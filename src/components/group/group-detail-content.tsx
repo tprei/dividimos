@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { GroupSpendingSection } from "@/components/group/group-spending-section";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
@@ -267,7 +268,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             meId={meId ?? ""}
           />
         </TabsContent>
-        <TabsContent value="contas" className="mt-4">
+        <TabsContent value="contas" className="mt-4 space-y-4">
+          <GroupSpendingSection spending={snapshot.overview?.spending} meId={meId ?? ""} />
           <GroupExpensesSection groupId={groupId} members={members} />
         </TabsContent>
         <TabsContent value="membros" className="mt-4 space-y-4">
