@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GroupSnapshot, Me } from "@/types/ledger";
-import { expensePageReadKey, groupReadKey, useAppStore } from "@/stores/app-store";
+import type { ExpenseDetail, GroupSnapshot, Me } from "@/types/ledger";
+import {
+  expensePageReadKey,
+  expenseReadKey,
+  groupReadKey,
+  useAppStore,
+} from "@/stores/app-store";
 import { rpc } from "./client";
-import { invalidateSyncReads, loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
+import {
+  invalidateSyncReads,
+  loadActivity,
+  loadMoreExpenses,
+  refreshExpense,
+  refreshGroup,
+} from "./refresh";
 import { LedgerError } from "./errors";
 
 const clientState = vi.hoisted(() => ({ authGeneration: 0 }));
@@ -47,6 +58,48 @@ function snapshot(groupId: string, ledgerVersion: number): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     pairwiseEdges: [],
+  };
+}
+
+function expenseDetail(): ExpenseDetail {
+  const current = {
+    expenseId: "e1",
+    versionNo: 1,
+    authorId: ME.id,
+    occurredOn: "2026-01-01",
+    title: "Almoço",
+    merchantName: null,
+    expenseType: "single_amount" as const,
+    totalCents: 100,
+    serviceFeeBasisPoints: 0,
+    fixedFeeCents: 0,
+    payload: {
+      items: [],
+      participants: [{ kind: "user" as const, userId: ME.id }],
+      shares: [100],
+      payers: [{ participantIndex: 0, amountCents: 100 }],
+      itemAssignments: null,
+      splitMethod: "fixed" as const,
+    },
+    changeSummary: null,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  return {
+    expense: {
+      id: "e1",
+      groupId: "g1",
+      creatorId: ME.id,
+      status: "active",
+      currentVersionNo: 1,
+      occurredOn: "2026-01-01",
+      createdAt: "2026-01-01T00:00:00Z",
+      deletedAt: null,
+      deletedBy: null,
+    },
+    current,
+    versions: [current],
+    participants: [],
+    group: { id: "g1", name: "Grupo", kind: "group" },
   };
 }
 
@@ -111,6 +164,39 @@ describe("refreshGroup", () => {
   });
 });
 
+
+describe("refreshExpense", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("installs detail and room metadata from one contextual RPC", async () => {
+    vi.mocked(rpc).mockResolvedValueOnce({
+      detail: expenseDetail(),
+      assignmentRoom: { id: "room-1", hostUserId: ME.id },
+    } as never);
+
+    await refreshExpense("e1");
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith(
+      "get_expense_context",
+      { p_expense_id: "e1" },
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().expenseDetails.e1).toBeDefined();
+    expect(useAppStore.getState().assignmentRoomsByExpenseId.e1).toEqual({
+      id: "room-1",
+      hostUserId: ME.id,
+    });
+    expect(useAppStore.getState().reads[expenseReadKey("e1")]).toEqual({
+      status: "ready",
+    });
+  });
+});
 describe("loadActivity", () => {
   beforeEach(() => {
     clientState.authGeneration = 0;

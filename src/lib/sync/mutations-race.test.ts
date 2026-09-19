@@ -251,8 +251,8 @@ describe("optimistic mutations under interleaved responses", () => {
               }
               case "get_group":
                 return snapshotOf(server);
-              case "get_expense":
-                return detailOf(server);
+              case "get_expense_context":
+                return { detail: detailOf(server), assignmentRoom: null };
               default:
                 throw new Error(`unmocked rpc ${fn}`);
             }
