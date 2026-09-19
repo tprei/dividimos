@@ -224,9 +224,10 @@ export function refreshSettlement(settlementId: string): Promise<void> {
   const inFlight = inFlightSettlements.get(settlementId);
   if (inFlight) return inFlight;
 
-  const task = (async () => {
-    const key = settlementReadKey(settlementId);
-    const attempt = beginRead(key);
+  const key = settlementReadKey(settlementId);
+  const attempt = beginRead(key);
+  let task = Promise.resolve();
+  task = (async () => {
     try {
       await trackedRead(
         key,
