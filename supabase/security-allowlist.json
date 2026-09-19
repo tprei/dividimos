@@ -209,6 +209,11 @@
       "authenticated": true,
       "note": "Authenticated membership-checked group overview read."
     },
+    "public.get_group_avatar(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked group avatar read."
+    },
     "public.get_group_expenses(p_group_id uuid, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
       "authenticated": true,
@@ -408,6 +413,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.set_group_avatar(p_group_id uuid, p_actor_id uuid, p_emoji text, p_photo_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role-only mutation; the route checks membership before calling it."
     },
     "public.set_updated_at()": {
       "anon": false,

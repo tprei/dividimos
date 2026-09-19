@@ -1130,6 +1130,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_group_avatar: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: Json
+      }
       get_group_expenses: {
         Args: {
           p_group_id: string
@@ -1412,6 +1418,15 @@ export type Database = {
         Args: {
           p_group_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      set_group_avatar: {
+        Args: {
+          p_group_id: string
+          p_actor_id: string
+          p_emoji: string
+          p_photo_id: string
         }
         Returns: Json
       }
