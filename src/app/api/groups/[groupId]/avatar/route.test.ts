@@ -86,7 +86,7 @@ describe("group avatar route", () => {
   });
 
   it("keeps a fresh object when the setter result is ambiguous", async () => {
-    mocks.adminRpc.mockRejectedValue(new Error("socket closed"));
+    mocks.adminRpc.mockResolvedValue({ data: null, error: { code: "", message: "fetch failed" } });
     const response = await PUT(request("PUT", new Uint8Array([1, 2, 3])), params);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "avatar_update_unknown" });

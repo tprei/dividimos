@@ -53,11 +53,11 @@ type GroupAvatarRead =
   | { kind: "photo"; photoId: string };
 
 /**
- * The generated Database types predate the avatar RPCs, so the calls are
- * pinned to the migration's contract locally instead of editing generated
- * output. PostgREST Postgres errors always carry string code + message;
- * anything else (fetch failure, timeout) arrives as a thrown error.
+ * The generated Database types predate the avatar RPCs, so these calls stay
+ * pinned to the migration contract locally. Setter rejection classification
+ * accepts only the P0001 code emitted by the avatar mutation.
  */
+
 type LooseSupabaseClient = SupabaseClient<never, "public", never> & {
   rpc(
     fn: string,
@@ -82,9 +82,17 @@ interface Rejection {
 }
 
 function asRejection(error: unknown): Rejection | null {
-  if (typeof error !== "object" || error === null) return null;
-  const { code, message } = error as { code?: unknown; message?: unknown };
-  if (typeof code !== "string" || typeof message !== "string") return null;
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error) ||
+    !("message" in error)
+  ) {
+    return null;
+  }
+  const code = error.code;
+  const message = error.message;
+  if (code !== "P0001" || typeof message !== "string") return null;
   return { code, message };
 }
 

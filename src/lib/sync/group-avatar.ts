@@ -42,6 +42,12 @@ function failureFrom(status: number, code: string): LedgerError {
       message: "Essa foto não é um JPEG válido.",
     });
   }
+  if (status === 503 && code === "avatar_update_unknown") {
+    return new LedgerError("network", {
+      message: "A atualização pode ter sido salva. Confira o avatar e tente de novo.",
+      cause: { status, code },
+    });
+  }
   const known = codeFromMessage(code);
   if (known !== "unknown") return new LedgerError(known, { cause: status });
   return new LedgerError("network", {
@@ -81,6 +87,10 @@ async function sendAvatarMutation(
   if (response.ok) return;
   const code = decodeErrorCode(await response.json().catch(() => undefined));
   if (getAuthGeneration() !== generation) throw new LedgerError("unauthenticated");
+  if (response.status === 503 && code === "avatar_update_unknown") {
+    await refreshGroup(groupId).catch(() => undefined);
+    if (getAuthGeneration() !== generation) throw new LedgerError("unauthenticated");
+  }
   throw failureFrom(response.status, code);
 }
 
@@ -120,6 +130,5 @@ export async function updateGroupAvatar(
   }
 
   if (getAuthGeneration() !== generation) throw new LedgerError("unauthenticated");
-  // Exactly one refresh: the group snapshot is the only thing that changes.
-  void refreshGroup(groupId);
+  await refreshGroup(groupId);
 }
