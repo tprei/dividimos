@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, ImagePlus, RotateCcw, ScanLine, X } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
+import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
-
+import {
+  pickNativeGalleryPhoto,
+  takeNativePhoto,
+  type PhotoOutcome,
+} from "@/lib/capacitor/camera";
 
 export interface ReceiptScannerProps {
   /** Called with the captured/selected image file when user taps "Processar" */
@@ -14,39 +19,76 @@ export interface ReceiptScannerProps {
   onBack: () => void;
   /** Whether processing is in progress (disables button, shows spinner) */
   processing?: boolean;
-
+  /** Opening surface: `camera` starts the camera right away, `picker` shows the chooser. */
+  initialSource?: "camera" | "picker";
 }
+
+/** Where the current preview photo came from; decides what "Trocar foto" reopens. */
+type FileOrigin = "camera" | "picker";
 
 export function ReceiptScanner({
   onProcess,
   onBack,
   processing = false,
-
+  initialSource = "picker",
 }: ReceiptScannerProps) {
+  const isAndroid = Capacitor.getPlatform() === "android";
+  const openWithCamera = initialSource === "camera";
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [fileOrigin, setFileOrigin] = useState<FileOrigin | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const isAndroid = Capacitor.getPlatform() === "android";
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(openWithCamera && !isAndroid);
+  const [nativeCamera, setNativeCamera] = useState(openWithCamera && isAndroid);
   const galleryRef = useRef<HTMLInputElement>(null);
+  /**
+   * The one in-flight native camera promise for the current entry intent. A
+   * StrictMode effect replay attaches a fresh handler to this same promise
+   * instead of launching a second camera or dropping the result; a retake
+   * replaces it with a new intent.
+   */
+  const nativeIntentRef = useRef<Promise<PhotoOutcome> | null>(null);
 
-  const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
+  // Mirror for revoking the preview URL on unmount. StrictMode double-runs
+  // mount cleanups while state survives, so the cleanup reads the mirror
+  // (null at mount) instead of revoking a URL the state still references.
+  const previewRef = useRef(preview);
+  useEffect(() => {
+    previewRef.current = preview;
+  }, [preview]);
+  useEffect(() => {
+    return () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    };
+  }, []);
 
-    setFile(selected);
-    const url = URL.createObjectURL(selected);
+  const showFile = useCallback((next: File, origin: FileOrigin) => {
+    setFile(next);
+    setFileOrigin(origin);
+    setCaptureError(null);
+    const url = URL.createObjectURL(next);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return url;
     });
-
-    // Reset the input so the same file can be re-selected
-    e.target.value = "";
   }, []);
+
+  const handleFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selected = e.target.files?.[0];
+      if (!selected) return;
+
+      showFile(selected, "picker");
+
+      // Reset the input so the same file can be re-selected
+      e.target.value = "";
+    },
+    [showFile],
+  );
 
   const clearPreview = useCallback(() => {
     setFile(null);
+    setFileOrigin(null);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -57,22 +99,10 @@ export function ReceiptScanner({
     if (file) onProcess(file);
   }, [file, onProcess]);
 
-  const handleNativeCapture = useCallback(
-    async (source: "camera" | "gallery") => {
-      const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
-        "@/lib/capacitor/camera"
-      );
-      const outcome =
-        source === "camera" ? await takeNativePhoto() : await pickNativeGalleryPhoto();
-
+  const applyNativeOutcome = useCallback(
+    (outcome: PhotoOutcome) => {
       if (outcome.kind === "captured") {
-        setCaptureError(null);
-        setFile(outcome.file);
-        const url = URL.createObjectURL(outcome.file);
-        setPreview((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
+        showFile(outcome.file, "camera");
         return;
       }
 
@@ -85,9 +115,93 @@ export function ReceiptScanner({
           : outcome.message,
       );
     },
-    [],
+    [showFile],
   );
 
+  // Native camera entry: launch exactly one capture per intent, deliver the
+  // outcome exactly once, and ignore handlers from StrictMode replays
+  // (cleaned up) or superseded intents.
+  useEffect(() => {
+    if (!nativeCamera) return;
+    if (nativeIntentRef.current === null) {
+      nativeIntentRef.current = takeNativePhoto();
+    }
+    const intent = nativeIntentRef.current;
+    let active = true;
+    void intent.then(
+      (outcome) => {
+        if (!active || nativeIntentRef.current !== intent) return;
+        nativeIntentRef.current = null;
+        setNativeCamera(false);
+        applyNativeOutcome(outcome);
+      },
+      () => {
+        if (!active || nativeIntentRef.current !== intent) return;
+        nativeIntentRef.current = null;
+        setNativeCamera(false);
+        setCaptureError("Não foi possível abrir a câmera.");
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [nativeCamera, applyNativeOutcome]);
+
+  const startWebCamera = useCallback(() => {
+    setCaptureError(null);
+    setCameraOpen(true);
+  }, []);
+
+  const startNativeCamera = useCallback(() => {
+    setCaptureError(null);
+    setNativeCamera(true);
+  }, []);
+
+  const handleCameraCapture = useCallback(
+    (captured: File) => {
+      setCameraOpen(false);
+      showFile(captured, "camera");
+    },
+    [showFile],
+  );
+
+  // The gallery must open inside the user gesture, so the camera stops and
+  // the hidden input is clicked synchronously in the same event.
+  const handleCameraGallery = useCallback(() => {
+    setCameraOpen(false);
+    galleryRef.current?.click();
+  }, []);
+
+  const handleCameraClose = useCallback(() => {
+    setCameraOpen(false);
+  }, []);
+
+  const handleNativeGallery = useCallback(() => {
+    void pickNativeGalleryPhoto().then(
+      (outcome) => {
+        if (outcome.kind === "captured") {
+          showFile(outcome.file, "picker");
+          return;
+        }
+        if (outcome.kind === "cancelled") return;
+        setCaptureError(
+          outcome.kind === "permission_denied"
+            ? "Permita o acesso à câmera nas configurações do aparelho."
+            : outcome.message,
+        );
+      },
+      () => setCaptureError("Não foi possível abrir a câmera."),
+    );
+  }, [showFile]);
+
+  const handleRetake = useCallback(() => {
+    const fromCamera = fileOrigin === "camera";
+    clearPreview();
+    if (fromCamera) {
+      if (isAndroid) startNativeCamera();
+      else startWebCamera();
+    }
+  }, [clearPreview, fileOrigin, isAndroid, startNativeCamera, startWebCamera]);
 
   return (
     <div className="space-y-4">
@@ -113,16 +227,6 @@ export function ReceiptScanner({
         </div>
       </div>
 
-      {/* Hidden file inputs */}
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handleFile}
-        className="hidden"
-        aria-hidden="true"
-      />
       <input
         ref={galleryRef}
         type="file"
@@ -131,9 +235,22 @@ export function ReceiptScanner({
         className="hidden"
         aria-hidden="true"
       />
-
       <AnimatePresence mode="wait">
-        {!preview ? (
+        {cameraOpen ? (
+          <motion.div
+            key="camera"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+          >
+            <ReceiptCameraView
+              onCapture={handleCameraCapture}
+              onGallery={handleCameraGallery}
+              onClose={handleCameraClose}
+            />
+          </motion.div>
+        ) : !preview ? (
           <motion.div
             key="input-modes"
             initial={{ opacity: 0, y: 12 }}
@@ -144,11 +261,7 @@ export function ReceiptScanner({
           >
             <button
               type="button"
-              onClick={() =>
-                isAndroid
-                  ? handleNativeCapture("camera")
-                  : cameraRef.current?.click()
-              }
+              onClick={isAndroid ? startNativeCamera : startWebCamera}
               className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -164,10 +277,10 @@ export function ReceiptScanner({
 
             <button
               type="button"
-              onClick={() =>
+              onClick={
                 isAndroid
-                  ? handleNativeCapture("gallery")
-                  : galleryRef.current?.click()
+                  ? handleNativeGallery
+                  : () => galleryRef.current?.click()
               }
               className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
             >
@@ -212,7 +325,7 @@ export function ReceiptScanner({
               <Button
                 variant="outline"
                 className="flex-1 gap-2"
-                onClick={clearPreview}
+                onClick={handleRetake}
                 disabled={processing}
               >
                 <RotateCcw className="h-4 w-4" />
