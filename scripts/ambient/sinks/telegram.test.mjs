@@ -306,7 +306,12 @@ test("going red with failure screenshots sends an album alert, then reddens the 
     const report = {
       status: "red",
       transition: "went_red",
-      failures: [{ name: "web smoke > badge", message: "boom" }],
+      failures: [
+        {
+          name: "web smoke > badge",
+          message: "expect(locator).toBeVisible() failed\nLocator: getByRole('img')",
+        },
+      ],
       diary: ["Ana paid R$ 10,00"],
       screenshots: png.paths.map((path) => ({ path, failure: true })),
       runUrl: "https://ci/run/2",
@@ -320,7 +325,10 @@ test("going red with failure screenshots sends an album alert, then reddens the 
     const media = JSON.parse(String(tg.calls[0].body.media));
     assert.equal(media.length, 2);
     assert.match(media[0].caption, /🚨 <b>Production started failing<\/b>/);
-    assert.match(media[0].caption, /<code>web smoke &gt; badge<\/code>/);
+    assert.match(media[0].caption, /<b>web smoke &gt; badge<\/b>/);
+    // The alert says what broke in words, then the original line underneath.
+    assert.match(media[0].caption, /a screen never showed what the walk waited for/);
+    assert.match(media[0].caption, /<code>expect\(locator\)\.toBeVisible\(\) failed<\/code>/);
     assert.equal(media[1].caption, undefined);
     assert.equal(tg.calls[0].body.disable_notification, undefined);
     assert.match(tg.calls[3].body.text, /🔴 <b>Dividimos · production failing<\/b>/);
