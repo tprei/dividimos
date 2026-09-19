@@ -43,9 +43,11 @@ test.describe("Receipt review participants", () => {
     const participantsRow = page.getByRole("button", { name: /^Participantes:/ });
     await expect(participantsRow).toHaveAccessibleName(/Alice$/);
 
-    const proceed = page.getByRole("button", { name: "Continuar para divisão" });
+    const proceed = page.getByRole("button", { name: "Dividir manualmente" });
     await expect(proceed).toBeDisabled();
-    await expect(page.getByText("Adicione pelo menos uma pessoa além de você.")).toBeVisible();
+    await expect(
+      page.getByText("Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa."),
+    ).toBeVisible();
 
     await participantsRow.click();
     await page.getByRole("button", { name: "Por @handle" }).click();
@@ -55,7 +57,9 @@ test.describe("Receipt review participants", () => {
     await page.getByRole("button", { name: "Concluir" }).click();
 
     await expect(participantsRow).toHaveAccessibleName(/Alice, Bob$/);
-    await expect(page.getByText("Adicione pelo menos uma pessoa além de você.")).toBeHidden();
+    await expect(
+      page.getByText("Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa."),
+    ).toBeHidden();
     await expect(proceed).toBeEnabled();
     await proceed.click();
     await expect(page.getByRole("button", { name: /^Participantes:/ })).toHaveCount(0);
