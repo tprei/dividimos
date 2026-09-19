@@ -1,7 +1,3 @@
--- Private group avatar storage: bucket provisioning plus a service-role-only
--- mutation and an authenticated membership read. No storage-object policies
--- or grants: objects stay reachable only through the server-side admin
--- client, which rechecks membership on every route call.
 SET lock_timeout = '5s';
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
@@ -25,8 +21,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  -- Exact palette only; the column check in 20260919070000 enforces the same
-  -- set on direct writes.
   IF p_emoji IS NOT NULL AND p_emoji NOT IN (
     E'\U0001F3E0', E'\U0001F37B', E'\U0001F355', E'\U0001F3D6\uFE0F',
     E'\u2708\uFE0F', E'\u26BD', E'\U0001F389', E'\U0001F431'
@@ -47,9 +41,6 @@ BEGIN
       FROM groups WHERE id = p_group_id;
   END IF;
 
-  -- Identity/metadata change only: no financial facts move, so the ledger
-  -- version steps without recomputing balances, and the broadcast carries
-  -- the group's latest existing event id (an avatar adds no event row).
   UPDATE groups
   SET avatar_emoji = p_emoji,
       avatar_photo_id = p_photo_id,
