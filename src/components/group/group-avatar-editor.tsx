@@ -50,7 +50,10 @@ function selectionPreview(groupId: string, name: string, selection: Selection): 
   if (selection.kind === "photo" && selection.photoId !== null) {
     return <GroupAvatar name={name} groupId={groupId} avatar={{ kind: "photo", photoId: selection.photoId }} size="lg" />;
   }
-  return <GroupAvatar name={name} groupId={groupId} avatar={selection} size="lg" />;
+  if (selection.kind === "emoji") {
+    return <GroupAvatar name={name} groupId={groupId} avatar={selection} size="lg" />;
+  }
+  return <GroupAvatar name={name} groupId={groupId} avatar={{ kind: "initials" }} size="lg" />;
 }
 
 export function GroupAvatarEditor({
