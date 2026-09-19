@@ -625,7 +625,7 @@ export function QuickChargeModal({
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Descrição (opcional)"
                     maxLength={100}
-                    className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors"
+                    className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors md:text-sm"
                   />
                   {error && (
                     <p className="mt-2 text-center text-sm text-destructive">{error}</p>

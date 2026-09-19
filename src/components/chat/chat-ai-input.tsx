@@ -252,7 +252,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
               ? "Descreva a despesa (ex: 'uber 25 eu paguei')"
               : "Mensagem…"
           }
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
           data-testid="chat-input"
         />
 
