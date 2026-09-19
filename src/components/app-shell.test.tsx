@@ -28,8 +28,8 @@ vi.mock("@/components/shared/skeleton", () => ({
 
 const mockKeyboardVisible = vi.fn(() => false);
 
-vi.mock("@/hooks/use-keyboard-visible", () => ({
-  useKeyboardVisible: () => mockKeyboardVisible(),
+vi.mock("@/hooks/use-app-viewport", () => ({
+  useAppViewport: () => ({ keyboardOpen: mockKeyboardVisible() }),
 }));
 
 vi.mock("@/hooks/use-haptics", () => ({
