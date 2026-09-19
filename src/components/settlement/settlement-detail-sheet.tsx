@@ -54,9 +54,9 @@ export function SettlementDetailSheet({
   const group = useAppStore((s) => s.groups[groupId]);
 
   useEffect(() => {
-    if (!open || read?.status === "loading" || read?.status === "error") return;
+    if (!open || (read !== undefined && read.status !== "idle")) return;
     void refreshSettlement(settlementId).catch(() => undefined);
-  }, [open, read?.status, settlementId]);
+  }, [open, read, settlementId]);
 
   const resolvePerson = useCallback(
     (userId: string): Person => {

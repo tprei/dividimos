@@ -136,5 +136,7 @@ describe("SettlementDetailSheet", () => {
     expect(screen.getByTestId("settlement-detail-updating")).toBeInTheDocument();
     expect(screen.getByTestId("settlement-detail-amount")).toHaveTextContent("R$ 30,00");
     expect(refreshSettlement).not.toHaveBeenCalled();
+    seedStore({ settlement: settlement(), read: { status: "ready" } });
+    renderSheet();
   });
 });
