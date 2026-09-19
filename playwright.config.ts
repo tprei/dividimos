@@ -43,6 +43,24 @@ export default defineConfig({
       fullyParallel: true,
       workers: process.env.CI ? 2 : 1,
     },
+    // Same synthetic suite on mobile browser engines. iPhone 13 runs WebKit and
+    // Pixel 5 runs mobile Chromium, so viewport, touch, and engine differences
+    // are exercised on every synthetic journey. These are Playwright device
+    // profiles, not a claim of emulating specific handset hardware.
+    {
+      name: "synthetic-ios",
+      use: { ...devices["iPhone 13"] },
+      testDir: "./e2e/synthetic",
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 1,
+    },
+    {
+      name: "synthetic-android",
+      use: { ...devices["Pixel 5"] },
+      testDir: "./e2e/synthetic",
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 1,
+    },
   ],
   // Run local dev server before tests
   webServer: process.env.CI
