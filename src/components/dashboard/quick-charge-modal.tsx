@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { formatBRL } from "@/lib/currency";
 import { haptics } from "@/hooks/use-haptics";
@@ -41,12 +42,15 @@ interface QuickChargeModalProps {
   open: boolean;
   onClose: () => void;
   onChargeConfirmed?: () => void;
+  /** Control the form is positioned against. */
+  anchor: HTMLElement | null;
 }
 
 export function QuickChargeModal({
   open,
   onClose,
   onChargeConfirmed,
+  anchor,
 }: QuickChargeModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -348,7 +352,7 @@ export function QuickChargeModal({
     setError("");
   }, [abandonGeneration, isConfirming]);
 
-  const handleBackdropClick = useCallback(() => {
+  const handleBackdropDismiss = useCallback(() => {
     if (isConfirming && phase !== "success") return;
     if (phase === "success") {
       handleSuccessClose();
@@ -357,44 +361,19 @@ export function QuickChargeModal({
     closeModal();
   }, [closeModal, handleSuccessClose, isConfirming, phase]);
 
-  const handleDragEnd = useCallback(
-    (_: unknown, info: { offset: { y: number }; velocity: { y: number } }) => {
-      if (isConfirming && phase !== "success") return;
-      if (info.offset.y > 100 || info.velocity.y > 500) {
-        if (phase === "success") {
-          handleSuccessClose();
-        } else {
-          closeModal();
-        }
-      }
-    },
-    [closeModal, handleSuccessClose, isConfirming, phase],
-  );
-
   if (!open) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
-        onClick={handleBackdropClick}
-      >
-        <motion.div
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          drag={isConfirming && phase !== "success" ? false : "y"}
-          dragConstraints={{ top: 0 }}
-          dragElastic={0.2}
-          onDragEnd={handleDragEnd}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl"
-        >
-          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) return;
+        // Same guard the old backdrop click used: a confirming charge and the
+        // success screen own their own exit.
+        handleBackdropDismiss();
+      }}
+    >
+      <PopoverContent anchor={anchor} side="bottom" align="center" data-testid="quick-charge-modal">
 
           <AnimatePresence mode="wait">
             {phase === "success" ? (
@@ -646,8 +625,7 @@ export function QuickChargeModal({
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+      </PopoverContent>
+    </Popover>
   );
 }
