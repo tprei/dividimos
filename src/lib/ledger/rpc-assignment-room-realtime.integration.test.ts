@@ -129,6 +129,27 @@ function nextBroadcast(
   return promise;
 }
 
+function nextRevisionBroadcast(
+  channel: RealtimeChannel,
+  revision: number,
+  timeoutMs = 8_000
+): Promise<{ payload: Record<string, unknown>; receivedAt: number }> {
+  const { promise, resolve, reject } = Promise.withResolvers<{
+    payload: Record<string, unknown>;
+    receivedAt: number;
+  }>();
+  const timer = setTimeout(
+    () => reject(new Error(`missing assignment revision ${revision}`)),
+    timeoutMs
+  );
+  channel.on("broadcast", { event: "assignment" }, ({ payload }) => {
+    if (payload.revision !== revision) return;
+    clearTimeout(timer);
+    resolve({ payload, receivedAt: performance.now() });
+  });
+  return promise;
+}
+
 function expectNoBroadcast(
   channel: RealtimeChannel,
   event: "assignment" | "access_changed",
@@ -389,7 +410,10 @@ describe.skipIf(!isIntegrationTestReady)(
         })
       );
 
-      const editMessage = nextBroadcast(channel, "assignment");
+      const editMessage = nextRevisionBroadcast(
+        channel,
+        finalized.room.room.revision + 1
+      );
       await rpc(hostClient, "edit_expense", {
         p_expense_id: finalized.ack.expenseId,
         p_expected_version_no: 1,
