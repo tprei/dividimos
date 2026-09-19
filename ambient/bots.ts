@@ -73,6 +73,146 @@ export async function pruneOldExpenses(troupe: Troupe): Promise<number> {
   return deleted;
 }
 
+// How long a bot group keeps history. The canary runs every 30 minutes, so
+// without a sweep the group gains roughly 48 expenses, events and chat lines
+// a day and never gives any back. A week still covers reading a weekend
+// failure on Monday.
+export const HISTORY_RETENTION_DAYS = 7;
+// Chat has no cap of its own, and the walk leaves one line per run.
+export const MAX_CHAT_MESSAGES = 200;
+// One run's worth of deletes, so a long-neglected group shrinks over several
+// runs instead of issuing one enormous statement.
+const SWEEP_BATCH = 500;
+
+export interface SweptHistory {
+  expenses: number;
+  events: number;
+  messages: number;
+}
+
+/**
+ * Hard-deletes what the soft-delete path leaves behind. `delete_expense` only
+ * flips status, so every pruned expense keeps its versions and participants
+ * forever, and nothing at all prunes events or chat.
+ *
+ * Balances cannot move here: `current_expense_participants` ends
+ * `WHERE e.status = 'active'`, so an expense this removes already counted for
+ * nothing. Settlements are left alone, because deleting a confirmed one would
+ * change a balance.
+ */
+export async function sweepGroupHistory(
+  troupe: Troupe,
+  groupId: string,
+): Promise<SweptHistory> {
+  const cutoff = new Date(
+    Date.now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const stale = await troupe.admin
+    .from("expenses")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("status", "deleted")
+    .lt("deleted_at", cutoff)
+    .limit(SWEEP_BATCH)
+    .returns<{ id: string }[]>();
+  if (stale.error) {
+    throw new Error(`ambient: list deleted expenses failed: ${stale.error.message}`);
+  }
+
+  const expenseIds = (stale.data ?? []).map((row) => row.id);
+  if (expenseIds.length > 0) {
+    // expense_versions and the participant rows cascade. group_events keeps
+    // its row with a null expense_id, which the event sweep below collects.
+    const { error } = await troupe.admin.from("expenses").delete().in("id", expenseIds);
+    if (error) {
+      throw new Error(`ambient: delete old expenses failed: ${error.message}`);
+    }
+  }
+
+  const events = await troupe.admin
+    .from("group_events")
+    .delete()
+    .eq("group_id", groupId)
+    .lt("created_at", cutoff)
+    .select("id")
+    .returns<{ id: number }[]>();
+  if (events.error) {
+    throw new Error(`ambient: delete old events failed: ${events.error.message}`);
+  }
+
+  const messages = await sweepChat(troupe, groupId);
+
+  return {
+    expenses: expenseIds.length,
+    events: (events.data ?? []).length,
+    messages,
+  };
+}
+
+/**
+ * Sweeps every group a bot created: the house group, the journey pool, and
+ * anything a later probe adds. Creator is the filter rather than membership,
+ * because the owner joins bot groups and bots never join his.
+ */
+export async function sweepBotGroups(troupe: Troupe): Promise<SweptHistory> {
+  const botIds = troupe.bots.map((bot) => bot.id);
+  const { data, error } = await troupe.admin
+    .from("groups")
+    .select("id")
+    .in("creator_id", botIds)
+    .returns<{ id: string }[]>();
+  if (error) {
+    throw new Error(`ambient: list bot groups failed: ${error.message}`);
+  }
+
+  const total: SweptHistory = { expenses: 0, events: 0, messages: 0 };
+  for (const group of data ?? []) {
+    const swept = await sweepGroupHistory(troupe, group.id);
+    total.expenses += swept.expenses;
+    total.events += swept.events;
+    total.messages += swept.messages;
+  }
+  return total;
+}
+
+/** Keeps the newest MAX_CHAT_MESSAGES lines and drops the rest. */
+async function sweepChat(troupe: Troupe, groupId: string): Promise<number> {
+  const listed = await troupe.admin
+    .from("chat_messages")
+    .select("id")
+    .eq("group_id", groupId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(MAX_CHAT_MESSAGES, MAX_CHAT_MESSAGES + SWEEP_BATCH - 1)
+    .returns<{ id: string }[]>();
+  if (listed.error) {
+    throw new Error(`ambient: list chat messages failed: ${listed.error.message}`);
+  }
+
+  const ids = (listed.data ?? []).map((row) => row.id);
+  if (ids.length === 0) return 0;
+
+  // conversation_reads.last_read_message_id has no cascade, so a read pointer
+  // into one of these lines would block the delete. The unread count reads
+  // last_read_at, so dropping the pointer costs nothing.
+  const cleared = await troupe.admin
+    .from("conversation_reads")
+    .update({ last_read_message_id: null })
+    .eq("group_id", groupId)
+    .in("last_read_message_id", ids);
+  if (cleared.error) {
+    throw new Error(`ambient: clear read pointers failed: ${cleared.error.message}`);
+  }
+
+  const { error } = await troupe.admin.from("chat_messages").delete().in("id", ids);
+  if (error) {
+    throw new Error(`ambient: delete chat messages failed: ${error.message}`);
+  }
+
+  return ids.length;
+}
+
 interface UserRow {
   id: string;
   handle: string;

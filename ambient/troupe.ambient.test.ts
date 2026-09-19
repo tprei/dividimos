@@ -13,7 +13,9 @@ import {
   ensureTroupe,
   MAX_ACTIVE_BOT_EXPENSES,
   OWNER_HANDLE,
+  MAX_CHAT_MESSAGES,
   pruneOldExpenses,
+  sweepBotGroups,
   type Troupe,
 } from "./bots";
 import { firstName, note } from "./diary";
@@ -288,5 +290,25 @@ describe("bot troupe", () => {
 
     expect(count ?? 0).toBeLessThanOrEqual(MAX_ACTIVE_BOT_EXPENSES);
     note(`Pruned ${deleted} old expense${deleted === 1 ? "" : "s"}, ${count ?? 0} active`);
+  });
+
+  it("keeps history from growing forever", async () => {
+    const swept = await sweepBotGroups(troupe);
+
+    const { count, error } = await troupe.admin
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", troupe.groupId);
+    if (error) {
+      throw new Error(`Failed to count chat messages: ${error.message}`);
+    }
+
+    // The sweep is what holds this line; the walk adds one message per run
+    // and nothing else ever removed one.
+    expect(count ?? 0).toBeLessThanOrEqual(MAX_CHAT_MESSAGES);
+    note(
+      `Swept ${swept.expenses} deleted expenses, ${swept.events} events and ` +
+        `${swept.messages} chat lines across the bot groups, ${count ?? 0} left here`,
+    );
   });
 });
