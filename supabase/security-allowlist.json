@@ -64,6 +64,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.bootstrap_overview()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; bootstrap includes membership-checked group overviews."
+    },
     "public.broadcast_group(p_group_id uuid, p_ledger_version bigint, p_event_id bigint)": {
       "anon": false,
       "authenticated": false,
@@ -199,6 +204,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.get_group_overview(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked group overview read."
+    },
     "public.get_group_expenses(p_group_id uuid, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
       "authenticated": true,
@@ -298,6 +308,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_group_overview_json(p_group_id uuid, p_viewer uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal overview serializer; reachable only through membership-checked reads."
     },
     "public.ledger_me_json(p_user_id uuid)": {
       "anon": false,
