@@ -202,6 +202,35 @@ describe("bootstrap account epoch", () => {
   });
 });
 
+describe("assignment room credential isolation", () => {
+  const roomKey = "dividimos.assignment-room.00000000-0000-4000-8000-000000000001";
+
+  it("purges room capabilities on sign-out and signed-in account switches", () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    localStorage.setItem(roomKey, JSON.stringify({ memberToken: "secret-a" }));
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    emit("SIGNED_IN", "user-b");
+    expect(localStorage.getItem(roomKey)).toBeNull();
+
+    localStorage.setItem(roomKey, JSON.stringify({ memberToken: "secret-b" }));
+    emit("SIGNED_OUT", null);
+    expect(localStorage.getItem(roomKey)).toBeNull();
+    detach();
+  });
+
+  it("keeps an anonymous guest capability through first login and route teardown", () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    localStorage.setItem(roomKey, JSON.stringify({ memberToken: "guest-secret" }));
+
+    emit("SIGNED_IN", "user-a");
+    expect(localStorage.getItem(roomKey)).not.toBeNull();
+
+    detach();
+    expect(localStorage.getItem(roomKey)).not.toBeNull();
+  });
+});
+
 describe("bill draft account isolation", () => {
   it("SIGNED_OUT clears the in-memory draft and archives the account draft", async () => {
     const { useBillStore } = await import("@/stores/bill-store");
