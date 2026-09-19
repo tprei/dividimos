@@ -54,7 +54,7 @@ beforeEach(() => {
 });
 
 describe("updateSession", () => {
-  it.each(["/claim", "/join", "/u/example", "/auth/onboard", "/auth/continue"])(
+  it.each(["/claim", "/join", "/room/00000000-0000-4000-8000-000000000001", "/u/example", "/auth/onboard", "/auth/continue"])(
     "verifies the session before returning %s",
     async (pathname) => {
       getClaimsMock.mockResolvedValue({
@@ -100,6 +100,18 @@ describe("updateSession", () => {
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toContain("/auth?next=%2Fapp");
     expect(response.headers.get("cache-control")).toContain("no-store");
+  });
+
+  it("does not expose similarly prefixed room routes", async () => {
+    getClaimsMock.mockResolvedValue({
+      data: null,
+      error: { name: "AuthSessionMissingError", status: 401 },
+    });
+
+    const response = await updateSession(makeRequest("/roommate/private"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/auth?next=%2Froommate%2Fprivate");
   });
 
   it("carries the destination's query string into the auth redirect", async () => {
