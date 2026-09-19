@@ -8,6 +8,7 @@ import type { GroupEvent, GroupSnapshot, Me, Settlement, UserProfile } from "@/t
 
 vi.mock("@/lib/sync/refresh", () => ({
   loadActivity: vi.fn().mockResolvedValue(undefined),
+  refreshSettlement: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/sync/mutations", () => ({
@@ -443,6 +444,41 @@ describe("ActivityContent", () => {
     render(<ActivityContent />);
 
     expect(screen.queryByRole("button", { name: /Desfazer/i })).not.toBeInTheDocument();
+  });
+
+  it("offers Ver pagamento to a third member and keeps undo party-gated", () => {
+    const thirdPartyEvent: GroupEvent = {
+      ...recordedSettlementEvent,
+      id: 105,
+      settlementId: "sett-999",
+      actor: bob,
+      payload: { amountCents: 4200, fromUserId: bob.id, toUserId: alice.id },
+    };
+    useAppStore.setState({
+      activity: {
+        items: [thirdPartyEvent],
+        oldestId: 105,
+        complete: false,
+        read: { status: "ready" },
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(screen.getByTestId("activity-view-settlement")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-undo-settlement")).not.toBeInTheDocument();
+  });
+
+  it("opens the shared settlement popover from the activity row", async () => {
+    const { refreshSettlement } = await import("@/lib/sync/refresh");
+
+    render(<ActivityContent />);
+    fireEvent.click(screen.getByTestId("activity-view-settlement"));
+
+    await waitFor(() => {
+      expect(refreshSettlement).toHaveBeenCalledWith("sett-789");
+    });
+    expect(screen.getByTestId("settlement-detail-popover")).toBeInTheDocument();
   });
 
   it("renders empty state when items is empty", () => {

@@ -10,6 +10,7 @@ import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
@@ -86,6 +87,7 @@ interface ActivityRowProps {
 function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
@@ -154,34 +156,61 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               {relativeTime}
             </span>
           </div>
-          {canUndo && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
-                else void handleConfirmUndo();
-              }}
-              disabled={isUndoing}
-              data-testid="activity-undo-settlement"
-            >
-              {isUndoing ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <>
-                  <Undo2 className="mr-1 h-3 w-3" />
-                  Desfazer
-                </>
-              )}
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {event.settlementId !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDetailOpen(true);
+                }}
+                data-testid="activity-view-settlement"
+              >
+                Ver pagamento
+              </Button>
+            )}
+            {canUndo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                  else void handleConfirmUndo();
+                }}
+                disabled={isUndoing}
+                data-testid="activity-undo-settlement"
+              >
+                {isUndoing ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <>
+                    <Undo2 className="mr-1 h-3 w-3" />
+                    Desfazer
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
+
+  const sheet =
+    event.settlementId !== null ? (
+      <SettlementDetailPopover
+        settlementId={event.settlementId}
+        groupId={event.groupId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
+    ) : null;
 
   const dialog = canUndo ? (
     <VoidSettlementDialog
@@ -200,7 +229,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
 
   if (event.expenseId) {
     return (
-      <>
+      <div className="relative">
         <Link
           href={`/app/bill/${event.expenseId}`}
           className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
@@ -208,17 +237,19 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
           {cardContent}
         </Link>
         {dialog}
-      </>
+        {sheet}
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="relative">
       <div className="rounded-xl border bg-card p-3">
         {cardContent}
       </div>
       {dialog}
-    </>
+      {sheet}
+    </div>
   );
 }
 

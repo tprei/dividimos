@@ -18,6 +18,7 @@ import {
   decodeVendorCharge,
   decodeVendorCharges,
 } from "./decode";
+import { decodeSettlementDetail } from "./decode-settlement-detail";
 
 describe("decodeBootstrap", () => {
   const fixture: Bootstrap = {
@@ -652,5 +653,39 @@ describe("additional wire decoders", () => {
         claimLinkGeneration: 1.5,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe("decodeSettlementDetail", () => {
+  const base = {
+    id: "set-1",
+    operationId: "op-1",
+    groupId: "group-1",
+    fromUserId: "user-1",
+    toUserId: "user-2",
+    amountCents: 3000,
+    status: "confirmed",
+    createdBy: "user-1",
+    createdAt: "2026-09-06T12:00:00.000Z",
+    confirmedAt: "2026-09-06T12:00:00.000Z",
+    voidedAt: null,
+    voidedBy: null,
+  };
+
+  it("unwraps the settlement key and decodes the payload", () => {
+    const result = decodeSettlementDetail({ settlement: base });
+    expect(result).toEqual({ ok: true, value: base });
+  });
+
+  it("rejects anything but the exact wrapper key", () => {
+    expect(decodeSettlementDetail({ settlement: base, extra: 1 }).ok).toBe(false);
+    expect(decodeSettlementDetail({}).ok).toBe(false);
+    expect(decodeSettlementDetail(null).ok).toBe(false);
+    expect(decodeSettlementDetail("settlement").ok).toBe(false);
+  });
+
+  it("rejects a malformed settlement payload", () => {
+    expect(decodeSettlementDetail({ settlement: { ...base, amountCents: "30" } }).ok).toBe(false);
+    expect(decodeSettlementDetail({ settlement: { ...base, status: "pending" } }).ok).toBe(false);
   });
 });
