@@ -25,7 +25,7 @@ import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { haptics } from "@/hooks/use-haptics";
-import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
+import { useAppViewport } from "@/hooks/use-app-viewport";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
 import { hasNativePushConsent } from "@/lib/push/native-consent";
 import { registerNativePushToken } from "@/lib/push/native-registration";
@@ -62,9 +62,8 @@ export function usesScreenHeader(pathname: string): boolean {
   return SCREEN_HEADER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-function NavBar() {
+function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
   const pathname = usePathname();
-  const keyboardOpen = useKeyboardVisible();
   const unreadTotal = useAppStore(selectUnreadTotal);
 
   if (keyboardOpen || pathname.startsWith(WIZARD_PREFIX)) return null;
@@ -190,7 +189,7 @@ function usePullToRefresh(onRefresh: () => Promise<boolean>) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const keyboardOpen = useKeyboardVisible();
+  const { keyboardOpen } = useAppViewport();
   const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -368,7 +367,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <DashboardSkeleton />
         </div>
       ) : !knownGood ? (
-        <div className="flex h-dvh flex-col items-center justify-center">
+        <div className="flex h-full min-h-0 flex-col items-center justify-center">
           <SyncErrorState
             title="Não conseguimos carregar sua conta"
             message={
@@ -381,7 +380,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
         </div>
       ) : (
-        <div className="flex h-dvh flex-col overflow-hidden bg-background">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
           {bootstrapStatus === "error" && (
             <div
               role="alert"
@@ -477,7 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             meId={me.id}
           />
 
-          <NavBar />
+          <NavBar keyboardOpen={keyboardOpen} />
         </div>
       )}
     </>
