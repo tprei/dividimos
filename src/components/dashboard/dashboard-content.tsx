@@ -64,6 +64,7 @@ export function DashboardContent() {
     mode: "pay" | "collect";
   } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
+  const [quickChargeAnchor, setQuickChargeAnchor] = useState<HTMLElement | null>(null);
   const [missingKeyOpen, setMissingKeyOpen] = useState(false);
 
   const owes = rows.filter((row) => row.direction === "owes");
@@ -159,7 +160,8 @@ export function DashboardContent() {
     setPixTarget({ debt: row, mode: "collect" });
   };
 
-  const openQuickCharge = () => {
+  const openQuickCharge = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setQuickChargeAnchor(event.currentTarget);
     setSelectedDebt(null);
     if (!me.pixKeyHint) {
       setMissingKeyOpen(true);
@@ -404,6 +406,7 @@ export function DashboardContent() {
         <QuickChargeModal
           open
           onClose={() => setQuickChargeOpen(false)}
+          anchor={quickChargeAnchor}
         />
       )}
 
