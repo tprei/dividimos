@@ -59,6 +59,12 @@ export function DashboardContent() {
     [expenses, groups, me, myExpenses],
   );
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
+  const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
+
+  const selectDebt = (row: DebtRow, anchor: HTMLButtonElement) => {
+    setDebtAnchor(anchor);
+    setSelectedDebt(row);
+  };
   const [pixTarget, setPixTarget] = useState<{
     debt: DebtRow;
     mode: "pay" | "collect";
@@ -319,7 +325,7 @@ export function DashboardContent() {
                     <DebtRowButton
                       key={`${row.groupId}-${row.counterpartyId}`}
                       row={row}
-                      onSelect={setSelectedDebt}
+                      onSelect={selectDebt}
                     />
                   ))}
                 </div>
@@ -337,7 +343,7 @@ export function DashboardContent() {
                     <DebtRowButton
                       key={`${row.groupId}-${row.counterpartyId}`}
                       row={row}
-                      onSelect={setSelectedDebt}
+                      onSelect={selectDebt}
                     />
                   ))}
                 </div>
@@ -394,6 +400,7 @@ export function DashboardContent() {
           meId={me.id}
           open
           onClose={() => setSelectedDebt(null)}
+          anchor={debtAnchor}
           onPay={openPay}
           onCollect={openCollect}
           onNudge={(row) => {
