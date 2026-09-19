@@ -829,7 +829,6 @@ describe.skipIf(!isIntegrationTestReady)(
     let thirdMember: TestUser;
     let pending: TestUser;
     let outsider: TestUser;
-    let clientCreditor: SupabaseClient;
     let clientDebtor: SupabaseClient;
     let clientThirdMember: SupabaseClient;
     let clientPending: SupabaseClient;
@@ -839,7 +838,6 @@ describe.skipIf(!isIntegrationTestReady)(
 
     beforeAll(async () => {
       [creditor, debtor, thirdMember, pending, outsider] = await createTestUsers(5);
-      clientCreditor = authenticateAs(creditor);
       clientDebtor = authenticateAs(debtor);
       clientThirdMember = authenticateAs(thirdMember);
       clientPending = authenticateAs(pending);
