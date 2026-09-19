@@ -59,7 +59,8 @@ function failureFrom(status: number, code: string): LedgerError {
 /** Recovers the stable code from a `{error: code}` body; anything else is "". */
 function decodeErrorCode(body: unknown): string {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return "";
-  const code = (body as { error?: unknown }).error;
+  if (!("error" in body)) return "";
+  const code = body.error;
   return typeof code === "string" ? code : "";
 }
 

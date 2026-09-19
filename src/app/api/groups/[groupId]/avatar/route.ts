@@ -188,10 +188,16 @@ function parseEmojiPatch(body: unknown): EmojiPatch {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { valid: false };
   }
-  const { kind, emoji } = body as { kind?: unknown; emoji?: unknown };
+  if (!("kind" in body)) return { valid: false };
+  const kind = body.kind;
   if (kind === "initials") return { valid: true, emoji: null };
-  if (kind === "emoji" && typeof emoji === "string" && AVATAR_EMOJI.includes(emoji)) {
-    return { valid: true, emoji };
+  if (
+    kind === "emoji" &&
+    "emoji" in body &&
+    typeof body.emoji === "string" &&
+    AVATAR_EMOJI.includes(body.emoji)
+  ) {
+    return { valid: true, emoji: body.emoji };
   }
   return { valid: false };
 }
