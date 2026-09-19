@@ -40,6 +40,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.assignment_room_expense_payload(p_room_id uuid, p_group_id uuid, p_payers jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal exact allocator used only by room finalization."
+    },
     "public.assignment_room_view(p_room_id uuid, p_self_participant_id uuid, p_host boolean)": {
       "anon": false,
       "authenticated": false,
@@ -204,6 +209,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.finalize_assignment_room(p_room_id uuid, p_expected_revision bigint, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; materializes one exact ledger expense from a closed room."
     },
     "public.get_assignment_room(p_room_id uuid, p_member_token text)": {
       "anon": true,
