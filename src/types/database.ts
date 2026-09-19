@@ -1147,6 +1147,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_settlement: {
+        Args: {
+          p_settlement_id: string
+        }
+        Returns: Json
+      }
       get_vendor_charges: {
         Args: {
           p_before_created_at?: string
