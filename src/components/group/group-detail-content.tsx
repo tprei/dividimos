@@ -16,6 +16,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupSpendingSection } from "@/components/group/group-spending-section";
+import { GroupAvatarEditor } from "@/components/group/group-avatar-editor";
+import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
@@ -51,6 +53,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const [tab, setTab] = useState("saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const departedRef = useRef(false);
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
@@ -214,11 +217,33 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isCreator = meId === snapshot.group.creatorId;
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
-
+  const canEditAvatar = isAcceptedMember && snapshot.group.kind === "group";
+  const groupAvatar = (
+    <GroupAvatar
+      name={snapshot.group.name}
+      avatar={snapshot.overview?.avatar}
+      groupId={groupId}
+      size="sm"
+    />
+  );
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <ScreenHeader
         back
+        leading={
+          canEditAvatar ? (
+            <button
+              type="button"
+              aria-label="Alterar imagem do grupo"
+              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setShowAvatarEditor(true)}
+            >
+              {groupAvatar}
+            </button>
+          ) : (
+            groupAvatar
+          )
+        }
         eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
         title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
         onBack={() => router.push("/app/groups")}
@@ -321,6 +346,14 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         groupId={groupId}
         groupName={snapshot.group.name}
       />
+
+      {canEditAvatar && (
+        <GroupAvatarEditor
+          groupId={groupId}
+          open={showAvatarEditor}
+          onOpenChange={setShowAvatarEditor}
+        />
+      )}
 
     </div>
   );

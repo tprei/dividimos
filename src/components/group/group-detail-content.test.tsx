@@ -266,6 +266,24 @@ describe("GroupDetailContent", () => {
     ]);
   });
 
+  it("offers the avatar editor to accepted group members", () => {
+    seedLoaded();
+    useAppStore.setState((state) => ({
+      groups: {
+        ...state.groups,
+        [groupId]: {
+          ...state.groups[groupId],
+          overview: { avatar: { kind: "emoji", emoji: "🍕" }, spending: null },
+        },
+      },
+    }));
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.getByRole("button", { name: "Alterar imagem do grupo" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
+  });
+
   it("links to the group chat with an unread count", () => {
     useAppStore.setState({
       hydrated: true,
