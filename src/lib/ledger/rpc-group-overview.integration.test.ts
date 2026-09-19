@@ -152,7 +152,22 @@ describe.skipIf(!isIntegrationTestReady)("group overview reads", () => {
       p_group_id: groupId,
     });
 
-    expect(Object.keys(legacy).sort()).toEqual(["expenses", "group", "members", "settlements"].sort());
+    expect(Object.keys(legacy).sort()).toEqual(
+      [
+        "balances",
+        "expenseCount",
+        "group",
+        "guests",
+        "lastActivityAt",
+        "lastEventId",
+        "lastMessage",
+        "members",
+        "pairwiseEdges",
+        "recentExpenses",
+        "settlements",
+        "unreadCount",
+      ].sort(),
+    );
     expect((legacy.group as Record<string, unknown>).id).toBe(groupId);
   });
 
