@@ -1454,8 +1454,6 @@ WHERE (
           const linkErr = await expectError(
             client.rpc("create_invite_link", {
               p_group_id: groupId,
-              p_expires_at: null,
-              p_max_uses: null,
             }),
           );
           expect(linkErr).toBe("not_a_member");
