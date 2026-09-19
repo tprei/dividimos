@@ -67,6 +67,9 @@ export interface ScannedItemsReviewProps {
   participants: ItemDivisionParticipant[];
   initialOccurredOn?: string;
   onConfirm: (result: ReceiptOcrResult, occurredOn: string) => void;
+  onShare: (result: ReceiptOcrResult, occurredOn: string) => void;
+  sharePending?: boolean;
+  shareError?: string | null;
   onCancel: () => void;
   onManageParticipants: () => void;
 }
@@ -76,8 +79,11 @@ export function ScannedItemsReview({
   participants,
   initialOccurredOn,
   onConfirm,
+  onShare,
   onCancel,
   onManageParticipants,
+  sharePending = false,
+  shareError,
 }: ScannedItemsReviewProps) {
   const [items, setItems] = useState<ReceiptItem[]>(() =>
     result.items.map((item) => ({
@@ -109,8 +115,7 @@ export function ScannedItemsReview({
   );
   const descriptionsValid = items.every((item) => isDescriptionValid(item.description));
   const totalWithinCap = totalCents <= (MAX_EXPENSE_CENTS as number);
-  const canConfirm =
-    participants.length >= 2 &&
+  const receiptValid =
     items.length > 0 &&
     amountsValid &&
     descriptionsValid &&
@@ -118,6 +123,7 @@ export function ScannedItemsReview({
     isOccurredOnValid(occurredOn) &&
     serviceFeeResult.ok &&
     serviceFeeCentsResult?.ok === true;
+  const canConfirm = participants.length >= 2 && receiptValid;
 
   const handleNameChange = (index: number, value: string) => {
     setItems((current) =>
@@ -160,10 +166,13 @@ export function ScannedItemsReview({
     setPanel((current) => (current?.index === index ? null : { index }));
   };
 
-  const handleContinue = () => {
-    if (!canConfirm || !serviceFeeResult.ok) return;
-    onConfirm(
-      {
+  const normalizedReceipt = (): {
+    result: ReceiptOcrResult;
+    occurredOn: string;
+  } | null => {
+    if (!receiptValid || !serviceFeeResult.ok) return null;
+    return {
+      result: {
         ...result,
         merchant: merchant.trim() || null,
         items,
@@ -171,7 +180,19 @@ export function ScannedItemsReview({
         totalCents,
       },
       occurredOn,
-    );
+    };
+  };
+
+  const handleContinue = () => {
+    const normalized = normalizedReceipt();
+    if (!normalized || !canConfirm) return;
+    onConfirm(normalized.result, normalized.occurredOn);
+  };
+
+  const handleShare = () => {
+    const normalized = normalizedReceipt();
+    if (!normalized) return;
+    onShare(normalized.result, normalized.occurredOn);
   };
 
   return (
@@ -292,16 +313,31 @@ export function ScannedItemsReview({
       <footer className="sticky bottom-0 border-t bg-background/95 py-3 backdrop-blur safe-bottom">
         {participants.length < 2 && (
           <p className="mb-2 text-center text-xs leading-4 text-muted-foreground">
-            Adicione pelo menos uma pessoa além de você.
+            Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa.
           </p>
         )}
-        <Button
-          className="min-h-11 w-full text-base font-bold"
-          onClick={handleContinue}
-          disabled={!canConfirm}
-        >
-          Continuar para divisão
-        </Button>
+        {shareError && (
+          <p role="alert" className="mb-2 text-center text-sm text-destructive">
+            {shareError}
+          </p>
+        )}
+        <div className="space-y-2">
+          <Button
+            className="min-h-11 w-full text-base font-bold"
+            onClick={handleShare}
+            disabled={!receiptValid || sharePending}
+          >
+            {sharePending ? "Criando sala..." : "Compartilhar para escolher itens"}
+          </Button>
+          <Button
+            variant="outline"
+            className="min-h-11 w-full"
+            onClick={handleContinue}
+            disabled={!canConfirm || sharePending}
+          >
+            Dividir manualmente
+          </Button>
+        </div>
       </footer>
     </motion.div>
   );
