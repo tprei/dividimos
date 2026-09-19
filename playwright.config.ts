@@ -38,7 +38,10 @@ export default defineConfig({
     // can safely run in parallel within each CI shard.
     {
       name: "synthetic",
-      use: { ...devices["Desktop Chrome"] },
+      // The app's service worker answers /api/** and /app/** from cache, which
+      // makes page.route mocks fire or not depending on the engine. Blocking
+      // it keeps every project's interception identical.
+      use: { ...devices["Desktop Chrome"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
       workers: process.env.CI ? 2 : 1,
@@ -49,14 +52,14 @@ export default defineConfig({
     // profiles, not a claim of emulating specific handset hardware.
     {
       name: "synthetic-ios",
-      use: { ...devices["iPhone 13"] },
+      use: { ...devices["iPhone 13"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
       workers: process.env.CI ? 2 : 1,
     },
     {
       name: "synthetic-android",
-      use: { ...devices["Pixel 5"] },
+      use: { ...devices["Pixel 5"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
       workers: process.env.CI ? 2 : 1,
