@@ -32,6 +32,18 @@ export function buildAssignmentRoomUrl(
   return `${origin}/room/${roomId.toLowerCase()}#${joinToken}`;
 }
 
+// The room page reads the URL the browser already opened, so the accepted-origin
+// rule for scanned payloads does not apply: any host serving this app may hand a
+// guest an invite fragment.
+export function readAssignmentRoomFragment(
+  roomId: string,
+  hash: string
+): string | null {
+  if (!ROOM_ID_RE.test(roomId)) return null;
+  const token = hash.startsWith("#") ? hash.slice(1) : hash;
+  return ASSIGNMENT_ROOM_JOIN_TOKEN_RE.test(token) ? token : null;
+}
+
 export function parseAssignmentRoomQrCode(
   value: string
 ): AssignmentRoomQrResult | null {

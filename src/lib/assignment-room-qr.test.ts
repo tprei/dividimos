@@ -3,6 +3,7 @@ import {
   ASSIGNMENT_ROOM_JOIN_TOKEN_RE,
   buildAssignmentRoomUrl,
   parseAssignmentRoomQrCode,
+  readAssignmentRoomFragment,
 } from "./assignment-room-qr";
 
 const ROOM_ID = "123e4567-e89b-42d3-a456-426614174000";
@@ -127,5 +128,18 @@ describe("buildAssignmentRoomUrl", () => {
     expect(() => buildAssignmentRoomUrl(ROOM_ID, "armj1_short")).toThrow(
       "Invalid assignment room URL input"
     );
+  });
+});
+
+describe("readAssignmentRoomFragment", () => {
+  it("accepts the invite fragment of the opened room in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(readAssignmentRoomFragment(ROOM_ID, `#${TOKEN}`)).toBe(TOKEN);
+  });
+
+  it("rejects a malformed room id, a foreign token shape and an empty hash", () => {
+    expect(readAssignmentRoomFragment("not-a-uuid", `#${TOKEN}`)).toBeNull();
+    expect(readAssignmentRoomFragment(ROOM_ID, "#armm1_member")).toBeNull();
+    expect(readAssignmentRoomFragment(ROOM_ID, "")).toBeNull();
   });
 });
