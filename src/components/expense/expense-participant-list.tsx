@@ -11,7 +11,7 @@ interface ExpenseParticipantListProps {
   participants: Participant[];
   meId: string | null;
   invitedUserIds: ReadonlySet<string>;
-  onInviteGuest: (participant: Participant) => void;
+  onInviteGuest: (participant: Participant, anchor: HTMLButtonElement) => void;
 }
 
 export function ExpenseParticipantList({
@@ -63,7 +63,7 @@ export function ExpenseParticipantList({
                     variant="outline"
                     aria-label={`Convidar ${participant.guest.displayName}`}
                     className="h-11 shrink-0 rounded-full px-4"
-                    onClick={() => onInviteGuest(participant)}
+                    onClick={(event) => onInviteGuest(participant, event.currentTarget)}
                   >
                     Convidar
                   </Button>
