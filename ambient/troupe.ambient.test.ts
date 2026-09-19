@@ -239,8 +239,15 @@ describe("bot troupe", () => {
     }
 
     expect(transfers.length).toBeGreaterThan(0);
-    const transfer = transfers[0];
-    const payer = troupe.bots.find((b) => b.id === transfer.fromId);
+    // The owner watches this group, so a transfer can name him as the payer,
+    // and only he can settle his own debt. The bots pay their own.
+    const botIds = new Set(troupe.bots.map((bot) => bot.id));
+    const transfer = transfers.find((t) => botIds.has(t.fromId));
+    if (!transfer) {
+      note("Every open transfer belongs to a human, so the bots had nothing to settle");
+      return;
+    }
+    const payer = troupe.bots.find((bot) => bot.id === transfer.fromId);
     if (!payer) {
       throw new Error(`Bot ${transfer.fromId} not found in troupe`);
     }

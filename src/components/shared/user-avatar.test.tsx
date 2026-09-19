@@ -28,6 +28,12 @@ describe("UserAvatar", () => {
     expect(screen.getByText("AC")).toBeInTheDocument();
   });
 
+  it("drops a parenthesised aside from the initials", () => {
+    // The bots are named "Ana (bot)", which used to initial as "A(".
+    render(<UserAvatar name="Ana (bot)" />);
+    expect(screen.getByText("AN")).toBeInTheDocument();
+  });
+
   it("renders image when avatarUrl provided", () => {
     render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" />);
     const img = screen.getByRole("img");
