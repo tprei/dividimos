@@ -219,6 +219,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.get_settlement(p_settlement_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked settlement detail read."
+    },
     "public.get_vendor_charges(p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
       "authenticated": true,
