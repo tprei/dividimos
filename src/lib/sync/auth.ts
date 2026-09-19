@@ -13,7 +13,10 @@ import {
 } from "@/lib/push/detach";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
 import { invalidateNativeRegistration } from "@/lib/push/native-registration";
-import { resetAssignmentRoomRuntime } from "./assignment-rooms";
+import {
+  clearAllAssignmentRoomCredentials,
+  resetAssignmentRoomRuntime,
+} from "./assignment-rooms";
 import { stopAllAssignmentRoomRealtime } from "./assignment-room-realtime";
 
 export function attachAuthListener(
@@ -41,6 +44,7 @@ export function attachAuthListener(
       advanceAuthGeneration();
       stopAllAssignmentRoomRealtime();
       resetAssignmentRoomRuntime();
+      clearAllAssignmentRoomCredentials();
       invalidateNativeRegistration();
       invalidateSyncReads();
       clearPendingVendorChargeCancellations();
@@ -69,6 +73,7 @@ export function attachAuthListener(
     advanceAuthGeneration();
     stopAllAssignmentRoomRealtime();
     resetAssignmentRoomRuntime();
+    if (previousUserId !== null) clearAllAssignmentRoomCredentials();
     invalidateNativeRegistration();
     invalidateSyncReads();
     clearPendingVendorChargeCancellations();

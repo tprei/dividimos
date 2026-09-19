@@ -126,12 +126,16 @@ export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => 
   },
 
   setConnected(roomId, connected) {
-    set((state) => ({
-      rooms: {
-        ...state.rooms,
-        [roomId]: { ...entryFor(state.rooms, roomId), connected },
-      },
-    }));
+    set((state) => {
+      const entry = state.rooms[roomId];
+      if (!entry) return state;
+      return {
+        rooms: {
+          ...state.rooms,
+          [roomId]: { ...entry, connected },
+        },
+      };
+    });
   },
 
   beginItemMutation(roomId, itemId) {

@@ -34,7 +34,7 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
   let channelTopic: string | null = null;
   let refreshInFlight: Promise<void> | null = null;
   let refreshPending = false;
-  let initialGuestHydration = getAssignmentRoomMemberToken(roomId) !== null;
+  let initialGuestHydration = true;
   let reconnectAttempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -81,13 +81,15 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
       .subscribe((status) => {
         if (disposed) return;
         if (status === "SUBSCRIBED") {
+          reconnectAttempt = 0;
+          clearTimeout(reconnectTimer ?? undefined);
+          reconnectTimer = null;
           scheduleRefresh();
           return;
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConnected(false);
           removeChannel();
-          scheduleRefresh();
           scheduleReconnect();
         }
       });
@@ -95,24 +97,25 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
 
   const executeRefresh = async () => {
     try {
-      if (initialGuestHydration) {
+      if (initialGuestHydration && getAssignmentRoomMemberToken(roomId) !== null) {
         initialGuestHydration = false;
         await refreshAssignmentRoomMember(roomId);
       } else {
         await refreshAssignmentRoom(roomId);
       }
       if (disposed) return;
-      reconnectAttempt = 0;
-      clearTimeout(reconnectTimer ?? undefined);
-      reconnectTimer = null;
       setConnected(true);
       subscribe();
     } catch (error) {
       if (disposed) return;
       setConnected(false);
       if (error instanceof LedgerError && error.code === "invalid_token") {
-        clearAssignmentRoomAccess(roomId);
         dispose();
+        try {
+          clearAssignmentRoomAccess(roomId);
+        } catch {
+          // Access is removed from memory even when storage cleanup fails.
+        }
         return;
       }
       scheduleReconnect();
@@ -120,14 +123,16 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
   };
 
   const runRefresh = () => {
-    const task = executeRefresh().finally(() => {
-      if (refreshInFlight !== task) return;
-      refreshInFlight = null;
-      if (refreshPending && !disposed) {
-        refreshPending = false;
-        runRefresh();
-      }
-    });
+    const task = executeRefresh()
+      .catch(() => undefined)
+      .finally(() => {
+        if (refreshInFlight !== task) return;
+        refreshInFlight = null;
+        if (refreshPending && !disposed) {
+          refreshPending = false;
+          runRefresh();
+        }
+      });
     refreshInFlight = task;
   };
 

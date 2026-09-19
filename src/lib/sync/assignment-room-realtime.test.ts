@@ -172,11 +172,32 @@ describe("assignment room realtime sync", () => {
     });
 
     firstChannel.status("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(250);
     await settle();
 
     expect(mocks.removeChannel).toHaveBeenCalledWith(firstChannel);
     expect(mocks.channels).toHaveLength(2);
     expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].connected).toBe(true);
+    stop();
+  });
+
+  it("backs off repeated channel failures until a subscription succeeds", async () => {
+    mocks.topic = `assignment:${ROOM_ID}:${"J".repeat(43)}`;
+    mocks.refresh.mockImplementation(successfulRefresh(1));
+    const stop = startAssignmentRoomRealtime(ROOM_ID);
+    await settle();
+
+    mocks.channels[0].status("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(249);
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+
+    mocks.channels[1].status("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(499);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.refresh).toHaveBeenCalledTimes(3);
     stop();
   });
 

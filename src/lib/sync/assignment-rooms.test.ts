@@ -16,6 +16,7 @@ vi.mock("./refresh", () => ({ refreshGroup: mocks.refreshGroup }));
 
 import {
   cancelAssignmentRoom,
+  clearAssignmentRoomAccess,
   finalizeAssignmentRoom,
   getAssignmentRoomMemberToken,
   joinAssignmentRoom,
@@ -108,6 +109,19 @@ describe("assignment room sync", () => {
     setItem.mockRestore();
   });
 
+  it("removes denied room state even when credential storage cleanup fails", () => {
+    useAssignmentRoomStore.getState().install(view(2));
+    const removeItem = vi
+      .spyOn(window.localStorage, "removeItem")
+      .mockImplementation(() => {
+        throw new Error("storage blocked");
+      });
+
+    expect(() => clearAssignmentRoomAccess(ROOM_ID)).toThrow();
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID]).toBeUndefined();
+    removeItem.mockRestore();
+  });
+
   it("fails before dispatch when secure randomness is unavailable", async () => {
     const getRandomValues = vi
       .spyOn(globalThis.crypto, "getRandomValues")
@@ -135,6 +149,40 @@ describe("assignment room sync", () => {
       "join_assignment_room",
       "refresh_assignment_room_member",
     ]);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toMatch(
+      /^armm1_[A-Za-z0-9_-]{43}$/
+    );
+  });
+
+  it("refreshes an existing membership instead of replacing its capability", async () => {
+    const memberToken = `armm1_${"D".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ memberToken })
+    );
+    mocks.rpc.mockImplementation(decodeThrough(view(3)));
+
+    await joinAssignmentRoom({
+      roomId: ROOM_ID,
+      joinToken: JOIN_TOKEN,
+      displayName: "Outro nome",
+    });
+
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "refresh_assignment_room_member",
+    ]);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toBe(memberToken);
+  });
+
+  it("retains a minted member capability when lost-response recovery is offline", async () => {
+    mocks.rpc
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockRejectedValueOnce(new LedgerError("network"));
+
+    await expect(
+      joinAssignmentRoom({ roomId: ROOM_ID, joinToken: JOIN_TOKEN, displayName: "Bia" })
+    ).rejects.toMatchObject({ code: "network" });
+
     expect(getAssignmentRoomMemberToken(ROOM_ID)).toMatch(
       /^armm1_[A-Za-z0-9_-]{43}$/
     );
@@ -236,6 +284,11 @@ describe("assignment room sync", () => {
       },
     };
     mocks.rpc.mockImplementation(decodeThrough(finalized));
+    const memberToken = `armm1_${"E".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: JOIN_TOKEN, memberToken })
+    );
 
     await finalizeAssignmentRoom({
       roomId: ROOM_ID,
@@ -253,5 +306,9 @@ describe("assignment room sync", () => {
     expect(mocks.refreshGroup).toHaveBeenCalledOnce();
     expect(mocks.refreshGroup).toHaveBeenCalledWith("group-1");
     expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].view?.room.revision).toBe(6);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toBe(memberToken);
+    expect(
+      localStorage.getItem(`dividimos.assignment-room.${ROOM_ID}`)
+    ).not.toContain(JOIN_TOKEN);
   });
 });

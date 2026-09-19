@@ -60,6 +60,15 @@ describe("assignment room store", () => {
     expect(useAssignmentRoomStore.getState().rooms[ROOM_ID]).toBeUndefined();
   });
 
+  it("does not recreate a removed room when connection cleanup finishes", () => {
+    useAssignmentRoomStore.getState().install(view(1));
+    useAssignmentRoomStore.getState().remove(ROOM_ID);
+
+    useAssignmentRoomStore.getState().setConnected(ROOM_ID, false);
+
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID]).toBeUndefined();
+  });
+
   it("blocks only a duplicate mutation for the same item", () => {
     const store = useAssignmentRoomStore.getState();
     expect(store.beginItemMutation(ROOM_ID, "item-1")).toBe(true);
