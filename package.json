@@ -30,9 +30,9 @@
     "test:ambient:web": "playwright test --config playwright.ambient.config.ts",
     "prepare": "git config core.hooksPath .githooks",
     "cap:sync": "npx cap sync",
-    "cap:dev:android": "CAPACITOR_DEV=true npx cap sync android && npx cap run android",
+    "cap:dev:android": "scripts/cap-dev.sh android --emulator --run",
     "cap:open:android": "npx cap open android",
-    "cap:dev:ios": "CAPACITOR_DEV=true npx cap sync ios && npx cap run ios",
+    "cap:dev:ios": "scripts/cap-dev.sh ios --run",
     "cap:open:ios": "npx cap open ios",
     "cap:assets": "npx @capacitor/assets generate --android --ios --iconBackgroundColor '#FEA101' --splashBackgroundColor '#F9F9FB' --splashBackgroundColorDark '#09243f'"
   },
