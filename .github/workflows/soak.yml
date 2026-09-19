@@ -119,3 +119,29 @@ jobs:
           else
             gh issue create --title "Nightly ledger soak failed" --label soak-failure --body "${BODY}"
           fi
+
+  close-on-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [soak-unit, soak-integration]
+    # Only a green run of the real nightly closes the issue. A dispatch on a
+    # topic branch proves a fix but says nothing about main.
+    if: success() && github.ref_name == 'main'
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Close the soak failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label soak-failure --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "${EXISTING}" ]; then
+            echo "No open soak-failure issue to close."
+            exit 0
+          fi
+          gh issue close "${EXISTING}" \
+            --comment "The soak is green again: ${RUN_URL}. Reopen if it comes back."
