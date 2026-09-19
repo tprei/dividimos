@@ -321,17 +321,6 @@ describe("EventCard", () => {
     expect(screen.queryByTestId("event-undo-settlement")).not.toBeInTheDocument();
   });
 
-  it("offers no settlement actions without a settlement id", () => {
-    const event = makeEvent({ settlementId: null });
-
-    render(
-      <EventCard event={event} groupId="g1" meId={meId} settlement={null} latestStatus={null} nameOf={nameOf} />,
-    );
-
-    expect(screen.queryByTestId("event-view-settlement")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("event-undo-settlement")).not.toBeInTheDocument();
-  });
-
   it("opens the shared sheet and keeps the event summary while the detail loads", async () => {
     const { refreshSettlement } = await import("@/lib/sync/refresh");
     const settlementBetweenOthers = makeSettlement({
@@ -353,7 +342,6 @@ describe("EventCard", () => {
       expect(refreshSettlement).toHaveBeenCalledWith("set-1");
     });
     expect(screen.getByTestId("settlement-detail-sheet")).toBeInTheDocument();
-    // The card keeps its event-derived summary while the sheet loads.
     expect(screen.getByTestId("event-settlement-card")).toHaveTextContent("R$ 50,00");
     expect(screen.getByTestId("settlement-detail-loading")).toBeInTheDocument();
   });

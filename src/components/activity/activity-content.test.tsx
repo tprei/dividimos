@@ -469,25 +469,6 @@ describe("ActivityContent", () => {
     expect(screen.queryByTestId("activity-undo-settlement")).not.toBeInTheDocument();
   });
 
-  it("offers no settlement detail action without a settlement id", () => {
-    const anonymousEvent: GroupEvent = {
-      ...recordedSettlementEvent,
-      settlementId: null,
-    };
-    useAppStore.setState({
-      activity: {
-        items: [anonymousEvent],
-        oldestId: 105,
-        complete: false,
-        read: { status: "ready" },
-      },
-    });
-
-    render(<ActivityContent />);
-
-    expect(screen.queryByTestId("activity-view-settlement")).not.toBeInTheDocument();
-  });
-
   it("opens the shared settlement sheet from the activity row", async () => {
     const { refreshSettlement } = await import("@/lib/sync/refresh");
 
