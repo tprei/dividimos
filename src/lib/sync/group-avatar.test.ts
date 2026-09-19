@@ -67,6 +67,7 @@ describe("updateGroupAvatar", () => {
 
     await expect(updateGroupAvatar("g1", { kind: "initials" })).rejects.toMatchObject({
       code: "network",
+      message: "Não foi possível confirmar a alteração. Atualize o grupo antes de tentar de novo.",
     });
     expect(refreshGroup).toHaveBeenCalledTimes(1);
     expect(refreshGroup).toHaveBeenCalledWith("g1");
