@@ -345,6 +345,60 @@ describe("GroupDetailContent", () => {
     await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
     expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
   });
+
+  it("shows the invite controls to an accepted non-creator member", async () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: {
+        ...me,
+        id: "user-2",
+        handle: "carol",
+        name: "Carol Souza",
+        email: "carol@example.com",
+      },
+      groups: { [groupId]: snapshot() },
+      groupOrder: [groupId],
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Compartilhar link e QR code do grupo" }),
+    );
+    expect(screen.getByTestId("invite-modal-stub")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
+    expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
+  });
+
+  it("hides the invite controls from a pending invitee", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: {
+        ...me,
+        id: "user-3",
+        handle: "dave",
+        name: "Dave Lima",
+        email: "dave@example.com",
+      },
+      groups: { [groupId]: snapshot() },
+      groupOrder: [groupId],
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Compartilhar link e QR code do grupo" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Convidar por @handle" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Membros" })).not.toBeInTheDocument();
+  });
+
   it("renders pending invite view when viewer status is invited", () => {
     const snap = snapshot();
     // user-3 is invited by user-1 (Alice)

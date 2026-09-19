@@ -1316,6 +1316,156 @@ WHERE (
       });
     });
 
+    describe("non-creator invitation authorization", () => {
+      it("lets an accepted non-creator invite an exact @handle whose user accepts and joins visibly", async () => {
+        const [creator, inviter, invitee] = await createTestUsers(3);
+        const cInviter = authenticateAs(inviter);
+        const cInvitee = authenticateAs(invitee);
+
+        const groupId = await createGroupWithMembers(
+          creator,
+          [inviter],
+          "Convite por handle",
+        );
+
+        // Resolve the handle exactly as the app does: lowercased, trimmed,
+        // onboarded profiles only.
+        const resolvedId = await withPg(async (pg) => {
+          const res = await pg.query<{ id: string }>(
+            "SELECT id FROM public.users WHERE handle = lower(trim($1)) AND onboarded",
+            [invitee.handle],
+          );
+          return res.rows[0]?.id;
+        });
+        expect(resolvedId).toBe(invitee.id);
+
+        const inviteAck = await rpc<MutationAck>(cInviter, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: resolvedId,
+        });
+        expect(inviteAck.groupId).toBe(groupId);
+        expect(inviteAck.eventId).not.toBeNull();
+
+        const bootInvitee = await rpc<BootstrapPayload>(cInvitee, "bootstrap");
+        const invitedMember = bootInvitee.groups
+          .find((g) => g.group.id === groupId)
+          ?.members.find((m) => m.userId === invitee.id);
+        expect(invitedMember?.status).toBe("invited");
+        expect(invitedMember?.invitedBy).toBe(inviter.id);
+
+        const acceptAck = await rpc<MutationAck>(cInvitee, "accept_invitation", {
+          p_group_id: groupId,
+        });
+        expect(acceptAck.groupId).toBe(groupId);
+
+        const inviterSnap = await rpc<GroupSnapshot>(cInviter, "get_group", {
+          p_group_id: groupId,
+        });
+        const joined = inviterSnap.members.find((m) => m.userId === invitee.id);
+        expect(joined?.status).toBe("accepted");
+        expect(typeof joined?.acceptedAt).toBe("string");
+        expect(joined?.invitedBy).toBe(inviter.id);
+      });
+
+      it("lets an accepted non-creator create and deactivate the active invite link", async () => {
+        const [creator, member, joiner] = await createTestUsers(3);
+        const cMember = authenticateAs(member);
+        const cJoiner = authenticateAs(joiner);
+
+        const groupId = await createGroupWithMembers(
+          creator,
+          [member],
+          "Link de membro",
+        );
+
+        const link = await rpc<InviteLinkAck>(cMember, "create_invite_link", {
+          p_group_id: groupId,
+          p_expires_at: null,
+          p_max_uses: null,
+        });
+        expect(link.groupId).toBe(groupId);
+        expect(link.token.length).toBeGreaterThan(0);
+
+        const preview = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: link.token },
+        );
+        expect(preview.valid).toBe(true);
+        expect(preview.groupName).toBe("Link de membro");
+
+        const joinAck = await rpc<MutationAck>(cJoiner, "join_via_link", {
+          p_token: link.token,
+        });
+        expect(joinAck.groupId).toBe(groupId);
+
+        const deactAck = await rpc<{ groupId: string }>(
+          cMember,
+          "deactivate_invite_link",
+          { p_group_id: groupId },
+        );
+        expect(deactAck.groupId).toBe(groupId);
+
+        const previewAfter = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: link.token },
+        );
+        expect(previewAfter.valid).toBe(false);
+      });
+
+      it("denies pending, removed, and outside callers the invitation RPCs", async () => {
+        const [creator, member, pendingUser, removed, outsider] =
+          await createTestUsers(5);
+        const cCreator = authenticateAs(creator);
+        const cPending = authenticateAs(pendingUser);
+        const cRemoved = authenticateAs(removed);
+        const cOutsider = authenticateAs(outsider);
+
+        const { groupId } = await createGroup(creator, "Autorização de convites", [
+          member.id,
+          pendingUser.id,
+          removed.id,
+        ]);
+        await acceptInvitation(member, groupId);
+        await acceptInvitation(removed, groupId);
+        await rpc<MutationAck>(cCreator, "remove_member", {
+          p_group_id: groupId,
+          p_user_id: removed.id,
+        });
+
+        const snap = await rpc<GroupSnapshot>(cCreator, "get_group", {
+          p_group_id: groupId,
+        });
+        expect(
+          snap.members.find((m) => m.userId === pendingUser.id)?.status,
+        ).toBe("invited");
+        expect(snap.members.some((m) => m.userId === removed.id)).toBe(false);
+
+        for (const client of [cPending, cRemoved, cOutsider]) {
+          const inviteErr = await expectError(
+            client.rpc("invite_member", {
+              p_group_id: groupId,
+              p_user_id: outsider.id,
+            }),
+          );
+          expect(inviteErr).toBe("not_a_member");
+
+          const linkErr = await expectError(
+            client.rpc("create_invite_link", {
+              p_group_id: groupId,
+            }),
+          );
+          expect(linkErr).toBe("not_a_member");
+
+          const deactErr = await expectError(
+            client.rpc("deactivate_invite_link", { p_group_id: groupId }),
+          );
+          expect(deactErr).toBe("not_a_member");
+        }
+      });
+    });
+
     describe("user profile update and handle lookup", () => {
       it("enforces handle uniqueness, length validation, and updates profile correctly", async () => {
         const takenErr = await expectError(
