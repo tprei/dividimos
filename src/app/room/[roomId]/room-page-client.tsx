@@ -105,6 +105,17 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   }, [accountId, fragmentReady, inviteToken, roomId]);
 
   const view = entry?.view ?? null;
+  const wasGuestRef = useRef(false);
+
+  useEffect(() => {
+    if (view?.role === "participant") {
+      wasGuestRef.current = true;
+      return;
+    }
+    if (!view && wasGuestRef.current) {
+      setPageError((current) => current ?? "Seu acesso foi removido.");
+    }
+  }, [view]);
 
   let joinUrl: string | null = null;
   if (view?.role === "host") {
