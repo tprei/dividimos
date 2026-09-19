@@ -64,7 +64,6 @@ function groupSnapshot(): GroupSnapshot {
     pairwiseEdges: [],
   };
 }
-
 function seedStore(options: { settlement?: Settlement | null; read?: ResourceReadState } = {}) {
   const id = options.settlement?.id ?? "set-1";
   useAppStore.setState({
@@ -74,7 +73,6 @@ function seedStore(options: { settlement?: Settlement | null; read?: ResourceRea
     reads: options.read === undefined ? {} : { [settlementReadKey(id)]: options.read },
   });
 }
-
 function renderSheet() {
   return render(
     <SettlementDetailSheet
@@ -84,14 +82,12 @@ function renderSheet() {
       onOpenChange={() => {}}
     />,
   );
-
 }
 describe("SettlementDetailSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.getState().reset();
   });
-
   it("shows payer, recipient, amount and status to a third member", () => {
     seedStore({ settlement: settlement() });
     renderSheet();
@@ -102,7 +98,6 @@ describe("SettlementDetailSheet", () => {
     expect(screen.getByTestId("settlement-detail-status")).toHaveTextContent("Confirmado");
     expect(screen.queryByRole("button", { name: /Desfazer/i })).not.toBeInTheDocument();
   });
-
   it("keeps cached detail visible and retries a failed refresh", () => {
     seedStore({ settlement: settlement(), read: { status: "error", code: "network" } });
     renderSheet();
@@ -112,7 +107,6 @@ describe("SettlementDetailSheet", () => {
     fireEvent.click(screen.getByTestId("settlement-detail-retry"));
     expect(refreshSettlement).toHaveBeenCalledTimes(1);
   });
-
   it("shows a retry instead of inventing a payment after the first failure", () => {
     seedStore({ settlement: null, read: { status: "error", code: "network" } });
     renderSheet();
@@ -122,7 +116,6 @@ describe("SettlementDetailSheet", () => {
     fireEvent.click(screen.getByTestId("settlement-detail-retry"));
     expect(refreshSettlement).toHaveBeenCalledTimes(1);
   });
-
   it("distinguishes a missing payment from a lost group membership", () => {
     seedStore({ settlement: null, read: { status: "error", code: "settlement_not_found" } });
     renderSheet();
@@ -136,7 +129,6 @@ describe("SettlementDetailSheet", () => {
       "Pagamento indisponível",
     );
   });
-
   it("marks a cached detail as updating while a fresh read runs", () => {
     seedStore({ settlement: settlement(), read: { status: "loading" } });
     renderSheet();
