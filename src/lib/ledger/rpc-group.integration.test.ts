@@ -1422,7 +1422,7 @@ WHERE (
         const cRemoved = authenticateAs(removed);
         const cOutsider = authenticateAs(outsider);
 
-        const groupId = await createGroup(creator, "Autorização de convites", [
+        const { groupId } = await createGroup(creator, "Autorização de convites", [
           member.id,
           pendingUser.id,
           removed.id,
