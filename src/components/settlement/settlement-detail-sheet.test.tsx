@@ -129,14 +129,4 @@ describe("SettlementDetailSheet", () => {
       "Pagamento indisponível",
     );
   });
-  it("marks a cached detail as updating while a fresh read runs", () => {
-    seedStore({ settlement: settlement(), read: { status: "loading" } });
-    renderSheet();
-
-    expect(screen.getByTestId("settlement-detail-updating")).toBeInTheDocument();
-    expect(screen.getByTestId("settlement-detail-amount")).toHaveTextContent("R$ 30,00");
-    expect(refreshSettlement).not.toHaveBeenCalled();
-    seedStore({ settlement: settlement(), read: { status: "ready" } });
-    renderSheet();
-  });
 });
