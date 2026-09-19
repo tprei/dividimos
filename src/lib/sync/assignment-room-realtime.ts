@@ -81,6 +81,7 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
       .subscribe((status) => {
         if (disposed) return;
         if (status === "SUBSCRIBED") {
+          setConnected(true);
           reconnectAttempt = 0;
           clearTimeout(reconnectTimer ?? undefined);
           reconnectTimer = null;
@@ -104,7 +105,6 @@ export function startAssignmentRoomRealtime(roomId: string): () => void {
         await refreshAssignmentRoom(roomId);
       }
       if (disposed) return;
-      setConnected(true);
       subscribe();
     } catch (error) {
       if (disposed) return;

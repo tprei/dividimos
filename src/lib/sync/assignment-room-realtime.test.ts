@@ -138,6 +138,10 @@ describe("assignment room realtime sync", () => {
     expect(mocks.refreshMember).not.toHaveBeenCalled();
     expect(mocks.refresh).toHaveBeenCalledOnce();
     expect(mocks.channels).toHaveLength(1);
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].connected).toBe(false);
+    mocks.channels[0].status("SUBSCRIBED");
+    await settle();
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].connected).toBe(true);
     stop();
   });
 
@@ -177,6 +181,9 @@ describe("assignment room realtime sync", () => {
 
     expect(mocks.removeChannel).toHaveBeenCalledWith(firstChannel);
     expect(mocks.channels).toHaveLength(2);
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].connected).toBe(false);
+    mocks.channels[1].status("SUBSCRIBED");
+    await settle();
     expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].connected).toBe(true);
     stop();
   });
