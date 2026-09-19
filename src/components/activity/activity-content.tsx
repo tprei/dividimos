@@ -14,69 +14,15 @@ import { SettlementDetailPopover } from "@/components/settlement/settlement-deta
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
+import { formatRelativeDate } from "@/lib/datetime";
 import { describeEvent } from "@/lib/ledger/event-copy";
+import { getGroupName, makeNameOf } from "@/lib/ledger/group-names";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 
-function formatRelativeDate(timestamp: string): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
-  const diffDays = Math.floor(diffMs / 86_400_000);
-
-  if (diffMin < 1) return "agora";
-  if (diffMin < 60) return `${diffMin}min`;
-  if (diffHours < 24) return `${diffHours}h`;
-  if (diffDays < 7) return `${diffDays}d`;
-
-  return date.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-function getGroupName(
-  groupId: string,
-  groups: Record<string, GroupSnapshot>,
-  meId: string | undefined,
-): string {
-  const snapshot = groups[groupId];
-  if (!snapshot) return "Grupo";
-  if (snapshot.group.kind === "dm") {
-    const counterparty = snapshot.members.find((m) => m.user.id !== meId);
-    return counterparty?.user.name ?? snapshot.group.name;
-  }
-  return snapshot.group.name;
-}
-
-function makeNameOf(
-  groupId: string,
-  groups: Record<string, GroupSnapshot>,
-  meId: string | undefined,
-): (userId: string) => string {
-  return (userId: string) => {
-    if (userId && userId === meId) return "você";
-    const currentGroup = groups[groupId];
-    if (currentGroup) {
-      const member = currentGroup.members.find((m) => m.user.id === userId);
-      if (member) return member.user.name;
-      const guest = currentGroup.guests.find((g) => g.id === userId);
-      if (guest) return guest.displayName;
-    }
-    for (const group of Object.values(groups)) {
-      const member = group.members.find((m) => m.user.id === userId);
-      if (member) return member.user.name;
-      const guest = group.guests.find((g) => g.id === userId);
-      if (guest) return guest.displayName;
-    }
-    return "alguém";
-  };
-}
 
 interface ActivityRowProps {
   event: GroupEvent;

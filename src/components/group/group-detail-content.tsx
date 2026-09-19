@@ -256,6 +256,14 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
         title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
         onBack={() => router.push("/app/groups")}
+        titleBadge={
+          isBotGroup(members, meId ?? "") ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
+              <Bot className="size-3.5" aria-hidden="true" />
+              Grupo de bots
+            </span>
+          ) : null
+        }
         action={
           <div className="flex items-center gap-1">
             {isAcceptedMember && (
@@ -279,13 +287,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           </div>
         }
       />
-
-      {isBotGroup(members, meId ?? "") && (
-        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
-          <Bot className="size-3.5" aria-hidden="true" />
-          Grupo de bots
-        </p>
-      )}
 
       <NotificationPrompt />
 
