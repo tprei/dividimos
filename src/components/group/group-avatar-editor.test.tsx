@@ -64,6 +64,16 @@ describe("GroupAvatarEditor", () => {
     expect(mocks.updateGroupAvatar).toHaveBeenCalledWith(groupId, { kind: "emoji", emoji: "🏠" });
   });
 
+  it("closes the anchored editor without a backdrop", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    render(<GroupAvatarEditor groupId={groupId} open onOpenChange={onOpenChange} />);
+
+    expect(screen.getByRole("dialog", { name: "Editar imagem do grupo" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fechar editor de imagem" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("keeps the selected avatar and shows an error when saving fails", async () => {
     mocks.updateGroupAvatar.mockRejectedValueOnce(new Error("network"));
     const user = userEvent.setup();

@@ -266,7 +266,7 @@ describe("GroupDetailContent", () => {
     ]);
   });
 
-  it("offers the avatar editor to accepted group members", () => {
+  it("opens the anchored avatar editor for accepted group members", async () => {
     seedLoaded();
     useAppStore.setState((state) => ({
       groups: {
@@ -278,10 +278,13 @@ describe("GroupDetailContent", () => {
       },
     }));
 
+    const user = userEvent.setup();
     render(<GroupDetailContent groupId={groupId} />);
 
     expect(screen.getByRole("button", { name: "Alterar imagem do grupo" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
+    await user.click(screen.getByRole("button", { name: "Alterar imagem do grupo" }));
+    expect(screen.getByRole("dialog", { name: "Editar imagem do grupo" })).toBeInTheDocument();
   });
 
   it("links to the group chat with an unread count", () => {

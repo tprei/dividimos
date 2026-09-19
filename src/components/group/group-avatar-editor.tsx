@@ -6,14 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { X } from "lucide-react";
+import { AnchoredPopover } from "@/components/shared/anchored-popover";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { updateGroupAvatar, type GroupAvatarUpdate } from "@/lib/sync/group-avatar";
 import { useAppStore } from "@/stores/app-store";
@@ -28,13 +22,11 @@ const AVATAR_EMOJI = [
   { emoji: "⚽", label: "Futebol" },
   { emoji: "🎉", label: "Festa" },
   { emoji: "🐱", label: "Gato" },
-] as const;
-
+];
 type Selection =
   | { kind: "initials" }
   | { kind: "emoji"; emoji: string }
   | { kind: "photo"; file: File | null; previewUrl: string; photoId: string | null };
-
 function selectionFromAvatar(avatar: GroupAvatarData | undefined): Selection {
   if (avatar?.kind === "emoji") return avatar;
   if (avatar?.kind === "photo") {
@@ -145,14 +137,33 @@ export function GroupAvatarEditor({
   const name = group?.group.name ?? "Grupo";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Imagem do grupo</DialogTitle>
-          <DialogDescription>Escolha um emoji ou uma foto para reconhecer o grupo.</DialogDescription>
-        </DialogHeader>
+    <AnchoredPopover
+      open={open}
+      onOpenChange={onOpenChange}
+      ariaLabel="Editar imagem do grupo"
+      className="left-0 top-[calc(100%+0.5rem)] w-[min(20rem,calc(100vw-2rem))] rounded-2xl p-4"
+    >
+      <div data-testid="group-avatar-editor">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Imagem do grupo</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Escolha um emoji ou uma foto para reconhecer o grupo.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 rounded-full"
+            aria-label="Fechar editor de imagem"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
 
-        <div className="grid gap-5">
+        <div className="mt-5 grid gap-5">
           <div className="flex justify-center">{selectionPreview(groupId, name, selection)}</div>
 
           <div>
@@ -190,14 +201,18 @@ export function GroupAvatarEditor({
             />
           </label>
 
-          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
         </div>
 
-        <DialogFooter>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
           <Button
             type="button"
             variant="outline"
-            className="min-h-11"
+            className="min-h-11 flex-1"
             onClick={() => {
               setSelection({ kind: "initials" });
               setError(null);
@@ -206,11 +221,11 @@ export function GroupAvatarEditor({
           >
             Usar iniciais
           </Button>
-          <Button type="button" className="min-h-11" onClick={() => void handleSave()} disabled={saving}>
+          <Button type="button" className="min-h-11 flex-1" onClick={() => void handleSave()} disabled={saving}>
             {saving ? "Salvando…" : "Salvar"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </AnchoredPopover>
   );
 }

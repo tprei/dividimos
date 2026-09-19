@@ -233,14 +233,22 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         back
         leading={
           canEditAvatar ? (
-            <button
-              type="button"
-              aria-label="Alterar imagem do grupo"
-              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setShowAvatarEditor(true)}
-            >
-              {groupAvatar}
-            </button>
+            <div className="relative z-30">
+              <button
+                type="button"
+                aria-label="Alterar imagem do grupo"
+                aria-expanded={showAvatarEditor}
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setShowAvatarEditor(true)}
+              >
+                {groupAvatar}
+              </button>
+              <GroupAvatarEditor
+                groupId={groupId}
+                open={showAvatarEditor}
+                onOpenChange={setShowAvatarEditor}
+              />
+            </div>
           ) : (
             groupAvatar
           )
@@ -348,13 +356,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         groupName={snapshot.group.name}
       />
 
-      {canEditAvatar && (
-        <GroupAvatarEditor
-          groupId={groupId}
-          open={showAvatarEditor}
-          onOpenChange={setShowAvatarEditor}
-        />
-      )}
+      
 
     </div>
   );
