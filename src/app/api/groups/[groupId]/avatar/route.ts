@@ -37,7 +37,7 @@ const AVATAR_EMOJI: readonly string[] = [
   "⚽",
   "🎉",
   "🐱",
-] as const;
+];
 
 /** Wire shape of set_group_avatar until the generated types catch up. */
 interface SetGroupAvatarResult {
@@ -267,7 +267,8 @@ async function normalizeAvatarJpeg(
 /** Storage errors that mean "no such object", as opposed to a backend outage. */
 function isAbsentObjectError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  const { status, message } = error as { status?: unknown; message?: unknown };
+  const status = "status" in error ? error.status : undefined;
+  const message = "message" in error ? error.message : undefined;
   if (status === 404) return true;
   return typeof message === "string" && /not found|does not exist/i.test(message);
 }
