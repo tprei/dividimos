@@ -277,6 +277,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsAnchor, setNotificationsAnchor] = useState<HTMLElement | null>(null);
   const invitations = useAppStore(selectPendingInvitations);
 
   const hydrated = useAppStore((s) => s.hydrated);
@@ -365,8 +366,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <button
         type="button"
         aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} convite${invitations.length > 1 ? "s" : ""}` : ""}${unread ? ", atividade nova" : ""}`}
-        onClick={() => {
+        onClick={(event) => {
           haptics.tap();
+          // Captured before the state update: the surface positions against
+          // whichever bell was pressed, shell header or screen header.
+          setNotificationsAnchor(event.currentTarget);
           setNotificationsOpen(true);
         }}
         className="relative flex min-h-11 min-w-11 items-center justify-center rounded-full text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -385,6 +389,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ),
     [invitations.length, unread],
   );
+
+  // A preview anchored to a header button must not survive the navigation
+  // that unmounts that button.
+  useEffect(() => {
+    setNotificationsOpen(false);
+    setNotificationsAnchor(null);
+  }, [pathname]);
 
   useEffect(() => {
     let handle: { remove: () => Promise<void> } | null = null;
@@ -566,6 +577,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onOpenChange={setNotificationsOpen}
             invitations={invitations}
             meId={me.id}
+            anchor={notificationsAnchor}
           />
 
           <NavBar keyboardOpen={keyboardOpen} />
