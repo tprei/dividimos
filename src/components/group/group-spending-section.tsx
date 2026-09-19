@@ -52,7 +52,7 @@ export function GroupSpendingSection({
         <div>
           <p className="text-sm font-semibold">Gastos do grupo</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            O total dividido entre as pessoas, sem misturar com o saldo do acerto.
+            Inclui as despesas ativas e as taxas. Acertos não entram nesse total.
           </p>
         </div>
         <Money cents={spending.totalCents} className="shrink-0 text-base" label="Total gasto no grupo" />
