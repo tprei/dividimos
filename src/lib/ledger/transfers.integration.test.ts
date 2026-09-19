@@ -32,7 +32,13 @@ function zeroSumLedger(userIds: readonly string[]): fc.Arbitrary<BalanceRow[]> {
       });
       const head = slots.slice(0, -1);
       const closing = 0 - head.reduce((sum, slot) => sum + slot.netCents, 0);
-      return [...head, { ...slots[slots.length - 1], netCents: closing }];
+      const ledger = [...head, { ...slots[slots.length - 1], netCents: closing }];
+      // The projection never holds a zero net: recompute_group_balances ends
+      // with HAVING SUM(delta) <> 0 and group_balances_nonzero rejects one
+      // outright. Dropping zeros leaves the ledger balanced and leaves only
+      // ledgers the database could have written itself, which is what this
+      // property is here to compare against.
+      return ledger.filter((row) => row.netCents !== 0);
     })
     .filter(
       (rows) =>
