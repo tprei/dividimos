@@ -16,7 +16,6 @@ DECLARE
   v_previous_photo_id uuid;
 BEGIN
   IF p_group_id IS NULL OR p_actor_id IS NULL
-     OR (p_emoji IS NULL AND p_photo_id IS NULL)
      OR (p_emoji IS NOT NULL AND p_photo_id IS NOT NULL) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
@@ -31,14 +30,11 @@ BEGIN
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, p_actor_id);
 
-  SELECT kind INTO v_kind FROM groups WHERE id = p_group_id;
+  SELECT kind, avatar_photo_id
+    INTO v_kind, v_previous_photo_id
+  FROM groups WHERE id = p_group_id;
   IF v_kind = 'dm' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_operation';
-  END IF;
-
-  IF p_photo_id IS NOT NULL THEN
-    SELECT avatar_photo_id INTO v_previous_photo_id
-      FROM groups WHERE id = p_group_id;
   END IF;
 
   UPDATE groups

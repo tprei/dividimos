@@ -294,7 +294,14 @@ export async function PATCH(
       logWarn(logger, "set_group_avatar returned no payload", { groupId, actorId: callerId });
       return avatarJson({ error: "avatar_update_unknown" }, 503);
     }
-    // MutationAck with eventId null: the setter adds no ledger event row.
+    const previousPhotoId = data.previousPhotoId;
+    if (typeof previousPhotoId === "string" && previousPhotoId.length > 0) {
+      await removeAvatarObject(
+        admin,
+        `${groupId}/${previousPhotoId}.jpg`,
+        "replaced_previous",
+      );
+    }
     return NextResponse.json(
       { groupId: data.groupId, ledgerVersion: data.ledgerVersion, eventId: null },
       { status: 200, headers: { "Cache-Control": "private, no-store" } },
