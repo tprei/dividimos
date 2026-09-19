@@ -66,6 +66,9 @@ export function ReceiptScanner({
     setFile(next);
     setFileOrigin(origin);
     setCaptureError(null);
+    // A photo exists now, so the live camera has nothing left to do; leaving
+    // it mounted would keep it stacked over the preview and Processar.
+    setCameraOpen(false);
     const url = URL.createObjectURL(next);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
