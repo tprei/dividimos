@@ -9,16 +9,12 @@
     "may execute. A function missing from the manifest, a manifest entry naming a",
     "missing function, any PUBLIC grant, or a privilege drift fails the gate."
   ],
-  "policies": [
-    "realtime.messages.group_broadcast_authz"
-  ],
+  "policies": ["realtime.messages.group_broadcast_authz"],
   "policyNotes": {
     "realtime.messages.group_broadcast_authz": "Realtime is broadcast-only. This policy authorizes a member to read the private group:<id> and chat:<id> topics; no application table is exposed."
   },
   "grants": [],
-  "definerOwners": [
-    "postgres"
-  ],
+  "definerOwners": ["postgres"],
   "tablesWithoutRls": [],
   "schemas": [
     "_realtime",
@@ -44,6 +40,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.assignment_room_view(p_room_id uuid, p_self_participant_id uuid, p_host boolean)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal role-scoped serializer; called only after assignment-room authorization."
+    },
     "public.assert_dm_pair_allowed(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
       "authenticated": false,
@@ -63,6 +64,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.broadcast_assignment_room(p_room_id uuid, p_event text, p_topic text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal broadcast helper; emits only a room revision on the stored private topic."
     },
     "public.broadcast_group(p_group_id uuid, p_ledger_version bigint, p_event_id bigint)": {
       "anon": false,
@@ -103,6 +109,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_assignment_room(p_room_id uuid, p_group_target jsonb, p_header jsonb, p_items jsonb, p_participants jsonb, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; validates the reviewed receipt and binds the host to auth.uid()."
     },
     "public.create_expense(p_client_id uuid, p_group_id uuid, p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb, p_chave_acesso text)": {
       "anon": false,
@@ -173,6 +184,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.enforce_assignment_room_immutability()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Table trigger that rejects changes to reviewed room inputs, immutable ordinals, and host removal."
     },
     "public.expense_change_summary(p_expense_id uuid, p_from integer, p_to integer)": {
       "anon": false,
@@ -374,6 +390,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.rotate_assignment_room_join(p_room_id uuid, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; rotates the room join credential while the room is open."
+    },
     "public.revoke_guest_claim_token(p_guest_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -398,6 +419,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.validate_assignment_room_receipt(p_header jsonb, p_items jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal immutable receipt validator; called only inside assignment-room RPCs."
     },
     "public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)": {
       "anon": false,
