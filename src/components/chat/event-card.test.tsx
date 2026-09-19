@@ -18,6 +18,10 @@ const toastMocks = vi.hoisted(() => ({
 }));
 vi.mock("react-hot-toast", () => ({ default: toastMocks }));
 
+vi.mock("@/lib/sync/refresh", () => ({
+  refreshSettlement: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href} data-testid="link">
@@ -295,6 +299,63 @@ describe("EventCard", () => {
     expect(link.getAttribute("href")).toBe("/app/bill/exp-42");
     expect(screen.getByText("Almoço")).toBeDefined();
     expect(screen.getByText("R$ 35,00")).toBeDefined();
+  });
+
+  it("offers Ver pagamento to a third member who cannot undo", () => {
+    const thirdId = "user-third";
+    const settlementBetweenOthers = makeSettlement({
+      fromUserId: otherId,
+      toUserId: thirdId,
+    });
+    const event = makeEvent({
+      kind: "settlement_recorded",
+      settlementId: settlementBetweenOthers.id,
+      payload: { amountCents: 5000, fromUserId: otherId, toUserId: thirdId },
+    });
+
+    render(
+      <EventCard event={event} groupId="g1" meId={meId} settlement={settlementBetweenOthers} latestStatus={null} nameOf={nameOf} />,
+    );
+
+    expect(screen.getByTestId("event-view-settlement")).toBeInTheDocument();
+    expect(screen.queryByTestId("event-undo-settlement")).not.toBeInTheDocument();
+  });
+
+  it("offers no settlement actions without a settlement id", () => {
+    const event = makeEvent({ settlementId: null });
+
+    render(
+      <EventCard event={event} groupId="g1" meId={meId} settlement={null} latestStatus={null} nameOf={nameOf} />,
+    );
+
+    expect(screen.queryByTestId("event-view-settlement")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("event-undo-settlement")).not.toBeInTheDocument();
+  });
+
+  it("opens the shared sheet and keeps the event summary while the detail loads", async () => {
+    const { refreshSettlement } = await import("@/lib/sync/refresh");
+    const settlementBetweenOthers = makeSettlement({
+      fromUserId: otherId,
+      toUserId: "user-third",
+    });
+    const event = makeEvent({
+      kind: "settlement_recorded",
+      settlementId: settlementBetweenOthers.id,
+    });
+
+    render(
+      <EventCard event={event} groupId="g1" meId={meId} settlement={settlementBetweenOthers} latestStatus={null} nameOf={nameOf} />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-view-settlement"));
+
+    await waitFor(() => {
+      expect(refreshSettlement).toHaveBeenCalledWith("set-1");
+    });
+    expect(screen.getByTestId("settlement-detail-sheet")).toBeInTheDocument();
+    // The card keeps its event-derived summary while the sheet loads.
+    expect(screen.getByTestId("event-settlement-card")).toHaveTextContent("R$ 50,00");
+    expect(screen.getByTestId("settlement-detail-loading")).toBeInTheDocument();
   });
 
   it("renders the sentence for membership kinds without a card", () => {
