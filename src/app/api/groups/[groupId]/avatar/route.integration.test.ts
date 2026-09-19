@@ -31,7 +31,7 @@ function actAs(user: TestUser): void {
 }
 function routeParams(id: string) { return { params: Promise.resolve({ groupId: id }) }; }
 function imageRequest(id: string, body: Uint8Array): NextRequest {
-  return new NextRequest(`http://localhost/api/groups/${id}/avatar`, { method: "PUT", body, headers: { "content-type": "image/jpeg" } });
+  return new NextRequest(`http://localhost/api/groups/${id}/avatar`, { method: "PUT", body: Buffer.from(body), headers: { "content-type": "image/jpeg" } });
 }
 
 describe.skipIf(!isIntegrationTestReady)("group avatar route persistence", () => {
