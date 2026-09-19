@@ -25,6 +25,9 @@ export interface TypeStepProps {
   reviewClearSignal?: number;
   onTypeSelect: (type: ExpenseType) => void;
   onReviewSubmit: (result: ReceiptOcrResult, occurredOn: string) => void;
+  onScanShare: (result: ReceiptOcrResult, occurredOn: string) => void;
+  scanSharePending?: boolean;
+  scanShareError?: string | null;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
   onManageParticipants: () => void;
@@ -45,6 +48,9 @@ export function TypeStep({
   reviewClearSignal = 0,
   onTypeSelect,
   onReviewSubmit,
+  onScanShare,
+  scanSharePending = false,
+  scanShareError,
   onVoiceConfirm,
   onReviewingChange,
   onManageParticipants,
@@ -176,6 +182,13 @@ export function TypeStep({
     onReviewSubmit(result, occurredOn);
   }, [onReviewSubmit]);
 
+  const handleScanShare = useCallback(
+    (result: ReceiptOcrResult, occurredOn: string) => {
+      onScanShare(result, occurredOn);
+    },
+    [onScanShare],
+  );
+
   const handleScanCancel = useCallback(() => {
     setScanResult(null);
   }, []);
@@ -201,6 +214,9 @@ export function TypeStep({
         participants={participants}
         initialOccurredOn={occurredOn}
         onConfirm={handleScanConfirm}
+        onShare={handleScanShare}
+        sharePending={scanSharePending}
+        shareError={scanShareError}
         onCancel={handleScanCancel}
         onManageParticipants={onManageParticipants}
       />

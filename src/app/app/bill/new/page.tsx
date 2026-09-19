@@ -51,6 +51,7 @@ import {
   profileToUser,
   useScanDraftContext,
 } from "./use-scan-draft-context";
+import { useAssignmentRoomEntry } from "./use-assignment-room-entry";
 
 const TypeStep = dynamic(
   () => import("@/components/bill/wizard/type-step").then((m) => ({ default: m.TypeStep })),
@@ -232,6 +233,10 @@ function NewBillPageContent() {
   const scanGroup = selectedGroup ?? (
     modes.entryGroupId ? groups[modes.entryGroupId] ?? null : null
   );
+  const assignmentRoomEntry = useAssignmentRoomEntry({
+    host: me ? { id: me.id, name: me.name } : null,
+    groupId: scanDraftContext?.groupId ?? scanGroup?.group.id ?? null,
+  });
   const activeParticipants = reviewingScan && scanDraftContext ? scanDraftContext.participants : store.participants;
   const activeGuests = reviewingScan && scanDraftContext ? scanDraftContext.guests : store.guests;
   const scanParticipants = useMemo<ItemDivisionParticipant[]>(() => {
@@ -736,6 +741,9 @@ function NewBillPageContent() {
           reviewClearSignal={reviewClearSignal}
           onTypeSelect={handleTypeSelect}
           onReviewSubmit={handleReviewSubmit}
+          onScanShare={assignmentRoomEntry.shareReceipt}
+          scanSharePending={assignmentRoomEntry.pending}
+          scanShareError={assignmentRoomEntry.error}
           onVoiceConfirm={handleVoiceConfirm}
           onReviewingChange={handleReviewingChange}
           onManageParticipants={() => setScanParticipantsOpen(true)}

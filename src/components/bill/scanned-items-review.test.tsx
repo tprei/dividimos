@@ -47,6 +47,7 @@ function renderReview(
       result={result}
       participants={participants}
       onConfirm={onConfirm}
+      onShare={vi.fn()}
       onCancel={onCancel}
       onManageParticipants={vi.fn()}
     />,
@@ -80,35 +81,42 @@ describe("ScannedItemsReview", () => {
 
   it("disables continue with a single participant and enables it once a second is added", () => {
     const onConfirm = vi.fn();
+    const onShare = vi.fn();
     const result = makeResult();
     const { rerender } = render(
       <ScannedItemsReview
         result={result}
         participants={[participants[0]]}
         onConfirm={onConfirm}
+        onShare={onShare}
         onCancel={vi.fn()}
         onManageParticipants={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Compartilhar para escolher itens" })).toBeEnabled();
     expect(
-      screen.getByText("Adicione pelo menos uma pessoa além de você."),
+      screen.getByText(/Você pode compartilhar agora/),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Compartilhar para escolher itens" }));
+    expect(onShare).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
 
     rerender(
       <ScannedItemsReview
         result={result}
         participants={participants}
         onConfirm={onConfirm}
+        onShare={vi.fn()}
         onCancel={vi.fn()}
         onManageParticipants={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
     expect(
-      screen.queryByText("Adicione pelo menos uma pessoa além de você."),
+      screen.queryByText(/Você pode compartilhar agora/),
     ).not.toBeInTheDocument();
   });
 
@@ -139,7 +147,7 @@ describe("ScannedItemsReview", () => {
     await user.click(screen.getByRole("button", { name: "Pronto" }));
     await user.click(screen.getByRole("button", { name: "Data do recibo" }));
     await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
-    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+    await user.click(screen.getByRole("button", { name: "Dividir manualmente" }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
     const [draft, occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, string];
@@ -162,7 +170,7 @@ describe("ScannedItemsReview", () => {
       target: { value: "   " },
     });
 
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
     expect(screen.getByText("Informe o nome do item.")).toBeInTheDocument();
   });
 
@@ -175,7 +183,7 @@ describe("ScannedItemsReview", () => {
     );
 
     expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
     expect(screen.queryByLabelText("Valor de Cerveja")).not.toBeInTheDocument();
   });
 
@@ -191,13 +199,13 @@ describe("ScannedItemsReview", () => {
       }),
     );
 
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
     await user.click(screen.getByRole("button", { name: "Remover Cerveja" }));
 
     expect(screen.queryByText("Valor incompatível com a quantidade.")).not.toBeInTheDocument();
-    const proceed = screen.getByRole("button", { name: "Continuar para divisão" });
+    const proceed = screen.getByRole("button", { name: "Dividir manualmente" });
     expect(proceed).toBeEnabled();
 
     await user.click(proceed);
@@ -211,7 +219,7 @@ describe("ScannedItemsReview", () => {
     expect(
       screen.getByText("Nenhum item. Tente escanear novamente ou adicione manualmente."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
   });
 
   it("shows a fee the receipt printed as an amount", () => {
