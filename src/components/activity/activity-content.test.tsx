@@ -469,7 +469,7 @@ describe("ActivityContent", () => {
     expect(screen.queryByTestId("activity-undo-settlement")).not.toBeInTheDocument();
   });
 
-  it("opens the shared settlement sheet from the activity row", async () => {
+  it("opens the shared settlement popover from the activity row", async () => {
     const { refreshSettlement } = await import("@/lib/sync/refresh");
 
     render(<ActivityContent />);

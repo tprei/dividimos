@@ -321,7 +321,7 @@ describe("EventCard", () => {
     expect(screen.queryByTestId("event-undo-settlement")).not.toBeInTheDocument();
   });
 
-  it("opens the shared sheet and keeps the event summary while the detail loads", async () => {
+  it("opens the shared popover and keeps the event summary while the detail loads", async () => {
     const { refreshSettlement } = await import("@/lib/sync/refresh");
     const settlementBetweenOthers = makeSettlement({
       fromUserId: otherId,
