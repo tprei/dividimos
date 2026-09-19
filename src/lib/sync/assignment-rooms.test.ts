@@ -18,9 +18,11 @@ import {
   cancelAssignmentRoom,
   clearAssignmentRoomAccess,
   finalizeAssignmentRoom,
+  getAssignmentRoomJoinToken,
   getAssignmentRoomMemberToken,
   joinAssignmentRoom,
   resetAssignmentRoomRuntime,
+  rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
 } from "./assignment-rooms";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
@@ -310,5 +312,40 @@ describe("assignment room sync", () => {
     expect(
       localStorage.getItem(`dividimos.assignment-room.${ROOM_ID}`)
     ).not.toContain(JOIN_TOKEN);
+  });
+
+  it("persists the replacement host invitation before rotating it", async () => {
+    const oldJoinToken = `armj1_${"C".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: oldJoinToken }),
+    );
+    mocks.rpc.mockImplementation(async (_name, args, decode) => {
+      expect(args.p_join_token).toBe(getAssignmentRoomJoinToken(ROOM_ID));
+      expect(args.p_join_token).not.toBe(oldJoinToken);
+      return (decode(view(2)) as { value: AssignmentRoomView }).value;
+    });
+
+    await rotateAssignmentRoomJoin(ROOM_ID);
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "rotate_assignment_room_join",
+      expect.objectContaining({ p_room_id: ROOM_ID }),
+      expect.any(Function),
+    );
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toMatch(/^armj1_[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("restores the prior invitation when rotation is rejected", async () => {
+    const oldJoinToken = `armj1_${"C".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: oldJoinToken }),
+    );
+    mocks.rpc.mockRejectedValueOnce(new LedgerError("not_a_member"));
+
+    await expect(rotateAssignmentRoomJoin(ROOM_ID)).rejects.toMatchObject({ code: "not_a_member" });
+
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toBe(oldJoinToken);
   });
 });
