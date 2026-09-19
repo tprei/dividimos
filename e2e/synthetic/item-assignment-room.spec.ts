@@ -56,8 +56,15 @@ async function collapseEditor(page: Page, description: string): Promise<void> {
   if (await collapse.isVisible()) await collapse.click();
 }
 
+// A production build copies the canonical production origin, so guests join
+// through the same path and fragment on the server under test.
+function localInvitation(invitation: string): string {
+  const url = new URL(invitation);
+  return `${url.pathname}${url.hash}`;
+}
+
 async function joinRoom(page: Page, invitation: string, displayName: string): Promise<void> {
-  await page.goto(invitation);
+  await page.goto(localInvitation(invitation));
   await page.getByRole("textbox", { name: "Seu nome" }).fill(displayName);
   await page.getByRole("button", { name: "Entrar na sala" }).click();
   await waitForRoom(page);
@@ -266,7 +273,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       ).toBe(true);
       await guestBPage.getByRole("button", { name: "Voltar" }).click();
       await expect(guestBPage).not.toHaveURL(/\/room\//, { timeout: ROOM_TIMEOUT });
-      await guestBPage.goto(invitation.split("#")[0]);
+      await guestBPage.goto(new URL(invitation).pathname);
       await waitForRoom(guestBPage);
       await expect(itemCard(guestBPage, "Petisco").getByText("1/3 do item")).toBeVisible();
 

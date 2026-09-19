@@ -7,7 +7,7 @@ import { RoomBreakdown } from "@/components/assignment-room/room-breakdown";
 import { RoomJoin } from "@/components/assignment-room/room-join";
 import { RoomReview } from "@/components/assignment-room/room-review";
 import { Button } from "@/components/ui/button";
-import { buildAssignmentRoomUrl, parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
+import { buildAssignmentRoomUrl, readAssignmentRoomFragment } from "@/lib/assignment-room-qr";
 import { startAssignmentRoomRealtime } from "@/lib/sync/assignment-room-realtime";
 import {
   cancelAssignmentRoom,
@@ -37,7 +37,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const entry = useAssignmentRoomStore((state) => state.rooms[roomId]);
   const [fragmentReady, setFragmentReady] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
-  const parsedInviteRef = useRef<ReturnType<typeof parseAssignmentRoomQrCode> | undefined>(undefined);
+  const inviteFragmentRef = useRef<string | null | undefined>(undefined);
   const [joinPending, setJoinPending] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<{ itemId: string; message: string } | null>(null);
@@ -49,16 +49,16 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const [editingClosed, setEditingClosed] = useState(false);
 
   useEffect(() => {
-    const parsed =
-      parsedInviteRef.current === undefined
-        ? parseAssignmentRoomQrCode(window.location.href)
-        : parsedInviteRef.current;
-    parsedInviteRef.current = parsed;
+    const fragmentToken =
+      inviteFragmentRef.current === undefined
+        ? readAssignmentRoomFragment(roomId, window.location.hash)
+        : inviteFragmentRef.current;
+    inviteFragmentRef.current = fragmentToken;
     try {
       const memberToken = getAssignmentRoomMemberToken(roomId);
       const hostJoinToken = getAssignmentRoomJoinToken(roomId);
-      if (parsed?.roomId === roomId && memberToken === null && hostJoinToken === null) {
-        setInviteToken(parsed.token);
+      if (fragmentToken && memberToken === null && hostJoinToken === null) {
+        setInviteToken(fragmentToken);
       }
     } catch (error) {
       setPageError(ledgerErrorMessage(error));
