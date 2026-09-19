@@ -44,7 +44,7 @@ function failureFrom(status: number, code: string): LedgerError {
   }
   if (status === 503 && code === "avatar_update_unknown") {
     return new LedgerError("network", {
-      message: "A atualização pode ter sido salva. Confira o avatar e tente de novo.",
+      message: "Não foi possível confirmar a alteração. Atualize o grupo antes de tentar de novo.",
       cause: { status, code },
     });
   }
