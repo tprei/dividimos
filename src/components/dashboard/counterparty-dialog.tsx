@@ -93,7 +93,7 @@ export function CounterpartyDialog({
           if (!nextOpen) onClose();
         }}
       >
-        <PopoverContent anchor={anchor} side="top" align="center">
+        <PopoverContent anchor={anchor} side="top" align="center" className="gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <PopoverTitle className="truncate">{row.counterpartyName}</PopoverTitle>

@@ -52,7 +52,6 @@ export function QuickChargeModal({
   onChargeConfirmed,
   anchor,
 }: QuickChargeModalProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
@@ -250,14 +249,26 @@ export function QuickChargeModal({
     requestCancellation,
   ]);
 
-  useEffect(() => {
-    if (!copiaECola || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, copiaECola, {
-      width: 240,
-      margin: 2,
-      color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
-  }, [copiaECola]);
+  // A callback ref, not an effect: the canvas only mounts when the QR phase
+  // renders, and an effect keyed on the payload would have already run by then
+  // and left an empty box.
+  const paintQr = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      if (!node || !copiaECola) return;
+      QRCode.toCanvas(
+        node,
+        copiaECola,
+        { width: 200, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } },
+        () => {
+          // The library pins the drawn size inline, which would outrank the
+          // class that shrinks the code when the popover has little height.
+          node.style.removeProperty("width");
+          node.style.removeProperty("height");
+        },
+      );
+    },
+    [copiaECola],
+  );
 
   const handleCopy = async () => {
     if (!copiaECola) return;
@@ -429,21 +440,13 @@ export function QuickChargeModal({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <div className="text-center">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 400,
-                      damping: 20,
-                    }}
-                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
-                  >
-                    <QrCode className="h-7 w-7" />
-                  </motion.div>
-                  <h2 className="mt-4 text-lg font-bold">Cobrar via Pix</h2>
-                  <p className="mt-1 text-3xl font-bold tabular-nums text-primary-text">
+                <div className="compact:flex compact:items-center compact:gap-3">
+                <div className="text-center compact:order-2 compact:min-w-0 compact:flex-1 compact:text-left">
+                  <h2 className="flex items-center justify-center gap-2 text-base font-bold compact:justify-start">
+                    <QrCode className="size-4 text-primary-text" aria-hidden="true" />
+                    Cobrar via Pix
+                  </h2>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-primary-text">
                     {formatBRL(amountCents)}
                   </p>
                   {description && (
@@ -457,14 +460,14 @@ export function QuickChargeModal({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 }}
-                  className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                  className="mt-3 flex justify-center rounded-2xl border bg-white p-3 shadow-sm compact:order-1 compact:mt-0 compact:shrink-0 compact:p-2"
                 >
                   {loading ? (
-                    <div className="flex h-[240px] w-[240px] items-center justify-center">
+                    <div className="flex h-[200px] w-[200px] items-center justify-center compact:size-[112px]">
                       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
                   ) : error ? (
-                    <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                    <div className="flex h-[200px] w-[200px] flex-col items-center justify-center gap-3 text-center compact:size-[112px] compact:gap-1">
                       <QrCode className="h-12 w-12 text-muted-foreground/30" />
                       <p className="text-sm text-destructive">{error}</p>
                       <Button
@@ -476,11 +479,12 @@ export function QuickChargeModal({
                       </Button>
                     </div>
                   ) : (
-                    <canvas ref={canvasRef} />
+                    <canvas ref={paintQr} className="compact:size-[112px]" />
                   )}
                 </motion.div>
+                </div>
 
-                <div className="mt-5 space-y-2.5">
+                <div className="mt-5 space-y-2.5 compact:mt-3 compact:flex compact:gap-2 compact:space-y-0 compact:[&>button]:flex-1">
                   <Button
                     onClick={handleCopy}
                     variant="outline"
@@ -535,7 +539,7 @@ export function QuickChargeModal({
                   </Button>
                   <Button
                     variant="ghost"
-                    className="w-full"
+                    className="w-full compact:hidden"
                     size="sm"
                     onClick={handleBackToInput}
                     disabled={isConfirming}
@@ -544,7 +548,7 @@ export function QuickChargeModal({
                   </Button>
                 </div>
 
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground compact:hidden">
                   <Shield className="h-3 w-3" />
                   <span>
                     Lê o QR code ou copia o código e cola no app do banco.
@@ -558,44 +562,37 @@ export function QuickChargeModal({
                 exit={{ opacity: 0, x: -20 }}
               >
                 <div className="text-center">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 400,
-                      damping: 20,
-                    }}
-                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-success/10 text-success shadow-lg shadow-success/10"
-                  >
-                    <Zap className="h-7 w-7" />
-                  </motion.div>
-                  <h2 className="mt-4 text-lg font-bold">Cobrar rápido</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <h2 className="flex items-center justify-center gap-2 text-lg font-bold compact:text-base">
+                    <Zap className="size-5 text-success" aria-hidden="true" />
+                    Cobrar rápido
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground compact:hidden">
                     Gere um QR Pix para qualquer pessoa te pagar
                   </p>
                 </div>
 
-                <div className="mt-6 flex flex-col items-center">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-medium text-muted-foreground">
-                      R$
-                    </span>
-                    <CurrencyInput
-                      valueCents={amountCents}
-                      onChangeCents={setAmountCents}
-                      autoFocus
-                      className="text-4xl font-bold text-foreground w-48"
-                      aria-label="Valor da cobrança"
-                    />
-                  </div>
+                <div className="mt-4 flex flex-col items-center compact:mt-2">
+                  <div className="flex w-full flex-col items-center gap-3 compact:flex-row compact:justify-center compact:gap-2">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-medium text-muted-foreground">
+                        R$
+                      </span>
+                      <CurrencyInput
+                        valueCents={amountCents}
+                        onChangeCents={setAmountCents}
+                        autoFocus
+                        className="text-4xl font-bold text-foreground w-48 compact:text-2xl compact:w-32"
+                        aria-label="Valor da cobrança"
+                      />
+                    </div>
 
-                  <div className="mt-3">
-                    <AmountQuickAdd
-                      valueCents={amountCents}
-                      onChangeCents={setAmountCents}
-                      increments={[5, 10, 20, 50]}
-                    />
+                    <div className="compact:mt-0">
+                      <AmountQuickAdd
+                        valueCents={amountCents}
+                        onChangeCents={setAmountCents}
+                        increments={[5, 10, 20, 50]}
+                      />
+                    </div>
                   </div>
 
                   <input
@@ -604,17 +601,17 @@ export function QuickChargeModal({
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Descrição (opcional)"
                     maxLength={100}
-                    className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors md:text-sm"
+                    className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors md:text-sm compact:hidden"
                   />
                   {error && (
                     <p className="mt-2 text-center text-sm text-destructive">{error}</p>
                   )}
                 </div>
 
-                <div className="mt-6">
+                <div className="mt-4 compact:mt-2">
                   <Button
                     onClick={generateQr}
-                    className="w-full gap-2"
+                    className="w-full gap-2 compact:h-10"
                     size="lg"
                     disabled={amountCents <= 0}
                   >
