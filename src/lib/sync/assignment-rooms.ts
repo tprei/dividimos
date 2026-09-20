@@ -208,6 +208,10 @@ export function getAssignmentRoomTopic(roomId: string): string | null {
   return topics.get(roomId) ?? null;
 }
 
+
+export function getAssignmentRoomJoinToken(roomId: string): string | null {
+  return readCredentials(roomId).joinToken ?? null;
+}
 export function getAssignmentRoomMemberToken(roomId: string): string | null {
   return readCredentials(roomId).memberToken ?? null;
 }
@@ -383,6 +387,31 @@ export async function setAssignmentRoomClaim(
     );
   } finally {
     useAssignmentRoomStore.getState().endItemMutation(input.roomId, input.itemId);
+  }
+}
+
+export async function rotateAssignmentRoomJoin(
+  roomId: string
+): Promise<AssignmentRoomView> {
+  const credentials = readCredentials(roomId);
+  const joinToken = randomToken("armj1");
+  writeCredentials(roomId, { ...credentials, joinToken });
+  try {
+    return await mutateRoom(roomId, () =>
+      rpc(
+        "rotate_assignment_room_join",
+        { p_room_id: roomId, p_join_token: joinToken },
+        decodeAssignmentRoomView
+      )
+    );
+  } catch (error) {
+    if (mayBeLostResponse(error)) {
+      const recovered = await refreshAssignmentRoom(roomId).catch(() => null);
+      if (recovered) return recovered;
+      throw error;
+    }
+    writeCredentials(roomId, credentials);
+    throw error;
   }
 }
 
