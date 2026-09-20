@@ -1,11 +1,11 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 
 test.describe("Group Invite & Accept", () => {
   test("creator invites by handle → invitee sees and accepts → appears as member", async ({
     page,
     seed,
     loginAs,
-    browser,
+    newSession,
   }) => {
     const alice = await seed.createUser({ name: "Alice Invite" });
     const bob = await seed.createUser({ name: "Bob Invite" });
@@ -37,9 +37,7 @@ test.describe("Group Invite & Accept", () => {
     await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
 
     // Bob opens the groups list and sees the pending invite
-    const bobCtx = await browser.newContext();
-    const bobPage = await bobCtx.newPage();
-    await loginInContext(bobCtx, bobPage, bob);
+    const { context: bobCtx, page: bobPage } = await newSession(bob);
 
     await bobPage.goto("/app/groups");
     await bobPage.waitForLoadState("networkidle");
@@ -71,7 +69,7 @@ test.describe("Group Invite & Accept", () => {
 
   test("invitee declines invite → group disappears from list", async ({
     seed,
-    browser,
+    newSession,
   }) => {
     const alice = await seed.createUser({ name: "Alice Decline" });
     const bob = await seed.createUser({ name: "Bob Decline" });
@@ -81,9 +79,7 @@ test.describe("Group Invite & Accept", () => {
     await seed.inviteMember(alice.id, group.id, bob.id);
 
     // Bob sees the pending invite
-    const bobCtx = await browser.newContext();
-    const bobPage = await bobCtx.newPage();
-    await loginInContext(bobCtx, bobPage, bob);
+    const { context: bobCtx, page: bobPage } = await newSession(bob);
 
     await bobPage.goto("/app/groups");
     await bobPage.waitForLoadState("networkidle");
