@@ -10,7 +10,7 @@ import type { DebtRow } from "@/lib/ledger/debt-rows";
 
 export interface DebtRowButtonProps {
   row: DebtRow;
-  onSelect: (row: DebtRow) => void;
+  onSelect: (row: DebtRow, anchor: HTMLButtonElement) => void;
 }
 
 export function DebtRowButton({ row, onSelect }: DebtRowButtonProps) {
@@ -23,7 +23,7 @@ export function DebtRowButton({ row, onSelect }: DebtRowButtonProps) {
       type="button"
       className="flex min-h-14 w-full min-w-0 items-center gap-3 px-4 py-2 text-left"
       aria-label={`${row.counterpartyName}, ${direction} ${formatBRL(row.amountCents)}, ${group}`}
-      onClick={() => onSelect(row)}
+      onClick={(event) => onSelect(row, event.currentTarget)}
     >
       {row.counterpartyKind === "guest" ? (
         <GuestAvatar size="sm" />

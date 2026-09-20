@@ -21,6 +21,7 @@ import type {
   GroupEvent,
   GroupSnapshot,
   Me,
+  Settlement,
   Transfer,
   VendorCharge,
 } from "@/types/ledger";
@@ -87,6 +88,7 @@ export const groupReadKey = (groupId: string) => `group:${groupId}`;
 export const expenseReadKey = (expenseId: string) => `expense:${expenseId}`;
 export const conversationReadKey = (groupId: string) => `conversation:${groupId}`;
 export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
+export const settlementReadKey = (settlementId: string) => `settlement:${settlementId}`;
 export const CHARGES_READ_KEY = "charges";
 export const MY_EXPENSES_READ_KEY = "myExpenses";
 
@@ -113,6 +115,11 @@ interface AppStateData {
   };
   /** Newest activity each account has actually seen, keyed by account id. */
   activityViewedAt: Record<string, string>;
+  /**
+   * Authoritative per-settlement reads, keyed by settlement id. Runtime only:
+   * never persisted, cleared by reset(), and pruned with the owning group.
+   */
+  settlementDetails: Record<string, Settlement>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
   /** Server-owned charge history metadata: cursor, totals and today's sum. */
@@ -148,6 +155,7 @@ export interface AppState extends AppStateData {
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpenseContext(context: ExpenseContext): void;
+  applySettlementDetail(s: Settlement): void;
   applyExpensePage(groupId: string, page: ExpensePage): void;
   applyMyExpensePage(page: ExpensePage, reset: boolean): void;
   applyActivity(items: GroupEvent[], complete: boolean): void;
@@ -176,6 +184,7 @@ const initialData: AppStateData = {
   assignmentRoomsByExpenseId: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
   activityViewedAt: {},
+  settlementDetails: {},
   conversations: {},
   vendorCharges: [],
   chargeSummary: {
@@ -571,6 +580,10 @@ export const useAppStore = create<AppState>()(
               ([expenseId]) => expenseDetails[expenseId] !== undefined,
             ),
           );
+          const settlementDetails: Record<string, Settlement> = {};
+          for (const [id, settlement] of Object.entries(state.settlementDetails)) {
+            if (settlement.groupId !== groupId) settlementDetails[id] = settlement;
+          }
           return {
             groups,
             groupOrder: computeGroupOrder(groups),
@@ -579,6 +592,7 @@ export const useAppStore = create<AppState>()(
             expenses,
             expenseDetails,
             assignmentRoomsByExpenseId,
+            settlementDetails,
           };
         }),
 
@@ -608,6 +622,17 @@ export const useAppStore = create<AppState>()(
             ]),
             assignmentRoomsByExpenseId,
           };
+        }),
+
+      // Void is terminal: a later confirmed read must not resurrect a
+      // payment the store already holds as Desfeito.
+      applySettlementDetail: (s) =>
+        set((state) => {
+          const cached = state.settlementDetails[s.id];
+          if (cached !== undefined && cached.status === "voided" && s.status !== "voided") {
+            return {};
+          }
+          return { settlementDetails: { ...state.settlementDetails, [s.id]: s } };
         }),
 
       applyExpensePage: (groupId, page) =>

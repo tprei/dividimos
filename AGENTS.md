@@ -92,6 +92,16 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 - Keep user-facing copy in PT-BR.
 - Do not add animation, state, or UI libraries without a clear reason. Framer Motion is already present.
 
+### Mobile surfaces
+
+- One overlay decision rule: an anchored popover (`src/components/ui/popover.tsx`) for short contextual actions and notification previews; a bounded dialog for substantial input or QR content; a drawer only for a genuinely long secondary workflow whose keyboard behavior you have demonstrated.
+- `useAppViewport` in `src/hooks/use-app-viewport.ts` is the only owner of visual-viewport geometry. Read `--app-viewport-height`, `--app-viewport-top`, and `--app-viewport-width` instead of measuring again, and never subtract the keyboard height a second time.
+- Editable text is at least 16px on mobile (`text-base md:text-sm`), because anything smaller makes iOS Safari zoom on focus. Never prevent pinch zoom or set `maximumScale` to stop it.
+- Touch targets are at least 44px.
+- Wizard footers sit in normal flow after the content, not fixed over it.
+- Pull-to-refresh is allowlisted to the top-level list routes in `app-shell.tsx`. Detail screens, wizards, settings, and anything with a slider never refresh from a gesture.
+- Honour `prefers-reduced-motion`: movement is removed, not merely shortened.
+
 ## Backend / Data Rules
 
 - Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. Every read and write is a `SECURITY DEFINER` RPC that checks membership first in the ordered migration files under `supabase/migrations/`.

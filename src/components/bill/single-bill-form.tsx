@@ -1,7 +1,8 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, type ReactNode, useMemo, useState } from "react";
+import { useCallback, useRef, type ReactNode, useMemo, useState } from "react";
+import { ScrollHint } from "@/components/shared/scroll-hint";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
@@ -132,6 +133,8 @@ export function SingleBillForm({
     await submit(() => planGroup(defaultGroupName));
   }, [canSubmit, defaultGroupName, planGroup, submit]);
 
+  const footerRef = useRef<HTMLElement | null>(null);
+
   return (
     <div className="mx-auto max-w-lg">
       <ScreenHeader
@@ -202,7 +205,7 @@ export function SingleBillForm({
           />
         </div>
       )}
-      <footer className="sticky bottom-0 border-t bg-background/95 px-4 py-3 backdrop-blur safe-bottom">
+      <footer ref={footerRef} className="border-t px-4 py-3">
         {stage === "conta" ? (
           <Button
             type="button"
@@ -240,6 +243,7 @@ export function SingleBillForm({
           </p>
         )}
       </footer>
+      <ScrollHint targetRef={footerRef} />
     </div>
   );
 }

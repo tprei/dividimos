@@ -21,6 +21,7 @@ jobs:
       matrix:
         shard: ${{ github.event_name == 'pull_request' && fromJSON('[1, 2]') || fromJSON('[1, 2, 3]') }}
         total: ${{ github.event_name == 'pull_request' && fromJSON('[2]') || fromJSON('[3]') }}
+        project: [synthetic, synthetic-ios, synthetic-android]
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -52,15 +53,17 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          # The browser set is part of the key: a cache written when only
+          # Chromium was installed must never satisfy a run that needs WebKit.
+          key: playwright-${{ runner.os }}-chromium-webkit-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Install Playwright deps (cache hit)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: npx playwright install-deps chromium webkit
 
       - name: Start Supabase
         id: supabase
@@ -129,7 +132,7 @@ jobs:
           echo "dev login correctly unavailable (404)"
 
       - name: Run synthetic tests
-        run: npm run test:synthetic -- --shard=${{ matrix.shard }}/${{ matrix.total }}
+        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.total }}
         env:
           CI: "true"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
@@ -142,7 +145,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: synthetic-test-results-shard-${{ matrix.shard }}
+          name: synthetic-test-results-${{ matrix.project }}-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
