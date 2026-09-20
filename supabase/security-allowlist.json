@@ -9,8 +9,12 @@
     "may execute. A function missing from the manifest, a manifest entry naming a",
     "missing function, any PUBLIC grant, or a privilege drift fails the gate."
   ],
-  "policies": ["realtime.messages.group_broadcast_authz"],
+  "policies": [
+    "realtime.messages.assignment_room_broadcast_authz",
+    "realtime.messages.group_broadcast_authz"
+  ],
   "policyNotes": {
+    "realtime.messages.assignment_room_broadcast_authz": "Realtime is broadcast-only. This policy authorizes the exact stored private topic for an active assignment room without granting snapshot access.",
     "realtime.messages.group_broadcast_authz": "Realtime is broadcast-only. This policy authorizes a member to read the private group:<id> and chat:<id> topics; no application table is exposed."
   },
   "grants": [],
@@ -35,6 +39,11 @@
     "vault"
   ],
   "functionPrivileges": {
+    "guest_credentials.normalize_assignment_room_topic()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal trigger helper; canonicalizes legacy room-topic generation before the row constraint runs."
+    },
     "public.accept_invitation(p_group_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -49,6 +58,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal exact allocator used only by room finalization."
+    },
+    "public.assignment_room_topic_allowed(p_topic text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Boolean-only Realtime policy predicate; compares an exact stored topic for an active room."
     },
     "public.assignment_room_view(p_room_id uuid, p_self_participant_id uuid, p_host boolean)": {
       "anon": false,

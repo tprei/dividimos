@@ -1100,6 +1100,12 @@ export type Database = {
         }
         Returns: Json
       }
+      assignment_room_topic_allowed: {
+        Args: {
+          p_topic: string
+        }
+        Returns: boolean
+      }
       assignment_room_view: {
         Args: {
           p_room_id: string
