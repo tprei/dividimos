@@ -91,7 +91,14 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     const bruno = troupe.bots[1];
     await page.goto(`/app/groups/${troupe.groupId}/chat`);
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
-    await page.getByTestId(`group-payment-member-${bruno.id}`).click();
+    // The sheet picks a counterparty through a select, and it opens on
+    // whichever member the group listed first, so Bruno has to be chosen.
+    // The option label is the one SelectField builds: name plus @handle.
+    await page.getByRole("combobox", { name: "Com quem?" }).click();
+    await page
+      .getByRole("option", { name: `${bruno.name} (@${bruno.handle})`, exact: true })
+      .click();
+    await expect(page.getByText(`Você pagou para ${bruno.name}`)).toBeVisible();
     await page.getByTestId("group-payment-payer-other").click();
 
     // The sheet caps the amount at the debt between the two and offers to

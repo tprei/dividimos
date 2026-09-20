@@ -21,6 +21,10 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 1,
+  // A production-latency phone journey with four 1.4s dwells does not fit
+  // Playwright's 30s default. Two attempts at 90s stay inside the workflow
+  // step's 4-minute budget.
+  timeout: 90_000,
   workers: 1,
   reporter: "html",
   use: {
