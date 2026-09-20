@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant keyboard (&:is([data-keyboard="open"] *));
 
 @theme inline {
   --color-background: var(--background);

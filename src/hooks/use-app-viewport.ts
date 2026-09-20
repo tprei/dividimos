@@ -12,6 +12,9 @@ import { isNativePlatform } from "@/lib/capacitor/auth";
  * keyboard covers half of it. Every overlay reads the published custom
  * properties instead of measuring on its own, so a dialog, a popover, and the
  * shell never disagree about where the bottom of the screen is.
+ * `data-keyboard="open"` on the document element is the CSS-side mirror of
+ * `keyboardOpen`, so overlays can compress with a Tailwind variant instead of
+ * branching in JS.
  */
 
 const HEIGHT_VAR = "--app-viewport-height";
@@ -173,6 +176,13 @@ export function useAppViewport(): { keyboardOpen: boolean } {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (keyboardOpen) root.setAttribute("data-keyboard", "open");
+    else root.removeAttribute("data-keyboard");
+    return () => root.removeAttribute("data-keyboard");
+  }, [keyboardOpen]);
 
   return { keyboardOpen };
 }

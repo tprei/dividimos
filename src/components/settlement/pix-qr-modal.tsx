@@ -3,6 +3,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
+  Circle,
+  Contrast,
   Copy,
   KeyRound,
   Loader2,
@@ -343,7 +345,7 @@ export function PixQrModal({
       <DialogContent
         showCloseButton={!isSettling && !showSuccess}
         initialFocus={false}
-        className="sm:max-w-md rounded-3xl bg-card p-0"
+        className="sm:max-w-md rounded-3xl bg-card p-0 overflow-hidden max-sm:h-full"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
@@ -409,21 +411,15 @@ export function PixQrModal({
               key="form"
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-3 keyboard:pt-2 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
                 <div className="text-center">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
-                  >
-                    <QrCode className="h-7 w-7" />
-                  </motion.div>
-                  <DialogTitle className="mt-4 text-lg font-bold">
+                  <DialogTitle className="flex items-center justify-center gap-2 text-lg font-bold keyboard:text-base">
+                    <QrCode className="size-5 text-primary-text" aria-hidden="true" />
                     {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm text-muted-foreground">
+                  <DialogDescription className="mt-1 text-sm text-muted-foreground keyboard:hidden">
                     {mode === "collect" ? "de" : "para"}{" "}
                     <span className="font-medium text-foreground">{recipientName}</span>
                   </DialogDescription>
@@ -431,7 +427,7 @@ export function PixQrModal({
                   <div className="mt-3">
                     {editingAmount ? (
                       <label
-                        className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary-text"
+                        className="flex items-center justify-center gap-1 text-3xl keyboard:text-2xl font-bold tabular-nums text-primary-text"
                         onBlur={commitAmount}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === "Escape") commitAmount();
@@ -493,13 +489,15 @@ export function PixQrModal({
                         onClick={() => setPaymentCents(amountCents)}
                         disabled={isSettling}
                         aria-pressed={paymentCents === amountCents}
-                        className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
+                        aria-label="Tudo"
+                        title="Tudo"
+                        className={`flex size-11 items-center justify-center rounded-full transition-all ${
                           paymentCents === amountCents
                             ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
                             : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
                         } disabled:opacity-50`}
                       >
-                        Tudo: {formatBRL(amountCents)}
+                        <Circle className="size-4" fill="currentColor" aria-hidden="true" />
                       </button>
                       {halfAvailable && (
                         <button
@@ -507,19 +505,21 @@ export function PixQrModal({
                           onClick={() => setPaymentCents(halfCents)}
                           disabled={isSettling}
                           aria-pressed={paymentCents === halfCents}
-                          className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
+                          aria-label="Metade"
+                          title="Metade"
+                          className={`flex size-11 items-center justify-center rounded-full transition-all ${
                             paymentCents === halfCents
                               ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
                               : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
                           } disabled:opacity-50`}
                         >
-                          Metade: {formatBRL(halfCents)}
+                          <Contrast className="size-4" aria-hidden="true" />
                         </button>
                       )}
                     </div>
 
                     {!isFullPayment && isValidAmount && (
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground keyboard:hidden">
                         Resta depois do Pix: {formatBRL(amountCents - paymentCents)}
                       </p>
                     )}
@@ -551,7 +551,7 @@ export function PixQrModal({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                    className="mt-6 keyboard:mt-3 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
                   >
                     <canvas ref={paintQr} />
                   </motion.div>
@@ -560,7 +560,7 @@ export function PixQrModal({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="mt-6 flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
+                    className="mt-6 keyboard:mt-3 flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
                   >
                     {payload.status === "idle" || payload.status === "loading" ? (
                       <div className="flex h-[240px] w-[240px] items-center justify-center">
@@ -634,20 +634,20 @@ export function PixQrModal({
               </div>
 
               {!copiaECola && (
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground keyboard:hidden">
                   <Shield className="h-3 w-3" />
                   <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
                 </div>
               )}
 
                 {mode === "collect" && (
-                  <p className="mt-5 text-sm text-muted-foreground">
+                  <p className="mt-5 text-sm text-muted-foreground keyboard:hidden">
                     Registrar não move dinheiro, só marca que ele te pagou por fora.
                   </p>
                 )}
               </div>
 
-              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)]">
+              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)] keyboard:p-3 keyboard:pt-2 keyboard:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
                 <div className="space-y-2.5">
                   <Button
                     onClick={handleCopy}

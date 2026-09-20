@@ -48,6 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  document.documentElement.removeAttribute("data-keyboard");
   vi.useRealTimers();
 });
 
@@ -83,6 +84,7 @@ describe("useAppViewport", () => {
     await settle();
 
     expect(result.current.keyboardOpen).toBe(true);
+    expect(document.documentElement.getAttribute("data-keyboard")).toBe("open");
   });
 
   it("ignores a height drop while no text field is focused", async () => {
@@ -97,6 +99,7 @@ describe("useAppViewport", () => {
     await settle();
 
     expect(result.current.keyboardOpen).toBe(false);
+    expect(document.documentElement.hasAttribute("data-keyboard")).toBe(false);
   });
 
   it("treats pinch zoom as zoom, not as a keyboard, and freezes the geometry", async () => {
