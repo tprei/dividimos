@@ -20,6 +20,26 @@ import { isNativePlatform } from "@/lib/capacitor/auth";
 const HEIGHT_VAR = "--app-viewport-height";
 const TOP_VAR = "--app-viewport-top";
 const WIDTH_VAR = "--app-viewport-width";
+const KEYBOARD_ATTR = "data-keyboard";
+
+/**
+ * The shell is not the only caller: chat sheets mount the hook too. Each
+ * instance reports the same geometry, but they mount and unmount at different
+ * moments, so the attribute is refcounted. Otherwise a sheet closing while the
+ * keyboard is still up would clear the flag under the shell.
+ */
+let keyboardOpenInstances = 0;
+
+function registerKeyboardOpen(): () => void {
+  keyboardOpenInstances += 1;
+  document.documentElement.setAttribute(KEYBOARD_ATTR, "open");
+  return () => {
+    keyboardOpenInstances = Math.max(0, keyboardOpenInstances - 1);
+    if (keyboardOpenInstances === 0) {
+      document.documentElement.removeAttribute(KEYBOARD_ATTR);
+    }
+  };
+}
 
 /** Below this drop the shrink is a browser chrome change, not a keyboard. */
 const KEYBOARD_THRESHOLD_PX = 150;
@@ -178,10 +198,8 @@ export function useAppViewport(): { keyboardOpen: boolean } {
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (keyboardOpen) root.setAttribute("data-keyboard", "open");
-    else root.removeAttribute("data-keyboard");
-    return () => root.removeAttribute("data-keyboard");
+    if (!keyboardOpen) return;
+    return registerKeyboardOpen();
   }, [keyboardOpen]);
 
   return { keyboardOpen };
