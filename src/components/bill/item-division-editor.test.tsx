@@ -108,6 +108,24 @@ describe("ItemDivisionEditor", () => {
     });
   });
 
+  it("shows each row's amount in reais while the percentages do not close 100%", () => {
+    renderEditor();
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno (@bruno) em Picanha"));
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+    const ana = screen.getByLabelText("Percentual de Ana (@ana) em Picanha");
+    fireEvent.change(ana, { target: { value: "35" } });
+
+    // 35% and 50% of 129,00 previewed independently: no normalization to 100%.
+    expect(screen.getByText("Faltam 15,00% para fechar 100%.")).toBeInTheDocument();
+    // formatBRL separates with a non-breaking space; Testing Library
+    // normalizes it to a plain space before matching.
+    expect(screen.getByText(formatBRL(4515).replace("\u00a0", " "))).toBeInTheDocument();
+    expect(screen.getByText(formatBRL(6450).replace("\u00a0", " "))).toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  });
+
   it("restores a saved fixed division when reopened", () => {
     const { onSave } = renderEditor({
       mode: "fixed",
