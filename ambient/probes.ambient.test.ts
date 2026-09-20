@@ -24,20 +24,8 @@ describe("production probes", () => {
     expect(chunks).not.toContain("yqhsqkrxgafrifephppa");
   });
 
-  it("redirects supabase authorize to google with the configured client", async () => {
-    const res = await fetch(
-      `${env.supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${env.baseUrl}/auth/callback`)}`,
-      { redirect: "manual" },
-    );
-    expect(res.status).toBe(302);
-
-    const location = res.headers.get("location") ?? "";
-    expect(location.startsWith("https://accounts.google.com/o/oauth2/v2/auth")).toBe(true);
-    expect(location).toContain(`client_id=${env.googleClientId}`);
-  });
-
-  it("gets the supabase callback accepted by google", async () => {
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.googleClientId}&redirect_uri=${encodeURIComponent(`${env.supabaseUrl}/auth/v1/callback`)}&response_type=code&scope=openid`;
+  it("gets the /auth/popup redirect accepted by google", async () => {
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.googleClientId}&redirect_uri=${encodeURIComponent(`${env.baseUrl}/auth/popup`)}&response_type=token%20id_token&scope=openid&nonce=probe`;
     const res = await fetch(url, { redirect: "manual" });
     expect(res.status).toBeLessThan(400);
 
@@ -52,7 +40,7 @@ describe("production probes", () => {
     }
 
     // Catches an OAuth client whose redirect list no longer contains the
-    // Supabase callback (redirect_uri_mismatch) or a dead client id
+    // popup return page (redirect_uri_mismatch) or a dead client id
     // (invalid_client): Google reports both in the redirect target or body.
     expect(body).not.toContain("redirect_uri_mismatch");
     expect(body).not.toContain("invalid_client");

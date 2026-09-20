@@ -14,11 +14,14 @@ export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-export function getPlatform(): string {
-  return Capacitor.getPlatform();
+// Supabase compares sha256(nonce) with the id_token's nonce claim, so Google
+// receives the hash and Supabase receives the raw value.
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function ensureInitialized() {
+export async function prepareGoogleSignIn(): Promise<void> {
   if (initialized) return;
 
   const platform = Capacitor.getPlatform();
@@ -29,43 +32,49 @@ async function ensureInitialized() {
           iOSServerClientId: GOOGLE_WEB_CLIENT_ID,
         }
       : { webClientId: GOOGLE_WEB_CLIENT_ID };
+  if (platform === "web") {
+    googleOptions.redirectUrl = `${window.location.origin}/auth/popup`;
+  }
 
   await SocialLogin.initialize({ google: googleOptions });
   initialized = true;
 }
 
-async function loginAndExtractToken(): Promise<string | undefined> {
+async function loginAndExtractToken(hashedNonce: string | undefined): Promise<string | undefined> {
   const result = await SocialLogin.login({
     provider: "google",
-    options: {},
+    options: hashedNonce === undefined ? {} : { nonce: hashedNonce },
   });
   const loginResult = result.result as { idToken?: string } | undefined;
   return loginResult?.idToken;
 }
 
-export async function nativeGoogleSignIn(
+async function exchangeIdToken(
   supabase: SupabaseClient,
+  token: string,
+  nonce: string | undefined,
 ): Promise<boolean> {
-  await ensureInitialized();
-
-  const idToken = await loginAndExtractToken();
-  if (!idToken) return false;
-
   const { error } = await supabase.auth.signInWithIdToken({
     provider: "google",
-    token: idToken,
+    token,
+    ...(nonce === undefined ? {} : { nonce }),
   });
-
-  if (error && Capacitor.getPlatform() === "ios") {
-    await SocialLogin.logout({ provider: "google" });
-    const freshToken = await loginAndExtractToken();
-    if (!freshToken) return false;
-    const retry = await supabase.auth.signInWithIdToken({
-      provider: "google",
-      token: freshToken,
-    });
-    return !retry.error;
-  }
-
   return !error;
+}
+
+export async function googleSignIn(supabase: SupabaseClient): Promise<boolean> {
+  await prepareGoogleSignIn();
+
+  const nonce = Capacitor.getPlatform() === "web" ? crypto.randomUUID() : undefined;
+  const hashedNonce = nonce === undefined ? undefined : await sha256Hex(nonce);
+  const idToken = await loginAndExtractToken(hashedNonce);
+  if (!idToken) return false;
+
+  const signedIn = await exchangeIdToken(supabase, idToken, nonce);
+  if (signedIn || Capacitor.getPlatform() !== "ios") return signedIn;
+
+  await SocialLogin.logout({ provider: "google" });
+  const freshToken = await loginAndExtractToken(hashedNonce);
+  if (!freshToken) return false;
+  return exchangeIdToken(supabase, freshToken, nonce);
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 const mockGetPlatform = vi.fn(() => "android");
 const mockIsNativePlatform = vi.fn(() => true);
@@ -44,14 +45,14 @@ async function loadModule() {
   return import("./auth");
 }
 
-describe("ensureInitialized (via nativeGoogleSignIn)", () => {
+describe("ensureInitialized (via googleSignIn)", () => {
   it("passes webClientId on Android", async () => {
     mockGetPlatform.mockReturnValue("android");
     mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
     mockSignInWithIdToken.mockResolvedValue({ error: null });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    await googleSignIn(makeSupabase() as never);
 
     expect(mockInitialize).toHaveBeenCalledWith({
       google: {
@@ -66,8 +67,8 @@ describe("ensureInitialized (via nativeGoogleSignIn)", () => {
     mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
     mockSignInWithIdToken.mockResolvedValue({ error: null });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    await googleSignIn(makeSupabase() as never);
 
     expect(mockInitialize).toHaveBeenCalledWith({
       google: {
@@ -83,23 +84,23 @@ describe("ensureInitialized (via nativeGoogleSignIn)", () => {
     mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
     mockSignInWithIdToken.mockResolvedValue({ error: null });
 
-    const { nativeGoogleSignIn } = await loadModule();
+    const { googleSignIn } = await loadModule();
     const supabase = makeSupabase() as never;
-    await nativeGoogleSignIn(supabase);
-    await nativeGoogleSignIn(supabase);
+    await googleSignIn(supabase);
+    await googleSignIn(supabase);
 
     expect(mockInitialize).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("nativeGoogleSignIn", () => {
+describe("googleSignIn", () => {
   it("returns true on successful sign-in", async () => {
     mockGetPlatform.mockReturnValue("android");
     mockLogin.mockResolvedValue({ result: { idToken: "valid-token" } });
     mockSignInWithIdToken.mockResolvedValue({ error: null });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(true);
     expect(mockSignInWithIdToken).toHaveBeenCalledWith({
@@ -112,8 +113,8 @@ describe("nativeGoogleSignIn", () => {
     mockGetPlatform.mockReturnValue("android");
     mockLogin.mockResolvedValue({ result: {} });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(false);
     expect(mockSignInWithIdToken).not.toHaveBeenCalled();
@@ -124,12 +125,38 @@ describe("nativeGoogleSignIn", () => {
     mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
     mockSignInWithIdToken.mockResolvedValue({ error: new Error("bad") });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(false);
     expect(mockLogout).not.toHaveBeenCalled();
     expect(mockSignInWithIdToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("on web, hands Google sha256(nonce) and Supabase the raw nonce, returning to /auth/popup", async () => {
+    mockGetPlatform.mockReturnValue("web");
+    mockLogin.mockResolvedValue({ result: { idToken: "web-token" } });
+    mockSignInWithIdToken.mockResolvedValue({ error: null });
+
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
+
+    expect(result).toBe(true);
+    expect(mockInitialize).toHaveBeenCalledWith({
+      google: {
+        webClientId: expect.stringContaining("apps.googleusercontent.com"),
+        redirectUrl: `${window.location.origin}/auth/popup`,
+      },
+    });
+    const googleNonce = mockLogin.mock.calls[0][0].options.nonce as string;
+    const supabaseNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
+    expect(supabaseNonce.length).toBeGreaterThan(0);
+    expect(googleNonce).toBe(createHash("sha256").update(supabaseNonce).digest("hex"));
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+      provider: "google",
+      token: "web-token",
+      nonce: supabaseNonce,
+    });
   });
 });
 
@@ -143,8 +170,8 @@ describe("iOS retry logic", () => {
       .mockResolvedValueOnce({ error: new Error("nonce mismatch") })
       .mockResolvedValueOnce({ error: null });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(true);
     expect(mockLogout).toHaveBeenCalledWith({ provider: "google" });
@@ -164,8 +191,8 @@ describe("iOS retry logic", () => {
       .mockResolvedValueOnce({ error: new Error("fail1") })
       .mockResolvedValueOnce({ error: new Error("fail2") });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(false);
     expect(mockLogout).toHaveBeenCalledTimes(1);
@@ -179,18 +206,10 @@ describe("iOS retry logic", () => {
       .mockResolvedValueOnce({ result: {} });
     mockSignInWithIdToken.mockResolvedValue({ error: new Error("fail") });
 
-    const { nativeGoogleSignIn } = await loadModule();
-    const result = await nativeGoogleSignIn(makeSupabase() as never);
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
 
     expect(result).toBe(false);
-  });
-});
-
-describe("getPlatform", () => {
-  it("returns the Capacitor platform string", async () => {
-    mockGetPlatform.mockReturnValue("ios");
-    const { getPlatform } = await loadModule();
-    expect(getPlatform()).toBe("ios");
   });
 });
 

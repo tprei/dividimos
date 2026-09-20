@@ -291,7 +291,7 @@ describe("Service Worker", () => {
     });
 
     it("ignores /auth/ routes", () => {
-      const event = makeFetchEvent("https://dividimos.app/auth/callback");
+      const event = makeFetchEvent("https://dividimos.app/auth/continue");
       env.listeners["fetch"]![0]!(event);
       expect(event._response).toBeUndefined();
     });

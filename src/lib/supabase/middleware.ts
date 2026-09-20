@@ -7,7 +7,6 @@ const PUBLIC_PATHS = [
   "/",
   "/demo",
   "/auth",
-  "/auth/callback",
   "/api/dev/login",
   "/claim",
   "/join",
