@@ -3,6 +3,7 @@ import {
   allocateByBasisPoints,
   allocateEvenly,
   parseAllocationPercentText,
+  parseExpenseCents,
   parseExpenseCentsText,
 } from "@/lib/expense-money";
 import type { ExpenseItem, SplitType } from "@/types";
@@ -91,6 +92,103 @@ export function computeDivision(
   const remainder = itemCents - sum;
   if (remainder !== 0) return { ok: false, reason: "total", remainder };
   return { ok: true, centsById };
+}
+
+// BigInt constants rather than literals: the compile target predates `1n`.
+const BASIS_POINTS_BIG = BigInt(10_000);
+const HALF_UP_BIAS_BIG = BigInt(5_000);
+const TWO_BIG = BigInt(2);
+
+/** Presentation-only per-row preview values. `null` = no preview for that row. */
+export interface DivisionPreview {
+  centsById: Record<string, number | null>;
+  basisPointsById: Record<string, number | null>;
+}
+
+/**
+ * Per-row split preview that stays useful while the division does not close
+ * yet: a valid computation reuses its exact allocated cents (remainder
+ * included); otherwise each authored field is parsed independently, so one
+ * invalid row never blanks the others and nothing is normalized to 100%.
+ * Integer-only arithmetic; these values never feed saved shares.
+ */
+export function previewDivision(
+  itemCents: number,
+  mode: ItemDivisionMode,
+  selectedIds: readonly string[],
+  percentTexts: Record<string, string>,
+  fixedTexts: Record<string, string>,
+  division: DivisionComputation,
+): DivisionPreview {
+  const centsById: Record<string, number | null> = {};
+  const basisPointsById: Record<string, number | null> = {};
+  const total = parseExpenseCents(itemCents, "allow");
+  if (!total.ok) {
+    for (const id of selectedIds) {
+      centsById[id] = null;
+      basisPointsById[id] = null;
+    }
+    return { centsById, basisPointsById };
+  }
+  const totalBig = BigInt(total.value);
+  const previewAuthoredRow = (id: string): void => {
+    if (mode === "percent") {
+      const parsed = parseAllocationPercentText(percentTexts[id] ?? "");
+      if (!parsed.ok) {
+        centsById[id] = null;
+        basisPointsById[id] = null;
+        return;
+      }
+      basisPointsById[id] = parsed.value;
+      centsById[id] =
+        Number((totalBig * BigInt(parsed.value) + HALF_UP_BIAS_BIG) / BASIS_POINTS_BIG);
+      return;
+    }
+    if (mode === "fixed") {
+      const parsed = parseExpenseCentsText(fixedTexts[id] ?? "", {
+        format: "plain_decimal",
+        zeroPolicy: "allow",
+      });
+      if (!parsed.ok) {
+        centsById[id] = null;
+        basisPointsById[id] = null;
+        return;
+      }
+      centsById[id] = parsed.value;
+      // Display-only half-up ratio of the authored value over the item total.
+      basisPointsById[id] =
+        total.value === 0
+          ? null
+          : Number(
+              (TWO_BIG * BigInt(parsed.value) * BASIS_POINTS_BIG + totalBig) /
+                (TWO_BIG * totalBig),
+            );
+      return;
+    }
+    centsById[id] = 0;
+    basisPointsById[id] = null;
+  };
+  if (division.ok) {
+    for (const id of selectedIds) {
+      if (division.centsById[id] === undefined) {
+        previewAuthoredRow(id);
+        continue;
+      }
+      centsById[id] = division.centsById[id];
+      basisPointsById[id] = division.basisPointsById?.[id] ?? null;
+    }
+    return { centsById, basisPointsById };
+  }
+  if (mode === "equal") {
+    const equal = allocateEvenly(total.value, selectedIds.length);
+    selectedIds.forEach((id, index) => {
+      centsById[id] = equal.ok ? equal.value[index] : null;
+      basisPointsById[id] = null;
+    });
+    return { centsById, basisPointsById };
+  }
+  for (const id of selectedIds) previewAuthoredRow(id);
+  return { centsById, basisPointsById };
 }
 
 export function equalDivision(participantIds: readonly string[], cents: number): ItemDivisionValue | null {

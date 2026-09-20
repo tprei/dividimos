@@ -132,6 +132,62 @@ export function ParticipantsStep({
         </>
       )}
 
+      <AnimatePresence>
+        {showAddGuest && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden rounded-2xl border border-dashed bg-card p-4"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold">Adicionar convidado</span>
+              <button
+                onClick={() => { setShowAddGuest(false); setGuestNameInput(""); }}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const name = guestNameInput.trim();
+              if (!name) return;
+              onAddGuest(name);
+              setGuestNameInput("");
+            }} className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="Nome do convidado"
+                value={guestNameInput}
+                onChange={(e) => setGuestNameInput(e.target.value)}
+                autoFocus
+                className="flex-1"
+              />
+              <Button type="submit" size="sm" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </form>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Convidados recebem um link pra confirmar a participação depois.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAddParticipant && (
+          <AddParticipantByHandle
+            onAdd={(profile: UserProfile) => {
+              onAddParticipant(profile);
+              setShowAddParticipant(false);
+            }}
+            onCancel={() => setShowAddParticipant(false)}
+            excludeIds={participants.map((p) => p.id)}
+          />
+        )}
+      </AnimatePresence>
+
       <div className="space-y-2">
         {selectedGroup ? (
           <>
@@ -214,62 +270,6 @@ export function ParticipantsStep({
           ))}
         </div>
       )}
-
-      <AnimatePresence>
-        {showAddGuest && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden rounded-2xl border border-dashed bg-card p-4"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold">Adicionar convidado</span>
-              <button
-                onClick={() => { setShowAddGuest(false); setGuestNameInput(""); }}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const name = guestNameInput.trim();
-              if (!name) return;
-              onAddGuest(name);
-              setGuestNameInput("");
-            }} className="flex gap-2">
-              <Input
-                type="text"
-                placeholder="Nome do convidado"
-                value={guestNameInput}
-                onChange={(e) => setGuestNameInput(e.target.value)}
-                autoFocus
-                className="flex-1"
-              />
-              <Button type="submit" size="sm" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </form>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Convidados recebem um link pra confirmar a participação depois.
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showAddParticipant && (
-          <AddParticipantByHandle
-            onAdd={(profile: UserProfile) => {
-              onAddParticipant(profile);
-              setShowAddParticipant(false);
-            }}
-            onCancel={() => setShowAddParticipant(false)}
-            excludeIds={participants.map((p) => p.id)}
-          />
-        )}
-      </AnimatePresence>
 
       {!showAddParticipant && !showAddGuest && (
         <div className="flex flex-col gap-2">
