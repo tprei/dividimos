@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GroupSnapshot, Me } from "@/types/ledger";
-import { expensePageReadKey, groupReadKey, useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Me, Settlement } from "@/types/ledger";
+import {
+  expensePageReadKey,
+  groupReadKey,
+  settlementReadKey,
+  useAppStore,
+} from "@/stores/app-store";
 import { rpc } from "./client";
-import { invalidateSyncReads, loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
+import {
+  invalidateSyncReads,
+  loadActivity,
+  loadMoreExpenses,
+  refreshGroup,
+  refreshSettlement,
+} from "./refresh";
 import { LedgerError } from "./errors";
 
 const clientState = vi.hoisted(() => ({ authGeneration: 0 }));
@@ -226,5 +237,189 @@ describe("resource read state", () => {
       status: "error",
       code: "network",
     });
+  });
+});
+
+function settlementFixture(overrides: Partial<Settlement> = {}): Settlement {
+  return {
+    id: "set-1",
+    operationId: "op-1",
+    groupId: "g1",
+    fromUserId: "user-a",
+    toUserId: "user-b",
+    amountCents: 3000,
+    status: "confirmed",
+    createdBy: "user-a",
+    createdAt: "2026-09-06T12:00:00.000Z",
+    confirmedAt: "2026-09-06T12:00:00.000Z",
+    voidedAt: null,
+    voidedBy: null,
+    ...overrides,
+  };
+}
+
+describe("refreshSettlement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("publishes the authoritative record for the current account", async () => {
+    vi.mocked(rpc).mockResolvedValue(settlementFixture({ amountCents: 4500 }));
+
+    await refreshSettlement("set-1");
+
+    expect(rpc).toHaveBeenCalledWith(
+      "get_settlement",
+      { p_settlement_id: "set-1" },
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().settlementDetails["set-1"]?.amountCents).toBe(4500);
+    expect(useAppStore.getState().reads[settlementReadKey("set-1")]).toEqual({ status: "ready" });
+  });
+
+  it("never publishes when the auth generation changed mid-read", async () => {
+    const { promise, resolve } = Promise.withResolvers<Settlement>();
+    vi.mocked(rpc).mockReturnValue(promise);
+
+    const pending = refreshSettlement("set-1");
+    clientState.authGeneration = 1;
+    resolve(settlementFixture());
+    await pending;
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toBeUndefined();
+    expect(useAppStore.getState().reads[settlementReadKey("set-1")]).toEqual({ status: "loading" });
+  });
+
+  it("removes the cached detail and exposes the error on settlement_not_found", async () => {
+    useAppStore.getState().applySettlementDetail(settlementFixture());
+    vi.mocked(rpc).mockRejectedValue(new LedgerError("settlement_not_found"));
+
+    await expect(refreshSettlement("set-1")).rejects.toThrow();
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toBeUndefined();
+    expect(useAppStore.getState().reads[settlementReadKey("set-1")]).toEqual({
+      status: "error",
+      code: "settlement_not_found",
+    });
+  });
+
+  it("removes the cached detail on not_a_member denials", async () => {
+    useAppStore.getState().applySettlementDetail(settlementFixture());
+    vi.mocked(rpc).mockRejectedValue(new LedgerError("not_a_member"));
+
+    await expect(refreshSettlement("set-1")).rejects.toThrow();
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toBeUndefined();
+    expect(useAppStore.getState().reads[settlementReadKey("set-1")]).toEqual({
+      status: "error",
+      code: "not_a_member",
+    });
+  });
+
+  it("keeps the cached detail behind a retry warning on network failure", async () => {
+    const cached = settlementFixture();
+    useAppStore.getState().applySettlementDetail(cached);
+    vi.mocked(rpc).mockRejectedValue(new LedgerError("network"));
+
+    await expect(refreshSettlement("set-1")).rejects.toThrow();
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(cached);
+    expect(useAppStore.getState().reads[settlementReadKey("set-1")]).toEqual({
+      status: "error",
+      code: "network",
+    });
+  });
+
+  it("shares one in-flight read among concurrent callers", async () => {
+    const { promise, resolve } = Promise.withResolvers<Settlement>();
+    vi.mocked(rpc).mockReturnValue(promise);
+
+    const first = refreshSettlement("set-1");
+    const second = refreshSettlement("set-1");
+    expect(second).toBe(first);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    resolve(settlementFixture());
+    await Promise.all([first, second]);
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().settlementDetails["set-1"]?.id).toBe("set-1");
+  });
+});
+
+describe("group refresh settlement details", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    resolvers.length = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("refreshes a loaded detail whose record left the snapshot after a version bump", async () => {
+    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.getState().applySettlementDetail(settlementFixture());
+
+    vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name === "get_settlement") return settlementFixture({ status: "voided" });
+      return snapshot("g1", 7);
+    });
+
+    await refreshGroup("g1");
+
+    expect(rpc).toHaveBeenCalledWith(
+      "get_settlement",
+      { p_settlement_id: "set-1" },
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().settlementDetails["set-1"]?.status).toBe("voided");
+  });
+
+  it("skips loaded details the fresh snapshot already matches", async () => {
+    const cached = settlementFixture();
+    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.getState().applySettlementDetail(cached);
+
+    const fresh = { ...snapshot("g1", 7), settlements: [cached] };
+    vi.mocked(rpc).mockResolvedValue(fresh);
+
+    await refreshGroup("g1");
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).not.toHaveBeenCalledWith("get_settlement", expect.anything(), expect.anything());
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(cached);
+  });
+
+  it("skips detail reads when the group version did not change", async () => {
+    const cached = settlementFixture();
+    const unchanged = { ...snapshot("g1", 7), settlements: [] };
+    useAppStore.getState().applyGroup(unchanged);
+    useAppStore.getState().applySettlementDetail(cached);
+
+    vi.mocked(rpc).mockResolvedValue(unchanged);
+
+    await refreshGroup("g1");
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(cached);
+  });
+
+  it("does not read every historical settlement card, only loaded details", async () => {
+    useAppStore.getState().applyGroup(snapshot("g1", 6));
+
+    const historical = [
+      settlementFixture({ id: "set-old-1" }),
+      settlementFixture({ id: "set-old-2" }),
+    ];
+    useAppStore.getState().applyGroup({ ...snapshot("g1", 7), settlements: historical });
+
+    vi.mocked(rpc).mockResolvedValue({ ...snapshot("g1", 8), settlements: historical });
+
+    await refreshGroup("g1");
+
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 });

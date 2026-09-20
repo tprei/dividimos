@@ -64,6 +64,12 @@
 }
 
 :root {
+  /* Pre-hydration fallbacks; useAppViewport replaces these with measured
+     visual-viewport pixels as soon as the shell mounts. */
+  --app-viewport-height: 100dvh;
+  --app-viewport-top: 0px;
+  --app-viewport-width: 100vw;
+
   --background: oklch(0.98 0.003 280);
   --foreground: oklch(0.17 0.02 250);
 

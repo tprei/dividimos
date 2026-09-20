@@ -117,6 +117,9 @@ await page.screenshot({ path: "/tmp/shot.webp", type: "webp", quality: 90 });
 - Reduced motion: `await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }])` — assert the UI is still usable and animations stop.
 - Clipboard flows: `await page.browserContext().overridePermissions(origin, ["clipboard-read", "clipboard-write"])` before asserting copied text.
 - Client state: after actions, assert `localStorage`/store values, not just the screenshot.
+- Keyboard states: keep the field focused for the capture. The generic `document.activeElement?.blur()` step above exists to kill stray focus rings, so skip it when the keyboard is the subject.
+- A resized browser viewport is not a keyboard. Shrinking the window proves layout math; it does not prove the iOS accessory bar, the Android IME, or `visualViewport.offsetTop`. Those claims need a real device.
+- Anchored surfaces: confirm the popover stays inside the visual viewport at 360px wide and at a 390 × 450 short viewport, and that an outside tap dismisses it without activating the control underneath.
 
 ## Evidence in the PR
 

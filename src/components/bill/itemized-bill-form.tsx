@@ -217,7 +217,7 @@ export function ItemizedBillForm({
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-lg flex-col pb-20">
+    <div className="mx-auto flex min-h-full max-w-lg flex-col">
       <ScreenHeader back onBack={onBack} eyebrow="Nova conta" title="Conta detalhada" />
       {conflictPanel}
       <ItemizedWorkspace
@@ -247,8 +247,9 @@ export function ItemizedBillForm({
         onServiceFeeChange={handleServiceFeeChange}
         onToggleItem={(itemId) => setExpandedId((current) => (current === itemId ? null : itemId))}
         onSaveDivision={(itemId, value) => {
+          // Autosave only persists. Collapsing here is what made the editor
+          // close 400ms after the first percentage change.
           store.setItemDivision(itemId, value);
-          setExpandedId(null);
         }}
         onCloseDivision={() => setExpandedId(null)}
         onAssignSelected={(itemIds, personIds) => {

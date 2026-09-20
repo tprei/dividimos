@@ -5,8 +5,63 @@ import { centsToBasisPoints,
   divisionStatusText,
   equalDivision,
   isDivisionValid,
+  previewDivision,
   recomputeDivisionShares,
 } from "./item-division";
+
+describe("previewDivision", () => {
+  it("previews each percentage independently while the sum is not 100%", () => {
+    const percentTexts = { a: "35,00", b: "60,00" };
+    const division = computeDivision(500, "percent", ["a", "b"], percentTexts, {});
+
+    const preview = previewDivision(500, "percent", ["a", "b"], percentTexts, {}, division);
+
+    expect(division.ok).toBe(false);
+    expect(preview.centsById).toEqual({ a: 175, b: 300 });
+    expect(preview.basisPointsById).toEqual({ a: 3500, b: 6000 });
+  });
+
+  it("blanks only the unparseable row", () => {
+    const percentTexts = { a: "35,00", b: "abc" };
+    const division = computeDivision(500, "percent", ["a", "b"], percentTexts, {});
+
+    const preview = previewDivision(500, "percent", ["a", "b"], percentTexts, {}, division);
+
+    expect(preview.centsById).toEqual({ a: 175, b: null });
+    expect(preview.basisPointsById.b).toBeNull();
+  });
+
+  it("reuses the exact allocation, remainder included, once the division closes", () => {
+    const percentTexts = { a: "33,33", b: "66,67" };
+    const division = computeDivision(1000, "percent", ["a", "b"], percentTexts, {});
+
+    const preview = previewDivision(1000, "percent", ["a", "b"], percentTexts, {}, division);
+
+    expect(preview.centsById).toEqual({ a: 333, b: 667 });
+  });
+
+  it("keeps a zero item total free of NaN and Infinity ratios", () => {
+    const fixedTexts = { a: "0", b: "0" };
+    const division = computeDivision(0, "fixed", ["a", "b"], {}, fixedTexts);
+
+    const preview = previewDivision(0, "fixed", ["a", "b"], {}, fixedTexts, division);
+
+    expect(preview.basisPointsById).toEqual({ a: null, b: null });
+    for (const cents of Object.values(preview.centsById)) {
+      expect(Number.isFinite(cents ?? 0)).toBe(true);
+    }
+  });
+
+  it("shows a fixed amount as its share of the item total", () => {
+    const fixedTexts = { a: "2,50", b: "1,00" };
+    const division = computeDivision(500, "fixed", ["a", "b"], {}, fixedTexts);
+
+    const preview = previewDivision(500, "fixed", ["a", "b"], {}, fixedTexts, division);
+
+    expect(preview.centsById).toEqual({ a: 250, b: 100 });
+    expect(preview.basisPointsById).toEqual({ a: 5000, b: 2000 });
+  });
+});
 
 describe("computeDivision", () => {
   it("rejects an empty selection", () => {

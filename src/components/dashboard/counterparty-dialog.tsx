@@ -6,14 +6,8 @@ import { Bell, QrCode, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { GuestBadge } from "@/components/shared/guest-avatar";
 import { GuestInviteDialog } from "@/components/expense/guest-invite-dialog";
-import { Money } from "@/components/shared/money";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshExpense } from "@/lib/sync/refresh";
@@ -32,6 +26,8 @@ export interface CounterpartyDialogProps {
   row: DebtRow;
   meId: string;
   open: boolean;
+  /** Row button the surface is anchored to. */
+  anchor: HTMLElement | null;
   onClose: () => void;
   onPay: (row: DebtRow) => void;
   onCollect: (row: DebtRow) => void;
@@ -42,6 +38,7 @@ export function CounterpartyDialog({
   row,
   meId,
   open,
+  anchor,
   onClose,
   onPay,
   onCollect,
@@ -87,80 +84,94 @@ export function CounterpartyDialog({
 
   return (
     <>
-      <Dialog
-        open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) onClose();
+      <Popover
+        open={open && inviteTarget === null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) onClose();
         }}
-        modal
       >
-        <DialogContent className="rounded-3xl bg-card p-5">
-          <DialogTitle className="pr-8 text-lg font-bold">{row.counterpartyName}</DialogTitle>
-          <DialogDescription>
-            {group} · {direction} {formatBRL(row.amountCents)}
-          </DialogDescription>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        <PopoverContent anchor={anchor} side="top" align="center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <PopoverTitle className="truncate">{row.counterpartyName}</PopoverTitle>
+              {row.counterpartyKind === "guest" && <GuestBadge />}
+            </div>
+            <PopoverDescription className="truncate">
+              {group} · {direction} {formatBRL(row.amountCents)}
+            </PopoverDescription>
+          </div>
+          <div className="grid gap-1.5">
             {row.counterpartyKind === "guest" ? (
-              <div className="flex flex-col items-center">
-                <GuestBadge />
-                {guestExpense && (
-                  <div className="mt-5 w-full">
-                    <Button
-                      variant="outline"
-                      className="h-11 w-full"
-                      type="button"
-                      disabled={inviting}
-                      onClick={() => void handleInvite()}
-                    >
-                      <UserPlus className="size-4" aria-hidden="true" />
-                      Convidar
-                    </Button>
-                  </div>
-                )}
-              </div>
+              guestExpense && (
+                <Button
+                  variant="outline"
+                  className="h-10 w-full"
+                  type="button"
+                  disabled={inviting}
+                  onClick={() => void handleInvite()}
+                >
+                  <UserPlus className="size-4" aria-hidden="true" />
+                  Convidar
+                </Button>
+              )
             ) : (
-              <div className="flex flex-col items-center">
-                <Money cents={row.amountCents} className="text-3xl" />
-                {isUserCounterparty && (
-                  <div className="mt-5 w-full space-y-2">
-                    {row.direction === "owes" ? (
-                      <Button className="h-11 w-full" type="button" onClick={() => onPay(row)}>
-                        <QrCode className="size-4" aria-hidden="true" />
-                        Pagar via Pix
-                      </Button>
-                    ) : (
-                      <>
-                        <Button className="h-11 w-full" type="button" onClick={() => onCollect(row)}>
-                          <QrCode className="size-4" aria-hidden="true" />
-                          Cobrar via Pix
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="h-11 w-full"
-                          type="button"
-                          onClick={() => onNudge(row)}
-                        >
-                          <Bell className="size-4" aria-hidden="true" />
-                          Lembrar
-                        </Button>
-                      </>
-                    )}
-                    <Link
-                      href={`/app/conversations/${row.counterpartyId}`}
-                      className={buttonVariants({ variant: "outline", className: "h-11 w-full" })}
+              isUserCounterparty && (
+                <>
+                  {row.direction === "owes" ? (
+                    <Button
+                      className="h-10 w-full"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onPay(row);
+                      }}
                     >
-                      Abrir conversa
-                    </Link>
-                  </div>
-                )}
-              </div>
+                      <QrCode className="size-4" aria-hidden="true" />
+                      Pagar via Pix
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        className="h-10 w-full"
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onCollect(row);
+                        }}
+                      >
+                        <QrCode className="size-4" aria-hidden="true" />
+                        Cobrar via Pix
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-10 w-full"
+                        type="button"
+                        onClick={() => onNudge(row)}
+                      >
+                        <Bell className="size-4" aria-hidden="true" />
+                        Lembrar
+                      </Button>
+                    </>
+                  )}
+                  <Link
+                    href={`/app/conversations/${row.counterpartyId}`}
+                    onClick={onClose}
+                    className={buttonVariants({ variant: "outline", className: "h-10 w-full" })}
+                  >
+                    Abrir conversa
+                  </Link>
+                </>
+              )
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </PopoverContent>
+      </Popover>
       {inviteTarget && (
         <GuestInviteDialog
           open
+          // The row button that opened the menu stays mounted in the list;
+          // the invite surface must keep pointing at it after the menu closes.
+          anchor={anchor}
           onOpenChange={(isOpen) => {
             if (!isOpen) setInviteTarget(null);
           }}

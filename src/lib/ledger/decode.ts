@@ -80,6 +80,8 @@ const NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
   "expenses",
   "settlements",
   "nudges",
+  "groups",
+  "messages",
 ];
 const GROUP_KINDS: readonly GroupKind[] = ["group", "dm"];
 const MEMBER_STATUSES: readonly MemberStatus[] = ["invited", "accepted"];
