@@ -14,6 +14,7 @@ export interface SyntheticFixtures {
   adminClient: SupabaseClient;
   seed: SeedHelper;
   loginAs: (user: SeededUser, options?: LoginAsOptions) => Promise<void>;
+  newSession: (user: SeededUser) => Promise<{ context: BrowserContext; page: Page }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +122,55 @@ export const test = base.extend<SyntheticFixtures>({
     };
 
     await use(login);
+  },
+
+  // A second actor needs its own context, but `browser.newContext()` drops the
+  // project's device profile, so an iPhone project would silently test a
+  // desktop viewport for everyone except the primary actor. Starting from the
+  // project's own context options keeps every actor on the same engine,
+  // viewport, touch, locale, and motion configuration as the test under test.
+  newSession: async (
+    {
+      browser,
+      contextOptions,
+      viewport,
+      userAgent,
+      deviceScaleFactor,
+      isMobile,
+      hasTouch,
+      locale,
+      colorScheme,
+      baseURL,
+    },
+    use,
+  ) => {
+    const opened: BrowserContext[] = [];
+
+    const openSession = async (user: SeededUser) => {
+      const context = await browser.newContext({
+        ...contextOptions,
+        viewport,
+        userAgent,
+        deviceScaleFactor,
+        isMobile,
+        hasTouch,
+        locale,
+        colorScheme,
+        baseURL,
+      });
+      opened.push(context);
+
+      const page = await context.newPage();
+      await loginInContext(context, page, user);
+
+      return { context, page };
+    };
+
+    await use(openSession);
+
+    for (const context of opened) {
+      await context.close();
+    }
   },
 });
 

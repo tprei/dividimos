@@ -251,6 +251,8 @@ describe("optimistic mutations under interleaved responses", () => {
               }
               case "get_group":
                 return snapshotOf(server);
+              case "get_group_overview":
+                return snapshotOf(server);
               case "get_expense":
                 return detailOf(server);
               default:

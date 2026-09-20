@@ -50,8 +50,10 @@ const config: CapacitorConfig = {
       backgroundColor: "#F9F9FB",
     },
     Keyboard: {
-      resize: KeyboardResize.None,
-      resizeOnFullScreen: false,
+      // Native resize is the only keyboard subtraction: the WebView shrinks,
+      // the visual viewport follows, and no JavaScript adds a second offset.
+      resize: KeyboardResize.Native,
+      resizeOnFullScreen: true,
     },
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],

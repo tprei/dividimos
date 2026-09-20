@@ -696,6 +696,8 @@ export type Database = {
       }
       groups: {
         Row: {
+          avatar_emoji: string | null
+          avatar_photo_id: string | null
           created_at: string
           creator_id: string
           dm_user_a: string | null
@@ -707,6 +709,8 @@ export type Database = {
           name: string
         }
         Insert: {
+          avatar_emoji?: string | null
+          avatar_photo_id?: string | null
           created_at?: string
           creator_id: string
           dm_user_a?: string | null
@@ -718,6 +722,8 @@ export type Database = {
           name: string
         }
         Update: {
+          avatar_emoji?: string | null
+          avatar_photo_id?: string | null
           created_at?: string
           creator_id?: string
           dm_user_a?: string | null
@@ -1100,6 +1106,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      bootstrap_overview: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       broadcast_assignment_room: {
         Args: {
           p_room_id: string
@@ -1364,12 +1374,24 @@ export type Database = {
         }
         Returns: Json
       }
+      get_group_avatar: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: Json
+      }
       get_group_expenses: {
         Args: {
           p_group_id: string
           p_before_created_at?: string
           p_before_id?: string
           p_limit?: number
+        }
+        Returns: Json
+      }
+      get_group_overview: {
+        Args: {
+          p_group_id: string
         }
         Returns: Json
       }
@@ -1388,6 +1410,12 @@ export type Database = {
       get_or_create_dm: {
         Args: {
           p_user_id: string
+        }
+        Returns: Json
+      }
+      get_settlement: {
+        Args: {
+          p_settlement_id: string
         }
         Returns: Json
       }
@@ -1495,6 +1523,13 @@ export type Database = {
         Args: {
           p_expense_id: string
           p_version_no: number
+        }
+        Returns: Json
+      }
+      ledger_group_overview_json: {
+        Args: {
+          p_group_id: string
+          p_viewer: string
         }
         Returns: Json
       }
@@ -1670,6 +1705,15 @@ export type Database = {
           p_participant_id: string
           p_expected_item_revision: number
           p_ticks: number
+        }
+        Returns: Json
+      }
+      set_group_avatar: {
+        Args: {
+          p_group_id: string
+          p_actor_id: string
+          p_emoji: string
+          p_photo_id: string
         }
         Returns: Json
       }

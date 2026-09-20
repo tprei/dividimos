@@ -32,16 +32,22 @@ const guest: GuestParticipant = {
 };
 
 function renderDialog(overrides: Partial<GuestParticipant> = {}) {
+  // A real mounted trigger: the popover positions against the row button
+  // exactly as the expense screen does.
+  const anchor = document.createElement("button");
+  anchor.textContent = "trigger";
+  document.body.appendChild(anchor);
   const props = {
     open: true,
     onOpenChange: vi.fn(),
+    anchor,
     guest: { ...guest, ...overrides },
     shareCents: 6000,
     expenseTitle: "Jantar",
     expenseId: "e1",
   };
   const view = render(<GuestInviteDialog {...props} />);
-  return { ...view, props };
+  return { ...view, props, anchor };
 }
 function stubClipboard(writeText: () => Promise<void>) {
   Object.defineProperty(navigator, "clipboard", {
@@ -74,9 +80,29 @@ describe("GuestInviteDialog", () => {
     expect(
       screen.getByRole("button", { name: "Copiar link" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(`http://localhost:3000/claim#gst1_cachedtoken`),
-    ).toBeInTheDocument();
+    // The credential-bearing URL is never printed on the surface.
+    expect(screen.queryByText(/claim#/)).not.toBeInTheDocument();
+  });
+
+  it("copies the exact full claim URL without ever printing it", async () => {
+    // userEvent.setup() installs its own clipboard stub, so the real spy has
+    // to be installed after it.
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    renderDialog();
+
+    expect(screen.queryByText(/claim#/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Copiar link" }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        "http://localhost:3000/claim#gst1_cachedtoken",
+      );
+    });
+    expect(toast.success).toHaveBeenCalledWith("Link copiado");
   });
 
   it("toasts success after copying and keeps the failure visible when copy is denied", async () => {
@@ -99,8 +125,13 @@ describe("GuestInviteDialog", () => {
     });
   });
 
-  it("issues the first token on open and persists it", async () => {
+  it("does not generate a link on open; generation is an explicit action", async () => {
     renderDialog({ claimLinkGeneration: 0 });
+
+    expect(createGuestClaimToken).not.toHaveBeenCalled();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Gerar link" }));
 
     await waitFor(() => {
       expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
@@ -108,9 +139,22 @@ describe("GuestInviteDialog", () => {
     await waitFor(() => {
       expect(refreshExpense).toHaveBeenCalledWith("e1");
     });
-    expect(
-      await screen.findByText(/\/claim#gst1_newtoken$/),
-    ).toBeInTheDocument();
+    expect(readClaimToken(guest.id)).toBe("gst1_newtoken");
+  });
+
+  it("an outside dismiss tap only closes and never revokes the link", async () => {
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    const user = userEvent.setup();
+    const { props } = renderDialog();
+
+    const backdrop = document.querySelector('[data-slot="popover-backdrop"]');
+    expect(backdrop).not.toBeNull();
+    await user.click(backdrop as HTMLElement);
+
+    expect(props.onOpenChange).toHaveBeenCalled();
+    expect(props.onOpenChange.mock.calls[0]?.[0]).toBe(false);
+    expect(revokeGuestClaimToken).not.toHaveBeenCalled();
+    expect(createGuestClaimToken).not.toHaveBeenCalled();
   });
 
   it("replaces the link after confirm and keeps replacing while the guest is unclaimed", async () => {

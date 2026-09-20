@@ -152,18 +152,24 @@ function renderDialog(row: DebtRow) {
     onCollect: vi.fn(),
     onNudge: vi.fn(),
   };
+  // A real mounted trigger: the popover positions against the row button
+  // exactly as the dashboard list does.
+  const anchor = document.createElement("button");
+  anchor.textContent = "trigger";
+  document.body.appendChild(anchor);
   render(
     <CounterpartyDialog
       row={row}
       meId={me.id}
       open
+      anchor={anchor}
       onClose={handlers.onClose}
       onPay={handlers.onPay}
       onCollect={handlers.onCollect}
       onNudge={handlers.onNudge}
     />,
   );
-  return { user, ...handlers };
+  return { user, anchor, ...handlers };
 }
 
 describe("CounterpartyDialog", () => {
@@ -202,7 +208,34 @@ describe("CounterpartyDialog", () => {
 
     expect(screen.queryByRole("button", { name: "Convidar" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Abrir conversa" })).toBeInTheDocument();
+  });
+
+  it("closes the surface before handing off to the Pix presentation", async () => {
+    const row = { ...userRow, direction: "owes" as const };
+    const { user, onClose, onPay } = renderDialog(row);
+
+    await user.click(screen.getByRole("button", { name: "Pagar via Pix" }));
+
+    expect(onPay).toHaveBeenCalledWith(row);
+    expect(onClose).toHaveBeenCalled();
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(
+      onPay.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("an outside dismiss tap closes the surface without firing row actions", async () => {
+    const { user, onClose, onPay, onCollect, onNudge } = renderDialog(userRow);
+
+    const backdrop = document.querySelector('[data-slot="popover-backdrop"]');
+    expect(backdrop).not.toBeNull();
+    await user.click(backdrop as HTMLElement);
+
+    expect(onClose).toHaveBeenCalled();
+    expect(onPay).not.toHaveBeenCalled();
+    expect(onCollect).not.toHaveBeenCalled();
+    expect(onNudge).not.toHaveBeenCalled();
   });
 
   it("reports a failure to load the guest invite", async () => {
