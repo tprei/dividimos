@@ -144,7 +144,7 @@ const userRow: DebtRow = {
   direction: "owed",
 };
 
-function renderDialog(row: DebtRow) {
+function renderDialog(row: DebtRow, nudgeState: "idle" | "sending" | "sent" = "idle") {
   const user = userEvent.setup();
   const handlers = {
     onClose: vi.fn(),
@@ -167,6 +167,7 @@ function renderDialog(row: DebtRow) {
       onPay={handlers.onPay}
       onCollect={handlers.onCollect}
       onNudge={handlers.onNudge}
+      nudgeState={nudgeState}
     />,
   );
   return { user, anchor, ...handlers };
@@ -210,6 +211,14 @@ describe("CounterpartyDialog", () => {
     expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Abrir conversa" })).toBeInTheDocument();
+  });
+
+  it("reports a reminder that already went out instead of inviting a retry", () => {
+    renderDialog(userRow, "sent");
+
+    const remind = screen.getByRole("button", { name: "Lembrete enviado" });
+    expect(remind).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
   });
 
   it("closes the surface before handing off to the Pix presentation", async () => {
