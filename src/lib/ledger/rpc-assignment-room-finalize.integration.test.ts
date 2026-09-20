@@ -166,18 +166,69 @@ describe.skipIf(!isIntegrationTestReady)(
   () => {
     let host: TestUser;
     let selected: TestUser;
+    let groupOwner: TestUser;
     let hostClient: Client;
+    let selectedClient: Client;
+    let groupOwnerClient: Client;
     let anonClient: Client;
 
     beforeAll(async () => {
-      [host, selected] = await createTestUsers(2);
+      [host, selected, groupOwner] = await createTestUsers(3);
       hostClient = authenticateAs(host);
+      selectedClient = authenticateAs(selected);
+      groupOwnerClient = authenticateAs(groupOwner);
       anonClient = createClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         { auth: { persistSession: false, autoRefreshToken: false } }
       );
     });
+
+    /**
+     * Host plus one signed-in participant who joined through the invitation,
+     * each owning half of the only line, with the room closed for review.
+     */
+    async function closedAccountRoom(
+      joiner: Client,
+      groupTarget?: Json
+    ): Promise<{ args: CreateArgs; closed: RoomView; joinedId: string }> {
+      const token = memberToken();
+      const args = roomArgs(host, groupTarget);
+      const created = await createRoom(hostClient, args);
+      const joined = await rpc<RoomView>(joiner, "join_assignment_room", {
+        p_room_id: args.p_room_id,
+        p_join_token: args.p_join_token,
+        p_member_token: token,
+        p_display_name: "",
+      });
+      let current = await claim(
+        hostClient,
+        args.p_room_id,
+        null,
+        created.room.items[0].id,
+        created.room.selfParticipantId,
+        created.room.items[0].revision,
+        60_000
+      );
+      current = await claim(
+        joiner,
+        args.p_room_id,
+        token,
+        current.room.items[0].id,
+        joined.room.selfParticipantId,
+        current.room.items[0].revision,
+        60_000
+      );
+      return {
+        args,
+        joinedId: joined.room.selfParticipantId,
+        closed: await closeRoom(
+          hostClient,
+          args.p_room_id,
+          current.room.revision
+        ),
+      };
+    }
 
     async function closedThreeWayRoom(
       groupTarget?: Json
@@ -343,39 +394,226 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(after).toBe(before);
     });
 
-    it("maps users without group membership to guests and rejects them as payers", async () => {
-      const args = roomArgs(host, undefined, [
-        {
-          id: crypto.randomUUID(),
-          displayName: selected.name,
-          userId: selected.id,
-        },
-      ]);
-      const created = await createRoom(hostClient, args);
-      const claimed = await claim(
+    it("keeps an account share and invites that account into a new group", async () => {
+      const { args, closed } = await closedAccountRoom(selectedClient);
+      const result = await finalize(
         hostClient,
         args.p_room_id,
-        null,
-        created.room.items[0].id,
-        created.room.selfParticipantId,
-        created.room.items[0].revision,
-        120_000
+        closed.room.revision,
+        expensePayload(closed)
       );
-      const closed = await closeRoom(
+
+      const ledger = await withPg(async (db) => {
+        const participants = await db.query<{ payload: Json }>(
+          "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+          [result.ack.expenseId]
+        );
+        const membership = await db.query<{ status: string }>(
+          "select status from public.group_members where group_id = $1 and user_id = $2",
+          [result.ack.groupId, selected.id]
+        );
+        const guests = await db.query<{ count: number }>(
+          "select count(*)::int as count from public.guests where expense_id = $1",
+          [result.ack.expenseId]
+        );
+        return {
+          payload: participants.rows[0].payload as {
+            participants: Array<{ kind: string; userId?: string }>;
+          },
+          membership: membership.rows[0]?.status ?? null,
+          guests: guests.rows[0].count,
+        };
+      });
+
+      expect(ledger.payload.participants).toEqual(
+        expect.arrayContaining([{ kind: "user", userId: selected.id }])
+      );
+      expect(ledger.membership).toBe("invited");
+      expect(ledger.guests).toBe(0);
+    });
+
+    it("invites a new account into an existing group and leaves members alone", async () => {
+      const groupId = await createGroupWithMembers(
+        host,
+        [groupOwner],
+        "Grupo com membro"
+      );
+      const { args, closed } = await closedAccountRoom(selectedClient, {
+        kind: "existing",
+        groupId,
+      });
+      const result = await finalize(
         hostClient,
         args.p_room_id,
-        claimed.room.revision
+        closed.room.revision,
+        expensePayload(closed)
       );
-      const forgedPayer = expensePayload(closed, 1);
+      expect(result.ack.groupId).toBe(groupId);
+
+      const membership = await withPg(async (db) => {
+        const rows = await db.query<{ user_id: string; status: string }>(
+          "select user_id, status from public.group_members where group_id = $1 order by user_id",
+          [groupId]
+        );
+        const invitations = await db.query<{ count: number }>(
+          "select count(*)::int as count from public.group_events where group_id = $1 and kind = 'member_invited' and subject_user_id = $2",
+          [groupId, selected.id]
+        );
+        return { rows: rows.rows, invitations: invitations.rows[0].count };
+      });
+      const byUser = new Map(
+        membership.rows.map((row) => [row.user_id, row.status])
+      );
+      expect(byUser.get(host.id)).toBe("accepted");
+      expect(byUser.get(groupOwner.id)).toBe("accepted");
+      expect(byUser.get(selected.id)).toBe("invited");
+      expect(membership.invitations).toBe(1);
+    });
+
+    it("rolls back the invitation when the payload is forged", async () => {
+      const groupId = await createGroupWithMembers(host, [], "Grupo intacto");
+      const { args, closed } = await closedAccountRoom(selectedClient, {
+        kind: "existing",
+        groupId,
+      });
+      // The invitation loop runs before the payload comparison, so a payload
+      // that demotes the account holder to a guest fails after those writes.
+      const valid = expensePayload(closed);
+      const forged: ExpensePayload = {
+        ...valid,
+        participants: valid.participants.map((ref, index) =>
+          index === 1
+            ? { kind: "guest", guestId: null, displayName: "Impostor" }
+            : ref
+        ),
+      };
       expect(
         await expectRpcError(
           hostClient.rpc("finalize_assignment_room", {
             p_room_id: args.p_room_id,
             p_expected_revision: closed.room.revision,
-            p_payload: forgedPayer,
+            p_payload: forged,
           })
         )
       ).toContain("invalid_payload");
+
+      const traces = await withPg(async (db) => {
+        const result = await db.query<{
+          members: number;
+          events: number;
+          expenses: number;
+        }>(
+          "select (select count(*)::int from public.group_members where group_id = $1 and user_id = $2) as members, " +
+            "(select count(*)::int from public.group_events where group_id = $1 and subject_user_id = $2) as events, " +
+            "(select count(*)::int from public.expenses where client_id = $3) as expenses",
+          [groupId, selected.id, args.p_room_id]
+        );
+        return result.rows[0];
+      });
+      expect(traces).toEqual({ members: 0, events: 0, expenses: 0 });
+    });
+
+    it("adds no second invitation when a finalized room is retried", async () => {
+      const groupId = await createGroupWithMembers(host, [], "Grupo repetido");
+      const { args, closed } = await closedAccountRoom(selectedClient, {
+        kind: "existing",
+        groupId,
+      });
+      const payload = expensePayload(closed);
+      const first = await finalize(
+        hostClient,
+        args.p_room_id,
+        closed.room.revision,
+        payload
+      );
+      const retry = await finalize(
+        hostClient,
+        args.p_room_id,
+        closed.room.revision,
+        payload
+      );
+      expect(retry.ack.expenseId).toBe(first.ack.expenseId);
+
+      const counts = await withPg(async (db) => {
+        const result = await db.query<{
+          members: number;
+          invitations: number;
+          expenses: number;
+        }>(
+          "select (select count(*)::int from public.group_members where group_id = $1 and user_id = $2) as members, " +
+            "(select count(*)::int from public.group_events where group_id = $1 and kind = 'member_invited' and subject_user_id = $2) as invitations, " +
+            "(select count(*)::int from public.expenses where client_id = $3) as expenses",
+          [groupId, selected.id, args.p_room_id]
+        );
+        return result.rows[0];
+      });
+      expect(counts).toEqual({ members: 1, invitations: 1, expenses: 1 });
+    });
+
+    it("recovers a closed room when a participant loses group access", async () => {
+      const groupId = await createGroupWithMembers(
+        groupOwner,
+        [host, selected],
+        "Grupo do dono"
+      );
+      const { args, closed, joinedId } = await closedAccountRoom(
+        selectedClient,
+        { kind: "existing", groupId }
+      );
+
+      // The group creator, who is not this room's host, revokes access after
+      // the person already picked their items.
+      await rpc<unknown>(groupOwnerClient, "remove_member", {
+        p_group_id: groupId,
+        p_user_id: selected.id,
+      });
+      expect(
+        await expectRpcError(
+          hostClient.rpc("finalize_assignment_room", {
+            p_room_id: args.p_room_id,
+            p_expected_revision: closed.room.revision,
+            p_payload: expensePayload(closed),
+          })
+        )
+      ).toContain("member_excluded");
+
+      const corrected = await rpc<RoomView>(
+        hostClient,
+        "remove_assignment_room_participant",
+        {
+          p_room_id: args.p_room_id,
+          p_participant_id: joinedId,
+          p_expected_revision: closed.room.revision,
+          p_join_token: joinToken("Z"),
+        }
+      );
+      expect(corrected.room.status).toBe("closed");
+      const reassigned = await claim(
+        hostClient,
+        args.p_room_id,
+        null,
+        corrected.room.items[0].id,
+        corrected.room.selfParticipantId,
+        corrected.room.items[0].revision,
+        120_000
+      );
+      const result = await finalize(
+        hostClient,
+        args.p_room_id,
+        reassigned.room.revision,
+        expensePayload(reassigned)
+      );
+      expect(result.ack.groupId).toBe(groupId);
+
+      const aftermath = await withPg(async (db) => {
+        const rows = await db.query<{ members: number; expenses: number }>(
+          "select (select count(*)::int from public.group_members where group_id = $1 and user_id = $2) as members, " +
+            "(select count(*)::int from public.expenses where client_id = $3) as expenses",
+          [groupId, selected.id, args.p_room_id]
+        );
+        return rows.rows[0];
+      });
+      expect(aftermath).toEqual({ members: 0, expenses: 1 });
     });
 
     it("rejects removed host membership and a colliding expense client id", async () => {
