@@ -184,6 +184,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "fetched-br-code",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 3000 });
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -391,8 +392,8 @@ describe("PixQrModal", () => {
   it("renders the Metade pill as a plain button without a midpoint snap marker", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
 
-    expect(screen.getByRole("button", { name: `Metade: ${formatBRL(6077)}` })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: `Tudo: ${formatBRL(12154)}` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Metade" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tudo" })).toBeInTheDocument();
 
     // Metade sets the value directly; it is not a snap point the slider can land on.
     const expectedLeft = `${((6077 - 100) / (12154 - 100)) * 100}%`;
@@ -556,6 +557,7 @@ describe("PixQrModal", () => {
       expect.anything(),
       "br-code-for-10000",
       expect.anything(),
+      expect.any(Function),
     );
   });
 
@@ -612,6 +614,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-10000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 3000 });
 
@@ -621,6 +624,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-5000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 4000 });
 
@@ -632,6 +636,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-10000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 4000 });
   });
@@ -682,8 +687,8 @@ describe("PixQrModal", () => {
   it("renders amount chips enabled with aria-pressed reflecting selection", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} amountCents={10000} />);
 
-    const tudoBtn = screen.getByRole("button", { name: /^Tudo:/i });
-    const metadeBtn = screen.getByRole("button", { name: /^Metade:/i });
+    const tudoBtn = screen.getByRole("button", { name: "Tudo" });
+    const metadeBtn = screen.getByRole("button", { name: "Metade" });
 
     expect(tudoBtn).not.toBeDisabled();
     expect(tudoBtn).toHaveAttribute("aria-pressed", "true");

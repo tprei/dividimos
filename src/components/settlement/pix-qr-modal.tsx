@@ -3,6 +3,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
+  Circle,
+  Contrast,
   Copy,
   KeyRound,
   Loader2,
@@ -35,6 +37,7 @@ import {
   getSnapStep,
 } from "@/lib/slider-snap";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { cn } from "@/lib/utils";
 
 type PixQrModalSource =
   | { pixKey: string; recipientUserId?: never; groupId?: never }
@@ -270,14 +273,23 @@ export function PixQrModal({
       ? payload.code
       : "";
 
+  const showsQr = Boolean(copiaECola) && (showPayQr || mode === "collect");
+
   const paintQr = useCallback(
     (node: HTMLCanvasElement | null) => {
       if (!node || !copiaECola) return;
-      QRCode.toCanvas(node, copiaECola, {
-        width: 240,
-        margin: 2,
-        color: { dark: "#1a1d2e", light: "#ffffff" },
-      });
+      QRCode.toCanvas(
+        node,
+        copiaECola,
+        { width: 240, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } },
+        () => {
+          // The library pins the drawn size with inline styles, which would
+          // outrank the class that shrinks the code on a short screen. The
+          // bitmap stays 240px; only its display size follows the layout.
+          node.style.removeProperty("width");
+          node.style.removeProperty("height");
+        },
+      );
     },
     [copiaECola],
   );
@@ -343,7 +355,7 @@ export function PixQrModal({
       <DialogContent
         showCloseButton={!isSettling && !showSuccess}
         initialFocus={false}
-        className="sm:max-w-md rounded-3xl bg-card p-0"
+        className="sm:max-w-md rounded-3xl bg-card p-0 overflow-hidden max-sm:h-full compact:h-auto"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
@@ -409,21 +421,16 @@ export function PixQrModal({
               key="form"
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
-                <div className="text-center">
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
-                  >
-                    <QrCode className="h-7 w-7" />
-                  </motion.div>
-                  <DialogTitle className="mt-4 text-lg font-bold">
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-3 compact:pt-2 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
+                <div className="compact:flex compact:items-start compact:gap-3 compact:pr-9">
+                <div className="min-w-0 text-center compact:flex-1">
+                  <DialogTitle className="flex items-center justify-center gap-2 text-lg font-bold compact:text-base">
+                    <QrCode className="size-5 text-primary-text" aria-hidden="true" />
                     {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm text-muted-foreground">
+                  <DialogDescription className="mt-1 text-sm text-muted-foreground compact:hidden">
                     {mode === "collect" ? "de" : "para"}{" "}
                     <span className="font-medium text-foreground">{recipientName}</span>
                   </DialogDescription>
@@ -431,7 +438,7 @@ export function PixQrModal({
                   <div className="mt-3">
                     {editingAmount ? (
                       <label
-                        className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary-text"
+                        className="flex items-center justify-center gap-1 text-3xl compact:text-2xl font-bold tabular-nums text-primary-text"
                         onBlur={commitAmount}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === "Escape") commitAmount();
@@ -445,7 +452,7 @@ export function PixQrModal({
                           maxCents={amountCents}
                           onChangeCents={setPaymentCents}
                           aria-label="Editar valor"
-                          className="h-12 w-40 text-3xl font-bold text-primary-text"
+                          className="h-12 w-40 text-3xl font-bold text-primary-text compact:h-10 compact:w-28 compact:text-2xl"
                         />
                       </label>
                     ) : (
@@ -460,21 +467,58 @@ export function PixQrModal({
                         <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
                       </button>
                     )}
-                    <input
-                      type="range"
-                      min={sliderMin}
-                      max={amountCents}
-                      step={1}
-                      value={paymentCents}
-                      onChange={handleSliderChange}
-                      onKeyDown={handleSliderKeyDown}
-                      disabled={isSettling}
-                      className="mt-3 w-full"
-                      aria-label="Valor do pagamento"
-                      aria-valuetext={formatBRL(paymentCents)}
-                    />
+                    {/* Slider and its two shortcuts share one row: the
+                        shortcuts set the same value the slider does, and a
+                        separate row for them cost more height than they earn. */}
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={sliderMin}
+                        max={amountCents}
+                        step={1}
+                        value={paymentCents}
+                        onChange={handleSliderChange}
+                        onKeyDown={handleSliderKeyDown}
+                        disabled={isSettling}
+                        className="min-w-0 flex-1"
+                        aria-label="Valor do pagamento"
+                        aria-valuetext={formatBRL(paymentCents)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPaymentCents(amountCents)}
+                        disabled={isSettling}
+                        aria-pressed={paymentCents === amountCents}
+                        aria-label="Tudo"
+                        title="Tudo"
+                        className={`relative flex size-11 shrink-0 items-center justify-center rounded-full transition-all compact:size-9 compact:after:absolute compact:after:-inset-1 compact:after:content-[''] ${
+                          paymentCents === amountCents
+                            ? "text-primary-text"
+                            : "text-muted-foreground hover:text-primary-text"
+                        } disabled:opacity-50`}
+                      >
+                        <Circle className="size-4" fill="currentColor" aria-hidden="true" />
+                      </button>
+                      {halfAvailable && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCents(halfCents)}
+                          disabled={isSettling}
+                          aria-pressed={paymentCents === halfCents}
+                          aria-label="Metade"
+                          title="Metade"
+                          className={`relative flex size-11 shrink-0 items-center justify-center rounded-full transition-all compact:size-9 compact:after:absolute compact:after:-inset-1 compact:after:content-[''] ${
+                            paymentCents === halfCents
+                              ? "text-primary-text"
+                              : "text-muted-foreground hover:text-primary-text"
+                          } disabled:opacity-50`}
+                        >
+                          <Contrast className="size-4" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
                     {snapPoints.length > 0 && amountCents > sliderMin && (
-                      <div className="relative mx-[11px] h-2">
+                      <div className="relative mr-[100px] ml-[11px] h-2 compact:hidden">
                         {snapPoints.map((v) => (
                           <div
                             key={v}
@@ -487,80 +531,54 @@ export function PixQrModal({
                       </div>
                     )}
 
-                    <div className="mt-2 flex justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentCents(amountCents)}
-                        disabled={isSettling}
-                        aria-pressed={paymentCents === amountCents}
-                        className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
-                          paymentCents === amountCents
-                            ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
-                            : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
-                        } disabled:opacity-50`}
-                      >
-                        Tudo: {formatBRL(amountCents)}
-                      </button>
-                      {halfAvailable && (
-                        <button
-                          type="button"
-                          onClick={() => setPaymentCents(halfCents)}
-                          disabled={isSettling}
-                          aria-pressed={paymentCents === halfCents}
-                          className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
-                            paymentCents === halfCents
-                              ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
-                              : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
-                          } disabled:opacity-50`}
-                        >
-                          Metade: {formatBRL(halfCents)}
-                        </button>
-                      )}
-                    </div>
-
                     {!isFullPayment && isValidAmount && (
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground compact:hidden">
                         Resta depois do Pix: {formatBRL(amountCents - paymentCents)}
                       </p>
                     )}
                   </div>
-                </div>
 
-                {copiaECola && mode === "pay" && (
-                  <div className="mt-5 text-left">
-                    <p className="text-sm text-muted-foreground">
-                      Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 min-h-11 gap-2 rounded-full px-4"
-                      aria-expanded={showPayQr}
-                      aria-controls="pix-qr-region"
-                      onClick={() => setShowPayQr((v) => !v)}
-                    >
-                      <QrCode className="h-4 w-4" />
-                      {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
-                    </Button>
-                  </div>
-                )}
-              <div id="pix-qr-region">
-                {(showPayQr || mode === "collect") && copiaECola ? (
+                  {copiaECola && mode === "pay" && (
+                    <div className="mt-5 text-left compact:mt-2">
+                      <p className="text-sm text-muted-foreground compact:hidden">
+                        Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 min-h-11 gap-2 rounded-full px-4 compact:mt-0 compact:h-9 compact:min-h-9 compact:w-full compact:px-2 compact:text-xs"
+                        aria-expanded={showPayQr}
+                        aria-controls="pix-qr-region"
+                        onClick={() => setShowPayQr((v) => !v)}
+                      >
+                        <QrCode className="h-4 w-4" />
+                        {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              {/* The column only claims width when it has something in it;
+                  pay mode leaves it empty until the disclosure is opened. */}
+              <div
+                id="pix-qr-region"
+                className={cn(showsQr && "compact:w-[112px] compact:shrink-0")}
+              >
+                {showsQr ? (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm compact:mt-0 compact:p-2"
                   >
-                    <canvas ref={paintQr} />
+                    <canvas ref={paintQr} className="compact:size-[104px]" />
                   </motion.div>
                 ) : !copiaECola ? (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="mt-6 flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
+                    className="mt-6 compact:mt-0 flex min-h-[240px] compact:min-h-[134px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
                   >
                     {payload.status === "idle" || payload.status === "loading" ? (
                       <div className="flex h-[240px] w-[240px] items-center justify-center">
@@ -632,23 +650,24 @@ export function PixQrModal({
                   </motion.div>
                 ) : null}
               </div>
+                </div>
 
               {!copiaECola && (
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground compact:hidden">
                   <Shield className="h-3 w-3" />
                   <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
                 </div>
               )}
 
                 {mode === "collect" && (
-                  <p className="mt-5 text-sm text-muted-foreground">
+                  <p className="mt-5 text-sm text-muted-foreground compact:hidden">
                     Registrar não move dinheiro, só marca que ele te pagou por fora.
                   </p>
                 )}
               </div>
 
-              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)]">
-                <div className="space-y-2.5">
+              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)] compact:p-3 compact:pt-2 compact:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+                <div className="space-y-2.5 compact:flex compact:gap-2 compact:space-y-0 compact:[&>button]:flex-1">
                   <Button
                     onClick={handleCopy}
                     variant="outline"

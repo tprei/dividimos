@@ -48,6 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  document.documentElement.removeAttribute("data-keyboard");
   vi.useRealTimers();
 });
 
@@ -83,6 +84,28 @@ describe("useAppViewport", () => {
     await settle();
 
     expect(result.current.keyboardOpen).toBe(true);
+    expect(document.documentElement.getAttribute("data-keyboard")).toBe("open");
+  });
+
+  it("keeps the keyboard flag while any mounted surface still reports one", async () => {
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+
+    // The shell always runs the hook; a chat sheet mounts a second instance.
+    const shell = renderHook(() => useAppViewport());
+    const sheet = renderHook(() => useAppViewport());
+    await settle();
+
+    input.focus();
+    viewport.height = FULL_HEIGHT - 336;
+    await settle();
+    expect(document.documentElement.getAttribute("data-keyboard")).toBe("open");
+
+    sheet.unmount();
+    expect(document.documentElement.getAttribute("data-keyboard")).toBe("open");
+
+    shell.unmount();
+    expect(document.documentElement.hasAttribute("data-keyboard")).toBe(false);
   });
 
   it("ignores a height drop while no text field is focused", async () => {
@@ -97,6 +120,7 @@ describe("useAppViewport", () => {
     await settle();
 
     expect(result.current.keyboardOpen).toBe(false);
+    expect(document.documentElement.hasAttribute("data-keyboard")).toBe(false);
   });
 
   it("treats pinch zoom as zoom, not as a keyboard, and freezes the geometry", async () => {

@@ -3,6 +3,18 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant keyboard (&:is([data-keyboard="open"] *));
+
+/* Either the keyboard is up or the screen is simply short: both leave an
+   overlay the same sliver of height, so they share one layout switch. */
+@custom-variant compact {
+  &:is([data-keyboard="open"] *) {
+    @slot;
+  }
+  @media (max-height: 640px) {
+    @slot;
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
