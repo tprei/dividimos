@@ -350,7 +350,7 @@ describe("AppShell haptics", () => {
       lastBootstrappedAccountId: mockMe.id,
       // The store is a module singleton: without resetting the activity read,
       // an earlier test's failed load makes refresh fetch activity here too.
-      activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
+      activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
     });
   });
 

@@ -233,6 +233,8 @@ describe("ActivityContent", () => {
         oldestId: 101,
         complete: false,
         read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
   });
@@ -244,6 +246,8 @@ describe("ActivityContent", () => {
         oldestId: null,
         complete: false,
         read: { status: "error", code: "network" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 
@@ -261,6 +265,8 @@ describe("ActivityContent", () => {
         oldestId: null,
         complete: false,
         read: { status: "error", code: "network" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 
@@ -276,6 +282,8 @@ describe("ActivityContent", () => {
         oldestId: 101,
         complete: true,
         read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 
@@ -438,6 +446,8 @@ describe("ActivityContent", () => {
         oldestId: 101,
         complete: false,
         read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 
@@ -460,6 +470,8 @@ describe("ActivityContent", () => {
         oldestId: 105,
         complete: false,
         read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 
@@ -488,6 +500,8 @@ describe("ActivityContent", () => {
         oldestId: null,
         complete: false,
         read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
       },
     });
 

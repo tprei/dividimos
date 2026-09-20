@@ -565,6 +565,8 @@ describe("reset", () => {
       oldestId: null,
       complete: false,
       read: { status: "idle" },
+      readIds: [],
+      dismissedIds: [],
     });
     expect(state.activityViewedAt).toEqual({});
     expect(state.lastBootstrapAt).toBeNull();
@@ -697,6 +699,15 @@ describe("migrateAppState", () => {
       complete: false,
       total: null,
     });
+  });
+
+  it("gives an activity slice persisted before read receipts existed empty id lists", () => {
+    const migrated = migrateAppState({
+      activity: { items: [], oldestId: null, complete: false, read: { status: "ready" } },
+    });
+
+    expect(migrated.activity.readIds).toEqual([]);
+    expect(migrated.activity.dismissedIds).toEqual([]);
   });
 
   it("keeps a complete expense list shape when an expense arrives first", () => {
@@ -836,5 +847,19 @@ describe("settlement details", () => {
     });
 
     expect(migrated.settlementDetails).toEqual({});
+  });
+});
+
+describe("applyActivity", () => {
+  it("prunes local dismissed and read ids to the cached window", () => {
+    useAppStore.getState().dismissEvent(7);
+    useAppStore.getState().markEventRead(8);
+
+    useAppStore
+      .getState()
+      .applyActivity([event(8, "2026-09-18T12:00:00.000Z"), event(9, "2026-09-19T12:00:00.000Z")], true);
+
+    expect(useAppStore.getState().activity.dismissedIds).toEqual([]);
+    expect(useAppStore.getState().activity.readIds).toEqual([8]);
   });
 });

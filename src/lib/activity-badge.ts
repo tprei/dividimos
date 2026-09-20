@@ -1,4 +1,4 @@
-import type { GroupSnapshot } from "@/types/ledger";
+import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 
 /**
  * Newest activity timestamp across the authoritative group snapshots. Group
@@ -26,4 +26,19 @@ export function hasUnreadActivity(
   if (newestAt === null) return false;
   if (viewedAt === undefined) return true;
   return newestAt > viewedAt;
+}
+
+/**
+ * Whether a single activity row is still unread for this account: an explicit
+ * read always wins, and without one the row is unread when it was published
+ * after the account last viewed the activity page.
+ */
+export function isEventUnread(
+  event: Pick<GroupEvent, "id" | "createdAt">,
+  readIds: readonly number[],
+  viewedAt: string | undefined,
+): boolean {
+  if (readIds.includes(event.id)) return false;
+  if (viewedAt === undefined) return true;
+  return event.createdAt > viewedAt;
 }

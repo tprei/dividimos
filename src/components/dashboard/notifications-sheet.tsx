@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { NotificationRow } from "./notification-row";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
+import { isEventUnread } from "@/lib/activity-badge";
 import { formatRelativeDate } from "@/lib/datetime";
 import { describeEvent } from "@/lib/ledger/event-copy";
 import { getGroupName, makeNameOf } from "@/lib/ledger/group-names";
@@ -80,6 +82,11 @@ export function NotificationsSheet({
   const events = useAppStore(useShallow((s) => s.activity.items));
   const read = useAppStore(useShallow((s) => s.activity.read));
   const groups = useAppStore(useShallow((s) => s.groups));
+  const readIds = useAppStore(useShallow((s) => s.activity.readIds));
+  const dismissedIds = useAppStore(useShallow((s) => s.activity.dismissedIds));
+  const viewedAt = useAppStore(useShallow((s) => s.activityViewedAt[meId]));
+  const markEventRead = useAppStore(useShallow((s) => s.markEventRead));
+  const dismissEvent = useAppStore(useShallow((s) => s.dismissEvent));
 
   useEffect(() => {
     // One read per open boundary, and only when nothing has been loaded yet:
@@ -97,9 +104,13 @@ export function NotificationsSheet({
   }, []);
 
   // Invitations first, then the newest activity, capped at five rows total.
+  // Dismissed rows leave before the cap, so the next row fills the slot.
   const previewEvents = useMemo<GroupEvent[]>(
-    () => events.slice(0, Math.max(0, PREVIEW_LIMIT - invitations.length)),
-    [events, invitations.length],
+    () =>
+      events
+        .filter((event) => !dismissedIds.includes(event.id))
+        .slice(0, Math.max(0, PREVIEW_LIMIT - invitations.length)),
+    [events, dismissedIds, invitations.length],
   );
   const previewInvitations = invitations.slice(0, PREVIEW_LIMIT);
 
@@ -153,10 +164,16 @@ export function NotificationsSheet({
               const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
               return (
                 <li key={event.id}>
-                  <Link
+                  <NotificationRow
+                    eventId={event.id}
+                    unread={isEventUnread(event, readIds, viewedAt)}
                     href={event.expenseId ? `/app/bill/${event.expenseId}` : "/app/activity"}
-                    onClick={() => onOpenChange(false)}
-                    className="flex items-start gap-2 rounded-lg p-2 transition-colors hover:bg-accent/40"
+                    onNavigate={() => {
+                      markEventRead(event.id);
+                      onOpenChange(false);
+                    }}
+                    onMarkRead={() => markEventRead(event.id)}
+                    onDismiss={() => dismissEvent(event.id)}
                   >
                     <UserAvatar
                       name={actorName}
@@ -177,7 +194,7 @@ export function NotificationsSheet({
                         {getGroupName(event.groupId, groups, meId)} · {formatRelativeDate(event.createdAt)}
                       </p>
                     </div>
-                  </Link>
+                  </NotificationRow>
                 </li>
               );
             })}
