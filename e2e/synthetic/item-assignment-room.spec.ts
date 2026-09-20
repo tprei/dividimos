@@ -104,7 +104,18 @@ test.describe("Assignment room multi-client acceptance", () => {
     let guestAContext: BrowserContext | null = null;
     let guestBContext: BrowserContext | null = null;
 
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    // WebKit rejects the clipboard permissions Chromium grants, so record what
+    // the app copies instead of reading the real clipboard.
+    await context.addInitScript(() => {
+      const record = (text: string) => {
+        (window as unknown as { __copiedText?: string }).__copiedText = text;
+        return Promise.resolve();
+      };
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: record, readText: () => Promise.resolve("") },
+      });
+    });
     await page.route("**/api/receipt/ocr", async (route) => {
       await route.fulfill({
         status: 200,
@@ -162,7 +173,9 @@ test.describe("Assignment room multi-client acceptance", () => {
       await page.getByRole("button", { name: "Mostrar convite" }).click();
       await page.getByRole("button", { name: "Copiar link" }).click();
       await expect(page.getByRole("button", { name: "Link copiado" })).toBeVisible();
-      const invitation = await page.evaluate<string>("navigator.clipboard.readText()");
+      const invitation = await page.evaluate<string>(
+        "window.__copiedText ?? ''",
+      );
       expect(invitation).toMatch(new RegExp(`/room/${roomId}#armj1_`));
       await page.getByRole("button", { name: "Recolher convite" }).click();
 
