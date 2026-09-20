@@ -5,12 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+} from "@/components/ui/popover";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { buildClaimUrl } from "@/lib/claim-qr";
 import { clearClaimToken, readClaimTokenEntry, writeClaimToken } from "@/lib/claim-token-cache";
@@ -24,6 +23,8 @@ import type { GuestParticipant } from "@/types/ledger";
 interface GuestInviteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Row or control the surface is anchored to (the button that opened it). */
+  anchor: HTMLElement | null;
   guest: GuestParticipant;
   shareCents: number;
   expenseTitle: string;
@@ -33,6 +34,7 @@ interface GuestInviteDialogProps {
 export function GuestInviteDialog({
   open,
   onOpenChange,
+  anchor,
   guest,
   shareCents,
   expenseTitle,
@@ -94,18 +96,17 @@ export function GuestInviteDialog({
       setExpiresAt(null);
       return;
     }
+    // Opening only reads the local cache: a popover boundary must never
+    // generate or revoke a link on its own. Issuing is an explicit action.
     const cached = readClaimTokenEntry(guest.id);
     if (cached) {
       setToken(cached.token);
       setExpiresAt(cached.expiresAt);
-      return;
+    } else {
+      setToken(null);
+      setExpiresAt(null);
     }
-    setToken(null);
-    setExpiresAt(null);
-    if (guest.claimLinkGeneration === 0) {
-      void issue();
-    }
-  }, [open, guest.id, guest.claimLinkGeneration, guest.claimedBy, issue]);
+  }, [open, guest.id, guest.claimedBy]);
 
   const claimUrl = token ? buildClaimUrl(token) : null;
   const canReplace = guest.claimedBy === null;
@@ -136,34 +137,21 @@ export function GuestInviteDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="text-lg font-bold">
-            Convidar {guest.displayName}
-          </DialogTitle>
-          <DialogDescription>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverContent anchor={anchor} side="top" align="center">
+        <div className="min-w-0">
+          <PopoverTitle className="truncate">Convidar {guest.displayName}</PopoverTitle>
+          <PopoverDescription className="truncate">
             Parte de {formatBRL(shareCents)} em {expenseTitle}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+          </PopoverDescription>
+        </div>
+        {claimUrl ? (
           <div className="grid gap-2">
-            {claimUrl && (
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {claimUrl}
-              </p>
-            )}
-            {claimUrl && expiresAt && (
-              <p className="text-xs text-muted-foreground">
-                Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
-              </p>
-            )}
             <div className="grid grid-cols-2 gap-2">
               {canShare && (
                 <Button
                   type="button"
-                  className="h-11 w-full"
-                  disabled={!claimUrl}
+                  className="h-10 w-full"
                   onClick={() => void handleShare()}
                 >
                   <Share2 className="size-4" />
@@ -173,8 +161,7 @@ export function GuestInviteDialog({
               <Button
                 type="button"
                 variant="outline"
-                className={cn("h-11 w-full", !canShare && "col-span-2")}
-                disabled={!whatsappUrl}
+                className={cn("h-10 w-full", !canShare && "col-span-2")}
                 render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
               >
                 <MessageCircle className="size-4" />
@@ -184,32 +171,20 @@ export function GuestInviteDialog({
             <Button
               type="button"
               variant="outline"
-              className="h-11 w-full"
-              disabled={!claimUrl}
+              className="h-10 w-full"
               onClick={() => void handleCopy()}
             >
               <Copy className="size-4" />
               Copiar link
             </Button>
-            {!claimUrl && (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-full"
-                disabled={working}
-                onClick={() => void issue()}
-              >
-                <RefreshCw className="size-4" />
-                {working ? "Gerando link..." : "Gerar link"}
-              </Button>
-            )}
-            {!claimUrl && guest.claimLinkGeneration > 0 && (
-              <p role="status" className="text-xs text-muted-foreground">
-                O link atual só está salvo no aparelho onde foi gerado. Gere outro para
-                compartilhar daqui.
+            {expiresAt && (
+              <p className="text-xs text-muted-foreground">
+                Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
               </p>
             )}
-            {claimUrl && canReplace && !confirming && (
+            {/* The credential-bearing URL is never printed here; sharing and
+                copying carry the exact link without displaying it. */}
+            {canReplace && !confirming && (
               <Button
                 type="button"
                 variant="ghost"
@@ -221,7 +196,7 @@ export function GuestInviteDialog({
                 Substituir link
               </Button>
             )}
-            {claimUrl && canReplace && confirming && (
+            {canReplace && confirming && (
               <div className="grid gap-2 rounded-xl border bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground">
                   Invalidar link atual?
@@ -250,7 +225,7 @@ export function GuestInviteDialog({
                 </div>
               </div>
             )}
-            {claimUrl && canReplace && !confirming && (
+            {canReplace && !confirming && (
               <Button
                 type="button"
                 variant="ghost"
@@ -264,8 +239,27 @@ export function GuestInviteDialog({
               </Button>
             )}
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        ) : (
+          <div className="grid gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 w-full"
+              disabled={working}
+              onClick={() => void issue()}
+            >
+              <RefreshCw className="size-4" />
+              {working ? "Gerando link..." : "Gerar link"}
+            </Button>
+            {guest.claimLinkGeneration > 0 && (
+              <p role="status" className="text-xs text-muted-foreground">
+                O link atual só está salvo no aparelho onde foi gerado. Gere outro para
+                compartilhar daqui.
+              </p>
+            )}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

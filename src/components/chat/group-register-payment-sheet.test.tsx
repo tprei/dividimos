@@ -22,6 +22,11 @@ function renderSheet(
   onLeavePending = vi.fn(),
 ) {
   const onConfirm = vi.fn();
+  // A real mounted trigger: the popover positions against it and focus
+  // returns there on dismissal, exactly as in the chat screen.
+  const anchor = document.createElement("button");
+  anchor.textContent = "Registrar pagamento";
+  document.body.appendChild(anchor);
   render(
     <GroupRegisterPaymentSheet
       currentUserHandle="alice"
@@ -30,6 +35,7 @@ function renderSheet(
       onDismiss={onDismiss}
       onLeavePending={onLeavePending}
       status={status}
+      anchor={anchor}
     />,
   );
   return { onConfirm, onDismiss, onLeavePending, user: userEvent.setup() };
@@ -44,6 +50,25 @@ function setAmountText(value: string) {
 describe("GroupRegisterPaymentSheet", () => {
   beforeEach(() => {
     __resetBackHandlerStackForTests();
+  });
+
+  it("dismissing over a background control does not activate that control", async () => {
+    const undo = vi.fn();
+    const undoButton = document.createElement("button");
+    undoButton.textContent = "Desfazer";
+    undoButton.addEventListener("click", undo);
+    document.body.appendChild(undoButton);
+
+    const { onDismiss, user } = renderSheet();
+
+    // The tap that closes the form lands on the backdrop, never on the
+    // settlement control underneath it.
+    const backdrop = document.querySelector('[data-slot="popover-backdrop"]');
+    expect(backdrop).not.toBeNull();
+    await user.click(backdrop as HTMLElement);
+
+    expect(onDismiss).toHaveBeenCalled();
+    expect(undo).not.toHaveBeenCalled();
   });
 
   it("does not call onDismiss when X button is clicked while confirming", () => {
@@ -102,7 +127,8 @@ describe("GroupRegisterPaymentSheet", () => {
   it("reports the chosen member, direction, and amount in cents", async () => {
     const { onConfirm, user } = renderSheet();
 
-    await user.click(screen.getByTestId("group-payment-member-user-carol"));
+    await user.click(screen.getByRole("combobox", { name: "Com quem?" }));
+    await user.click(await screen.findByRole("option", { name: /Carol Dias/ }));
     setAmountText("3,00");
     await user.click(screen.getByTestId("group-payment-confirm"));
 

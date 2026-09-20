@@ -58,6 +58,7 @@ export function TypeStep({
   const searchParams = useSearchParams();
 
   const [showScanner, setShowScanner] = useState(false);
+  const [scannerSource, setScannerSource] = useState<"camera" | "picker">("picker");
   const [scanProcessing, setScanProcessing] = useState(false);
   const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -125,11 +126,13 @@ export function TypeStep({
     if (scanParamRef.current) return;
     if (searchParams.get("scan") && !showScanner && !scanResult) {
       scanParamRef.current = true;
+      setScannerSource("camera");
       setShowScanner(true);
     }
   }, [searchParams, showScanner, scanResult]);
 
   const openScanner = useCallback(() => {
+    setScannerSource("camera");
     setShowScanner(true);
   }, []);
 
@@ -231,6 +234,7 @@ export function TypeStep({
     return (
       <div className="space-y-3">
         <ReceiptScanner
+          initialSource={scannerSource}
           onProcess={handleScanProcess}
           onBack={() => {
             resetScanState();
