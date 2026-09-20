@@ -18,6 +18,7 @@ import {
   parseAllocationPercentText,
 } from "@/lib/expense-money";
 import { centsToBasisPoints, FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
+import { cn } from "@/lib/utils";
 import type { UserProfile } from "@/types";
 
 function percentBasisPoints(text: string | undefined): number {
@@ -271,8 +272,26 @@ export function PayerStep({
             );
             const totalBasisPoints = basisPointsByUser.reduce((sum, bp) => sum + bp, 0);
             const remainingBasisPoints = FULL_PERCENT_BASIS_POINTS - totalBasisPoints;
-            const allocated = allocateByBasisPoints(grandTotal, basisPointsByUser);
-            const amounts = allocated.ok ? allocated.value : null;
+            // Display-only preview: the commit path below still refuses to
+            // persist anything but an exact 100% split. When it is exact the
+            // preview uses the same allocator, so the two never disagree.
+            const exact =
+              remainingBasisPoints === 0
+                ? allocateByBasisPoints(grandTotal, basisPointsByUser)
+                : null;
+            const amounts: readonly number[] =
+              exact?.ok === true
+                ? exact.value
+                : basisPointsByUser.map((bp) =>
+                    Math.round((grandTotal * bp) / FULL_PERCENT_BASIS_POINTS),
+                  );
+            const allocatedTotal = amounts.reduce((sum, cents) => sum + cents, 0);
+            const amountTone =
+              remainingBasisPoints === 0
+                ? "text-muted-foreground"
+                : remainingBasisPoints < 0
+                  ? "text-destructive"
+                  : "text-warning-foreground";
             return (
               <div className="space-y-3">
                 {participants.map((user, index) => {
@@ -297,8 +316,8 @@ export function PayerStep({
                           <span className="text-sm font-bold tabular-nums text-primary-text">
                             {percentLabel(basisPoints)}%
                           </span>
-                          <span className="ml-2 text-xs text-muted-foreground tabular-nums">
-                            {amounts ? formatBRL(amounts[index]) : "—"}
+                          <span className={cn("ml-2 text-xs tabular-nums", amountTone)}>
+                            {formatBRL(amounts[index])}
                           </span>
                         </div>
                       </div>
@@ -343,12 +362,23 @@ export function PayerStep({
                   <Users className="h-4 w-4" />
                   Dividir igualmente
                 </Button>
-                {totalBasisPoints > 0 && remainingBasisPoints !== 0 && (
-                  <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                    Total: {percentLabel(totalBasisPoints)}% —{" "}
+                {totalBasisPoints > 0 && (
+                  <div
+                    className={cn(
+                      "rounded-lg px-3 py-2 text-xs",
+                      remainingBasisPoints === 0
+                        ? "bg-success/10 text-success"
+                        : remainingBasisPoints < 0
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-warning/10 text-warning-foreground",
+                    )}
+                  >
+                    Total: {percentLabel(totalBasisPoints)}% · {formatBRL(allocatedTotal)}
                     {remainingBasisPoints > 0
-                      ? `faltam ${percentLabel(remainingBasisPoints)}% para completar 100%`
-                      : `excede 100% em ${percentLabel(-remainingBasisPoints)}%`}
+                      ? ` — faltam ${percentLabel(remainingBasisPoints)}% para completar 100%`
+                      : remainingBasisPoints < 0
+                        ? ` — excede 100% em ${percentLabel(-remainingBasisPoints)}%`
+                        : ""}
                   </div>
                 )}
               </div>

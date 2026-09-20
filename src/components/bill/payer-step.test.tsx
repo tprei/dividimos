@@ -91,15 +91,32 @@ describe("PayerStep percentage mode", () => {
     expect(onRemovePayerEntry).toHaveBeenCalledWith("c");
   });
 
-  it("shows a dash instead of a float estimate before the split is exact", async () => {
+  it("shows each payer's amount while the split is still short", async () => {
     const user = userEvent.setup();
     renderPercentMode(10_000);
     await user.click(screen.getByRole("button", { name: "Porcentagem" }));
 
-    await setPercent("Ana", 50);
+    await setPercent("Ana", 40);
 
-    expect(screen.queryByText("R$\u00a050,00")).not.toBeInTheDocument();
-    expect(screen.getAllByText("—")).toHaveLength(participants.length);
+    // Testing Library normalizes the rendered text but not the matcher, so the
+    // non-breaking space formatBRL emits has to be collapsed on this side too.
+    expect(screen.getByText(formatBRL(4000).replace(/\u00a0/g, " "))).toBeInTheDocument();
+    expect(screen.getByText(/faltam 59,99% para completar 100%/)).toBeInTheDocument();
+  });
+
+  it("marks the amounts as over budget once the percentages exceed 100", async () => {
+    const user = userEvent.setup();
+    renderPercentMode(10_000);
+    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
+
+    await setPercent("Ana", 60);
+    await setPercent("Bruno", 60);
+
+    const overshoot = screen.getAllByText(formatBRL(6000).replace(/\u00a0/g, " "));
+    expect(overshoot).toHaveLength(2);
+    for (const amount of overshoot) {
+      expect(amount).toHaveClass("text-destructive");
+    }
   });
 
   it("renders explainer when hasGuests is true", () => {
