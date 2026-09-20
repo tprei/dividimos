@@ -89,6 +89,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.bootstrap_overview()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; bootstrap includes membership-checked group overviews."
+    },
     "public.broadcast_assignment_room(p_room_id uuid, p_event text, p_topic text)": {
       "anon": false,
       "authenticated": false,
@@ -264,6 +269,16 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.get_group_overview(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked group overview read."
+    },
+    "public.get_group_avatar(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked group avatar read."
+    },
     "public.get_group_expenses(p_group_id uuid, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
       "authenticated": true,
@@ -283,6 +298,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_settlement(p_settlement_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked settlement detail read."
     },
     "public.get_vendor_charges(p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
@@ -363,6 +383,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_group_overview_json(p_group_id uuid, p_viewer uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal overview serializer; reachable only through membership-checked reads."
     },
     "public.ledger_me_json(p_user_id uuid)": {
       "anon": false,
@@ -478,6 +503,11 @@
       "anon": true,
       "authenticated": true,
       "note": "Capability RPC; active members claim only their own items while the host may correct any active participant."
+    },
+    "public.set_group_avatar(p_group_id uuid, p_actor_id uuid, p_emoji text, p_photo_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role-only mutation; the route checks membership before calling it."
     },
     "public.set_updated_at()": {
       "anon": false,

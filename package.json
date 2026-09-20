@@ -23,13 +23,16 @@
     "test:synthetic": "playwright test --project=synthetic",
     "test:synthetic:ui": "playwright test --project=synthetic --ui",
     "test:synthetic:headed": "playwright test --project=synthetic --headed",
+    "test:synthetic:ios": "playwright test --project=synthetic-ios",
+    "test:synthetic:android": "playwright test --project=synthetic-android",
+    "test:synthetic:mobile": "playwright test --project=synthetic-ios --project=synthetic-android",
     "test:ambient": "vitest run --config vitest.ambient.config.mts",
     "test:ambient:web": "playwright test --config playwright.ambient.config.ts",
     "prepare": "git config core.hooksPath .githooks",
     "cap:sync": "npx cap sync",
-    "cap:dev:android": "CAPACITOR_DEV=true npx cap sync android && npx cap run android",
+    "cap:dev:android": "scripts/cap-dev.sh android --emulator --run",
     "cap:open:android": "npx cap open android",
-    "cap:dev:ios": "CAPACITOR_DEV=true npx cap sync ios && npx cap run ios",
+    "cap:dev:ios": "scripts/cap-dev.sh ios --run",
     "cap:open:ios": "npx cap open ios",
     "cap:assets": "npx @capacitor/assets generate --android --ios --iconBackgroundColor '#FEA101' --splashBackgroundColor '#F9F9FB' --splashBackgroundColorDark '#09243f'"
   },
@@ -66,6 +69,7 @@
     "react-dom": "19.2.4",
     "react-hot-toast": "^2.6.0",
     "server-only": "^0.0.1",
+    "sharp": "^0.34.5",
     "shadcn": "^4.1.0",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0",
@@ -96,7 +100,6 @@
     "supabase": "2.20.3",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "sharp": "^0.34.5",
     "vitest": "^4.1.1"
   }
 }

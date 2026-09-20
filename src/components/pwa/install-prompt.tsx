@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
-import { useMounted } from "@/hooks/use-client-only";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +15,21 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-function isMobileBrowser(): boolean {
+/** iOS home-screen launches report installation here, not via display-mode. */
+interface StandaloneNavigator extends Navigator {
+  standalone?: boolean;
+}
+
+function isInstalled(): boolean {
   if (typeof window === "undefined") return false;
-  if (Capacitor.isNativePlatform()) return false;
-  if (window.matchMedia("(display-mode: standalone)").matches) return false;
+  if (Capacitor.isNativePlatform()) return true;
+  if (window.matchMedia("(display-mode: standalone)").matches) return true;
+  return (navigator as StandaloneNavigator).standalone === true;
+}
+
+function isInstallableBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  if (isInstalled()) return false;
   return /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
 
@@ -36,18 +46,24 @@ export function InstallPrompt() {
   const [visible, setVisible] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [platform, setPlatform] = useState<"ios" | "android" | null>(null);
-  const mounted = useMounted();
-  const [prevMounted, setPrevMounted] = useState(false);
-  if (mounted !== prevMounted) {
-    setPrevMounted(mounted);
-    if (mounted && isMobileBrowser()) {
-      setPlatform(detectPlatform());
-      setVisible(true);
-    }
-  }
+
+  const installed = useRef(false);
 
   useEffect(() => {
-    if (!isMobileBrowser()) return;
+    // Visibility is recomputed, never written during render: an iPhone that
+    // launched from the home screen must not show an install button even when
+    // its display-mode query disagrees with navigator.standalone.
+    const sync = () => {
+      const installable = !installed.current && isInstallableBrowser();
+      setVisible(installable);
+      setPlatform(installable ? detectPlatform() : null);
+      if (!installable) {
+        deferredPrompt.current = null;
+        setShowGuide(false);
+      }
+    };
+
+    sync();
 
     const captured = (window as unknown as Record<string, unknown>)
       .__pwaInstallPrompt as BeforeInstallPromptEvent | null;
@@ -61,16 +77,26 @@ export function InstallPrompt() {
       deferredPrompt.current = e as BeforeInstallPromptEvent;
     };
 
+    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+    standaloneQuery.addEventListener("change", sync);
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    // `appinstalled` is the authoritative signal; the display-mode query can
+    // lag behind it by a navigation.
     const onAppInstalled = () => {
-      deferredPrompt.current = null;
-      setVisible(false);
+      installed.current = true;
+      sync();
     };
 
-    window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onAppInstalled);
+    // Installing happens outside the page; returning to it is when the app
+    // finds out.
+    window.addEventListener("visibilitychange", sync);
+
     return () => {
+      standaloneQuery.removeEventListener("change", sync);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onAppInstalled);
+      window.removeEventListener("visibilitychange", sync);
     };
   }, []);
 

@@ -1,4 +1,4 @@
-import { decodeBootstrap } from "@/lib/ledger/decode";
+import { decodeBootstrapOverview } from "@/lib/ledger/decode-group-overview";
 import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import { getAuthGeneration, rpc } from "./client";
@@ -14,7 +14,7 @@ async function executeBootstrap(generation: number): Promise<void> {
 
   let data;
   try {
-    data = await rpc("bootstrap", {}, decodeBootstrap);
+    data = await rpc("bootstrap_overview", {}, decodeBootstrapOverview);
   } catch (error) {
     // A failed read must not clear projections; it records why and rethrows so
     // the caller can retry.
