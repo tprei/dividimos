@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { Bell, QrCode, UserPlus } from "lucide-react";
+import { Bell, Check, Loader2, QrCode, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { GuestBadge } from "@/components/shared/guest-avatar";
 import { GuestInviteDialog } from "@/components/expense/guest-invite-dialog";
@@ -32,6 +32,8 @@ export interface CounterpartyDialogProps {
   onPay: (row: DebtRow) => void;
   onCollect: (row: DebtRow) => void;
   onNudge: (row: DebtRow) => void;
+  /** Reminder lifecycle for this counterparty, owned by the dashboard. */
+  nudgeState: "idle" | "sending" | "sent";
 }
 
 export function CounterpartyDialog({
@@ -43,6 +45,7 @@ export function CounterpartyDialog({
   onPay,
   onCollect,
   onNudge,
+  nudgeState,
 }: CounterpartyDialogProps) {
   const snapshot = useAppStore((s) => s.groups[row.groupId]);
   const guestExpense =
@@ -146,10 +149,22 @@ export function CounterpartyDialog({
                         variant="outline"
                         className="h-10 w-full"
                         type="button"
+                        disabled={nudgeState !== "idle"}
+                        aria-busy={nudgeState === "sending"}
                         onClick={() => onNudge(row)}
                       >
-                        <Bell className="size-4" aria-hidden="true" />
-                        Lembrar
+                        {nudgeState === "sending" ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : nudgeState === "sent" ? (
+                          <Check className="size-4 text-success" aria-hidden="true" />
+                        ) : (
+                          <Bell className="size-4" aria-hidden="true" />
+                        )}
+                        {nudgeState === "sending"
+                          ? "Enviando…"
+                          : nudgeState === "sent"
+                            ? "Lembrete enviado"
+                            : "Lembrar"}
                       </Button>
                     </>
                   )}

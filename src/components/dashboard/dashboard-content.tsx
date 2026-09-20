@@ -60,6 +60,12 @@ export function DashboardContent() {
   );
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
+  /**
+   * Reminder lifecycle per counterparty, keyed `${groupId}:${counterpartyId}`.
+   * Session-scoped on purpose: the RPC's 24h cooldown is the real authority,
+   * this only stops the button from looking idle after it fired.
+   */
+  const [nudgeStates, setNudgeStates] = useState<Record<string, "sending" | "sent">>({});
 
   const selectDebt = (row: DebtRow, anchor: HTMLButtonElement) => {
     setDebtAnchor(anchor);
@@ -102,27 +108,43 @@ export function DashboardContent() {
   };
 
   const handleNudge = async (groupId: string, counterpartyId: string) => {
+    const key = `${groupId}:${counterpartyId}`;
+    const settle = (state: "sending" | "sent" | null) =>
+      setNudgeStates((current) => {
+        if (state !== null) return { ...current, [key]: state };
+        if (current[key] === undefined) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+
+    settle("sending");
     try {
       const { ack, delivery } = await sendNudge(groupId, counterpartyId);
       if (delivery === "delivered") {
+        settle("sent");
         toast.success("Lembrete enviado");
         return;
       }
       if (delivery === "suppressed") {
+        settle("sent");
         toast.success("Lembrete registrado");
         return;
       }
       if (delivery === "unavailable") {
+        settle(null);
         toast.error("A outra pessoa não tem notificações ativas.");
         return;
       }
 
       const eventId = ack.eventId;
       if (eventId === null) {
+        settle(null);
         toast.error("Não conseguimos entregar o lembrete.");
         return;
       }
 
+      settle(null);
       toast.error(
         (t) => (
           <span className="flex items-center gap-3">
@@ -134,8 +156,10 @@ export function DashboardContent() {
                 toast.dismiss(t.id);
                 void retryNudgeDispatch(eventId).then((result) => {
                   if (result === "delivered") {
+                    settle("sent");
                     toast.success("Lembrete enviado");
                   } else if (result === "suppressed") {
+                    settle("sent");
                     toast.success("Lembrete registrado");
                   } else if (result === "unavailable") {
                     toast.error("A outra pessoa não tem notificações ativas.");
@@ -152,6 +176,9 @@ export function DashboardContent() {
         { duration: 8000 },
       );
     } catch (error) {
+      // A cooldown means today's reminder already went out, so the button
+      // must stay spent rather than invite a second pointless attempt.
+      settle(error instanceof LedgerError && error.code === "nudge_cooldown" ? "sent" : null);
       toast.error(ledgerErrorMessage(error));
     }
   };
@@ -403,6 +430,9 @@ export function DashboardContent() {
           anchor={debtAnchor}
           onPay={openPay}
           onCollect={openCollect}
+          nudgeState={
+            nudgeStates[`${selectedDebt.groupId}:${selectedDebt.counterpartyId}`] ?? "idle"
+          }
           onNudge={(row) => {
             void handleNudge(row.groupId, row.counterpartyId);
           }}

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
+import { LedgerError } from "@/lib/sync/errors";
 
 
 const mutations = vi.hoisted(() => ({
@@ -384,6 +385,8 @@ describe("DashboardContent", () => {
       expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
       expect(toastSuccess).toHaveBeenCalledWith("Lembrete enviado");
     });
+    // The button has to show the reminder landed; otherwise people tap again.
+    expect(screen.getByRole("button", { name: "Lembrete enviado" })).toBeDisabled();
   });
 
   it("opens quick charge from the home actions when a Pix key exists", async () => {
@@ -417,6 +420,27 @@ describe("DashboardContent", () => {
     });
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalled();
+  });
+
+  it("keeps the reminder spent when the server reports a cooldown", async () => {
+    groupMutations.sendNudge.mockRejectedValue(new LedgerError("nudge_cooldown"));
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ], meWithPixKey);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Lembrar" }));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Você já lembrou essa pessoa hoje.");
+    });
+    expect(screen.getByRole("button", { name: "Lembrete enviado" })).toBeDisabled();
   });
 
   it("opens the missing-key dialog from Cobrar rápido without a Pix key", () => {
