@@ -16,7 +16,7 @@ import {
   useAssignmentRoomStore,
   type AssignmentRoomAttempt,
 } from "@/stores/assignment-room-store";
-import { getAuthGeneration, rpc } from "./client";
+import { getAuthGeneration, getSupabase, rpc } from "./client";
 import { LedgerError } from "./errors";
 import { refreshGroup } from "./refresh";
 
@@ -214,6 +214,19 @@ export function getAssignmentRoomJoinToken(roomId: string): string | null {
 }
 export function getAssignmentRoomMemberToken(roomId: string): string | null {
   return readCredentials(roomId).memberToken ?? null;
+}
+
+/**
+ * Presentation-only identity for the public join form: the room screen needs
+ * to know whether the visitor already has a Dividimos account so it can hide
+ * the guest-name field. The join RPC itself still identifies the actor through
+ * `auth.uid()`; this never authorizes anything.
+ */
+export async function getAssignmentRoomJoinAccount(): Promise<{ id: string } | null> {
+  const { data, error } = await getSupabase().auth.getSession();
+  if (error) throw error;
+  const user = data.session?.user ?? null;
+  return user ? { id: user.id } : null;
 }
 
 function forgetAssignmentRoomCredentials(roomId: string): void {

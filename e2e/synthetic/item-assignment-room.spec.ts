@@ -1,4 +1,5 @@
-import type { BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
+import { devices } from "@playwright/test";
+import type { Browser, BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
 import { expect, test } from "../fixtures";
 
 const TINY_PNG = Buffer.from(
@@ -10,14 +11,28 @@ const HOST_NAME = "Ana Sala";
 const GUEST_A = "Bia";
 const GUEST_B = "Caio";
 
-function itemCard(page: Page, description: string): Locator {
+// Board rows live in named lists, so every helper scopes to the list plus the
+// item row instead of relying on DOM order.
+type RoomList = "Itens" | "Disponíveis" | "Minha parte";
+
+function itemCard(page: Page, list: RoomList, description: string): Locator {
   return page
-    .getByRole("heading", { name: description, exact: true })
-    .locator("xpath=ancestor::article");
+    .getByRole("region", { name: list })
+    .locator("li[data-item-id]")
+    .filter({ has: page.getByText(description, { exact: true }) });
+}
+
+function rowButton(page: Page, list: RoomList, description: string): Locator {
+  return itemCard(page, list, description).getByRole("button", {
+    name: new RegExp(`(Escolher quantidade de|Editar escolhas de) ${description}`),
+  });
 }
 
 async function waitForRoom(page: Page): Promise<void> {
-  await expect(page.getByRole("heading", { name: "Bar da sala" })).toBeVisible({
+  // Creating a room opens the invitation over the board, and a modal takes the
+  // background out of the accessibility tree, so this waits on text.
+  await page.waitForURL(/\/room\/[0-9a-f-]{36}/i, { timeout: 20_000 });
+  await expect(page.getByText("Bar da sala").first()).toBeVisible({
     timeout: 20_000,
   });
   await expect(page.getByText("Reconectando.", { exact: false })).toBeHidden({
@@ -27,37 +42,40 @@ async function waitForRoom(page: Page): Promise<void> {
 
 async function claimQuantity(
   page: Page,
+  list: RoomList,
   description: string,
   quantity: string,
 ): Promise<void> {
-  const card = itemCard(page, description);
-  const input = card.getByRole("textbox", { name: "Quantidade desejada" });
-  if (!(await input.isVisible())) {
-    await card.getByRole("button", { name: /Escolher quantidade|Editar minha parte/ }).click();
-  }
-  await input.fill(quantity);
-  await card.getByRole("button", { name: "Confirmar quantidade" }).click();
-  await expect(card.getByText("Salvando sua escolha...")).toBeHidden({ timeout: ROOM_TIMEOUT });
+  await rowButton(page, list, description).click();
+  const dialog = page.getByRole("dialog", { name: description });
+  await dialog.getByRole("button", { name: "Outra quantidade" }).click();
+  await dialog.getByRole("textbox", { name: "Quantidade desejada" }).fill(quantity);
+  await dialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+  await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
 }
 
-async function claimOneThird(page: Page, description: string): Promise<void> {
-  const card = itemCard(page, description);
-  const fraction = card.getByRole("button", { name: "1/3", exact: true });
-  if (!(await fraction.isVisible())) {
-    await card.getByRole("button", { name: /Escolher quantidade|Editar minha parte/ }).click();
-  }
-  await fraction.click();
-  await expect(card.getByText("Salvando sua escolha...")).toBeHidden({ timeout: ROOM_TIMEOUT });
+async function claimOneThird(
+  page: Page,
+  list: RoomList,
+  description: string,
+): Promise<void> {
+  await rowButton(page, list, description).click();
+  const dialog = page.getByRole("dialog", { name: description });
+  await dialog.getByRole("button", { name: "1/3", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+  await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
 }
 
-async function collapseEditor(page: Page, description: string): Promise<void> {
-  const card = itemCard(page, description);
-  const collapse = card.getByRole("button", { name: "Recolher" });
-  if (await collapse.isVisible()) await collapse.click();
-}
-
-async function selectHostParticipant(page: Page, displayName: string): Promise<void> {
-  await page.getByRole("combobox", { name: "Editar escolhas de" }).click();
+// The host picks the claim target inside the item dialog; there is no global
+// board-level person selector anymore.
+async function selectHostParticipant(
+  page: Page,
+  description: string,
+  displayName: string,
+): Promise<void> {
+  await rowButton(page, "Itens", description).click();
+  const dialog = page.getByRole("dialog", { name: description });
+  await dialog.getByRole("combobox", { name: "Pra quem?" }).click();
   await page.getByRole("option", { name: displayName, exact: true }).click();
 }
 
@@ -90,12 +108,26 @@ async function observeRemote(
   });
 }
 
+/**
+ * A joiner scans the QR on their own phone, so joiner contexts use the real
+ * iPhone and Pixel descriptors. WebKit rejects `isMobile`, so that single flag
+ * is dropped there while the screen, scale, touch and user agent stay.
+ */
+function phoneContext(browser: Browser, model: "iPhone 13" | "Pixel 5") {
+  const { defaultBrowserType, isMobile, ...screen } = devices[model];
+  void defaultBrowserType;
+  return browser.browserType().name() === "webkit"
+    ? screen
+    : { ...screen, isMobile };
+}
+
 test.describe("Assignment room multi-client acceptance", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(600_000);
   test("feels like everyone's using the same client", async ({
     adminClient,
     browser,
     context,
+    isMobile,
     loginAs,
     page,
     seed,
@@ -161,54 +193,58 @@ test.describe("Assignment room multi-client acceptance", () => {
       await expect(page.getByRole("heading", { name: "Recibo" })).toBeVisible({
         timeout: 20_000,
       });
-      const shareReceipt = page.getByRole("button", {
-        name: "Compartilhar para escolher itens",
-      });
-      await expect(shareReceipt).toBeEnabled();
-      await shareReceipt.click();
+      const createRoom = page.getByRole("button", { name: "Criar sala de divisão" });
+      await expect(createRoom).toBeEnabled();
+      await createRoom.click();
       await waitForRoom(page);
 
       const roomId = new URL(page.url()).pathname.split("/").at(-1);
       expect(roomId).toMatch(/^[0-9a-f-]{36}$/i);
-      await page.getByRole("button", { name: "Mostrar convite" }).click();
-      await page.getByRole("button", { name: "Copiar link" }).click();
-      await expect(page.getByRole("button", { name: "Link copiado" })).toBeVisible();
+      // Creating the room presents the invitation on arrival; the header
+      // trigger keeps it reachable without scrolling.
+      const inviteDialog = page.getByRole("dialog", { name: "Convide o pessoal" });
+      await expect(inviteDialog).toBeVisible();
+      await inviteDialog.getByRole("button", { name: "Copiar link" }).click();
+      await expect(inviteDialog.getByRole("button", { name: "Link copiado" })).toBeVisible();
       const invitation = await page.evaluate<string>(
         "window.__copiedText ?? ''",
       );
       expect(invitation).toMatch(new RegExp(`/room/${roomId}#armj1_`));
-      await page.getByRole("button", { name: "Recolher convite" }).click();
+      await inviteDialog.getByRole("button", { name: "Voltar para a sala" }).click();
+      await expect(inviteDialog).toBeHidden();
+      await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();
+      await expect(page.getByText("1 pessoa na sala")).toBeVisible();
 
+      // The people who scan the QR are on phones, so the joiners run on the
+      // real iPhone and Pixel descriptors instead of an invented viewport.
       guestAContext = await browser.newContext({
+        ...phoneContext(browser, "iPhone 13"),
         colorScheme: "light",
-        viewport: { width: 390, height: 844 },
       });
       guestBContext = await browser.newContext({
+        ...phoneContext(browser, "Pixel 5"),
         colorScheme: "dark",
-        viewport: { width: 1280, height: 720 },
       });
       const guestAPage = await guestAContext.newPage();
       const guestBPage = await guestBContext.newPage();
       await joinRoom(guestAPage, invitation, GUEST_A);
-      const hostRoster = page
-        .getByRole("heading", { name: "Na sala" })
-        .locator("xpath=ancestor::section");
-      await expect(hostRoster.getByText(GUEST_A, { exact: true })).toBeVisible({
-        timeout: ROOM_TIMEOUT,
-      });
+      await expect(
+        page.getByRole("region", { name: "Na sala" }).getByLabel(GUEST_A),
+      ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await joinRoom(guestBPage, invitation, GUEST_B);
 
       for (const roomPage of [page, guestAPage, guestBPage]) {
-        const roster = roomPage
-          .getByRole("heading", { name: "Na sala" })
-          .locator("xpath=ancestor::section");
-        await expect(roster.getByText(HOST_NAME, { exact: true })).toBeVisible({
+        const roster = roomPage.getByRole("region", { name: "Na sala" });
+        await expect(roster.getByText("3 pessoas na sala")).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
-        await expect(roster.getByText(GUEST_A, { exact: true })).toBeVisible({
+        await expect(roster.getByLabel(HOST_NAME)).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
-        await expect(roster.getByText(GUEST_B, { exact: true })).toBeVisible({
+        await expect(roster.getByLabel(GUEST_A)).toBeVisible({
+          timeout: ROOM_TIMEOUT,
+        });
+        await expect(roster.getByLabel(GUEST_B)).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
       }
@@ -218,68 +254,100 @@ test.describe("Assignment room multi-client acceptance", () => {
           testInfo,
           "claim",
           async () => {
-            await claimQuantity(guestAPage, "Cervejas", "2");
-            await expect(itemCard(guestAPage, "Cervejas").getByText("2/3 do item")).toBeVisible();
+            await claimQuantity(guestAPage, "Disponíveis", "Cervejas", "2");
+            await expect(
+              itemCard(guestAPage, "Minha parte", "Cervejas").getByText("Você: 2 un."),
+            ).toBeVisible();
           },
           async () => {
-            await selectHostParticipant(page, GUEST_A);
-            await expect(itemCard(page, "Cervejas").getByText("2/3 do item")).toBeVisible({
-              timeout: ROOM_TIMEOUT,
-            });
-            const remoteCard = itemCard(guestBPage, "Cervejas");
-            await remoteCard.getByRole("button", { name: "Escolher quantidade" }).click();
-            await remoteCard.getByRole("textbox", { name: "Quantidade desejada" }).fill("2");
-            await remoteCard.getByRole("button", { name: "Confirmar quantidade" }).click();
-            await expect(remoteCard.getByRole("alert")).toContainText("não está mais disponível");
-            await remoteCard.getByRole("button", { name: "Recolher" }).click();
+            await expect(
+              itemCard(page, "Itens", "Cervejas").getByText("Disponível: 1 de 3 un."),
+            ).toBeVisible({ timeout: ROOM_TIMEOUT });
+            // Asking for more than the room still holds is refused before any
+            // request leaves the phone, and the draft stays put.
+            const remoteDialog = guestBPage.getByRole("dialog", { name: "Cervejas" });
+            await rowButton(guestBPage, "Disponíveis", "Cervejas").click();
+            await remoteDialog.getByRole("button", { name: "Outra quantidade" }).click();
+            await remoteDialog.getByRole("textbox", { name: "Quantidade desejada" }).fill("2");
+            await expect(remoteDialog.getByRole("alert")).toContainText(
+              "não está mais disponível",
+            );
+            await expect(
+              remoteDialog.getByRole("button", { name: "Confirmar quantidade" }),
+            ).toBeDisabled();
+            await remoteDialog.getByRole("button", { name: "Cancelar" }).click();
           },
         );
 
-        await claimQuantity(guestBPage, "Cervejas", "1");
-        await selectHostParticipant(page, GUEST_B);
-        await expect(itemCard(page, "Cervejas").getByText("1/3 do item")).toBeVisible({
-          timeout: ROOM_TIMEOUT,
-        });
+        await claimQuantity(guestBPage, "Disponíveis", "Cervejas", "1");
+        await expect(
+          itemCard(page, "Itens", "Cervejas").getByText("Tudo escolhido"),
+        ).toBeVisible({ timeout: ROOM_TIMEOUT });
 
         await observeRemote(
           testInfo,
           "undo",
-          () => claimQuantity(guestAPage, "Cervejas", "1"),
+          () => claimQuantity(guestAPage, "Minha parte", "Cervejas", "1"),
           async () => {
-            await selectHostParticipant(page, GUEST_A);
-            await expect(itemCard(page, "Cervejas").getByText("1/3 do item")).toBeVisible({
-              timeout: ROOM_TIMEOUT,
-            });
+            await expect(
+              itemCard(page, "Itens", "Cervejas").getByText("Disponível: 1 de 3 un."),
+            ).toBeVisible({ timeout: ROOM_TIMEOUT });
           },
         );
 
-        const guestBPetisco = itemCard(guestBPage, "Petisco");
-        await guestBPetisco.getByRole("button", { name: "Escolher quantidade" }).click();
-        const preservedInput = guestBPetisco.getByRole("textbox", {
+        const guestBPetisco = itemCard(guestBPage, "Disponíveis", "Petisco");
+        await guestBPetisco
+          .getByRole("button", { name: "Escolher quantidade de Petisco" })
+          .click();
+        const petiscoDialog = guestBPage.getByRole("dialog", { name: "Petisco" });
+        await petiscoDialog.getByRole("button", { name: "Outra quantidade" }).click();
+        const preservedInput = petiscoDialog.getByRole("textbox", {
           name: "Quantidade desejada",
         });
-        await preservedInput.focus();
-        await selectHostParticipant(page, HOST_NAME);
-        await claimQuantity(page, "Cervejas", "1");
+        // A claim landing elsewhere in the room must not throw away what this
+        // person is typing, and must not submit it either.
+        await preservedInput.fill("2");
+        await claimQuantity(page, "Itens", "Cervejas", "1");
         await expect(preservedInput).toBeVisible({ timeout: ROOM_TIMEOUT });
-        await expect(preservedInput).toBeFocused();
+        await expect(preservedInput).toHaveValue("2");
+        await expect(petiscoDialog.getByText("Escolha uma quantidade")).toBeHidden();
         await preservedInput.fill("1");
-        await guestBPetisco.getByRole("button", { name: "Confirmar quantidade" }).click();
-        await expect(guestBPetisco.getByText("1/3 do item")).toBeVisible({ timeout: ROOM_TIMEOUT });
+        await petiscoDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+        await expect(
+          itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+        ).toBeVisible({ timeout: ROOM_TIMEOUT });
+
+        await itemCard(guestBPage, "Minha parte", "Petisco")
+          .getByRole("button", { name: "Escolher quantidade de Petisco" })
+          .click();
+        await expect(petiscoDialog.getByText("Sua quantidade: 1 un.")).toBeVisible();
+        await petiscoDialog.getByRole("button", { name: "Outra quantidade" }).click();
         await preservedInput.fill("2");
         await guestBPage.keyboard.press("Escape");
-        await expect(preservedInput).toBeHidden();
-        const reopenPetisco = guestBPetisco.getByRole("button", {
-          name: "Editar minha parte",
-        });
-        await expect(reopenPetisco).toBeFocused();
+        await expect(petiscoDialog).toBeHidden();
+        const reopenPetisco = itemCard(guestBPage, "Minha parte", "Petisco").getByRole(
+          "button",
+          { name: "Escolher quantidade de Petisco" },
+        );
+        // Dismissing the editor hands focus back to the row that opened it.
+        // Touch profiles deliberately skip that, so a focus ring never appears
+        // after a tap; there the row only has to be reachable again.
+        if (isMobile) {
+          await expect(reopenPetisco).toBeVisible();
+        } else {
+          await expect(reopenPetisco).toBeFocused();
+        }
         await reopenPetisco.click();
-        await expect(preservedInput).toHaveValue("1");
-        await collapseEditor(guestBPage, "Petisco");
+        await expect(
+          petiscoDialog.getByText("Sua quantidade: 1 un."),
+        ).toBeVisible({ timeout: ROOM_TIMEOUT });
+        await petiscoDialog.getByRole("button", { name: "Cancelar" }).click();
 
-        await claimOneThird(page, "Petisco");
-        await expect(itemCard(page, "Petisco").getByText("1/3 do item")).toBeVisible();
-        await collapseEditor(page, "Petisco");
+        // Caio already holds one of the three, so the host's third leaves one.
+        await claimOneThird(page, "Itens", "Petisco");
+        await expect(
+          itemCard(page, "Itens", "Petisco").getByText("Disponível: 1 de 3 un."),
+        ).toBeVisible({ timeout: ROOM_TIMEOUT });
       });
       await expect
         .poll(() =>
@@ -293,67 +361,46 @@ test.describe("Assignment room multi-client acceptance", () => {
       await expect(guestBPage).not.toHaveURL(/\/room\//, { timeout: ROOM_TIMEOUT });
       await guestBPage.goto(new URL(invitation).pathname);
       await waitForRoom(guestBPage);
-      await expect(itemCard(guestBPage, "Petisco").getByText("1/3 do item")).toBeVisible();
+      await expect(
+        itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+      ).toBeVisible();
 
-      const finalBeerA = itemCard(guestAPage, "Última cerveja");
-      const finalBeerB = itemCard(guestBPage, "Última cerveja");
-      await finalBeerA.getByRole("button", { name: "Escolher quantidade" }).click();
-      await finalBeerB.getByRole("button", { name: "Escolher quantidade" }).click();
-      await finalBeerA.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
-      await finalBeerB.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
-      // Both guests submit the last unit at once. Whichever claim lands first
-      // reaches the other client over realtime, which re-renders its card and
-      // takes the editor down, so the losing click can find no button at all —
-      // on WebKit that is the usual ordering. Waiting out the full test budget
-      // for a control that will never come back burns the CI shard, so each
-      // click is bounded and the assertions below cover both orderings.
-      const submitLastUnit = async (card: Locator) => {
-        await card
-          .getByRole("button", { name: "Confirmar quantidade" })
-          .click({ timeout: ROOM_TIMEOUT })
-          .catch(() => undefined);
-      };
-      await Promise.all([submitLastUnit(finalBeerA), submitLastUnit(finalBeerB)]);
-      await expect
-        .poll(
-          async () => {
-            const { data } = await adminClient
-              .from("assignment_room_claims")
-              .select("participant_id")
-              .eq("room_id", roomId as string)
-              .eq("item_id", (
-                await adminClient
-                  .from("assignment_room_items")
-                  .select("id")
-                  .eq("room_id", roomId as string)
-                  .eq("description", "Última cerveja")
-                  .single()
-              ).data?.id ?? "");
-            return data?.length ?? 0;
-          },
-          { timeout: ROOM_TIMEOUT },
-        )
-        .toBe(1);
-      // Whoever lost learns it: either the server rejected their submission
-      // (the card shows the error) or their editor closed because the item was
-      // gone before they could submit. Both leave exactly one holder.
-      await expect
-        .poll(
-          async () => {
-            const alerts =
-              (await finalBeerA.getByRole("alert").count()) +
-              (await finalBeerB.getByRole("alert").count());
-            if (alerts === 1) return true;
-            const editors =
-              (await finalBeerA.getByRole("button", { name: "Confirmar quantidade" }).count()) +
-              (await finalBeerB.getByRole("button", { name: "Confirmar quantidade" }).count());
-            return alerts === 0 && editors < 2;
-          },
-          { timeout: ROOM_TIMEOUT },
-        )
-        .toBe(true);
+      // Caio lines up the last unit while Bia takes it first. Only one claim
+      // may land, and Caio must be told rather than silently overwriting it.
+      const finalDialogB = guestBPage.getByRole("dialog", { name: "Última cerveja" });
+      await rowButton(guestBPage, "Disponíveis", "Última cerveja").click();
+      await finalDialogB.getByRole("button", { name: "Outra quantidade" }).click();
+      await finalDialogB.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
+
+      await claimQuantity(guestAPage, "Disponíveis", "Última cerveja", "1");
+
+      const confirmB = finalDialogB.getByRole("button", { name: "Confirmar quantidade" });
+      if (await confirmB.isEnabled()) {
+        await confirmB.click();
+      }
+      await expect(finalDialogB.getByRole("alert")).toContainText(
+        "não está mais disponível",
+        { timeout: ROOM_TIMEOUT },
+      );
+      const lastBeerId = (
+        await adminClient
+          .from("assignment_room_items")
+          .select("id")
+          .eq("room_id", roomId as string)
+          .eq("description", "Última cerveja")
+          .single()
+      ).data?.id as string;
+      const lastBeerClaims = await adminClient
+        .from("assignment_room_claims")
+        .select("participant_id")
+        .eq("room_id", roomId as string)
+        .eq("item_id", lastBeerId);
+      expect(lastBeerClaims.data ?? []).toHaveLength(1);
+      await guestBPage.keyboard.press("Escape");
+      await expect(finalDialogB).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       await guestBContext.setOffline(true);
+      await page.getByText("Gerenciar pessoas").click();
       await page.getByRole("button", { name: `Remover ${GUEST_A}` }).click();
       await page.getByRole("button", { name: "Remover e liberar itens" }).click();
       await expect(page.getByText("Removido", { exact: true })).toBeVisible({
@@ -363,7 +410,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         name: "Convite inválido ou acesso expirado",
       });
       if (!(await removedState.isVisible({ timeout: ROOM_TIMEOUT }))) {
-        await claimQuantity(guestAPage, "Cervejas", "1");
+        await claimQuantity(guestAPage, "Minha parte", "Cervejas", "1");
       }
       await expect(removedState).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(page.getByRole("button", { name: "Fechar escolhas" })).toBeDisabled();
@@ -380,17 +427,15 @@ test.describe("Assignment room multi-client acceptance", () => {
       await guestBPage.bringToFront();
       await backgroundTab.close();
       await waitForRoom(guestBPage);
-      await expect(itemCard(guestBPage, "Petisco").getByText("1/3 do item")).toBeVisible();
+      await expect(
+        itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+      ).toBeVisible();
 
-      await selectHostParticipant(page, HOST_NAME);
-      await claimQuantity(page, "Cervejas", "2");
-      await collapseEditor(page, "Cervejas");
-      await claimQuantity(page, "Petisco", "2");
-      await collapseEditor(page, "Petisco");
+      await claimQuantity(page, "Itens", "Cervejas", "2");
+      await claimQuantity(page, "Itens", "Petisco", "2");
       const closeChoices = page.getByRole("button", { name: "Fechar escolhas" });
       if (!(await closeChoices.isEnabled())) {
-        await claimQuantity(page, "Última cerveja", "1");
-        await collapseEditor(page, "Última cerveja");
+        await claimQuantity(page, "Itens", "Última cerveja", "1");
       }
       await expect(closeChoices).toBeEnabled({ timeout: ROOM_TIMEOUT });
       await observeRemote(
@@ -402,26 +447,26 @@ test.describe("Assignment room multi-client acceptance", () => {
             timeout: ROOM_TIMEOUT,
           });
           await expect(
-            itemCard(guestBPage, "Cervejas").getByRole("button", {
-              name: /Escolher quantidade|Editar minha parte|Confirmar quantidade/,
+            itemCard(guestBPage, "Minha parte", "Petisco").getByRole("button", {
+              name: "Escolher quantidade de Petisco",
             }),
           ).toBeDisabled();
         },
       );
 
       await page.getByRole("button", { name: "Corrigir escolhas" }).click();
-      await selectHostParticipant(page, GUEST_B);
-      const guestBBeer = itemCard(page, "Cervejas");
-      if (!(await guestBBeer.getByRole("button", { name: "Desfazer minha escolha" }).isVisible())) {
-        await guestBBeer.getByRole("button", { name: "Editar minha parte" }).click();
-      }
-      await guestBBeer.getByRole("button", { name: "Desfazer minha escolha" }).click();
-      await expect(itemCard(guestBPage, "Cervejas").getByText("Nada escolhido")).toBeVisible({
-        timeout: ROOM_TIMEOUT,
-      });
-      await selectHostParticipant(page, HOST_NAME);
-      await claimQuantity(page, "Cervejas", "3");
-      await expect(itemCard(guestBPage, "Cervejas")).toHaveCount(0);
+      await selectHostParticipant(page, "Cervejas", GUEST_B);
+      const guestBBeerDialog = page.getByRole("dialog", { name: "Cervejas" });
+      await guestBBeerDialog
+        .getByRole("button", { name: `Remover escolha de ${GUEST_B}` })
+        .click();
+      await guestBBeerDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
+      await expect(
+        itemCard(guestBPage, "Disponíveis", "Cervejas").getByText("Disponível: 1 de 3 un."),
+      ).toBeVisible({ timeout: ROOM_TIMEOUT });
+      await claimQuantity(page, "Itens", "Cervejas", "3");
+      await expect(itemCard(guestBPage, "Disponíveis", "Cervejas")).toHaveCount(0);
       await page.getByRole("button", { name: "Voltar" }).click();
       await expect(page.getByText("Revise antes de registrar")).toBeVisible();
       const payerSection = page

@@ -123,6 +123,8 @@ export function ScannedItemsReview({
     isOccurredOnValid(occurredOn) &&
     serviceFeeResult.ok &&
     serviceFeeCentsResult?.ok === true;
+  const roomShareBlocked = participants.length > 1;
+  const canShare = receiptValid && participants.length === 1 && !sharePending;
   const canConfirm = participants.length >= 2 && receiptValid;
 
   const handleNameChange = (index: number, value: string) => {
@@ -182,14 +184,15 @@ export function ScannedItemsReview({
       occurredOn,
     };
   };
-
   const handleContinue = () => {
+    if (sharePending) return;
     const normalized = normalizedReceipt();
     if (!normalized || !canConfirm) return;
     onConfirm(normalized.result, normalized.occurredOn);
   };
 
   const handleShare = () => {
+    if (!canShare) return;
     const normalized = normalizedReceipt();
     if (!normalized) return;
     onShare(normalized.result, normalized.occurredOn);
@@ -217,23 +220,6 @@ export function ScannedItemsReview({
               </p>
             )}
           </div>
-          <div className="border-t border-dashed" />
-          <button
-            type="button"
-            onClick={onManageParticipants}
-            aria-label={`Participantes: ${participants.map((person) => person.name.split(" ")[0]).join(", ")}`}
-            className="flex min-h-14 w-full items-center justify-between gap-3 px-4 text-left transition-colors hover:bg-muted/40"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <Users className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 truncate text-sm font-semibold">
-                {participants.length > 1
-                  ? participants.map((person) => person.name.split(" ")[0]).join(", ")
-                  : "Adicionar pessoas"}
-              </span>
-            </span>
-            <AvatarStack people={participants} />
-          </button>
           <div className="border-t border-dashed" />
           {items.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -310,34 +296,74 @@ export function ScannedItemsReview({
           </div>
         </div>
       </div>
-      <footer className="sticky bottom-0 border-t bg-background/95 py-3 backdrop-blur safe-bottom">
-        {participants.length < 2 && (
-          <p className="mb-2 text-center text-xs leading-4 text-muted-foreground">
-            Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa.
+      <footer className="space-y-2">
+        <Button
+          className="min-h-11 w-full text-base font-bold"
+          onClick={handleShare}
+          disabled={!canShare}
+          aria-describedby={
+            [roomShareBlocked && "room-share-blocked", shareError && "room-share-error"]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+        >
+          {sharePending ? "Criando sala..." : "Criar sala de divisão"}
+        </Button>
+        {roomShareBlocked && (
+          <p id="room-share-blocked" className="text-center text-xs leading-4 text-muted-foreground">
+            Você adicionou pessoas para dividir manualmente. Remova essas pessoas para criar uma sala.
           </p>
         )}
         {shareError && (
-          <p role="alert" className="mb-2 text-center text-sm text-destructive">
+          <p id="room-share-error" role="alert" className="text-center text-sm text-destructive">
             {shareError}
           </p>
         )}
-        <div className="space-y-2">
-          <Button
-            className="min-h-11 w-full text-base font-bold"
-            onClick={handleShare}
-            disabled={!receiptValid || sharePending}
-          >
-            {sharePending ? "Criando sala..." : "Compartilhar para escolher itens"}
-          </Button>
-          <Button
-            variant="outline"
-            className="min-h-11 w-full"
-            onClick={handleContinue}
-            disabled={!canConfirm || sharePending}
-          >
-            Dividir manualmente
-          </Button>
+        <p className="text-center text-xs leading-4 text-muted-foreground">
+          Cada pessoa entra pelo QR ou link e escolhe o que consumiu.
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">ou</span>
+          <div className="h-px flex-1 bg-border" />
         </div>
+        <Button
+          variant="outline"
+          className="min-h-11 w-full"
+          onClick={handleContinue}
+          disabled={!canConfirm || sharePending}
+        >
+          Dividir manualmente
+        </Button>
+        <p className="text-center text-xs leading-4 text-muted-foreground">
+          Você escolhe os itens de cada pessoa.
+        </p>
+        {participants.length < 2 && (
+          <p className="text-center text-xs leading-4 text-muted-foreground">
+            Adicione pelo menos uma pessoa para dividir manualmente.
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onManageParticipants}
+          disabled={sharePending}
+          className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 text-left transition-colors hover:bg-muted/40"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Users className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate text-sm font-semibold">
+              {participants.length > 1 ? "Gerenciar pessoas" : "Adicionar pessoas"}
+            </span>
+          </span>
+          <span className="flex min-w-0 items-center gap-2">
+            {participants.length > 1 && (
+              <span className="min-w-0 truncate text-sm text-muted-foreground">
+                {participants.map((person) => person.name.split(" ")[0]).join(", ")}
+              </span>
+            )}
+            <AvatarStack people={participants} />
+          </span>
+        </button>
       </footer>
     </motion.div>
   );

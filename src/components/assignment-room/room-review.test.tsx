@@ -131,6 +131,28 @@ describe("RoomReview", () => {
     expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();
     expect(onFinalize).not.toHaveBeenCalled();
   });
+
+  it("explains account invitations and the correction path before confirming", () => {
+    render(
+      <RoomReview
+        view={hostView()}
+        pending={false}
+        onEditClaims={vi.fn()}
+        onFinalize={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já participa continua no grupo; convidados continuam sem precisar de conta.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("RoomBreakdown", () => {

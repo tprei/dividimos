@@ -1,78 +1,296 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { RoomItemClaim } from "./room-item-claim";
-import type { AssignmentRoomItem } from "@/types/assignment-room";
+import type {
+  AssignmentRoomClaim,
+  AssignmentRoomItem,
+  AssignmentRoomParticipant,
+} from "@/types/assignment-room";
 
-const item: AssignmentRoomItem = {
+/** One unit at 1_000 milliunits, so the whole line is 120_000 ticks. */
+const singleItem: AssignmentRoomItem = {
   id: "item-1",
   ordinal: 0,
   revision: 1,
-  description: "Cerveja",
+  description: "Toast Bacon Egg",
+  quantityMilliunits: 1_000,
+  unitPriceCents: 690,
+  totalPriceCents: 690,
+};
+
+const tripleItem: AssignmentRoomItem = {
+  ...singleItem,
+  description: "Cervejas",
   quantityMilliunits: 3_000,
   unitPriceCents: 1_000,
   totalPriceCents: 3_000,
 };
 
-function renderClaim(overrides: Partial<React.ComponentProps<typeof RoomItemClaim>> = {}) {
-  const onSubmit = vi.fn();
-  render(
-    <RoomItemClaim
-      item={item}
-      claimedTicks={0}
-      availableTicks={360_000}
-      pending={false}
-      disabled={false}
-      onSubmit={onSubmit}
-      {...overrides}
-    />,
+const me: AssignmentRoomParticipant = {
+  id: "person-a",
+  ordinal: 0,
+  displayName: "Ana Sala",
+  avatarUrl: null,
+  isGuest: false,
+  removed: false,
+};
+const other: AssignmentRoomParticipant = {
+  id: "person-b",
+  ordinal: 1,
+  displayName: "Bia",
+  avatarUrl: null,
+  isGuest: true,
+  removed: false,
+};
+
+interface HarnessOptions {
+  item?: AssignmentRoomItem;
+  initialClaims?: AssignmentRoomClaim[];
+  role?: "host" | "participant";
+  participants?: AssignmentRoomParticipant[];
+  submit?: (participantId: string, ticks: number) => Promise<boolean>;
+  error?: { participantId: string; message: string } | null;
+}
+
+/**
+ * Mirrors the board: the room only changes once a claim is accepted, so a test
+ * that never confirms must observe no change at all.
+ */
+function Harness({
+  item = singleItem,
+  initialClaims = [],
+  role = "participant",
+  participants = [me, other],
+  submit,
+  error = null,
+}: HarnessOptions) {
+  const [open, setOpen] = useState(true);
+  const [claims, setClaims] = useState(initialClaims);
+  const capacity = item.quantityMilliunits * 120;
+  const claimed = claims.reduce((sum, claim) => sum + claim.ticks, 0);
+
+  return (
+    <>
+      <p>
+        room: {claims.map((c) => `${c.participantId}=${c.ticks}`).join(",") || "vazio"}
+      </p>
+      <p>disponível: {capacity - claimed}</p>
+      <button type="button" onClick={() => setOpen(true)}>
+        Abrir
+      </button>
+      <RoomItemClaim
+        open={open}
+        onOpenChange={setOpen}
+        getReturnFocus={() => null}
+        item={item}
+        participants={participants}
+        claims={claims}
+        availableTicks={capacity - claimed}
+        selfParticipantId={me.id}
+        role={role}
+        pending={false}
+        disabled={false}
+        error={error}
+        onSubmit={
+          submit ??
+          (async (participantId, ticks) => {
+            setClaims((current) => {
+              const rest = current.filter(
+                (claim) => claim.participantId !== participantId,
+              );
+              return ticks === 0
+                ? rest
+                : [...rest, { itemId: item.id, participantId, ticks }];
+            });
+            return true;
+          })
+        }
+      />
+    </>
   );
-  return onSubmit;
 }
 
 describe("RoomItemClaim", () => {
-  it("submits exact absolute ticks for fractions, quantity text, and step controls", async () => {
+  it("changes nothing until the quantity is confirmed", async () => {
     const user = userEvent.setup();
-    const onSubmit = renderClaim();
+    const onSubmit = vi.fn(async () => true);
+    render(<Harness submit={onSubmit} />);
 
-    await user.click(screen.getByRole("button", { name: "Escolher quantidade" }));
-    await user.click(screen.getByRole("button", { name: "1/3" }));
-    expect(onSubmit).toHaveBeenLastCalledWith(120_000);
-
-    onSubmit.mockClear();
-    await user.click(screen.getByRole("button", { name: "Aumentar uma unidade" }));
-    expect(onSubmit).toHaveBeenCalledWith(120_000);
-
-    const input = screen.getByRole("textbox", { name: "Quantidade desejada" });
-    await user.clear(input);
-    await user.type(input, "1,5{Enter}");
-    expect(onSubmit).toHaveBeenLastCalledWith(180_000);
-  });
-
-  it("keeps invalid text local and collapse discards only the draft", async () => {
-    const user = userEvent.setup();
-    const onSubmit = renderClaim({ claimedTicks: 120_000, availableTicks: 240_000 });
-
-    await user.click(screen.getByRole("button", { name: "Editar minha parte" }));
-    const input = screen.getByRole("textbox", { name: "Quantidade desejada" });
-    await user.clear(input);
-    await user.type(input, "4{Enter}");
+    await user.click(screen.getByRole("button", { name: "1/2" }));
+    await user.click(screen.getByRole("button", { name: "Outra quantidade" }));
+    await user.click(
+      screen.getByRole("button", { name: "Aumentar uma unidade" }),
+    );
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("não está mais disponível");
 
-    await user.click(screen.getByRole("button", { name: "Recolher" }));
-    expect(screen.getByText("1/3 do item")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Editar minha parte" }));
-    expect(screen.getByRole("textbox", { name: "Quantidade desejada" })).toHaveValue("1");
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps pending feedback visible after the editor collapses", async () => {
+  it("leaves the other half available after taking half of one item", async () => {
     const user = userEvent.setup();
-    renderClaim({ pending: true, claimedTicks: 120_000, availableTicks: 240_000 });
+    render(<Harness />);
 
-    await user.click(screen.getByRole("button", { name: "Editar minha parte" }));
-    await user.click(screen.getByRole("button", { name: "Recolher" }));
+    await user.click(screen.getByRole("button", { name: "1/2" }));
+    expect(
+      screen.getByText("Depois de confirmar, restam 1/2 un."),
+    ).toBeInTheDocument();
 
-    expect(screen.getByRole("status")).toHaveTextContent("Salvando sua escolha");
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("room: person-a=60000")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("disponível: 60000")).toBeInTheDocument();
+  });
+
+  it("submits an exact third rather than a rounded decimal", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    render(<Harness item={tripleItem} submit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "1/3" }));
+    expect(screen.getByText("Sua quantidade: 1 un.")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000);
+  });
+
+  it("edits an existing claim as an absolute quantity", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    render(
+      <Harness
+        initialClaims={[
+          { itemId: singleItem.id, participantId: me.id, ticks: 60_000 },
+        ]}
+        submit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByText("Sua quantidade: 1/2 un.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Inteiro" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000);
+  });
+
+  it("releases a claim through the same confirmation", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initialClaims={[
+          { itemId: singleItem.id, participantId: me.id, ticks: 120_000 },
+        ]}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Remover minha escolha" }),
+    );
+    expect(screen.getByText("Sua quantidade: 0 un.")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("room: vazio")).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the editor open and refuses a second send while saving", async () => {
+    const user = userEvent.setup();
+    const deferred = Promise.withResolvers<boolean>();
+    const onSubmit = vi.fn(() => deferred.promise);
+    render(<Harness submit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "1/2" }));
+    const confirm = screen.getByRole("button", { name: "Confirmar quantidade" });
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Salvando..." })).toBeDisabled(),
+    );
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    deferred.resolve(true);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Confirmar quantidade" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the draft and shows why a rejected claim failed", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        submit={async () => false}
+        error={{ participantId: me.id, message: "Alguém pegou antes." }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "1/3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("Alguém pegou antes."),
+    );
+    expect(screen.getByText("Sua quantidade: 1/3 un.")).toBeInTheDocument();
+  });
+
+  it("refuses a draft the room can no longer fit without changing it", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initialClaims={[
+          { itemId: singleItem.id, participantId: other.id, ticks: 90_000 },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Outra quantidade" }));
+    const input = screen.getByRole("textbox", { name: "Quantidade desejada" });
+    await user.clear(input);
+    await user.type(input, "1");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "não está mais disponível",
+    );
+    expect(input).toHaveValue("1");
+    expect(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    ).toBeDisabled();
+  });
+
+  it("lets a host pick who receives the item without touching other drafts", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    render(
+      <Harness
+        role="host"
+        initialClaims={[
+          { itemId: singleItem.id, participantId: me.id, ticks: 60_000 },
+        ]}
+        submit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Pra quem?" }));
+    await user.click(screen.getByRole("option", { name: "Bia" }));
+    expect(
+      screen.getByText("Escolha uma quantidade para continuar."),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "1/2" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar quantidade" }),
+    );
+    expect(onSubmit).toHaveBeenCalledWith("person-b", 60_000);
   });
 });

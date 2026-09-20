@@ -1,110 +1,176 @@
 "use client";
 
+import { Check, Copy, QrCode, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Check, Copy, QrCode, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useBackHandler } from "@/hooks/use-back-handler";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 interface RoomShareProps {
   url: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   rotating: boolean;
+  rotationDisabled: boolean;
+  errorMessage: string | null;
   onRotate: () => void;
 }
 
-export function RoomShare({ url, rotating, onRotate }: RoomShareProps) {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wasOpenRef = useRef(false);
+export function RoomShare({
+  url,
+  open,
+  onOpenChange,
+  rotating,
+  rotationDisabled,
+  errorMessage,
+  onRotate,
+}: RoomShareProps) {
+  // Feedback is remembered against the invite it belongs to, so a rotated
+  // link or a reopened dialog drops stale "copiado" and QR failures without an
+  // effect writing state back on every render.
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [copyFailedUrl, setCopyFailedUrl] = useState<string | null>(null);
+  const [qrFailedUrl, setQrFailedUrl] = useState<string | null>(null);
+  // The dialog mounts its content in a portal, so the canvas can arrive after
+  // the effect that wants to draw on it. Tracking the node as state makes the
+  // draw run when the element exists instead of silently skipping it and
+  // leaving an empty white square where the QR should be.
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
 
-  const close = useCallback(() => {
-    setOpen(false);
-    setCopied(false);
-    setCopyFailed(false);
-  }, []);
-  useBackHandler(open, close);
+  const copied = open && url !== null && copiedUrl === url;
+  const copyFailed = open && url !== null && copyFailedUrl === url;
+  const qrFailed = url !== null && qrFailedUrl === url;
 
+  // The QR stays hidden while a rotation is in flight so an old code is never
+  // presented as current. The cancellation flag keeps a completion from an
+  // older URL from overwriting the current dialog state.
   useEffect(() => {
-    if (wasOpenRef.current && !open) triggerRef.current?.focus();
-    wasOpenRef.current = open;
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !url || !canvasRef.current) return;
-    void QRCode.toCanvas(canvasRef.current, url, { width: 224, margin: 2 });
-  }, [open, url]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      close();
+    if (!open || !url || rotating || !canvas) return;
+    let cancelled = false;
+    void QRCode.toCanvas(canvas, url, { width: 224, margin: 2 }).then(
+      () => {
+        if (!cancelled) setQrFailedUrl(null);
+      },
+      () => {
+        if (!cancelled) setQrFailedUrl(url);
+      },
+    );
+    return () => {
+      cancelled = true;
     };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [close, open]);
+  }, [canvas, open, url, rotating]);
 
   async function handleCopy() {
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setCopyFailed(false);
+      setCopiedUrl(url);
+      setCopyFailedUrl(null);
     } catch {
-      setCopied(false);
-      setCopyFailed(true);
+      setCopiedUrl(null);
+      setCopyFailedUrl(url);
     }
   }
 
-  if (!open) {
-    return (
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="outline"
-        className="min-h-11 w-full"
-        onClick={() => setOpen(true)}
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger
+        render={<Button type="button" variant="ghost" className="min-h-11" />}
       >
         <QrCode className="size-4" />
-        Mostrar convite
-      </Button>
-    );
-  }
+        Convidar
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Convide o pessoal</DialogTitle>
+          <DialogDescription>
+            Escaneie o QR ou copie o link. Quem já tem conta entra com ela; quem não tem entra
+            com um nome.
+          </DialogDescription>
+        </DialogHeader>
 
-  return (
-    <section className="space-y-4 rounded-2xl border bg-card p-4" aria-label="Convite da sala">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-heading font-semibold">Convide o pessoal</h2>
-          <p className="text-sm text-muted-foreground">Mostre o QR ou copie o link.</p>
-        </div>
-        <Button type="button" size="icon" variant="ghost" className="min-h-11 min-w-11" onClick={close}>
-          <X className="size-4" />
-          <span className="sr-only">Recolher convite</span>
-        </Button>
-      </div>
+        {url && (
+          <canvas
+            key={url}
+            ref={setCanvas}
+            aria-label="QR code do convite"
+            aria-hidden={rotating || qrFailed}
+            hidden={rotating || qrFailed}
+            width={224}
+            height={224}
+            className="mx-auto max-w-full rounded-xl bg-white p-2"
+          />
+        )}
+        {qrFailed && !rotating && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Não foi possível gerar o QR. Você ainda pode copiar o link.
+          </p>
+        )}
 
-      {url ? (
-        <div className="space-y-3 text-center">
-          <canvas ref={canvasRef} className="mx-auto max-w-full rounded-xl bg-white p-2" aria-label="QR code do convite" />
-          <Button type="button" variant="outline" className="min-h-11 w-full" onClick={handleCopy}>
+        {url === null && !rotating && (
+          <p className="text-sm text-muted-foreground">
+            Este aparelho não tem o convite atual. Gere um novo para compartilhar.
+          </p>
+        )}
+
+        {errorMessage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errorMessage}
+          </p>
+        )}
+
+        {copyFailed && (
+          <p role="alert" className="text-sm text-destructive">
+            Não foi possível copiar. Tente novamente.
+          </p>
+        )}
+
+        {/* Full-width actions stack in reading order; the shared footer's row
+            layout would push them past the popup edge on a wide screen. */}
+        <DialogFooter className="flex-col sm:flex-col sm:justify-stretch">
+          <Button
+            type="button"
+            className="min-h-11 w-full"
+            disabled={!url || rotating}
+            onClick={handleCopy}
+          >
             {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             {copied ? "Link copiado" : "Copiar link"}
           </Button>
-          {copyFailed && <p role="alert" className="text-sm text-destructive">Não foi possível copiar. Tente novamente.</p>}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Gere um novo convite para continuar compartilhando.</p>
-      )}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            onClick={() => onOpenChange(false)}
+          >
+            Voltar para a sala
+          </Button>
+        </DialogFooter>
 
-      <Button type="button" variant="ghost" className="min-h-11 w-full" disabled={rotating} onClick={onRotate}>
-        <RefreshCw className={rotating ? "size-4 animate-spin" : "size-4"} />
-        {rotating ? "Gerando novo convite..." : "Gerar novo convite"}
-      </Button>
-    </section>
+        {url !== null && !rotating && (
+          <p className="text-xs text-muted-foreground">
+            O link anterior deixará de funcionar. Quem já entrou continua na sala.
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          className="min-h-11 w-full"
+          disabled={rotationDisabled || rotating}
+          onClick={onRotate}
+        >
+          <RefreshCw className={rotating ? "size-4 animate-spin" : "size-4"} />
+          {rotating ? "Gerando convite..." : url ? "Gerar novo convite" : "Gerar convite"}
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

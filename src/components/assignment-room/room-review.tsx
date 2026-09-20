@@ -151,6 +151,13 @@ export function RoomReview({
         </p>
       )}
 
+      <p className="text-sm text-muted-foreground">
+        Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já
+        participa continua no grupo; convidados continuam sem precisar de conta.
+      </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <Button type="button" variant="outline" className="min-h-11" disabled={pending} onClick={onEditClaims}>
           Corrigir escolhas
