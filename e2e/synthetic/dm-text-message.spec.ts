@@ -1,4 +1,4 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 
 test.describe("DM text messages", () => {
   test("shows a sent text message in the sender's thread", async ({
@@ -57,15 +57,13 @@ test.describe("DM text messages", () => {
     page,
     seed,
     loginAs,
-    browser,
+    newSession,
   }) => {
     const alice = await seed.createUser({ name: "Alice Realtime" });
     const bob = await seed.createUser({ name: "Bob Realtime" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto(`/app/conversations/${alice.id}`);
     await bobPage.waitForLoadState("networkidle");
