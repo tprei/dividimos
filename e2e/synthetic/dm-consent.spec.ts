@@ -1,4 +1,4 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 
 test.describe("DM consent", () => {
   test("initiator sees an awaiting-acceptance conversation without payment affordances", async ({
@@ -25,7 +25,7 @@ test.describe("DM consent", () => {
   });
 
   test("invitee sees only the invitation, never messages or money", async ({
-    browser,
+    newSession,
     seed,
   }) => {
     const alice = await seed.createUser({ name: "Alice Convite" });
@@ -36,9 +36,7 @@ test.describe("DM consent", () => {
     });
     await seed.sendChatMessage(dm.id, alice.id, "conteúdo privado antes do aceite");
 
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto("/app/conversations");
     await expect(
@@ -63,7 +61,7 @@ test.describe("DM consent", () => {
 
   test("accepting makes the conversation usable for both sides", async ({
     page,
-    browser,
+    newSession,
     seed,
     loginAs,
   }) => {
@@ -80,9 +78,7 @@ test.describe("DM consent", () => {
     await expect(banner).toBeVisible();
     await expect(page.getByTestId("chat-input")).toHaveCount(0);
 
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto("/app/conversations");
     await bobPage.getByTestId("conversation-row-dm").click();
@@ -98,7 +94,7 @@ test.describe("DM consent", () => {
   });
 
   test("declining removes the conversation from the invitee's list", async ({
-    browser,
+    newSession,
     seed,
   }) => {
     const alice = await seed.createUser({ name: "Alice Recusa" });
@@ -106,9 +102,7 @@ test.describe("DM consent", () => {
 
     await seed.createDmGroup(alice, bob, { autoAcceptCounterparty: false });
 
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto("/app/conversations");
     await bobPage.getByTestId("conversation-row-dm").click();

@@ -79,6 +79,7 @@ function snapshot(
     unreadCount?: number;
     expenseCount?: number;
     recentExpenses?: GroupSnapshot["recentExpenses"];
+    overview?: GroupSnapshot["overview"];
   } = {},
 ): GroupSnapshot {
   const base: GroupSnapshot = {
@@ -173,6 +174,20 @@ describe("GroupsListContent", () => {
       "href",
       "/app/groups/g1",
     );
+  });
+
+  it("renders the authoritative group avatar in the list", () => {
+    seed([
+      snapshot("g1", {
+        group: { name: "Viagem" },
+        members: [member("user-1", "Alice", "accepted")],
+        overview: { avatar: { kind: "emoji", emoji: "🍕" }, spending: null },
+      }),
+    ]);
+
+    render(<GroupsListContent />);
+
+    expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
   });
 
   it("renders a signed receivable and an in-day balance", () => {
