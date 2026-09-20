@@ -56,6 +56,11 @@ async function collapseEditor(page: Page, description: string): Promise<void> {
   if (await collapse.isVisible()) await collapse.click();
 }
 
+async function selectHostParticipant(page: Page, displayName: string): Promise<void> {
+  await page.getByRole("combobox", { name: "Editar escolhas de" }).click();
+  await page.getByRole("option", { name: displayName, exact: true }).click();
+}
+
 // A production build copies the canonical production origin, so guests join
 // through the same path and fragment on the server under test.
 function localInvitation(invitation: string): string {
@@ -204,7 +209,7 @@ test.describe("Assignment room multi-client acceptance", () => {
             await expect(itemCard(guestAPage, "Cervejas").getByText("2/3 do item")).toBeVisible();
           },
           async () => {
-            await page.getByLabel("Editar escolhas de").selectOption({ label: GUEST_A });
+            await selectHostParticipant(page, GUEST_A);
             await expect(itemCard(page, "Cervejas").getByText("2/3 do item")).toBeVisible({
               timeout: ROOM_TIMEOUT,
             });
@@ -218,7 +223,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         );
 
         await claimQuantity(guestBPage, "Cervejas", "1");
-        await page.getByLabel("Editar escolhas de").selectOption({ label: GUEST_B });
+        await selectHostParticipant(page, GUEST_B);
         await expect(itemCard(page, "Cervejas").getByText("1/3 do item")).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
@@ -228,7 +233,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           "undo",
           () => claimQuantity(guestAPage, "Cervejas", "1"),
           async () => {
-            await page.getByLabel("Editar escolhas de").selectOption({ label: GUEST_A });
+            await selectHostParticipant(page, GUEST_A);
             await expect(itemCard(page, "Cervejas").getByText("1/3 do item")).toBeVisible({
               timeout: ROOM_TIMEOUT,
             });
@@ -241,7 +246,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           name: "Quantidade desejada",
         });
         await preservedInput.focus();
-        await page.getByLabel("Editar escolhas de").selectOption({ label: HOST_NAME });
+        await selectHostParticipant(page, HOST_NAME);
         await claimQuantity(page, "Cervejas", "1");
         await expect(preservedInput).toBeVisible({ timeout: ROOM_TIMEOUT });
         await expect(preservedInput).toBeFocused();
@@ -345,7 +350,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await waitForRoom(guestBPage);
       await expect(itemCard(guestBPage, "Petisco").getByText("1/3 do item")).toBeVisible();
 
-      await page.getByLabel("Editar escolhas de").selectOption({ label: HOST_NAME });
+      await selectHostParticipant(page, HOST_NAME);
       await claimQuantity(page, "Cervejas", "2");
       await collapseEditor(page, "Cervejas");
       await claimQuantity(page, "Petisco", "2");
@@ -373,7 +378,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       );
 
       await page.getByRole("button", { name: "Corrigir escolhas" }).click();
-      await page.getByLabel("Editar escolhas de").selectOption({ label: GUEST_B });
+      await selectHostParticipant(page, GUEST_B);
       const guestBBeer = itemCard(page, "Cervejas");
       if (!(await guestBBeer.getByRole("button", { name: "Desfazer minha escolha" }).isVisible())) {
         await guestBBeer.getByRole("button", { name: "Editar minha parte" }).click();
@@ -382,7 +387,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await expect(itemCard(guestBPage, "Cervejas").getByText("Nada escolhido")).toBeVisible({
         timeout: ROOM_TIMEOUT,
       });
-      await page.getByLabel("Editar escolhas de").selectOption({ label: HOST_NAME });
+      await selectHostParticipant(page, HOST_NAME);
       await claimQuantity(page, "Cervejas", "3");
       await expect(itemCard(guestBPage, "Cervejas")).toHaveCount(0);
       await page.getByRole("button", { name: "Voltar" }).click();
