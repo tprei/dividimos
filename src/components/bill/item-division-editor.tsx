@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { DivisionModePills } from "@/components/bill/division-mode-pills";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
@@ -21,6 +22,7 @@ import {
   computeDivision,
   divisionStatusText,
   percentText,
+  previewDivision,
   type ItemDivisionMode,
   type ItemDivisionValue,
 } from "@/lib/item-division";
@@ -52,6 +54,7 @@ function ShareCell({
   onFocus,
   onPercentChange,
   onFixedChange,
+  id,
 }: {
   shareCents: number | null;
   percentInput: string | null;
@@ -60,35 +63,54 @@ function ShareCell({
   onFocus: () => void;
   onPercentChange: (value: string) => void;
   onFixedChange: (value: string) => void;
+  id: string;
 }) {
   if (percentInput !== null) {
     return (
-      <Input
-        value={percentInput}
-        onChange={(event) => onPercentChange(event.target.value)}
-        onFocus={onFocus}
-        inputMode="decimal"
-        aria-label={inputLabel}
-        className="h-11 w-24 bg-card text-right font-mono"
-      />
+      <div id={id} className="flex shrink-0 items-center gap-2">
+        <Input
+          value={percentInput}
+          onChange={(event) => onPercentChange(event.target.value)}
+          onFocus={onFocus}
+          inputMode="decimal"
+          aria-label={inputLabel}
+          className="h-11 w-24 bg-card text-right font-mono"
+        />
+        {shareCents === null ? (
+          <span className="w-[4.5rem] text-right text-sm text-muted-foreground">—</span>
+        ) : (
+          <Money cents={shareCents} className="w-[4.5rem] shrink-0 text-right text-sm" />
+        )}
+      </div>
     );
   }
   if (fixedInput !== null) {
     return (
-      <Input
-        value={fixedInput}
-        onChange={(event) => onFixedChange(event.target.value)}
-        onFocus={onFocus}
-        inputMode="decimal"
-        aria-label={inputLabel}
-        className="h-11 w-24 bg-card text-right font-mono"
-      />
+      <div id={id} className="flex shrink-0 items-center gap-2">
+        <Input
+          value={fixedInput}
+          onChange={(event) => onFixedChange(event.target.value)}
+          onFocus={onFocus}
+          inputMode="decimal"
+          aria-label={inputLabel}
+          className="h-11 w-24 bg-card text-right font-mono"
+        />
+        {shareCents === null ? (
+          <span className="w-[4.5rem] text-right text-sm text-muted-foreground">—</span>
+        ) : (
+          <Money cents={shareCents} className="w-[4.5rem] shrink-0 text-right text-sm" />
+        )}
+      </div>
     );
   }
   if (shareCents === null) {
-    return <span className="text-sm text-muted-foreground">—</span>;
+    return <span id={id} className="text-sm text-muted-foreground">—</span>;
   }
-  return <Money cents={shareCents} className="text-sm" />;
+  return (
+    <span id={id}>
+      <Money cents={shareCents} className="text-sm" />
+    </span>
+  );
 }
 
 function percentSliderValue(text: string): number {
@@ -181,6 +203,15 @@ export function ItemDivisionEditor({
     mode === "equal" ? selectedIds : participantIds.filter((id) => contributes(id));
 
   const division = computeDivision(itemCents, mode, includedIds, percentValues, fixedValues);
+  // Presentation only: rows preview their authored values before the division closes.
+  const preview = previewDivision(
+    itemCents,
+    mode,
+    mode === "equal" ? includedIds : participantIds,
+    percentValues,
+    fixedValues,
+    division,
+  );
   const percentSliderValues: Record<string, number> = {};
   for (const id of participantIds) percentSliderValues[id] = percentSliderValue(percentValues[id]);
   const fixedSliderValues: Record<string, number> = {};
@@ -304,21 +335,57 @@ export function ItemDivisionEditor({
         groupLabel={`Modo de divisão de ${itemName}`}
         idPrefix={`modo-divisao-${itemId}`}
       />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold">Pessoas</p>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" className="min-h-11" onClick={handleSelectAll}>
             Todos
           </Button>
           <Button variant="ghost" size="sm" className="min-h-11" onClick={handleSelectNone}>
             Nenhum
           </Button>
+          {/* Closing is explicit and separate from autosave: saving a valid
+              edit must never collapse the editor under the user. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="min-h-11 min-w-11"
+            onClick={handleDone}
+            aria-label={`Concluir divisão de ${itemName}`}
+          >
+            <Check className="size-4" aria-hidden="true" />
+          </Button>
         </div>
+      </div>
+      <div className="sticky top-0 z-10 -mx-4 bg-muted px-4 py-2">
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">Total do item</span>
+          <Money cents={itemCents} className="text-xs" />
+        </div>
+        <p
+          aria-live="polite"
+          className={cn(
+            "min-h-4 text-xs font-semibold",
+            division.ok ? "text-muted-foreground" : "text-destructive",
+          )}
+        >
+          {status}
+        </p>
       </div>
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-input bg-card">
         {participants.map((participant) => {
           const selected = includedIds.includes(participant.id);
           const shareId = `${itemId}-share-${participant.id}`;
+          // Equal mode: excluded people render zero; percent/fixed rows preview
+          // their own authored field (null only while it cannot parse).
+          const shareCents =
+            mode === "equal"
+              ? selected
+                ? division.ok
+                  ? division.centsById[participant.id]
+                  : preview.centsById[participant.id] ?? null
+                : 0
+              : preview.centsById[participant.id] ?? null;
           const identity = (
             <>
               {participant.isGuest ? (
@@ -340,25 +407,24 @@ export function ItemDivisionEditor({
             </>
           );
           const shareCell = (
-            <span id={shareId}>
-              <ShareCell
-                shareCents={selected && division.ok ? division.centsById[participant.id] : null}
-                percentInput={mode === "percent" ? percentValues[participant.id] : null}
-                fixedInput={mode === "fixed" ? fixedValues[participant.id] : null}
-                inputLabel={
-                  mode === "percent"
-                    ? `Percentual de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
-                    : `Valor fixo de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
-                }
-                onFocus={() => setLastTouchedId(participant.id)}
-                onPercentChange={(next) =>
-                  setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))
-                }
-                onFixedChange={(next) =>
-                  setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))
-                }
-              />
-            </span>
+            <ShareCell
+              id={shareId}
+              shareCents={shareCents}
+              percentInput={mode === "percent" ? percentValues[participant.id] : null}
+              fixedInput={mode === "fixed" ? fixedValues[participant.id] : null}
+              inputLabel={
+                mode === "percent"
+                  ? `Percentual de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
+                  : `Valor fixo de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
+              }
+              onFocus={() => setLastTouchedId(participant.id)}
+              onPercentChange={(next) =>
+                setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))
+              }
+              onFixedChange={(next) =>
+                setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))
+              }
+            />
           );
           if (mode === "equal") {
             return (
@@ -442,18 +508,11 @@ export function ItemDivisionEditor({
           );
         })}
       </div>
-      <p
-        aria-live="polite"
-        className={cn("text-xs font-semibold", division.ok ? "text-muted-foreground" : "text-destructive")}
-      >
-        {status}
-      </p>
-      {division.ok && (
-        <p className="text-xs text-muted-foreground">Salvo automaticamente</p>
+      {!division.ok && (
+        <p className="text-xs text-muted-foreground">
+          Divisão incompleta. Ao fechar, vale a última divisão salva.
+        </p>
       )}
-      <Button className="h-11 w-full" onClick={handleDone}>
-        Pronto
-      </Button>
     </div>
   );
 }

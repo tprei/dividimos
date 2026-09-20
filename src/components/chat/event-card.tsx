@@ -10,6 +10,7 @@ import { describeEvent } from "@/lib/ledger/event-copy";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { cn } from "@/lib/utils";
+import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
@@ -76,6 +77,7 @@ interface EventCardProps {
 export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf }: EventCardProps) {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId);
   const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "");
   const copy = describeEvent(event, {
@@ -170,7 +172,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   };
 
   return (
-    <div className="w-full">
+    <div className="relative w-full">
       <p className="mb-1 text-center text-[11px] text-muted-foreground">{copy}</p>
       <div className="rounded-2xl border bg-card p-3" data-testid="event-settlement-card">
         <div className="flex items-center gap-3">
@@ -195,21 +197,32 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
             </span>
           </div>
         </div>
-        {canUndo && (
+        {settlementId !== null && (
           <div className="mt-2.5 flex gap-2">
+            {canUndo && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="min-h-11 flex-1 gap-1.5 text-xs"
+                onClick={() => {
+                  if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                  else void handleVoid();
+                }}
+                disabled={busy}
+                data-testid="event-undo-settlement"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                Desfazer
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
               className="min-h-11 flex-1 gap-1.5 text-xs"
-              onClick={() => {
-                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
-                else void handleVoid();
-              }}
-              disabled={busy}
-              data-testid="event-undo-settlement"
+              onClick={() => setDetailOpen(true)}
+              data-testid="event-view-settlement"
             >
-              <Undo2 className="h-3.5 w-3.5" />
-              Desfazer
+              Ver pagamento
             </Button>
           </div>
         )}
@@ -226,6 +239,14 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
             void handleVoid();
           }}
           onSkipFutureConfirmations={() => updatePreferences({ confirmVoidSettlement: false })}
+        />
+      )}
+      {settlementId !== null && (
+        <SettlementDetailPopover
+          settlementId={settlementId}
+          groupId={groupId}
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
         />
       )}
     </div>
