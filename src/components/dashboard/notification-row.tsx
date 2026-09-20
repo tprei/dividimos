@@ -47,11 +47,13 @@ function ActionButton({
       onClick={onClick}
       className={
         compact
-          ? `flex size-11 shrink-0 items-center justify-center rounded-lg transition-colors ${className}`
+          ? // A 32px disc reads as a quiet affordance beside the text; the
+            // pseudo-element pushes the tap area back out to 44px.
+            `relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1.5 after:content-[''] ${className}`
           : `flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-1 transition-colors ${className}`
       }
     >
-      <Icon className="h-4 w-4" aria-hidden="true" />
+      <Icon className="size-3.5" aria-hidden="true" />
       {compact ? <span className="sr-only">{label}</span> : <span className="text-[10px] font-medium">{label}</span>}
     </button>
   );
@@ -147,13 +149,13 @@ export function NotificationRow({
           {marker}
           {children}
         </Link>
-        <div className="flex shrink-0 items-start gap-1.5">
+        <div className="mt-0.5 flex shrink-0 items-start gap-1">
           {unread && (
             <ActionButton
               compact
               label="Marcar como lida"
               icon={Check}
-              className="bg-success/15 text-success"
+              className="text-success hover:bg-success/15"
               onClick={markRead}
             />
           )}
@@ -161,7 +163,7 @@ export function NotificationRow({
             compact
             label="Dispensar"
             icon={X}
-            className="bg-muted text-muted-foreground"
+            className="text-muted-foreground hover:bg-muted"
             onClick={dismiss}
           />
         </div>
