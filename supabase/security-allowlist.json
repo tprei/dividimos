@@ -85,6 +85,11 @@
       "authenticated": false,
       "note": "Internal broadcast helper; called only inside ledger RPCs."
     },
+    "public.cancel_assignment_room(p_room_id uuid, p_expected_revision bigint)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; cancels an open room and revokes its capabilities."
+    },
     "public.cancel_vendor_charge(p_charge_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -200,6 +205,11 @@
       "authenticated": false,
       "note": "Internal ledger helper; called only inside ledger RPCs."
     },
+    "public.get_assignment_room(p_room_id uuid, p_member_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability or authenticated-host read; returns only the role-scoped room view."
+    },
     "public.get_activity(p_before_id bigint, p_limit integer)": {
       "anon": false,
       "authenticated": true,
@@ -294,6 +304,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.join_assignment_room(p_room_id uuid, p_join_token text, p_member_token text, p_display_name text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability-authenticated room join; stores only token digests and never grants group membership."
     },
     "public.join_via_link(p_token text)": {
       "anon": false,
@@ -394,6 +409,16 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.refresh_assignment_room_member(p_room_id uuid, p_member_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability-authenticated refresh; extends only a currently valid active room membership."
+    },
+    "public.remove_assignment_room_participant(p_room_id uuid, p_participant_id uuid, p_expected_revision bigint, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; removes one participant and rotates room access."
     },
     "public.remove_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,

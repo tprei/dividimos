@@ -1125,6 +1125,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      cancel_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+        }
+        Returns: Json
+      }
       cancel_vendor_charge: {
         Args: {
           p_charge_id: string
@@ -1314,6 +1321,13 @@ export type Database = {
         }
         Returns: Json
       }
+      get_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
       get_conversation: {
         Args: {
           p_group_id: string
@@ -1441,6 +1455,15 @@ export type Database = {
           p_user_id: string
         }
         Returns: boolean
+      }
+      join_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_join_token: string
+          p_member_token: string
+          p_display_name: string
+        }
+        Returns: Json
       }
       join_via_link: {
         Args: {
@@ -1578,6 +1601,22 @@ export type Database = {
         Args: {
           p_amount_cents: number
           p_description?: string
+        }
+        Returns: Json
+      }
+      refresh_assignment_room_member: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
+      remove_assignment_room_participant: {
+        Args: {
+          p_room_id: string
+          p_participant_id: string
+          p_expected_revision: number
+          p_join_token: string
         }
         Returns: Json
       }
