@@ -254,6 +254,36 @@ export interface GroupGuest {
   expenseId: string;
 }
 
+export type GroupAvatar =
+  | { kind: "initials" }
+  | { kind: "emoji"; emoji: string }
+  | { kind: "photo"; photoId: string };
+
+export type GroupSpendingRow =
+  | {
+      kind: "user";
+      participantId: string;
+      user: UserProfile;
+      shareCents: number;
+    }
+  | {
+      kind: "guest";
+      participantId: string;
+      displayName: string;
+      shareCents: number;
+    };
+
+export interface GroupSpending {
+  totalCents: number;
+  participants: GroupSpendingRow[];
+}
+
+export interface GroupOverviewData {
+  avatar: GroupAvatar;
+  spending: GroupSpending | null;
+}
+
+
 export interface GroupSnapshot {
   group: Group;
   members: GroupMember[];
@@ -267,6 +297,7 @@ export interface GroupSnapshot {
   lastActivityAt: string | null;
   expenseCount: number;
   pairwiseEdges: Transfer[];
+  overview?: GroupOverviewData;
 }
 
 export interface Bootstrap {

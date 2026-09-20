@@ -10,72 +10,19 @@ import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
+import { formatRelativeDate } from "@/lib/datetime";
 import { describeEvent } from "@/lib/ledger/event-copy";
+import { getGroupName, makeNameOf } from "@/lib/ledger/group-names";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 
-function formatRelativeDate(timestamp: string): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
-  const diffDays = Math.floor(diffMs / 86_400_000);
-
-  if (diffMin < 1) return "agora";
-  if (diffMin < 60) return `${diffMin}min`;
-  if (diffHours < 24) return `${diffHours}h`;
-  if (diffDays < 7) return `${diffDays}d`;
-
-  return date.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-function getGroupName(
-  groupId: string,
-  groups: Record<string, GroupSnapshot>,
-  meId: string | undefined,
-): string {
-  const snapshot = groups[groupId];
-  if (!snapshot) return "Grupo";
-  if (snapshot.group.kind === "dm") {
-    const counterparty = snapshot.members.find((m) => m.user.id !== meId);
-    return counterparty?.user.name ?? snapshot.group.name;
-  }
-  return snapshot.group.name;
-}
-
-function makeNameOf(
-  groupId: string,
-  groups: Record<string, GroupSnapshot>,
-  meId: string | undefined,
-): (userId: string) => string {
-  return (userId: string) => {
-    if (userId && userId === meId) return "você";
-    const currentGroup = groups[groupId];
-    if (currentGroup) {
-      const member = currentGroup.members.find((m) => m.user.id === userId);
-      if (member) return member.user.name;
-      const guest = currentGroup.guests.find((g) => g.id === userId);
-      if (guest) return guest.displayName;
-    }
-    for (const group of Object.values(groups)) {
-      const member = group.members.find((m) => m.user.id === userId);
-      if (member) return member.user.name;
-      const guest = group.guests.find((g) => g.id === userId);
-      if (guest) return guest.displayName;
-    }
-    return "alguém";
-  };
-}
 
 interface ActivityRowProps {
   event: GroupEvent;
@@ -86,6 +33,7 @@ interface ActivityRowProps {
 function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
@@ -154,34 +102,61 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               {relativeTime}
             </span>
           </div>
-          {canUndo && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
-                else void handleConfirmUndo();
-              }}
-              disabled={isUndoing}
-              data-testid="activity-undo-settlement"
-            >
-              {isUndoing ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <>
-                  <Undo2 className="mr-1 h-3 w-3" />
-                  Desfazer
-                </>
-              )}
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {event.settlementId !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDetailOpen(true);
+                }}
+                data-testid="activity-view-settlement"
+              >
+                Ver pagamento
+              </Button>
+            )}
+            {canUndo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                  else void handleConfirmUndo();
+                }}
+                disabled={isUndoing}
+                data-testid="activity-undo-settlement"
+              >
+                {isUndoing ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <>
+                    <Undo2 className="mr-1 h-3 w-3" />
+                    Desfazer
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
+
+  const sheet =
+    event.settlementId !== null ? (
+      <SettlementDetailPopover
+        settlementId={event.settlementId}
+        groupId={event.groupId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
+    ) : null;
 
   const dialog = canUndo ? (
     <VoidSettlementDialog
@@ -200,7 +175,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
 
   if (event.expenseId) {
     return (
-      <>
+      <div className="relative">
         <Link
           href={`/app/bill/${event.expenseId}`}
           className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
@@ -208,17 +183,19 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
           {cardContent}
         </Link>
         {dialog}
-      </>
+        {sheet}
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="relative">
       <div className="rounded-xl border bg-card p-3">
         {cardContent}
       </div>
       {dialog}
-    </>
+      {sheet}
+    </div>
   );
 }
 

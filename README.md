@@ -286,6 +286,7 @@ npm run test:watch           # Run unit tests in watch mode
 npm run test:integration     # Run integration tests (requires supabase start)
 npm run test:all             # Run unit + integration tests
 npm run test:synthetic       # Run Playwright synthetic E2E tests
+npm run test:synthetic:mobile # Same synthetic suite on iPhone 13 (WebKit) + Pixel 5
 npm run test:soak            # Unit tests with the properties at 5,000 runs
 npm run test:soak:integration # Integration tests with the properties at 150 runs
 ./scripts/dev-setup.sh       # One-command local setup
@@ -331,7 +332,7 @@ CI runs on every pull request and on push to `main` across several workflows in 
 
 - `ci.yml` — `npm test` (unit), `npx tsc --noEmit` (type check), `npm run lint`.
 - `integration.yml` — `npm run test:integration` against a fresh local Supabase instance.
-- `synthetic.yml` — `npm run test:synthetic` (Playwright) against local Supabase + the dev server, sharded.
+- `synthetic.yml` — Playwright synthetics against local Supabase + a production build, sharded across three projects: Desktop Chrome, iPhone 13 (WebKit), and Pixel 5 (mobile Chromium).
 - `migrations.yml` — replays the complete migration directory on an independent fresh database, verifies the reviewed migration epoch on two databases, runs the integration contract suite, checks database security invariants, and regenerates `src/types/database.ts` from the resulting catalog.
 - `soak.yml` — nightly, replays the property-based ledger tests at high run counts with a fresh seed and opens a `soak-failure` issue carrying the seed when they break.
 - `android.yml` — signed Android release AAB via Capacitor, on push to `main`.
@@ -350,6 +351,20 @@ Triggers on push to `main`. Builds a signed release AAB using Capacitor's native
 **versionCode strategy**: Uses `github.run_number` (auto-incrementing). For Play Store releases, consider switching to tag-based versioning.
 
 **Build output**: Signed AAB uploaded as artifact (`app-release-<run_number>`), retained for 7 days.
+
+### Mobile development loop
+
+The Capacitor WebView loads the running dev server rather than a static export, so `npm run dev` must be up in another terminal.
+
+```bash
+npm run cap:dev:android                                  # emulator, host reachable at 10.0.2.2
+scripts/cap-dev.sh android --device --run                # USB device; forwards port 3000 with adb reverse
+LAN_IP=192.168.0.14 scripts/cap-dev.sh android --device  # device over Wi-Fi, opens Android Studio
+```
+
+Requires JDK 21 and the Android SDK platform-tools on `PATH`. Inspect the WebView from desktop Chrome at `chrome://inspect`. After changing `capacitor.config.ts` or the manifest, run `npx cap sync android` and rebuild; compiling is not proof that the keyboard behaves.
+
+Native iOS is not initialized in this repo: there is no `ios/` directory, and `scripts/cap-dev.sh ios` refuses with that message rather than generating an unverified project. iOS is covered as a PWA in Safari plus the WebKit synthetic project.
 
 ## Testing
 

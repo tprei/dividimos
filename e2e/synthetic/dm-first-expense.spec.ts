@@ -1,4 +1,4 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 
 test.describe("DM first expense", () => {
   test("wizard creates expense and its event appears in thread", async ({
@@ -87,7 +87,7 @@ test.describe("DM first expense", () => {
     page,
     seed,
     loginAs,
-    browser,
+    newSession,
     adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice DM Both" });
@@ -109,9 +109,7 @@ test.describe("DM first expense", () => {
       timeout: 5000,
     });
 
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto(`/app/conversations/${alice.id}`);
     await bobPage.waitForLoadState("networkidle");
