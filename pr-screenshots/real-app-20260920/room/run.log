@@ -1,0 +1,7 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 ../../../../../../tmp/dividimos-authentic-evidence/room/room-capture.spec.ts:126:7 › Assignment room multi-client acceptance › feels like everyone's using the same client (25.2s)
+
+  1 passed (26.7s)
+

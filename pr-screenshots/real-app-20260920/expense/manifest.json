@@ -1,0 +1,143 @@
+{
+  "scenario": "Same actual room-finalized expense, host and accepted non-host member, same database and browser; parent/head1046; onboarding tour completed before capture",
+  "records": [
+    {
+      "file": "expense-host-360x740-before.png",
+      "side": "before",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "6c5a0fd64578898e88fd4d7b31fe7476506a68a9da91eb01daf1e0ff195eeaf0"
+    },
+    {
+      "file": "expense-host-390x844-before.png",
+      "side": "before",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "34ceefc287f9d8dfd5043fde2c88f993999508472abb2c8ff8d4957c6d5750b6"
+    },
+    {
+      "file": "expense-host-430x932-before.png",
+      "side": "before",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "c72c88cc97fe8fe0f13b1e5e1e6640ac60ed5c729d24c6bc1a85326dcacc957c"
+    },
+    {
+      "file": "expense-host-360x740-after.png",
+      "side": "after",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "ecc60d7b87c1600b76908b983261381ed80a137efd466580f9f30818b23cd4e6"
+    },
+    {
+      "file": "expense-host-390x844-after.png",
+      "side": "after",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "d675bdb7d4e2316fc1faf230530202b6b204edc41ee65f64b52f333e8a86ac1b"
+    },
+    {
+      "file": "expense-host-430x932-after.png",
+      "side": "after",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "4b9a298d760cbf5322e9e1fa9c2a9fbfdaea4e139f3675958c9412eeec450527"
+    },
+    {
+      "file": "expense-nonhost-360x740-before.png",
+      "side": "before",
+      "role": "nonhost",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "fa15f3b9851b971e4dadee6dfee66017a9c343f7167d8a478f39e649ab189562"
+    },
+    {
+      "file": "expense-nonhost-390x844-before.png",
+      "side": "before",
+      "role": "nonhost",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "9239313b4a8465ec6ec2d85678addd1acfeafb51efcb05ee0912bdd8b1967154"
+    },
+    {
+      "file": "expense-nonhost-430x932-before.png",
+      "side": "before",
+      "role": "nonhost",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "32485714a9eb4af78f20100abafba7a3cc3d6281",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "fe1e1134f8b17460b07cbfe407ba3a65dbb9de5a854b980b37afbd9134f5d164"
+    },
+    {
+      "file": "expense-nonhost-360x740-after.png",
+      "side": "after",
+      "role": "nonhost",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "d624d79da91fe662f0839e22328e1f025e23b946c775b3aa68f8cc5ce16035bb"
+    },
+    {
+      "file": "expense-nonhost-390x844-after.png",
+      "side": "after",
+      "role": "nonhost",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "dbf0af1fc87a55e19e7f12748397620a9e6f06a6a6461ff40a313e5018734e5b"
+    },
+    {
+      "file": "expense-nonhost-430x932-after.png",
+      "side": "after",
+      "role": "nonhost",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "revision": "ed76ddd4dcb9b0395a7d3ca8d34d3a6aa46d92dd",
+      "route": "/app/bill/82a2857b-c5ba-4f05-b9e4-59a1ac77391f",
+      "sha256": "95a0c5e12cb603ad7a8a4b16509b3a16b7c1940dad25e6117c0b3ae8f8531842"
+    }
+  ]
+}
