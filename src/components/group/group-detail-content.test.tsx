@@ -14,8 +14,11 @@ const routerMock = vi.hoisted(() => ({
   back: vi.fn(),
 }));
 
+const searchParamsMock = vi.hoisted(() => ({ value: new URLSearchParams() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
+  useSearchParams: () => searchParamsMock.value,
 }));
 
 const mockAccept = vi.fn();
@@ -181,6 +184,7 @@ beforeEach(() => {
   settlementProps.length = 0;
   inviteModalProps.length = 0;
   vi.clearAllMocks();
+  searchParamsMock.value = new URLSearchParams();
   vi.mocked(refreshGroup).mockResolvedValue(undefined);
 });
 
@@ -266,7 +270,7 @@ describe("GroupDetailContent", () => {
     ]);
   });
 
-  it("opens the anchored avatar editor for accepted group members", async () => {
+  it("routes the header avatar and title to the group profile", async () => {
     seedLoaded();
     useAppStore.setState((state) => ({
       groups: {
@@ -281,10 +285,14 @@ describe("GroupDetailContent", () => {
     const user = userEvent.setup();
     render(<GroupDetailContent groupId={groupId} />);
 
-    expect(screen.getByRole("button", { name: "Alterar imagem do grupo" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver perfil do grupo" })).toHaveAttribute(
+      "href",
+      `/app/groups/${groupId}/info`,
+    );
     expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
-    await user.click(screen.getByRole("button", { name: "Alterar imagem do grupo" }));
-    expect(screen.getByRole("dialog", { name: "Editar imagem do grupo" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ver perfil do grupo" }));
+    expect(routerMock.push).toHaveBeenCalledWith(`/app/groups/${groupId}/info`);
   });
 
   it("links to the group chat with an unread count", () => {
@@ -337,6 +345,15 @@ describe("GroupDetailContent", () => {
 
     expect(screen.getByText("Pendente")).toBeInTheDocument();
     expect(screen.getByText("Convidado")).toBeInTheDocument();
+  });
+
+  it("opens the Membros tab straight from a ?tab=membros deep link", () => {
+    seedLoaded();
+    searchParamsMock.value = new URLSearchParams("tab=membros");
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.getByText("Pendente")).toBeInTheDocument();
   });
 
   it("opens the link invite modal from the Membros tab", async () => {
