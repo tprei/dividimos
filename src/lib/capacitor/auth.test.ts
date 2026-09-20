@@ -7,6 +7,7 @@ const mockInitialize = vi.fn();
 const mockLogin = vi.fn();
 const mockLogout = vi.fn();
 const mockSignInWithIdToken = vi.fn();
+const mockAssign = vi.fn();
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
@@ -39,6 +40,15 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+});
+
+Object.defineProperty(window, "location", {
+  value: {
+    origin: "https://www.dividimos.ai",
+    hash: "",
+    assign: (...args: unknown[]) => mockAssign(...args),
+  },
+  writable: true,
 });
 
 async function loadModule() {
@@ -133,30 +143,81 @@ describe("googleSignIn", () => {
     expect(mockSignInWithIdToken).toHaveBeenCalledTimes(1);
   });
 
-  it("on web, hands Google sha256(nonce) and Supabase the raw nonce, returning to /auth/popup", async () => {
+  it("does not touch the plugin's web popup path", async () => {
     mockGetPlatform.mockReturnValue("web");
-    mockLogin.mockResolvedValue({ result: { idToken: "web-token" } });
+    mockIsNativePlatform.mockReturnValue(false);
+
+    const { prepareGoogleSignIn } = await loadModule();
+    await prepareGoogleSignIn();
+
+    expect(mockInitialize).not.toHaveBeenCalled();
+  });
+});
+
+describe("web redirect flow", () => {
+  beforeEach(() => {
+    mockGetPlatform.mockReturnValue("web");
+    mockIsNativePlatform.mockReturnValue(false);
+    window.localStorage.clear();
+    mockAssign.mockClear();
+    window.location.hash = "";
+  });
+
+  it("sends Google sha256(nonce) and keeps the raw nonce for Supabase", async () => {
+    const { startGoogleRedirect, completeGoogleRedirect } = await loadModule();
+    await startGoogleRedirect("/app/groups");
+
+    const target = new URL(mockAssign.mock.calls[0][0] as string);
+    expect(target.origin + target.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(target.searchParams.get("response_type")).toBe("id_token");
+    expect(target.searchParams.get("redirect_uri")).toBe(`${window.location.origin}/auth/popup`);
+    expect(target.searchParams.get("client_id")).toContain("apps.googleusercontent.com");
+
+    window.location.hash = "#id_token=web-token";
     mockSignInWithIdToken.mockResolvedValue({ error: null });
+    const next = await completeGoogleRedirect(makeSupabase() as never);
 
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
-
-    expect(result).toBe(true);
-    expect(mockInitialize).toHaveBeenCalledWith({
-      google: {
-        webClientId: expect.stringContaining("apps.googleusercontent.com"),
-        redirectUrl: `${window.location.origin}/auth/popup`,
-      },
-    });
-    const googleNonce = mockLogin.mock.calls[0][0].options.nonce as string;
-    const supabaseNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
-    expect(supabaseNonce.length).toBeGreaterThan(0);
-    expect(googleNonce).toBe(createHash("sha256").update(supabaseNonce).digest("hex"));
+    expect(next).toBe("/app/groups");
+    const rawNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
+    expect(target.searchParams.get("nonce")).toBe(
+      createHash("sha256").update(rawNonce).digest("hex"),
+    );
     expect(mockSignInWithIdToken).toHaveBeenCalledWith({
       provider: "google",
       token: "web-token",
-      nonce: supabaseNonce,
+      nonce: rawNonce,
     });
+  });
+
+  it("returns null when the fragment carries no id_token", async () => {
+    const { startGoogleRedirect, completeGoogleRedirect } = await loadModule();
+    await startGoogleRedirect("/app");
+    window.location.hash = "#error=access_denied";
+
+    expect(await completeGoogleRedirect(makeSupabase() as never)).toBeNull();
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it("returns null for a fragment that no redirect of ours started", async () => {
+    const { completeGoogleRedirect } = await loadModule();
+    window.location.hash = "#id_token=injected";
+
+    expect(await completeGoogleRedirect(makeSupabase() as never)).toBeNull();
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it("returns null and forgets the nonce when Supabase rejects the token", async () => {
+    const { startGoogleRedirect, completeGoogleRedirect } = await loadModule();
+    await startGoogleRedirect("/app");
+    window.location.hash = "#id_token=web-token";
+    mockSignInWithIdToken.mockResolvedValue({ error: new Error("nonce mismatch") });
+
+    expect(await completeGoogleRedirect(makeSupabase() as never)).toBeNull();
+
+    window.location.hash = "#id_token=web-token";
+    mockSignInWithIdToken.mockResolvedValue({ error: null });
+    expect(await completeGoogleRedirect(makeSupabase() as never)).toBeNull();
+    expect(mockSignInWithIdToken).toHaveBeenCalledTimes(1);
   });
 });
 

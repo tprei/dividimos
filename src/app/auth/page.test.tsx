@@ -17,9 +17,13 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 const mockGoogleSignIn = vi.fn(async () => true);
+const mockIsNativePlatform = vi.fn(() => true);
+const mockStartGoogleRedirect = vi.fn<(next: string) => Promise<void>>(async () => undefined);
 vi.mock("@/lib/capacitor/auth", () => ({
   googleSignIn: () => mockGoogleSignIn(),
+  isNativePlatform: () => mockIsNativePlatform(),
   prepareGoogleSignIn: async () => undefined,
+  startGoogleRedirect: (next: string) => mockStartGoogleRedirect(next),
 }));
 
 vi.mock("@/components/bill/qr-scanner-view", () => ({
@@ -34,6 +38,7 @@ describe("sign-in destination", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGoogleSignIn.mockResolvedValue(true);
+    mockIsNativePlatform.mockReturnValue(true);
     decodeHolder.payload = "";
     searchParams.set("next", "/join/abc123");
   });
@@ -65,6 +70,47 @@ describe("sign-in destination", () => {
 
     const target = mockReplace.mock.calls[0]?.[0] as string;
     expect(target).toBe(`/auth/continue?next=${encodeURIComponent("/app")}`);
+  });
+
+  it("hands the sanitized destination to the web redirect instead of navigating itself", async () => {
+    mockIsNativePlatform.mockReturnValue(false);
+    searchParams.set("next", "https://evil.example.com/steal");
+    render(<AuthPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /google/i }));
+
+    await waitFor(() => {
+      expect(mockStartGoogleRedirect).toHaveBeenCalledWith("/app");
+    });
+    expect(mockGoogleSignIn).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+
+describe("callback failure alert", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams.delete("error");
+    searchParams.delete("next");
+    decodeHolder.payload = "";
+  });
+
+  it("dismisses the alert and keeps next while dropping error", () => {
+    searchParams.set("error", "callback_failed");
+    searchParams.set("next", "/join/test");
+    render(<AuthPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dispensar aviso" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith("/auth?next=%2Fjoin%2Ftest");
+  });
+
+  it("renders nothing for an unrecognized error value", () => {
+    searchParams.set("error", "random_error");
+    render(<AuthPage />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

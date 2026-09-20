@@ -213,10 +213,10 @@ Automated unit, integration, and synthetic tests mock these boundaries for execu
 
 ### Scenario 1: Google Sign-In with a Real Account
 
-Tests live Google authentication on web (popup ID-token flow) and Android native Google Credential Manager. Both hand a Google ID token to `supabase.auth.signInWithIdToken`; no Supabase OAuth redirect is involved.
+Tests live Google authentication on web (full-page ID-token redirect) and Android native Google Credential Manager. Both hand a Google ID token to `supabase.auth.signInWithIdToken`; no Supabase OAuth redirect is involved. Web uses a redirect rather than a popup because a home-screen PWA gets `null` back from `window.open`.
 
 - **Surfaces & File Paths**:
-  - Web: `src/app/auth/page.tsx`, `src/lib/capacitor/auth.ts` (`googleSignIn` via `@capgo/capacitor-social-login` web popup), `/auth/popup` (page the popup returns to), `/auth/continue`
+  - Web: `src/app/auth/page.tsx`, `src/lib/capacitor/auth.ts` (`startGoogleRedirect` / `completeGoogleRedirect`), `/auth/popup` (page Google redirects back to), `/auth/continue`
   - Android native: `src/lib/capacitor/auth.ts` (`googleSignIn` via `@capgo/capacitor-social-login`, `supabase.auth.signInWithIdToken`), `android/app/build.gradle`
 - **Prerequisites**:
   - A real Google account with active credentials.
@@ -226,9 +226,10 @@ Tests live Google authentication on web (popup ID-token flow) and Android native
   - **Web Flow**:
     1. Open `/auth` in a clean browser session (incognito or signed out).
     2. Click the **"Continuar com Google"** button.
-    3. Verify a Google popup opens (`accounts.google.com`) whose consent screen names the app domain, not `*.supabase.co`.
+    3. Verify the tab navigates to `accounts.google.com` and the consent screen names the app domain, not `*.supabase.co`.
     4. Select the Google account and grant permissions.
-    5. Verify the popup closes on `/auth/popup`, the opener navigates through `/auth/continue?next=...`, and lands at `/app` (or `/onboarding` for a newly created user).
+    5. Verify Google returns to `/auth/popup`, which exchanges the fragment `id_token` and navigates through `/auth/continue?next=...` to `/app` (or `/onboarding` for a newly created user).
+    6. Repeat from the iOS home-screen PWA (standalone display): the same redirect must complete without a popup.
   - **Android Flow**:
     1. Launch the Dividimos APK on an Android device configured with a Google account.
     2. Tap **"Continuar com Google"** on the authentication screen.
