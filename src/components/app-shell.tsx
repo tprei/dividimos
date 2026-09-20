@@ -135,55 +135,139 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
   );
 }
 
-/** `onRefresh` resolves true only when the refresh actually succeeded. */
-function usePullToRefresh(onRefresh: () => Promise<boolean>) {
+/**
+ * Nearest ancestor that actually scrolls vertically, stopping at `container`.
+ * A pull that starts inside one belongs to that element, not to the shell.
+ */
+function nearestScrollable(from: HTMLElement, container: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = from;
+  while (node && node !== container) {
+    const overflowY = window.getComputedStyle(node).overflowY;
+    const scrolls = overflowY === "auto" || overflowY === "scroll";
+    if (scrolls && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return container;
+}
+
+/** Routes where a top-edge pull means "reload this list". */
+const PULL_TO_REFRESH_PATHS: Record<string, true> = {
+  "/app": true,
+  "/app/groups": true,
+  "/app/conversations": true,
+  "/app/bills": true,
+  "/app/charges": true,
+  "/app/activity": true,
+};
+
+/** Controls the gesture never starts on: they own their own drag or press. */
+const PULL_BLOCKING_SELECTOR =
+  'input, textarea, select, button, a, label, [contenteditable="true"], [role="slider"], [data-no-pull]';
+
+/** A pull must begin this close to the top of the scroll container. */
+const PULL_START_ZONE_PX = 64;
+
+/**
+ * `onRefresh` resolves true only when the refresh actually succeeded.
+ *
+ * A pull is only a refresh when the user clearly meant one: a single finger,
+ * starting at the very top of an eligible list, moving down. Everything else
+ * (sliders, horizontal swipes, a second finger, a nested scroller, an open
+ * overlay) is ordinary interaction and must not reload the screen.
+ */
+function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  const startY = useRef(0);
+  const start = useRef({ x: 0, y: 0 });
+  const touchId = useRef<number | null>(null);
   const isDragging = useRef(false);
+  const distance = useRef(0);
+  const refreshing = useRef(false);
   const threshold = 80;
 
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    const source = e.target as HTMLElement | null;
-    if (source?.closest('input[type="range"], [data-no-pull]')) return;
-    const target = e.currentTarget as HTMLElement;
-    if (target.scrollTop <= 0) {
-      startY.current = e.touches[0].clientY;
-      isDragging.current = true;
-    }
+  const cancel = useCallback(() => {
+    isDragging.current = false;
+    touchId.current = null;
+    distance.current = 0;
+    setPullDistance(0);
   }, []);
 
-  const onTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!isDragging.current) return;
-    const delta = e.touches[0].clientY - startY.current;
-    if (delta > 0) {
-      setPullDistance(Math.min(delta * 0.4, threshold * 1.5));
-    } else {
-      isDragging.current = false;
-      setPullDistance(0);
-    }
-  }, [threshold]);
+  // Losing eligibility mid-gesture (navigation, keyboard, an overlay opening)
+  // must abandon the pull rather than complete it on release.
+  useEffect(() => {
+    if (!enabled) cancel();
+  }, [enabled, cancel]);
+
+  const onTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      cancel();
+      if (!enabled || refreshing.current) return;
+      if (e.touches.length !== 1) return;
+
+      const source = e.target as HTMLElement | null;
+      if (source?.closest(PULL_BLOCKING_SELECTOR)) return;
+
+      const container = e.currentTarget as HTMLElement;
+      if (container.scrollTop > 1) return;
+      // A gesture that starts inside a nested scroller belongs to that
+      // scroller, even when the shell happens to be at the top.
+      if (source && nearestScrollable(source, container) !== container) return;
+
+      const touch = e.touches[0];
+      const bounds = container.getBoundingClientRect();
+      if (touch.clientY - bounds.top > PULL_START_ZONE_PX) return;
+
+      start.current = { x: touch.clientX, y: touch.clientY };
+      touchId.current = touch.identifier;
+      isDragging.current = true;
+    },
+    [cancel, enabled],
+  );
+
+  const onTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!isDragging.current) return;
+      if (e.touches.length !== 1 || e.touches[0].identifier !== touchId.current) {
+        cancel();
+        return;
+      }
+
+      const touch = e.touches[0];
+      const deltaY = touch.clientY - start.current.y;
+      const deltaX = touch.clientX - start.current.x;
+      if (deltaY <= 0 || Math.abs(deltaX) > Math.abs(deltaY)) {
+        cancel();
+        return;
+      }
+
+      const next = Math.min(deltaY * 0.4, threshold * 1.5);
+      distance.current = next;
+      setPullDistance(next);
+    },
+    [cancel],
+  );
 
   const onTouchEnd = useCallback(async () => {
     if (!isDragging.current) return;
-    isDragging.current = false;
-    if (pullDistance < threshold) {
-      setPullDistance(0);
-      return;
-    }
+    const travelled = distance.current;
+    const eligible = enabled && !refreshing.current;
+    cancel();
+    if (travelled < threshold || !eligible) return;
+
     haptics.impact();
+    refreshing.current = true;
     setPulling(true);
-    setPullDistance(0);
     try {
       // Success feedback would otherwise fire on a failed refresh and tell the
       // user their data is current when it is not.
       if (await onRefresh()) haptics.success();
     } finally {
+      refreshing.current = false;
       setPulling(false);
     }
-  }, [pullDistance, threshold, onRefresh]);
+  }, [cancel, enabled, onRefresh]);
 
-  return { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd };
+  return { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel: cancel };
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -357,8 +441,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
-  const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } =
-    usePullToRefresh(handleRefresh);
+  // Wizards, detail screens, and settings never reload from a pull: the
+  // gesture there is almost always a mis-read scroll or slider drag.
+  const refreshEligible =
+    PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen;
+
+  const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } =
+    usePullToRefresh(handleRefresh, refreshEligible);
 
   return (
     <>
@@ -419,18 +508,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <Settings className="h-4 w-4" />
                 </Link>
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  aria-label="Atualizar"
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-                >
-                  {refreshing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </button>
+                {refreshEligible && (
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    aria-label="Atualizar"
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+                  >
+                    {refreshing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
                 {unifiedBell}
               </div>
             </div>
@@ -449,10 +540,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
 
           <main
-            className={cn("flex-1 overflow-y-auto", !navHidden && "pb-20")}
+            className={cn("flex-1 overflow-y-auto overscroll-y-contain", !navHidden && "pb-20")}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchCancel}
           >
             <ScreenHeaderActionsContext.Provider
               value={
