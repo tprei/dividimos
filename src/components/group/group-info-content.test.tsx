@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GroupInfoContent } from "./group-info-content";
 import { refreshGroup } from "@/lib/sync/refresh";
@@ -134,7 +134,7 @@ describe("GroupInfoContent", () => {
     expect(spending).toHaveTextContent("120,00");
   });
 
-  it("expands the group photo into a full-width hero", async () => {
+  it("expands the group photo into a full-bleed hero that carries the identity", async () => {
     seedLoaded({ kind: "photo", photoId: "photo-9" });
     const user = userEvent.setup();
 
@@ -147,10 +147,19 @@ describe("GroupInfoContent", () => {
 
     const collapsed = screen.getByRole("button", { name: "Recolher imagem do grupo" });
     expect(collapsed).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByAltText("Viagem")).toHaveAttribute(
-      "src",
-      expect.stringContaining("/avatar?photoId="),
-    );
+
+    const photo = screen.getByAltText("Viagem");
+    expect(photo).toHaveAttribute("src", expect.stringContaining("/avatar?photoId="));
+
+    // Expanded, the photo is the header: the name, the member line and the
+    // only back control all sit on top of the image, not in a row above it.
+    const hero = photo.closest("section");
+    expect(hero).not.toBeNull();
+    const inHero = within(hero as HTMLElement);
+    expect(inHero.getByRole("heading", { name: "Viagem" })).toBeInTheDocument();
+    expect(inHero.getByText(/membros · desde/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Voltar" })).toHaveLength(1);
+    expect(inHero.getByRole("button", { name: "Voltar" })).toBeInTheDocument();
   });
 
   it("opens the avatar editor from the image action", async () => {

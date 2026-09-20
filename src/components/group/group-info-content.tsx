@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Image as ImageIcon, MessageSquare, UserPlus, UsersRound } from "lucide-react";
+import { ArrowLeft, Image as ImageIcon, MessageSquare, UserPlus, UsersRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -102,49 +102,121 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
     year: "numeric",
   });
 
+  const actions = (
+    <div className="mt-5 grid grid-cols-3 gap-2">
+      {isAcceptedMember && (
+        <Button
+          variant="outline"
+          className="min-h-11 flex-col gap-1 text-xs"
+          render={<Link href={`/app/groups/${groupId}/chat`} />}
+        >
+          <MessageSquare className="size-4" aria-hidden="true" />
+          Conversa
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        className="min-h-11 flex-col gap-1 text-xs"
+        onClick={() => router.push(`/app/groups/${groupId}?tab=membros`)}
+      >
+        <UserPlus className="size-4" aria-hidden="true" />
+        Convidar
+      </Button>
+      {canEditAvatar && (
+        <Button
+          variant="outline"
+          className="min-h-11 flex-col gap-1 text-xs"
+          onClick={() => setEditorOpen(true)}
+        >
+          <ImageIcon className="size-4" aria-hidden="true" />
+          Imagem
+        </Button>
+      )}
+    </div>
+  );
+
+  const sections = (
+    <div className="mt-5 space-y-4">
+      <GroupSpendingSection spending={overview?.spending} meId={meId ?? ""} />
+      <GroupMembersSection
+        snapshot={snapshot}
+        meId={meId ?? ""}
+        onDepart={() => router.replace("/app/groups")}
+      />
+    </div>
+  );
+
+  if (photoId !== null && expanded) {
+    const photoSrc = `/api/groups/${encodeURIComponent(groupId)}/avatar?photoId=${encodeURIComponent(photoId)}`;
+    return (
+      <div className="mx-auto max-w-lg pb-6">
+        {/* Expanded, the photo is the header: it runs edge to edge, the back
+            control floats on top of it, and the group's identity sits over the
+            bottom of the image instead of below it. */}
+        <motion.section layout={!reducedMotion} className="relative aspect-square w-full overflow-hidden">
+          <Image
+            src={photoSrc}
+            alt={group.name}
+            fill
+            unoptimized
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            aria-label="Voltar"
+            className="absolute top-3 left-3 size-11 rounded-full bg-black/35 text-white backdrop-blur-sm hover:bg-black/50 hover:text-white"
+            onClick={() => router.push(`/app/groups/${groupId}`)}
+          >
+            <ArrowLeft className="size-5" />
+          </Button>
+          <button
+            type="button"
+            aria-label="Recolher imagem do grupo"
+            aria-expanded
+            onClick={() => setExpanded(false)}
+            className="absolute inset-0 cursor-zoom-out"
+          />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 pt-16 pb-4">
+            <h2 className="text-2xl font-bold tracking-tight text-white">{group.name}</h2>
+            <p className="mt-0.5 text-sm text-white/80">
+              {accepted.length} {accepted.length === 1 ? "membro" : "membros"} · desde {since}
+            </p>
+          </div>
+        </motion.section>
+
+        <div className="px-4">
+          {actions}
+          {sections}
+        </div>
+        <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <ScreenHeader back title={group.name} onBack={() => router.push(`/app/groups/${groupId}`)} />
 
-      {photoId !== null && expanded ? (
-        <motion.button
-          type="button"
-          layout={!reducedMotion}
-          aria-label="Recolher imagem do grupo"
-          aria-expanded
-          onClick={() => setExpanded(false)}
-          className="relative block aspect-square w-full overflow-hidden rounded-3xl"
-        >
-          <Image
-            src={`/api/groups/${encodeURIComponent(groupId)}/avatar?photoId=${encodeURIComponent(photoId)}`}
-            alt={group.name}
-            fill
-            unoptimized
-            sizes="100vw"
-            className="object-cover"
-          />
-          <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-4 text-left text-xl font-bold text-white">
-            {group.name}
-          </span>
-        </motion.button>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          {photoId !== null ? (
-            <motion.button
-              type="button"
-              layout={!reducedMotion}
-              aria-label="Ampliar imagem do grupo"
-              aria-expanded={false}
-              onClick={() => setExpanded(true)}
-              className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <GroupAvatar name={group.name} avatar={overview?.avatar} groupId={groupId} size="lg" />
-            </motion.button>
-          ) : (
+      <div className="flex flex-col items-center gap-3">
+        {photoId !== null ? (
+          <motion.button
+            type="button"
+            layout={!reducedMotion}
+            aria-label="Ampliar imagem do grupo"
+            aria-expanded={false}
+            onClick={() => setExpanded(true)}
+            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <GroupAvatar name={group.name} avatar={overview?.avatar} groupId={groupId} size="lg" />
-          )}
-        </div>
-      )}
+          </motion.button>
+        ) : (
+          <GroupAvatar name={group.name} avatar={overview?.avatar} groupId={groupId} size="lg" />
+        )}
+      </div>
 
       <div className="mt-4 text-center">
         <h2 className="text-2xl font-bold tracking-tight">{group.name}</h2>
@@ -153,46 +225,8 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
         </p>
       </div>
 
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        {isAcceptedMember && (
-          <Button
-            variant="outline"
-            className="min-h-11 flex-col gap-1 text-xs"
-            render={<Link href={`/app/groups/${groupId}/chat`} />}
-          >
-            <MessageSquare className="size-4" aria-hidden="true" />
-            Conversa
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          className="min-h-11 flex-col gap-1 text-xs"
-          onClick={() => router.push(`/app/groups/${groupId}?tab=membros`)}
-        >
-          <UserPlus className="size-4" aria-hidden="true" />
-          Convidar
-        </Button>
-        {canEditAvatar && (
-          <Button
-            variant="outline"
-            className="min-h-11 flex-col gap-1 text-xs"
-            onClick={() => setEditorOpen(true)}
-          >
-            <ImageIcon className="size-4" aria-hidden="true" />
-            Imagem
-          </Button>
-        )}
-      </div>
-
-      <div className="mt-5 space-y-4">
-        <GroupSpendingSection spending={overview?.spending} meId={meId ?? ""} />
-        <GroupMembersSection
-          snapshot={snapshot}
-          meId={meId ?? ""}
-          onDepart={() => router.replace("/app/groups")}
-        />
-      </div>
-
+      {actions}
+      {sections}
       <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} />
     </div>
   );
