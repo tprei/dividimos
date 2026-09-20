@@ -1,0 +1,71 @@
+{
+  "scenario": "Same seeded host, deterministic OCR response and local database; actual parent/head production applications; no OCR-provider call claimed",
+  "records": [
+    {
+      "file": "shots/receipt-360x740-before.png",
+      "side": "before",
+      "revision": "3e584c3c145e21d1148b24475bd1e79e84bf69b2",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "02b2064487d608354d0dafda1b8605ca3b53e7b6566d00284022507b6ae1cc99"
+    },
+    {
+      "file": "shots/receipt-390x844-before.png",
+      "side": "before",
+      "revision": "3e584c3c145e21d1148b24475bd1e79e84bf69b2",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "79bf0b0303bc19e0e938b57808a403869ce5b55bd0cc38cc7e55218f82dea581"
+    },
+    {
+      "file": "shots/receipt-430x932-before.png",
+      "side": "before",
+      "revision": "3e584c3c145e21d1148b24475bd1e79e84bf69b2",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "11fda89223d5873e825164abe2ed6a9ebea5ed0ca05f6b0c3194fd4edde9d000"
+    },
+    {
+      "file": "shots/receipt-360x740-after.png",
+      "side": "after",
+      "revision": "262bb6d7c8b01f2e055e16fbaec66ff49f4959bd",
+      "width": 360,
+      "height": 740,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "9ba77dc31f1e971f67ed45a88a2715bdba7a8df397948ed7ffbf55ac2cd0185a"
+    },
+    {
+      "file": "shots/receipt-390x844-after.png",
+      "side": "after",
+      "revision": "262bb6d7c8b01f2e055e16fbaec66ff49f4959bd",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "f84d0a92814b0ed7842e39bb816b1ba0038b59cd17c41f5ddefbe48bea6a37bf"
+    },
+    {
+      "file": "shots/receipt-430x932-after.png",
+      "side": "after",
+      "revision": "262bb6d7c8b01f2e055e16fbaec66ff49f4959bd",
+      "width": 430,
+      "height": 932,
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "route": "/app/bill/new?scan=true",
+      "sha256": "77da4966cff3f5141a046f8398667e67246d9486b5003f27c5524241868c4d46"
+    }
+  ]
+}

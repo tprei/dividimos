@@ -1,0 +1,7 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 ../../../../../../tmp/dividimos-authentic-evidence/room/receipt-capture.spec.ts:4:5 › capture actual receipt review parent and head (4.1s)
+
+  1 passed (5.3s)
+
