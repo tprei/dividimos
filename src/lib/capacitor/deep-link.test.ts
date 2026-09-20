@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveDeepLinkTarget } from "./deep-link";
+import { isSingleUseTarget, resolveDeepLinkTarget } from "./deep-link";
 
 const TOKEN = "gst1_" + "a".repeat(43);
 const INVITE = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6";
+const ROOM_ID = "00000000-0000-4000-8000-000000000001";
+const ROOM_TOKEN = `armj1_${"A".repeat(43)}`;
 
 describe("resolveDeepLinkTarget", () => {
   describe("dividimos:// scheme", () => {
@@ -33,6 +35,10 @@ describe("resolveDeepLinkTarget", () => {
     it("rejects a claim credential in the custom scheme", () => {
       expect(resolveDeepLinkTarget(`dividimos://claim#${TOKEN}`)).toBeNull();
     });
+
+    it("rejects a room credential in the custom scheme", () => {
+      expect(resolveDeepLinkTarget(`dividimos://room/${ROOM_ID}#${ROOM_TOKEN}`)).toBeNull();
+    });
   });
 
   describe("https://www.dividimos.ai", () => {
@@ -54,6 +60,28 @@ describe("resolveDeepLinkTarget", () => {
 
     it("rejects a /claim with no fragment", () => {
       expect(resolveDeepLinkTarget("https://www.dividimos.ai/claim")).toBeNull();
+    });
+
+    it("resolves a strict-fragment room link", () => {
+      expect(
+        resolveDeepLinkTarget(
+          `https://www.dividimos.ai/room/${ROOM_ID}#${ROOM_TOKEN}`,
+        ),
+      ).toBe(`/room/${ROOM_ID}#${ROOM_TOKEN}`);
+    });
+
+    it("rejects malformed room links instead of using the generic redirect", () => {
+      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/room/${ROOM_ID}`)).toBeNull();
+      expect(
+        resolveDeepLinkTarget(
+          `https://www.dividimos.ai/room/${ROOM_ID}#not-a-token`,
+        ),
+      ).toBeNull();
+      expect(
+        resolveDeepLinkTarget(
+          `https://www.dividimos.ai/room/${ROOM_ID}?leak=1#${ROOM_TOKEN}`,
+        ),
+      ).toBeNull();
     });
 
     it("resolves a verified invite link", () => {
@@ -91,6 +119,14 @@ describe("resolveDeepLinkTarget", () => {
 
     it("rejects mailto:", () => {
       expect(resolveDeepLinkTarget("mailto:victim@example.com")).toBeNull();
+    });
+  });
+
+  describe("single-use targets", () => {
+    it("consumes room fragments once without broadening malformed room paths", () => {
+      expect(isSingleUseTarget(`/room/${ROOM_ID}#${ROOM_TOKEN}`)).toBe(true);
+      expect(isSingleUseTarget(`/room/${ROOM_ID}#bad`)).toBe(false);
+      expect(isSingleUseTarget(`/room/${ROOM_ID}`)).toBe(false);
     });
   });
 

@@ -1,4 +1,5 @@
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -26,9 +27,7 @@ export function resolveDeepLinkTarget(url: string): string | null {
   }
 
   if (parsed.protocol === "dividimos:") {
-    // Claim credentials travel only via the HTTPS fragment route. The custom
-    // scheme's authority is not a pathname, so dividimos://claim#... is rejected.
-    if (parsed.host === "claim") return null;
+    if (parsed.host === "claim" || parsed.host === "room") return null;
 
     const prefix = SCHEME_AUTHORITIES[parsed.host];
     if (prefix === undefined) return null;
@@ -41,6 +40,10 @@ export function resolveDeepLinkTarget(url: string): string | null {
     if (parsed.pathname === "/claim" || parsed.pathname.startsWith("/claim/")) {
       const claim = parseClaimQrCode(url);
       return claim ? claim.url : null;
+    }
+    if (parsed.pathname === "/room" || parsed.pathname.startsWith("/room/")) {
+      const room = parseAssignmentRoomQrCode(url);
+      return room ? room.url : null;
     }
     if (parsed.pathname.startsWith("/join")) {
       // A malformed invite link is not a destination; it would land on a
@@ -56,5 +59,9 @@ export function resolveDeepLinkTarget(url: string): string | null {
 
 /** Does this target carry a credential that must be consumed exactly once? */
 export function isSingleUseTarget(target: string): boolean {
-  return target.startsWith("/claim#") || target.startsWith("/join/");
+  return (
+    target.startsWith("/claim#") ||
+    target.startsWith("/join/") ||
+    parseAssignmentRoomQrCode(target) !== null
+  );
 }
