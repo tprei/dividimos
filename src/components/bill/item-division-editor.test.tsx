@@ -42,12 +42,12 @@ function renderEditor(value: React.ComponentProps<typeof ItemDivisionEditor>["va
 describe("ItemDivisionEditor", () => {
   it("does not save until somebody is selected, then saves equal shares", () => {
     const { onSave } = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Selecione quem divide este item.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Todos" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "equal",
       shares: [
@@ -94,11 +94,11 @@ describe("ItemDivisionEditor", () => {
 
     fireEvent.change(ana, { target: { value: "49" } });
     expect(screen.getByText("Faltam 1,00% para fechar 100%.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).not.toHaveBeenCalled();
 
     fireEvent.change(bruno, { target: { value: "51" } });
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -138,7 +138,6 @@ describe("ItemDivisionEditor", () => {
     expect((screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement).value).toBe("100,00");
     expect((screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("29,00");
-    expect(screen.getByText("Salvo automaticamente")).toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -157,7 +156,7 @@ describe("ItemDivisionEditor", () => {
     const brunoInput = screen.getByLabelText("Percentual de Bruno (@bruno) em Picanha") as HTMLInputElement;
     fireEvent.change(brunoInput, { target: { value: "36" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -181,7 +180,7 @@ describe("ItemDivisionEditor", () => {
     const mariaInput = screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement;
     fireEvent.change(mariaInput, { target: { value: "64,50" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "fixed",
       shares: [
@@ -199,7 +198,7 @@ describe("ItemDivisionEditor", () => {
     expect((screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("0,00");
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -237,7 +236,7 @@ describe("ItemDivisionEditor", () => {
 
     const brunoSlider = screen.getByRole("slider", { name: "Percentual deslizante de Bruno (@bruno) em Picanha" });
     fireEvent.change(brunoSlider, { target: { value: "67" } });
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -258,7 +257,7 @@ describe("ItemDivisionEditor", () => {
     fireEvent.pointerUp(anaSlider);
 
     expect(anaSlider).toHaveValue("50");
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -286,7 +285,7 @@ describe("ItemDivisionEditor", () => {
     fireEvent.change(anaInput, { target: { value: "43,00" } });
     fireEvent.change(mariaInput, { target: { value: "43,00" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "fixed",
       shares: [
@@ -306,7 +305,7 @@ describe("ItemDivisionEditor", () => {
     fireEvent.change(brunoInput, { target: { value: "0,005" } });
 
     expect(brunoInput.value).toBe("0,005");
-    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).not.toHaveBeenCalled();
   });
   it("announces slider values with units and exact step 1 in both modes", () => {

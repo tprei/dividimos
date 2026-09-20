@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { DivisionModePills } from "@/components/bill/division-mode-pills";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
@@ -343,6 +344,17 @@ export function ItemDivisionEditor({
           <Button variant="ghost" size="sm" className="min-h-11" onClick={handleSelectNone}>
             Nenhum
           </Button>
+          {/* Closing is explicit and separate from autosave: saving a valid
+              edit must never collapse the editor under the user. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="min-h-11 min-w-11"
+            onClick={handleDone}
+            aria-label={`Concluir divisão de ${itemName}`}
+          >
+            <Check className="size-4" aria-hidden="true" />
+          </Button>
         </div>
       </div>
       <div className="sticky top-0 z-10 -mx-4 bg-muted px-4 py-2">
@@ -496,12 +508,11 @@ export function ItemDivisionEditor({
           );
         })}
       </div>
-      {division.ok && (
-        <p className="text-xs text-muted-foreground">Salvo automaticamente</p>
+      {!division.ok && (
+        <p className="text-xs text-muted-foreground">
+          Divisão incompleta. Ao fechar, vale a última divisão salva.
+        </p>
       )}
-      <Button className="h-11 w-full" onClick={handleDone}>
-        Pronto
-      </Button>
     </div>
   );
 }
