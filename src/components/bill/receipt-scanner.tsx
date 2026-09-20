@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ImagePlus, RotateCcw, ScanLine, X } from "lucide-react";
+import { RotateCcw, ScanLine, X } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
@@ -19,27 +19,19 @@ export interface ReceiptScannerProps {
   onBack: () => void;
   /** Whether processing is in progress (disables button, shows spinner) */
   processing?: boolean;
-  /** Opening surface: `camera` starts the camera right away, `picker` shows the chooser. */
-  initialSource?: "camera" | "picker";
 }
-
-/** Where the current preview photo came from; decides what "Trocar foto" reopens. */
-type FileOrigin = "camera" | "picker";
 
 export function ReceiptScanner({
   onProcess,
   onBack,
   processing = false,
-  initialSource = "picker",
 }: ReceiptScannerProps) {
   const isAndroid = Capacitor.getPlatform() === "android";
-  const openWithCamera = initialSource === "camera";
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [fileOrigin, setFileOrigin] = useState<FileOrigin | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(openWithCamera && !isAndroid);
-  const [nativeCamera, setNativeCamera] = useState(openWithCamera && isAndroid);
+  const [cameraOpen, setCameraOpen] = useState(!isAndroid);
+  const [nativeCamera, setNativeCamera] = useState(isAndroid);
   const galleryRef = useRef<HTMLInputElement>(null);
   /**
    * The one in-flight native camera promise for the current entry intent. A
@@ -62,9 +54,8 @@ export function ReceiptScanner({
     };
   }, []);
 
-  const showFile = useCallback((next: File, origin: FileOrigin) => {
+  const showFile = useCallback((next: File) => {
     setFile(next);
-    setFileOrigin(origin);
     setCaptureError(null);
     // A photo exists now, so the live camera has nothing left to do; leaving
     // it mounted would keep it stacked over the preview and Processar.
@@ -81,7 +72,7 @@ export function ReceiptScanner({
       const selected = e.target.files?.[0];
       if (!selected) return;
 
-      showFile(selected, "picker");
+      showFile(selected);
 
       // Reset the input so the same file can be re-selected
       e.target.value = "";
@@ -91,7 +82,6 @@ export function ReceiptScanner({
 
   const clearPreview = useCallback(() => {
     setFile(null);
-    setFileOrigin(null);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -105,20 +95,22 @@ export function ReceiptScanner({
   const applyNativeOutcome = useCallback(
     (outcome: PhotoOutcome) => {
       if (outcome.kind === "captured") {
-        showFile(outcome.file, "camera");
+        showFile(outcome.file);
         return;
       }
 
-      // Backing out is a choice, so it stays silent. Anything else left the
-      // user tapping a button that appeared to do nothing.
-      if (outcome.kind === "cancelled") return;
+      // Backing out leaves the scanner entirely, same as closing the camera.
+      if (outcome.kind === "cancelled") {
+        onBack();
+        return;
+      }
       setCaptureError(
         outcome.kind === "permission_denied"
           ? "Permita o acesso à câmera nas configurações do aparelho."
           : outcome.message,
       );
     },
-    [showFile],
+    [onBack, showFile],
   );
 
   // Native camera entry: launch exactly one capture per intent, deliver the
@@ -163,7 +155,7 @@ export function ReceiptScanner({
   const handleCameraCapture = useCallback(
     (captured: File) => {
       setCameraOpen(false);
-      showFile(captured, "camera");
+      showFile(captured);
     },
     [showFile],
   );
@@ -175,15 +167,11 @@ export function ReceiptScanner({
     galleryRef.current?.click();
   }, []);
 
-  const handleCameraClose = useCallback(() => {
-    setCameraOpen(false);
-  }, []);
-
   const handleNativeGallery = useCallback(() => {
     void pickNativeGalleryPhoto().then(
       (outcome) => {
         if (outcome.kind === "captured") {
-          showFile(outcome.file, "picker");
+          showFile(outcome.file);
           return;
         }
         if (outcome.kind === "cancelled") return;
@@ -198,13 +186,10 @@ export function ReceiptScanner({
   }, [showFile]);
 
   const handleRetake = useCallback(() => {
-    const fromCamera = fileOrigin === "camera";
     clearPreview();
-    if (fromCamera) {
-      if (isAndroid) startNativeCamera();
-      else startWebCamera();
-    }
-  }, [clearPreview, fileOrigin, isAndroid, startNativeCamera, startWebCamera]);
+    if (isAndroid) startNativeCamera();
+    else startWebCamera();
+  }, [clearPreview, isAndroid, startNativeCamera, startWebCamera]);
 
   return (
     <div className="space-y-4">
@@ -213,22 +198,6 @@ export function ReceiptScanner({
           {captureError}
         </p>
       )}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
-          aria-label="Voltar"
-        >
-          <X className="h-4 w-4" />
-        </button>
-        <div>
-          <h2 className="text-lg font-semibold">Escanear nota</h2>
-          <p className="text-sm text-muted-foreground">
-            Tire uma foto ou escolha da galeria.
-          </p>
-        </div>
-      </div>
 
       <input
         ref={galleryRef}
@@ -250,55 +219,10 @@ export function ReceiptScanner({
             <ReceiptCameraView
               onCapture={handleCameraCapture}
               onGallery={handleCameraGallery}
-              onClose={handleCameraClose}
+              onClose={onBack}
             />
           </motion.div>
-        ) : !preview ? (
-          <motion.div
-            key="input-modes"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.2 }}
-            className="grid grid-cols-2 gap-3"
-          >
-            <button
-              type="button"
-              onClick={isAndroid ? startNativeCamera : startWebCamera}
-              className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Camera className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Camera</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Tirar foto agora
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                isAndroid
-                  ? handleNativeGallery
-                  : () => galleryRef.current?.click()
-              }
-              className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <ImagePlus className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Galeria</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Escolher foto
-                </p>
-              </div>
-            </button>
-          </motion.div>
-        ) : (
+        ) : preview ? (
           <motion.div
             key="preview"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -347,6 +271,34 @@ export function ReceiptScanner({
                 {processing ? "Processando..." : "Processar"}
               </Button>
             </div>
+          </motion.div>
+        ) : nativeCamera ? null : (
+          <motion.div
+            key="fallback"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col gap-2"
+          >
+            <Button
+              variant="outline"
+              className="min-h-11 w-full"
+              onClick={
+                isAndroid
+                  ? handleNativeGallery
+                  : () => galleryRef.current?.click()
+              }
+            >
+              Escolher da galeria
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 w-full"
+              onClick={onBack}
+            >
+              Voltar
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>
