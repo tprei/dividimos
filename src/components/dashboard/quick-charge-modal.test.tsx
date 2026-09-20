@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import QRCode from "qrcode";
 import { QuickChargeModal } from "./quick-charge-modal";
 import { useAppStore } from "@/stores/app-store";
 
@@ -102,6 +103,27 @@ describe("QuickChargeModal", () => {
     expect(storeCharges).toHaveLength(1);
     expect(storeCharges[0].id).toBe("charge-123");
     expect(storeCharges[0].status).toBe("pending");
+  });
+
+  it("paints the code onto the canvas the QR phase mounts", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+
+    // The canvas only exists once this phase renders, so a payload-keyed
+    // effect would have run too early and left an empty white box.
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+        expect.anything(),
+        "00020126580014br.gov.bcb.pix",
+        expect.anything(),
+        expect.any(Function),
+      );
+    });
   });
 
   it("confirms charge and upserts confirmed charge into store", async () => {
