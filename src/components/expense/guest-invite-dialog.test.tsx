@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import toast from "react-hot-toast";
+import QRCode from "qrcode";
 import { GuestInviteDialog } from "./guest-invite-dialog";
+import { buildClaimUrl } from "@/lib/claim-qr";
 import { readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
 import { LedgerError } from "@/lib/sync/errors";
 import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutations-group";
@@ -20,6 +22,10 @@ vi.mock("@/lib/sync/mutations-group", () => ({
 
 vi.mock("@/lib/sync/refresh", () => ({
   refreshExpense: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("qrcode", () => ({
+  default: { toCanvas: vi.fn() },
 }));
 
 const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -103,6 +109,31 @@ describe("GuestInviteDialog", () => {
       );
     });
     expect(toast.success).toHaveBeenCalledWith("Link copiado");
+  });
+
+  it("expands the claim QR inside the popover and encodes the exact claim URL", async () => {
+    const user = userEvent.setup();
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    renderDialog();
+
+    expect(screen.getByText("Convidar Bruno")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Mostrar QR code" }));
+
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalled();
+    });
+    const canvasArgs = vi.mocked(QRCode.toCanvas).mock.calls[0];
+    expect(canvasArgs[1]).toBe(buildClaimUrl("gst1_cachedtoken"));
+
+    // The code opens in place: the invite actions stay on screen instead of
+    // a second sheet covering them.
+    expect(screen.getByText("Convidar Bruno")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+    expect(screen.getByText("Escaneie pelo app para entrar na conta")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ocultar QR code" }));
+    expect(screen.queryByText("Escaneie pelo app para entrar na conta")).not.toBeInTheDocument();
   });
 
   it("toasts success after copying and keeps the failure visible when copy is denied", async () => {

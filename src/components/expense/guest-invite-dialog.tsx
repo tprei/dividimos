@@ -1,7 +1,8 @@
 "use client";
 
-import { Copy, MessageCircle, RefreshCw, Share2, Trash2 } from "lucide-react";
+import { Copy, MessageCircle, QrCode, RefreshCw, Share2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +48,9 @@ export function GuestInviteDialog({
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const inFlightRef = useRef(false);
+
 
   const issue = useCallback(async () => {
     if (inFlightRef.current) return;
@@ -109,6 +112,21 @@ export function GuestInviteDialog({
   }, [open, guest.id, guest.claimedBy]);
 
   const claimUrl = token ? buildClaimUrl(token) : null;
+  const paintQr = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      if (!node || !claimUrl) return;
+      QRCode.toCanvas(
+        node,
+        claimUrl,
+        { width: 200, margin: 1, color: { dark: "#1a1d2e", light: "#ffffff" } },
+        () => {
+          node.style.removeProperty("width");
+          node.style.removeProperty("height");
+        },
+      );
+    },
+    [claimUrl],
+  );
   const canReplace = guest.claimedBy === null;
 
   const shareText = `Participe da conta "${expenseTitle}" no Dividimos! Sua parte: ${formatBRL(shareCents)}`;
@@ -137,129 +155,153 @@ export function GuestInviteDialog({
   }
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverContent anchor={anchor} side="top" align="center">
-        <div className="min-w-0">
-          <PopoverTitle className="truncate">Convidar {guest.displayName}</PopoverTitle>
-          <PopoverDescription className="truncate">
-            Parte de {formatBRL(shareCents)} em {expenseTitle}
-          </PopoverDescription>
-        </div>
-        {claimUrl ? (
-          <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-2">
-              {canShare && (
+    <>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverContent anchor={anchor} side="top" align="center">
+          <div className="min-w-0">
+            <PopoverTitle className="truncate">Convidar {guest.displayName}</PopoverTitle>
+            <PopoverDescription className="truncate">
+              Parte de {formatBRL(shareCents)} em {expenseTitle}
+            </PopoverDescription>
+          </div>
+          {claimUrl ? (
+            <div className="grid gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                {canShare && (
+                  <Button
+                    type="button"
+                    className="h-10 w-full"
+                    onClick={() => void handleShare()}
+                  >
+                    <Share2 className="size-4" />
+                    Compartilhar
+                  </Button>
+                )}
                 <Button
                   type="button"
-                  className="h-10 w-full"
-                  onClick={() => void handleShare()}
+                  variant="outline"
+                  className={cn("h-10 w-full", !canShare && "col-span-2")}
+                  render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
                 >
-                  <Share2 className="size-4" />
-                  Compartilhar
+                  <MessageCircle className="size-4" />
+                  WhatsApp
                 </Button>
-              )}
+              </div>
               <Button
                 type="button"
                 variant="outline"
-                className={cn("h-10 w-full", !canShare && "col-span-2")}
-                render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
+                className="h-10 w-full"
+                onClick={() => void handleCopy()}
               >
-                <MessageCircle className="size-4" />
-                WhatsApp
+                <Copy className="size-4" />
+                Copiar link
               </Button>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-full"
-              onClick={() => void handleCopy()}
-            >
-              <Copy className="size-4" />
-              Copiar link
-            </Button>
-            {expiresAt && (
-              <p className="text-xs text-muted-foreground">
-                Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
-              </p>
-            )}
-            {/* The credential-bearing URL is never printed here; sharing and
-                copying carry the exact link without displaying it. */}
-            {canReplace && !confirming && (
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground"
-                onClick={() => setConfirming(true)}
+                variant="outline"
+                className="h-10 w-full"
+                aria-expanded={qrOpen}
+                aria-controls="guest-claim-qr"
+                onClick={() => setQrOpen((shown) => !shown)}
+              >
+                <QrCode className="size-4" aria-hidden="true" />
+                {qrOpen ? "Ocultar QR code" : "Mostrar QR code"}
+              </Button>
+              {qrOpen && (
+                <div id="guest-claim-qr" className="grid justify-items-center gap-1">
+                  <div className="rounded-xl bg-white p-2">
+                    <canvas ref={paintQr} className="size-[160px]" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Escaneie pelo app para entrar na conta
+                  </p>
+                </div>
+              )}
+              {expiresAt && (
+                <p className="text-xs text-muted-foreground">
+                  Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
+                </p>
+              )}
+              {/* The credential-bearing URL is shared, copied, or rendered
+                  as a QR code that the app's own scanner reads; it is still
+                  never printed as readable text. */}
+              {canReplace && !confirming && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground"
+                  onClick={() => setConfirming(true)}
+                >
+                  <RefreshCw className="size-4" />
+                  Substituir link
+                </Button>
+              )}
+              {canReplace && confirming && (
+                <div className="grid gap-2 rounded-xl border bg-muted/40 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Invalidar link atual?
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      disabled={working}
+                      onClick={() => setConfirming(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="flex-1"
+                      disabled={working}
+                      onClick={() => void issue()}
+                    >
+                      Substituir
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {canReplace && !confirming && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground"
+                  disabled={working}
+                  onClick={() => void revoke()}
+                >
+                  <Trash2 className="size-4" />
+                  Revogar link
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-full"
+                disabled={working}
+                onClick={() => void issue()}
               >
                 <RefreshCw className="size-4" />
-                Substituir link
+                {working ? "Gerando link..." : "Gerar link"}
               </Button>
-            )}
-            {canReplace && confirming && (
-              <div className="grid gap-2 rounded-xl border bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground">
-                  Invalidar link atual?
+              {guest.claimLinkGeneration > 0 && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  O link atual só está salvo no aparelho onde foi gerado. Gere outro para
+                  compartilhar daqui.
                 </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    disabled={working}
-                    onClick={() => setConfirming(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="flex-1"
-                    disabled={working}
-                    onClick={() => void issue()}
-                  >
-                    Substituir
-                  </Button>
-                </div>
-              </div>
-            )}
-            {canReplace && !confirming && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground"
-                disabled={working}
-                onClick={() => void revoke()}
-              >
-                <Trash2 className="size-4" />
-                Revogar link
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-full"
-              disabled={working}
-              onClick={() => void issue()}
-            >
-              <RefreshCw className="size-4" />
-              {working ? "Gerando link..." : "Gerar link"}
-            </Button>
-            {guest.claimLinkGeneration > 0 && (
-              <p role="status" className="text-xs text-muted-foreground">
-                O link atual só está salvo no aparelho onde foi gerado. Gere outro para
-                compartilhar daqui.
-              </p>
-            )}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+              )}
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
