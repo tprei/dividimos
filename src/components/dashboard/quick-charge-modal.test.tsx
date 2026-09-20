@@ -64,12 +64,12 @@ describe("QuickChargeModal", () => {
   });
 
   it("does not render when open is false", () => {
-    render(<QuickChargeModal open={false} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
     expect(screen.queryByText("Cobrar rápido")).not.toBeInTheDocument();
   });
 
   it("renders input phase when open", () => {
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     expect(screen.getByText("Cobrar rápido")).toBeInTheDocument();
     expect(screen.getByText("Gerar QR Code")).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe("QuickChargeModal", () => {
       json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
     });
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     const descInput = screen.getByPlaceholderText("Descrição (opcional)");
     fireEvent.change(descInput, { target: { value: "Ingresso" } });
@@ -112,6 +112,7 @@ describe("QuickChargeModal", () => {
     const onConfirmed = vi.fn();
     render(
       <QuickChargeModal
+        anchor={null}
         open={true}
         onClose={vi.fn()}
         onChargeConfirmed={onConfirmed}
@@ -139,12 +140,12 @@ describe("QuickChargeModal", () => {
       Promise.withResolvers<{ copiaECola: string }>();
     global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
 
-    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
 
-    view.rerender(<QuickChargeModal open={false} onClose={vi.fn()} />);
+    view.rerender(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
     resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
 
     await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
@@ -154,7 +155,7 @@ describe("QuickChargeModal", () => {
       Promise.withResolvers<{ copiaECola: string }>();
     global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
 
-    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
@@ -180,12 +181,12 @@ describe("QuickChargeModal", () => {
     }>();
     vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
 
-    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
 
-    view.rerender(<QuickChargeModal open={false} onClose={vi.fn()} />);
+    view.rerender(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
     insert.resolve({
       id: "charge-late",
       userId: "user-me",
@@ -216,7 +217,7 @@ describe("QuickChargeModal", () => {
     }>();
     vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
@@ -253,7 +254,7 @@ describe("QuickChargeModal", () => {
     vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
     vi.mocked(cancelVendorCharge).mockRejectedValueOnce(new Error("falha"));
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
@@ -289,7 +290,7 @@ describe("QuickChargeModal", () => {
     }>();
     vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
@@ -315,7 +316,7 @@ describe("QuickChargeModal", () => {
     });
     vi.mocked(confirmVendorCharge).mockRejectedValueOnce(new Error("offline"));
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
     await waitFor(() => expect(screen.getByText(/Já recebi/i)).toBeInTheDocument());
@@ -340,7 +341,7 @@ describe("QuickChargeModal", () => {
       json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
     });
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
@@ -370,7 +371,7 @@ describe("QuickChargeModal", () => {
       json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
     });
 
-    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));

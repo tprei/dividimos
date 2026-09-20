@@ -1,15 +1,16 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { Banknote, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
+import { SelectField } from "@/components/ui/select-field";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
-import { useBackHandler } from "@/hooks/use-back-handler";
+import { useAppViewport } from "@/hooks/use-app-viewport";
 import {
   PendingOperationNotice,
   usePendingOperation,
@@ -41,6 +42,8 @@ interface GroupRegisterPaymentSheetProps {
   onLeavePending: () => void;
   status?: GroupPaymentStatus;
   errorMessage?: string;
+  /** Control the form is positioned against. */
+  anchor: HTMLElement | null;
 }
 
 export function GroupRegisterPaymentSheet({
@@ -52,6 +55,7 @@ export function GroupRegisterPaymentSheet({
   onLeavePending,
   status = "idle",
   errorMessage,
+  anchor,
 }: GroupRegisterPaymentSheetProps) {
   const [amountCents, setAmountCents] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -70,7 +74,7 @@ export function GroupRegisterPaymentSheet({
   const [allowOverpay, setAllowOverpay] = useState(false);
 
   const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
-  useBackHandler(true, guardedDismiss);
+  const { keyboardOpen } = useAppViewport();
 
   const capCents = counterparty
     ? payerIsSelf
@@ -97,65 +101,52 @@ export function GroupRegisterPaymentSheet({
   }, [amountCents, counterparty, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8, scale: 0.97 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      className="max-h-[60dvh] overflow-y-auto overscroll-contain rounded-2xl border bg-card p-4"
-      aria-busy={status === "confirming"}
-      data-testid="group-payment-sheet"
+    <Popover
+      open
+      onOpenChange={(next) => {
+        // Every dismissal path goes through the pending-operation guard, so a
+        // tap outside can never abandon a confirming ledger write.
+        if (!next) guardedDismiss();
+      }}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-            <Banknote className="h-4 w-4 text-primary" />
-          </div>
-          <span className="text-xs font-medium text-muted-foreground">
-            Registrar pagamento
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={guardedDismiss}
-          disabled={status === "confirming"}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Fechar"
-          data-testid="group-payment-dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div
-        className={cn(
-          "transition-opacity",
-          isConfirming && "pointer-events-none opacity-60",
-        )}
+      <PopoverContent
+        anchor={anchor}
+        side="top"
+        align="center"
+        aria-busy={status === "confirming"}
+        data-testid="group-payment-sheet"
       >
-      <div className="mb-3">
-        <div className="mb-1.5 text-xs text-muted-foreground">Com quem?</div>
-        <div className="flex flex-wrap gap-2">
-          {counterparties.map((member) => (
-            <button
-              key={member.id}
-              type="button"
-              onClick={() => setSelectedId(member.id)}
-              disabled={isConfirming}
-              className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                counterparty?.id === member.id
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-background text-muted-foreground hover:border-primary/30"
-              }`}
-              data-testid={`group-payment-member-${member.id}`}
-            >
-              <PersonLabel name={member.name} handle={member.handle} nameClassName="text-sm" />
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-2">
+          <PopoverTitle>Registrar pagamento</PopoverTitle>
+          <button
+            type="button"
+            onClick={guardedDismiss}
+            disabled={status === "confirming"}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Fechar"
+            data-testid="group-payment-dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-      </div>
 
-      <div className="mb-3 text-center">
+        <div
+          className={cn(
+            "flex flex-col gap-3 transition-opacity",
+            isConfirming && "pointer-events-none opacity-60",
+          )}
+        >
+          <SelectField
+            label="Com quem?"
+            value={counterparty?.id ?? ""}
+            onChange={setSelectedId}
+            disabled={isConfirming}
+            options={counterparties.map((member) => ({
+              value: member.id,
+              label: `${member.name} (@${member.handle})`,
+            }))}
+          />
+          <div className="text-center">
         <div className="mb-1 text-xs text-muted-foreground">
           {counterparty
             ? payerIsSelf
@@ -230,20 +221,22 @@ export function GroupRegisterPaymentSheet({
         )}
       </div>
 
-      {!(capped && capCents === 0) && (
-        <div className="mb-3 flex justify-center">
-          <AmountQuickAdd
-            valueCents={amountCents}
-            onChangeCents={setAmountCents}
-            maxCents={capped ? capCents : undefined}
-            disabled={isConfirming}
-          />
-        </div>
-      )}
+          {/* Quick-add collapses with the keyboard up: direct entry stays
+              available and the amount plus Registrar must remain visible. */}
+          {!(capped && capCents === 0) && !keyboardOpen && (
+            <div className="flex justify-center">
+              <AmountQuickAdd
+                valueCents={amountCents}
+                onChangeCents={setAmountCents}
+                maxCents={capped ? capCents : undefined}
+                disabled={isConfirming}
+              />
+            </div>
+          )}
 
-      <div className="mb-4">
-        <div className="mb-1.5 text-xs text-muted-foreground">Quem pagou?</div>
-        <div className="flex gap-2">
+          <div>
+            <div className="mb-1.5 text-xs text-muted-foreground">Quem pagou?</div>
+            <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setPayerIsSelf(true)}
@@ -272,27 +265,26 @@ export function GroupRegisterPaymentSheet({
               <PersonLabel name={counterparty.name} handle={counterparty.handle} nameClassName="text-sm" />
             </button>
           )}
+            </div>
+          </div>
         </div>
-      </div>
 
-      </div>
+        {status === "error" && errorMessage && (
+          <div
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            data-testid="group-payment-error"
+          >
+            {errorMessage}
+          </div>
+        )}
+        <PendingOperationNotice
+          show={showPending && status === "confirming"}
+          body="A conexão está demorando. Se o pagamento tiver sido registrado, ele aparece aqui na conversa. Sair agora não duplica nada."
+          onLeave={onLeavePending}
+          testId="group-payment-pending"
+        />
 
-      {status === "error" && errorMessage && (
-        <div
-          className="mb-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
-          data-testid="group-payment-error"
-        >
-          {errorMessage}
-        </div>
-      )}
-      <PendingOperationNotice
-        show={showPending && status === "confirming"}
-        body="A conexão está demorando. Se o pagamento tiver sido registrado, ele aparece aqui na conversa. Sair agora não duplica nada."
-        onLeave={onLeavePending}
-        testId="group-payment-pending"
-      />
-
-      <Button
+        <Button
         className={cn(
           "min-h-11 w-full rounded-lg transition-colors",
           isConfirming && "bg-primary/70 text-primary-foreground opacity-100 disabled:opacity-100",
@@ -310,6 +302,7 @@ export function GroupRegisterPaymentSheet({
           "Registrar"
         )}
       </Button>
-    </motion.div>
+      </PopoverContent>
+    </Popover>
   );
 }

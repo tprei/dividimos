@@ -99,6 +99,32 @@ describe("ItemizedBillForm Conta section", () => {
     expect(container.querySelector(".px-4.pb-4.pt-1")).toBeNull();
   });
 
+  it("keeps the division editor open after its first autosave", () => {
+    vi.useFakeTimers();
+    try {
+      useBillStore.getState().addItem({
+        description: "Pizza",
+        quantity: 1000,
+        unitPriceCents: 5000,
+        totalPriceCents: 5000,
+      });
+      renderForm("split");
+
+      fireEvent.click(screen.getByRole("button", { name: /Pizza/ }));
+      fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+      // The editor autosaves 400ms after a valid change; it must not collapse
+      // out from under the person still editing.
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+
+      expect(screen.getByText("Pessoas")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns to Conta and focuses the name field from the review title issue", async () => {
     prepareStore("", true);
     renderForm("review");

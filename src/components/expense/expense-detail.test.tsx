@@ -288,7 +288,7 @@ describe("ExpenseDetail", () => {
     expect(screen.queryByText(/depois de entrar/i)).not.toBeInTheDocument();
   });
 
-  it("opens the invite dialog from the guest row and issues the first link", async () => {
+  it("opens the invite surface from the guest row and issues a link only when asked", async () => {
     const user = userEvent.setup();
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
@@ -304,6 +304,11 @@ describe("ExpenseDetail", () => {
     expect(
       within(dialog).getByText("Parte de R$ 50,00 em Jantar"),
     ).toBeInTheDocument();
+    // Opening a surface must not mint a credential.
+    expect(createGuestClaimToken).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Gerar link" }));
+
     await waitFor(() => {
       expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
