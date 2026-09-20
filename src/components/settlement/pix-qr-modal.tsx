@@ -37,6 +37,7 @@ import {
   getSnapStep,
 } from "@/lib/slider-snap";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { cn } from "@/lib/utils";
 
 type PixQrModalSource =
   | { pixKey: string; recipientUserId?: never; groupId?: never }
@@ -272,6 +273,8 @@ export function PixQrModal({
       ? payload.code
       : "";
 
+  const showsQr = Boolean(copiaECola) && (showPayQr || mode === "collect");
+
   const paintQr = useCallback(
     (node: HTMLCanvasElement | null) => {
       if (!node || !copiaECola) return;
@@ -421,7 +424,7 @@ export function PixQrModal({
               className="flex min-h-0 flex-1 flex-col"
             >
               <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-3 compact:pt-2 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
-                <div className="compact:flex compact:items-start compact:gap-4">
+                <div className="compact:flex compact:items-start compact:gap-3 compact:pr-9">
                 <div className="min-w-0 text-center compact:flex-1">
                   <DialogTitle className="flex items-center justify-center gap-2 text-lg font-bold compact:text-base">
                     <QrCode className="size-5 text-primary-text" aria-hidden="true" />
@@ -534,29 +537,34 @@ export function PixQrModal({
                       </p>
                     )}
                   </div>
-                </div>
 
-                {copiaECola && mode === "pay" && (
-                  <div className="mt-5 text-left compact:hidden">
-                    <p className="text-sm text-muted-foreground">
-                      Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 min-h-11 gap-2 rounded-full px-4"
-                      aria-expanded={showPayQr}
-                      aria-controls="pix-qr-region"
-                      onClick={() => setShowPayQr((v) => !v)}
-                    >
-                      <QrCode className="h-4 w-4" />
-                      {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
-                    </Button>
-                  </div>
-                )}
-              <div id="pix-qr-region" className="compact:mr-9 compact:w-[112px] compact:shrink-0">
-                {(showPayQr || mode === "collect") && copiaECola ? (
+                  {copiaECola && mode === "pay" && (
+                    <div className="mt-5 text-left compact:mt-2">
+                      <p className="text-sm text-muted-foreground compact:hidden">
+                        Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 min-h-11 gap-2 rounded-full px-4 compact:mt-0 compact:h-9 compact:min-h-9 compact:w-full compact:px-2 compact:text-xs"
+                        aria-expanded={showPayQr}
+                        aria-controls="pix-qr-region"
+                        onClick={() => setShowPayQr((v) => !v)}
+                      >
+                        <QrCode className="h-4 w-4" />
+                        {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              {/* The column only claims width when it has something in it;
+                  pay mode leaves it empty until the disclosure is opened. */}
+              <div
+                id="pix-qr-region"
+                className={cn(showsQr && "compact:w-[112px] compact:shrink-0")}
+              >
+                {showsQr ? (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
