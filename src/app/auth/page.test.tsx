@@ -16,11 +16,10 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: {} }),
 }));
 
-const mockIsNativePlatform = vi.fn(() => true);
-const mockNativeGoogleSignIn = vi.fn(async () => true);
+const mockGoogleSignIn = vi.fn(async () => true);
 vi.mock("@/lib/capacitor/auth", () => ({
-  isNativePlatform: () => mockIsNativePlatform(),
-  nativeGoogleSignIn: () => mockNativeGoogleSignIn(),
+  googleSignIn: () => mockGoogleSignIn(),
+  prepareGoogleSignIn: async () => undefined,
 }));
 
 vi.mock("@/components/bill/qr-scanner-view", () => ({
@@ -31,16 +30,15 @@ vi.mock("@/components/bill/qr-scanner-view", () => ({
 
 import AuthPage from "./page";
 
-describe("native sign-in destination", () => {
+describe("sign-in destination", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsNativePlatform.mockReturnValue(true);
-    mockNativeGoogleSignIn.mockResolvedValue(true);
+    mockGoogleSignIn.mockResolvedValue(true);
     decodeHolder.payload = "";
     searchParams.set("next", "/join/abc123");
   });
 
-  it("routes a native sign-in through the onboarding decision, keeping the destination", async () => {
+  it("routes a sign-in through the onboarding decision, keeping the destination", async () => {
     render(<AuthPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
@@ -70,7 +68,6 @@ describe("native sign-in destination", () => {
   });
 });
 
-
 describe("auth invitation scanner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,40 +86,5 @@ describe("auth invitation scanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "decodificar" }));
 
     expect(mockPush).toHaveBeenCalledWith(`/room/${roomId}#${token}`);
-  });
-});
-describe("callback failure alert", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    searchParams.delete("error");
-    searchParams.delete("next");
-  });
-
-  it("renders the alert with exact copy above the Google button", () => {
-    searchParams.set("error", "callback_failed");
-    searchParams.set("next", "/join/test");
-    render(<AuthPage />);
-
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByText("Não conseguimos concluir a entrada com o Google.")).toBeInTheDocument();
-    expect(screen.getByText('Toque em "Entrar com Google" para tentar de novo.')).toBeInTheDocument();
-  });
-
-  it("dismisses the alert and keeps next while dropping error", () => {
-    searchParams.set("error", "callback_failed");
-    searchParams.set("next", "/join/test");
-    render(<AuthPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Dispensar aviso" }));
-
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(mockReplace).toHaveBeenCalledWith("/auth?next=%2Fjoin%2Ftest");
-  });
-
-  it("renders nothing for an unrecognized error value", () => {
-    searchParams.set("error", "random_error");
-    render(<AuthPage />);
-
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

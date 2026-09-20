@@ -213,22 +213,22 @@ Automated unit, integration, and synthetic tests mock these boundaries for execu
 
 ### Scenario 1: Google Sign-In with a Real Account
 
-Tests live Google authentication across both the web OAuth redirect flow and Android native Google Credential Manager.
+Tests live Google authentication on web (popup ID-token flow) and Android native Google Credential Manager. Both hand a Google ID token to `supabase.auth.signInWithIdToken`; no Supabase OAuth redirect is involved.
 
 - **Surfaces & File Paths**:
-  - Web: `src/app/auth/page.tsx` (`signInWithOAuth({ provider: "google" })`), `/auth/callback`, `/auth/continue`
-  - Android native: `src/lib/capacitor/auth.ts` (`nativeGoogleSignIn` via `@capgo/capacitor-social-login`, `supabase.auth.signInWithIdToken`), `android/app/build.gradle`
+  - Web: `src/app/auth/page.tsx`, `src/lib/capacitor/auth.ts` (`googleSignIn` via `@capgo/capacitor-social-login` web popup), `/auth/popup` (page the popup returns to), `/auth/continue`
+  - Android native: `src/lib/capacitor/auth.ts` (`googleSignIn` via `@capgo/capacitor-social-login`, `supabase.auth.signInWithIdToken`), `android/app/build.gradle`
 - **Prerequisites**:
   - A real Google account with active credentials.
-  - Web: Supabase Google OAuth configured with valid client ID and client secret, with callback URL whitelisted (`http://localhost:3000/auth/callback` or production domain).
+  - Web: the web OAuth client in GCP lists the app origin under **Authorized JavaScript origins** and `<origin>/auth/popup` under **Authorized redirect URIs** (`http://localhost:3000/auth/popup` or the production domain). The Supabase Google provider stays enabled with the same client id so `signInWithIdToken` accepts the token.
   - Android: Physical Android device or emulator with Google Play Services; debug or release APK built with `android/app/google-services.json` and matching SHA-1 certificate fingerprint registered in Google Cloud Console.
 - **Exact Manual Steps**:
   - **Web Flow**:
     1. Open `/auth` in a clean browser session (incognito or signed out).
     2. Click the **"Continuar com Google"** button.
-    3. Verify browser redirects to Google's account selection / consent screen (`accounts.google.com`).
+    3. Verify a Google popup opens (`accounts.google.com`) whose consent screen names the app domain, not `*.supabase.co`.
     4. Select the Google account and grant permissions.
-    5. Verify redirection back through `/auth/callback?next=...` and landing at `/app` (or `/onboarding` for a newly created user).
+    5. Verify the popup closes on `/auth/popup`, the opener navigates through `/auth/continue?next=...`, and lands at `/app` (or `/onboarding` for a newly created user).
   - **Android Flow**:
     1. Launch the Dividimos APK on an Android device configured with a Google account.
     2. Tap **"Continuar com Google"** on the authentication screen.

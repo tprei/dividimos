@@ -209,7 +209,7 @@ Cada transferência gera um QR Code Pix pra pagar a parte direto. No wizard e na
 ## Quick orientation
 
 - `src/app/` — Next.js 16 App Router pages. Main flows: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), app shell (`app/`, prerendered and served cache-first by `public/sw.js`)
-- `src/app/auth/` — Google OAuth sign-in, callback route handler, onboarding (handle + Pix key). No phone or 2FA.
+- `src/app/auth/` — Google sign-in (ID token via `@capgo/capacitor-social-login` on web, Android, and iOS; `popup/` is the page the web popup returns to), `continue/` onboarding decision, onboarding (handle + Pix key). No phone or 2FA.
 - `src/app/app/groups/` — Groups with mutual confirmation (invite/accept flow)
 - `src/app/api/pix/generate/` — Server-side Pix Copia e Cola generation (decrypts key server-side)
 - `src/app/api/users/lookup/` — Exact @handle lookup for authenticated users
