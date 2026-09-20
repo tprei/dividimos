@@ -1,11 +1,16 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Loader2, QrCode } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2, QrCode, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { googleSignIn, prepareGoogleSignIn } from "@/lib/capacitor/auth";
+import {
+  googleSignIn,
+  isNativePlatform,
+  prepareGoogleSignIn,
+  startGoogleRedirect,
+} from "@/lib/capacitor/auth";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { safeRedirect } from "@/lib/safe-redirect";
@@ -25,6 +30,8 @@ function AuthPageContent() {
   const [mode, setMode] = useState<AuthMode>("choose");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [scanPaused, setScanPaused] = useState(false);
+  const error = searchParams.get("error");
+  const [dismissedError, setDismissedError] = useState(false);
 
   useEffect(() => {
     void prepareGoogleSignIn();
@@ -60,6 +67,11 @@ function AuthPageContent() {
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     try {
+      if (!isNativePlatform()) {
+        await startGoogleRedirect(next);
+        return;
+      }
+
       const success = await googleSignIn(supabase);
       if (success) {
         // Go through /auth/continue so a first login makes the onboarded
@@ -121,6 +133,35 @@ function AuthPageContent() {
                   </p>
 
                   <div className="mt-8 space-y-3">
+                    {error === "callback_failed" && !dismissedError && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5 text-left"
+                      >
+                        <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-destructive">
+                            Não conseguimos concluir a entrada com o Google.
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Toque em &quot;Entrar com Google&quot; para tentar de novo.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Dispensar aviso"
+                          onClick={() => {
+                            setDismissedError(true);
+                            const params = new URLSearchParams(searchParams.toString());
+                            params.delete("error");
+                            router.replace(params.toString() ? `/auth?${params.toString()}` : "/auth");
+                          }}
+                          className="-mr-2 -mt-2 flex size-11 shrink-0 items-center justify-center rounded-lg text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    )}
                     <Button
                       onClick={handleGoogleSignIn}
                       disabled={isGoogleLoading}

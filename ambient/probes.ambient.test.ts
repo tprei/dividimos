@@ -25,7 +25,7 @@ describe("production probes", () => {
   });
 
   it("gets the /auth/popup redirect accepted by google", async () => {
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.googleClientId}&redirect_uri=${encodeURIComponent(`${env.baseUrl}/auth/popup`)}&response_type=token%20id_token&scope=openid&nonce=probe`;
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.googleClientId}&redirect_uri=${encodeURIComponent(`${env.baseUrl}/auth/popup`)}&response_type=id_token&scope=openid%20email%20profile&nonce=probe`;
     const res = await fetch(url, { redirect: "manual" });
     expect(res.status).toBeLessThan(400);
 
@@ -40,7 +40,7 @@ describe("production probes", () => {
     }
 
     // Catches an OAuth client whose redirect list no longer contains the
-    // popup return page (redirect_uri_mismatch) or a dead client id
+    // page Google redirects back to (redirect_uri_mismatch) or a dead client id
     // (invalid_client): Google reports both in the redirect target or body.
     expect(body).not.toContain("redirect_uri_mismatch");
     expect(body).not.toContain("invalid_client");
