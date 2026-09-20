@@ -1,4 +1,4 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 import { transfersFromBalances } from "../../src/lib/ledger/transfers";
 import type { BalanceRow } from "../../src/types/ledger";
 
@@ -7,7 +7,7 @@ test.describe("Settlement Flow", () => {
     page,
     seed,
     loginAs,
-    browser,
+    newSession,
     adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Settle" });
@@ -40,9 +40,7 @@ test.describe("Settlement Flow", () => {
     // Bob is the intermediary: he paid R$ 60 and owes R$ 60, so he nets to
     // zero. The settled state only renders when every balance is zero, so he
     // still sees the transfer list; his row is marked Outro acerto.
-    const bobCtx = await browser.newContext();
-    const bobPage = await bobCtx.newPage();
-    await loginInContext(bobCtx, bobPage, bob);
+    const { context: bobCtx, page: bobPage } = await newSession(bob);
 
     await bobPage.goto(`/app/groups/${group.id}`);
     await bobPage.waitForLoadState("networkidle");
@@ -54,9 +52,7 @@ test.describe("Settlement Flow", () => {
     await expect(bobPage.getByText("Tudo liquidado!")).toHaveCount(0);
 
     // Carol paid nothing, so she owes her whole share
-    const carolCtx = await browser.newContext();
-    const carolPage = await carolCtx.newPage();
-    await loginInContext(carolCtx, carolPage, carol);
+    const { context: carolCtx, page: carolPage } = await newSession(carol);
 
     await carolPage.goto(`/app/groups/${group.id}`);
     await carolPage.waitForLoadState("networkidle");
@@ -121,9 +117,7 @@ test.describe("Settlement Flow", () => {
     // A fresh session loads the settled group. The service worker serves
     // /app/** navigations cache-first, so revisiting the same URL in an
     // existing context would render the already-cached shell.
-    const settledCtx = await browser.newContext();
-    const settledPage = await settledCtx.newPage();
-    await loginInContext(settledCtx, settledPage, alice);
+    const { context: settledCtx, page: settledPage } = await newSession(alice);
 
     await settledPage.goto(`/app/groups/${group.id}`);
     await settledPage.waitForLoadState("networkidle");

@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
-import { useBackHandler } from "@/hooks/use-back-handler";
+import { useAppViewport } from "@/hooks/use-app-viewport";
 import {
   PendingOperationNotice,
   usePendingOperation,
@@ -28,6 +28,8 @@ export interface QuickChargeSheetProps {
   onLeavePending: () => void;
   status?: QuickChargeStatus;
   errorMessage?: string;
+  /** Control the form is positioned against. */
+  anchor: HTMLElement | null;
 }
 
 function buildDescription(
@@ -77,6 +79,7 @@ export function QuickChargeSheet({
   onLeavePending,
   status = "idle",
   errorMessage,
+  anchor,
 }: QuickChargeSheetProps) {
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
@@ -84,7 +87,7 @@ export function QuickChargeSheet({
   const [payerIsSelf, setPayerIsSelf] = useState(true);
 
   const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
-  useBackHandler(true, guardedDismiss);
+  const { keyboardOpen } = useAppViewport();
 
   const autoDescription = useMemo(
     () => buildDescription(amountCents, counterpartyName, payerIsSelf),
@@ -127,15 +130,20 @@ export function QuickChargeSheet({
   }, [amountCents, displayDescription, payerIsSelf, counterpartyHandle, onEdit]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.97 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      className="rounded-2xl border bg-card p-4"
-      aria-busy={status === "confirming"}
-      data-testid="quick-charge-sheet"
+    <Popover
+      open
+      onOpenChange={(next) => {
+        // Dismissal always passes the pending-operation guard.
+        if (!next) guardedDismiss();
+      }}
     >
+      <PopoverContent
+        anchor={anchor}
+        side="top"
+        align="start"
+        aria-busy={status === "confirming"}
+        data-testid="quick-charge-sheet"
+      >
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
@@ -179,9 +187,11 @@ export function QuickChargeSheet({
         )}
       </div>
 
-      <div className="mb-3 flex justify-center">
-        <AmountQuickAdd valueCents={amountCents} onChangeCents={setAmountCents} />
-      </div>
+      {!keyboardOpen && (
+        <div className="mb-3 flex justify-center">
+          <AmountQuickAdd valueCents={amountCents} onChangeCents={setAmountCents} />
+        </div>
+      )}
 
       <div className="mb-3">
         <input
@@ -189,7 +199,7 @@ export function QuickChargeSheet({
           value={displayDescription}
           onChange={handleDescriptionChange}
           placeholder="Descrição (opcional)"
-          className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/50"
+          className="w-full rounded-lg border bg-background px-3 py-2 text-base outline-none transition-colors focus:border-primary/50 md:text-sm"
           data-testid="quick-charge-description"
         />
       </div>
@@ -277,6 +287,7 @@ export function QuickChargeSheet({
           )}
         </Button>
       </div>
-    </motion.div>
+      </PopoverContent>
+    </Popover>
   );
 }

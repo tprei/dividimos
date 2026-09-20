@@ -1,7 +1,8 @@
 import { DollarSign, Receipt } from "lucide-react";
 
 interface ConversationQuickActionsProps {
-  onCharge: () => void;
+  /** Receives the pressed control so the charge form anchors to it. */
+  onCharge: (anchor: HTMLButtonElement) => void;
   onSplit: () => void;
 }
 
@@ -13,7 +14,7 @@ export function ConversationQuickActions({
     <div className="flex gap-2 px-4 pb-2">
       <button
         type="button"
-        onClick={onCharge}
+        onClick={(event) => onCharge(event.currentTarget)}
         className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
       >
         <DollarSign className="h-3.5 w-3.5" />

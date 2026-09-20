@@ -65,7 +65,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="h-full overflow-hidden flex flex-col safe-top safe-bottom">
+      {/* The body is the single safe-area owner and the only element sized to
+          the measured visual viewport, so overlays and the shell agree on
+          where the usable screen ends when the keyboard is up. */}
+      <body className="fixed inset-x-0 top-[var(--app-viewport-top)] h-[var(--app-viewport-height)] w-full overflow-hidden flex flex-col safe-top safe-bottom">
         <RegisterSW />
         <MotionProvider>{children}</MotionProvider>
         <Toaster

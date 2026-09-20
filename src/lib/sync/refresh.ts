@@ -2,10 +2,11 @@ import {
   decodeConversation,
   decodeExpensePage,
   decodeGroupEvents,
-  decodeGroupSnapshot,
   decodeChargePage,
 } from "@/lib/ledger/decode";
 import { decodeExpenseContext } from "@/lib/ledger/decode-assignment-room";
+import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
+import { decodeGroupOverview } from "@/lib/ledger/decode-group-overview";
 import {
   CHARGES_READ_KEY,
   conversationReadKey,
@@ -13,6 +14,7 @@ import {
   expenseReadKey,
   MY_EXPENSES_READ_KEY,
   groupReadKey,
+  settlementReadKey,
   useAppStore,
   type ResourceReadState,
 } from "@/stores/app-store";
@@ -24,6 +26,7 @@ const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
 const inFlightExpensePageOwners = new Map<string, symbol>();
+const inFlightSettlements = new Map<string, Promise<void>>();
 
 interface ReadAttempt {
   generation: number;
@@ -68,6 +71,7 @@ export function invalidateSyncReads(): void {
   pendingGroups.clear();
   inFlightExpensePages.clear();
   inFlightExpensePageOwners.clear();
+  inFlightSettlements.clear();
 }
 
 async function trackedRead<T>(
@@ -126,6 +130,29 @@ function refreshStaleDetails(
   }
 }
 
+function refreshStaleSettlementDetails(
+  groupId: string,
+  snapshot: GroupSnapshot,
+  prevLedgerVersion: number | null,
+): void {
+  if (prevLedgerVersion !== null && prevLedgerVersion === snapshot.group.ledgerVersion) {
+    return;
+  }
+
+  // The snapshot only carries its bounded recent-confirmed list, so a detail
+  // it omits may simply be older or voided: a matching status is the only
+  // cheap proof the cached copy is still fresh.
+  const snapshotStatuses = new Map(
+    snapshot.settlements.map((s) => [s.id, s.status] as const),
+  );
+  const details = useAppStore.getState().settlementDetails;
+  for (const [id, settlement] of Object.entries(details)) {
+    if (settlement.groupId !== groupId) continue;
+    if (snapshotStatuses.get(id) === settlement.status) continue;
+    void refreshSettlement(id);
+  }
+}
+
 async function executeRefreshGroup(groupId: string): Promise<void> {
   const prev = useAppStore.getState().groups[groupId];
   const prevVersion = prev?.group.ledgerVersion ?? null;
@@ -137,12 +164,13 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   const snapshot = await trackedRead(
     key,
     attempt,
-    () => rpc("get_group", { p_group_id: groupId }, decodeGroupSnapshot),
+    () => rpc("get_group_overview", { p_group_id: groupId }, decodeGroupOverview),
     (value) => useAppStore.getState().applyGroup(value),
   );
 
   if (snapshot === null || !isCurrentRead(key, attempt)) return;
   refreshStaleDetails(groupId, snapshot, prevVersion);
+  refreshStaleSettlementDetails(groupId, snapshot, prevVersion);
   const conversation = useAppStore.getState().conversations[groupId];
   const loaded = conversation !== undefined && conversation.messages.length > 0;
   if (loaded && prevEventId !== null && snapshot.lastEventId > prevEventId) {
@@ -195,6 +223,46 @@ export async function refreshExpense(expenseId: string): Promise<void> {
       ),
     (context) => useAppStore.getState().applyExpenseContext(context),
   );
+}
+
+export function refreshSettlement(settlementId: string): Promise<void> {
+  const inFlight = inFlightSettlements.get(settlementId);
+  if (inFlight) return inFlight;
+
+  const key = settlementReadKey(settlementId);
+  const attempt = beginRead(key);
+  let task = Promise.resolve();
+  task = (async () => {
+    try {
+      await trackedRead(
+        key,
+        attempt,
+        () => rpc("get_settlement", { p_settlement_id: settlementId }, decodeSettlementDetail),
+        (settlement) => useAppStore.getState().applySettlementDetail(settlement),
+      );
+    } catch (error) {
+      // A denial is a verdict about the record itself, so the cached copy
+      // must not outlive it; other failures keep the cache behind a retry.
+      if (
+        error instanceof LedgerError &&
+        (error.code === "not_a_member" || error.code === "settlement_not_found")
+      ) {
+        useAppStore.getState().patch((state) => {
+          if (!(settlementId in state.settlementDetails)) return {};
+          const settlementDetails = { ...state.settlementDetails };
+          delete settlementDetails[settlementId];
+          return { settlementDetails };
+        });
+      }
+      throw error;
+    } finally {
+      if (inFlightSettlements.get(settlementId) === task) {
+        inFlightSettlements.delete(settlementId);
+      }
+    }
+  })();
+  inFlightSettlements.set(settlementId, task);
+  return task;
 }
 
 export async function loadMoreExpenses(groupId: string): Promise<void> {
