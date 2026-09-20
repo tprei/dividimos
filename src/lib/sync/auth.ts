@@ -13,7 +13,11 @@ import {
 } from "@/lib/push/detach";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
 import { invalidateNativeRegistration } from "@/lib/push/native-registration";
-import { resetAssignmentRoomRuntime } from "./assignment-rooms";
+import {
+  clearAllAssignmentRoomCredentials,
+  resetAssignmentRoomRuntime,
+} from "./assignment-rooms";
+import { stopAllAssignmentRoomRealtime } from "./assignment-room-realtime";
 
 export function attachAuthListener(
   onSignedOut: () => void,
@@ -38,7 +42,9 @@ export function attachAuthListener(
       useBillStore.getState().reset();
       observedUserId = null;
       advanceAuthGeneration();
+      stopAllAssignmentRoomRealtime();
       resetAssignmentRoomRuntime();
+      clearAllAssignmentRoomCredentials();
       invalidateNativeRegistration();
       invalidateSyncReads();
       clearPendingVendorChargeCancellations();
@@ -65,7 +71,9 @@ export function attachAuthListener(
     const previousUserId = priorUserId();
     observedUserId = nextUserId;
     advanceAuthGeneration();
+    stopAllAssignmentRoomRealtime();
     resetAssignmentRoomRuntime();
+    if (previousUserId !== null) clearAllAssignmentRoomCredentials();
     invalidateNativeRegistration();
     invalidateSyncReads();
     clearPendingVendorChargeCancellations();
@@ -88,6 +96,7 @@ export function attachAuthListener(
     disposed = true;
     data.subscription.unsubscribe();
     advanceAuthGeneration();
+    stopAllAssignmentRoomRealtime();
     resetAssignmentRoomRuntime();
     invalidateNativeRegistration();
   };

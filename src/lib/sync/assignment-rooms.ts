@@ -122,6 +122,20 @@ function writeCredentials(roomId: string, value: StoredRoomCredentials): void {
   }
 }
 
+export function clearAllAssignmentRoomCredentials(): void {
+  try {
+    const roomStorage = storage();
+    const keys: string[] = [];
+    for (let index = 0; index < roomStorage.length; index += 1) {
+      const key = roomStorage.key(index);
+      if (key?.startsWith(CREDENTIAL_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) roomStorage.removeItem(key);
+  } catch {
+    // Credential cleanup is best effort when browser storage is unavailable.
+  }
+}
+
 function randomToken(prefix: "armj1" | "armm1"): string {
   const cryptoApi = globalThis.crypto;
   if (!cryptoApi?.getRandomValues) throw new LedgerError("invalid_token");
@@ -203,9 +217,17 @@ function forgetAssignmentRoomCredentials(roomId: string): void {
   writeCredentials(roomId, {});
 }
 
+function forgetAssignmentRoomJoinToken(roomId: string): void {
+  const memberToken = readCredentials(roomId).memberToken;
+  writeCredentials(roomId, memberToken ? { memberToken } : {});
+}
+
 export function clearAssignmentRoomAccess(roomId: string): void {
-  forgetAssignmentRoomCredentials(roomId);
-  useAssignmentRoomStore.getState().remove(roomId);
+  try {
+    forgetAssignmentRoomCredentials(roomId);
+  } finally {
+    useAssignmentRoomStore.getState().remove(roomId);
+  }
 }
 
 export function resetAssignmentRoomRuntime(): void {
@@ -247,6 +269,7 @@ export async function createAssignmentRoom(
     if (mayBeLostResponse(error)) {
       const recovered = await refreshAssignmentRoom(roomId).catch(() => null);
       if (recovered) return recovered;
+      throw error;
     }
     clearAssignmentRoomAccess(roomId);
     throw error;
@@ -257,6 +280,8 @@ export async function joinAssignmentRoom(
   input: JoinAssignmentRoomInput
 ): Promise<AssignmentRoomView> {
   if (!JOIN_TOKEN.test(input.joinToken)) throw new LedgerError("invalid_token");
+  const existingMemberToken = readCredentials(input.roomId).memberToken;
+  if (existingMemberToken) return refreshAssignmentRoomMember(input.roomId);
   const memberToken = randomToken("armm1");
   writeCredentials(input.roomId, { joinToken: input.joinToken, memberToken });
   const attempt = useAssignmentRoomStore.getState().beginRead(input.roomId);
@@ -284,6 +309,7 @@ export async function joinAssignmentRoom(
         writeCredentials(input.roomId, { memberToken });
         return recovered;
       }
+      throw error;
     }
     clearAssignmentRoomAccess(input.roomId);
     throw error;
@@ -297,8 +323,8 @@ async function readRoom(
   const store = useAssignmentRoomStore.getState();
   const attempt = store.beginRead(roomId);
   const authGeneration = getAuthGeneration();
-  const memberToken = readCredentials(roomId).memberToken ?? null;
   try {
+    const memberToken = readCredentials(roomId).memberToken ?? null;
     const view = refreshMember
       ? await rpc(
           "refresh_assignment_room_member",
@@ -380,6 +406,11 @@ export async function removeAssignmentRoomParticipant(
       )
     );
   } catch (error) {
+    if (mayBeLostResponse(error)) {
+      const recovered = await refreshAssignmentRoom(input.roomId).catch(() => null);
+      if (recovered) return recovered;
+      throw error;
+    }
     writeCredentials(input.roomId, credentials);
     throw error;
   }
@@ -426,6 +457,11 @@ export async function finalizeAssignmentRoom(
     decodeFinalizeAssignmentRoomResult
   );
   publish(result.room, attempt, authGeneration);
+  try {
+    forgetAssignmentRoomJoinToken(input.roomId);
+  } catch {
+    // The recorded room remains valid when browser storage is unavailable.
+  }
   if (getAuthGeneration() === authGeneration) await refreshGroup(result.ack.groupId);
   return result;
 }
