@@ -301,10 +301,19 @@ test.describe("Assignment room multi-client acceptance", () => {
       await finalBeerB.getByRole("button", { name: "Escolher quantidade" }).click();
       await finalBeerA.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
       await finalBeerB.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
-      await Promise.all([
-        finalBeerA.getByRole("button", { name: "Confirmar quantidade" }).click(),
-        finalBeerB.getByRole("button", { name: "Confirmar quantidade" }).click(),
-      ]);
+      // Both guests submit the last unit at once. Whichever claim lands first
+      // reaches the other client over realtime, which re-renders its card and
+      // takes the editor down, so the losing click can find no button at all —
+      // on WebKit that is the usual ordering. Waiting out the full test budget
+      // for a control that will never come back burns the CI shard, so each
+      // click is bounded and the assertions below cover both orderings.
+      const submitLastUnit = async (card: Locator) => {
+        await card
+          .getByRole("button", { name: "Confirmar quantidade" })
+          .click({ timeout: ROOM_TIMEOUT })
+          .catch(() => undefined);
+      };
+      await Promise.all([submitLastUnit(finalBeerA), submitLastUnit(finalBeerB)]);
       await expect
         .poll(
           async () => {
@@ -325,14 +334,24 @@ test.describe("Assignment room multi-client acceptance", () => {
           { timeout: ROOM_TIMEOUT },
         )
         .toBe(1);
+      // Whoever lost learns it: either the server rejected their submission
+      // (the card shows the error) or their editor closed because the item was
+      // gone before they could submit. Both leave exactly one holder.
       await expect
         .poll(
-          async () =>
-            (await finalBeerA.getByRole("alert").count()) +
-            (await finalBeerB.getByRole("alert").count()),
+          async () => {
+            const alerts =
+              (await finalBeerA.getByRole("alert").count()) +
+              (await finalBeerB.getByRole("alert").count());
+            if (alerts === 1) return true;
+            const editors =
+              (await finalBeerA.getByRole("button", { name: "Confirmar quantidade" }).count()) +
+              (await finalBeerB.getByRole("button", { name: "Confirmar quantidade" }).count());
+            return alerts === 0 && editors < 2;
+          },
           { timeout: ROOM_TIMEOUT },
         )
-        .toBe(1);
+        .toBe(true);
 
       await guestBContext.setOffline(true);
       await page.getByRole("button", { name: `Remover ${GUEST_A}` }).click();
