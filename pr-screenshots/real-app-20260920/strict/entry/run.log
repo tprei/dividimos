@@ -1,0 +1,18 @@
+shot pr1063/scan-invite-after-360x740.png
+shot pr1063/scan-invite-after-390x844.png
+shot pr1063/scan-invite-after-430x932.png
+shot pr1063/auth-scan-after-360x740.png
+shot pr1063/auth-scan-after-390x844.png
+shot pr1063/auth-scan-after-430x932.png
+shot pr1063/route-room-qr-before-390x844.png
+shot pr1063/route-room-qr-after-390x844.png
+shot pr1062/entry-head-360x740.png
+shot pr1062/entry-head-390x844.png
+shot pr1062/entry-head-430x932.png
+shot pr1064/entry-before-360x740.png
+shot pr1064/entry-before-390x844.png
+shot pr1064/entry-before-430x932.png
+shot pr1064/entry-after-360x740.png
+shot pr1064/entry-after-390x844.png
+shot pr1064/entry-after-430x932.png
+Stopped services: [supabase_imgproxy_dividimos-local supabase_edge_runtime_dividimos-local supabase_analytics_dividimos-local supabase_vector_dividimos-local supabase_pooler_dividimos-local]
