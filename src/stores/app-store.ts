@@ -112,6 +112,10 @@ interface AppStateData {
     /** The server had no older rows on the last successful page. */
     complete: boolean;
     read: ResourceReadState;
+    /** Local-only read receipts for notification rows, pruned to the cached window. */
+    readIds: number[];
+    /** Local-only dismissed notification rows, pruned to the cached window. */
+    dismissedIds: number[];
   };
   /** Newest activity each account has actually seen, keyed by account id. */
   activityViewedAt: Record<string, string>;
@@ -162,6 +166,8 @@ export interface AppState extends AppStateData {
   setActivityRead(read: ResourceReadState): void;
   setResourceRead(key: string, read: ResourceReadState): void;
   markActivityViewed(accountId: string, newestAt: string): void;
+  markEventRead(eventId: number): void;
+  dismissEvent(eventId: number): void;
   applyConversation(groupId: string, merge: ConversationMerge): void;
   setConversationReconcile(groupId: string, status: ConversationReconcileState["status"]): void;
   upsertExpense(summary: ExpenseSummary): void;
@@ -182,7 +188,7 @@ const initialData: AppStateData = {
   expenses: {},
   expenseDetails: {},
   assignmentRoomsByExpenseId: {},
-  activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
+  activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
   activityViewedAt: {},
   settlementDetails: {},
   conversations: {},
@@ -305,6 +311,12 @@ export function migrateAppState(persisted: unknown): AppStateData {
     oldestId: typeof persistedActivity.oldestId === "number" ? persistedActivity.oldestId : null,
     complete: typeof persistedActivity.complete === "boolean" ? persistedActivity.complete : false,
     read: { status: "idle" },
+    readIds: Array.isArray(persistedActivity.readIds)
+      ? persistedActivity.readIds.filter((id): id is number => typeof id === "number")
+      : [],
+    dismissedIds: Array.isArray(persistedActivity.dismissedIds)
+      ? persistedActivity.dismissedIds.filter((id): id is number => typeof id === "number")
+      : [],
   };
 
   const conversations: Record<string, ConversationState> = {};
@@ -654,13 +666,20 @@ export const useAppStore = create<AppState>()(
       // Rows are published only from a successful read, so a failure can never
       // shrink the list or mark it complete.
       applyActivity: (items, complete) =>
-        set((state) => ({
-          activity: {
-            ...mergeActivity(state.activity.items, items),
-            complete,
-            read: { status: "ready" as const },
-          },
-        })),
+        set((state) => {
+          const merged = mergeActivity(state.activity.items, items);
+          const cached = new Set(merged.items.map((event) => event.id));
+          return {
+            activity: {
+              ...merged,
+              complete,
+              read: { status: "ready" as const },
+              // Local read/dismiss state only outlives rows still cached.
+              readIds: state.activity.readIds.filter((id) => cached.has(id)),
+              dismissedIds: state.activity.dismissedIds.filter((id) => cached.has(id)),
+            },
+          };
+        }),
 
       setActivityRead: (read) =>
         set((state) => ({ activity: { ...state.activity, read } })),
@@ -672,6 +691,25 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           activityViewedAt: { ...state.activityViewedAt, [accountId]: newestAt },
         })),
+
+      markEventRead: (eventId) =>
+        set((state) =>
+          state.activity.readIds.includes(eventId)
+            ? {}
+            : { activity: { ...state.activity, readIds: [...state.activity.readIds, eventId] } },
+        ),
+
+      dismissEvent: (eventId) =>
+        set((state) =>
+          state.activity.dismissedIds.includes(eventId)
+            ? {}
+            : {
+                activity: {
+                  ...state.activity,
+                  dismissedIds: [...state.activity.dismissedIds, eventId],
+                },
+              },
+        ),
 
       applyConversation: (groupId, merge) =>
         set((state) => ({
@@ -804,7 +842,9 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      version: 4,
+      // Bumped for activity.readIds/dismissedIds: without it `migrate` never
+      // runs and an existing cache rehydrates those lists as undefined.
+      version: 5,
     },
   ),
 );

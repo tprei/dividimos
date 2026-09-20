@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { GroupSnapshot } from "@/types/ledger";
-import { hasUnreadActivity, newestActivityAt } from "./activity-badge";
+import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
+import { hasUnreadActivity, isEventUnread, newestActivityAt } from "./activity-badge";
 
 function group(id: string, lastActivityAt: string): GroupSnapshot {
   return {
@@ -25,6 +25,22 @@ function group(id: string, lastActivityAt: string): GroupSnapshot {
     lastActivityAt,
     expenseCount: 0,
     pairwiseEdges: [],
+  };
+}
+
+function event(id: number, createdAt: string): GroupEvent {
+  return {
+    id,
+    groupId: "g1",
+    actorId: null,
+    kind: "expense_created",
+    expenseId: null,
+    settlementId: null,
+    subjectUserId: null,
+    payload: {},
+    createdAt,
+    actor: null,
+    expenseTitle: null,
   };
 }
 
@@ -56,5 +72,15 @@ describe("hasUnreadActivity", () => {
     expect(hasUnreadActivity("2026-01-03T10:00:00.000Z", "2026-01-02T10:00:00.000Z")).toBe(true);
     // A view recorded later than the newest row leaves nothing unread.
     expect(hasUnreadActivity("2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z")).toBe(false);
+  });
+});
+
+describe("isEventUnread", () => {
+  it("is unread when it is newer than the last view and absent from readIds", () => {
+    expect(isEventUnread(event(9, "2026-09-19T12:00:00.000Z"), [7], "2026-09-18T00:00:00.000Z")).toBe(true);
+  });
+
+  it("is read once its id is in readIds even though it is newer than the last view", () => {
+    expect(isEventUnread(event(9, "2026-09-19T12:00:00.000Z"), [9], "2026-09-18T00:00:00.000Z")).toBe(false);
   });
 });
