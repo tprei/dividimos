@@ -42,6 +42,24 @@ describe("errors", () => {
     );
   });
 
+  it("maps assignment-room failures to specific copy", () => {
+    expect(ledgerErrorMessage(new LedgerError("room_closed"))).toBe(
+      "A escolha de itens já foi encerrada.",
+    );
+    expect(ledgerErrorMessage(new LedgerError("room_incomplete"))).toBe(
+      "Ainda há itens sem dividir.",
+    );
+    expect(ledgerErrorMessage(new LedgerError("item_unavailable"))).toBe(
+      "Essa quantidade não está mais disponível.",
+    );
+    expect(ledgerErrorMessage(new LedgerError("room_cancelled"))).toBe(
+      "Essa sala foi cancelada.",
+    );
+    expect(ledgerErrorMessage(new LedgerError("room_host_required"))).toBe(
+      "Só quem criou a sala pode fazer isso.",
+    );
+  });
+
   it("codeFromMessage falls back to unknown for arbitrary text", () => {
     expect(codeFromMessage("random message")).toBe("unknown");
     expect(codeFromMessage("NOT_A_MEMBER")).toBe("unknown");

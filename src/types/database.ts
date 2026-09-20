@@ -34,6 +34,186 @@ export type Database = {
   }
   public: {
     Tables: {
+      assignment_room_claims: {
+        Row: {
+          item_id: string
+          participant_id: string
+          room_id: string
+          ticks: number
+        }
+        Insert: {
+          item_id: string
+          participant_id: string
+          room_id: string
+          ticks: number
+        }
+        Update: {
+          item_id?: string
+          participant_id?: string
+          room_id?: string
+          ticks?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_room_claims_room_id_item_id_fkey"
+            columns: ["room_id", "item_id"]
+            isOneToOne: false
+            referencedRelation: "assignment_room_items"
+            referencedColumns: ["room_id", "id"]
+          },
+          {
+            foreignKeyName: "assignment_room_claims_room_id_participant_id_fkey"
+            columns: ["room_id", "participant_id"]
+            isOneToOne: false
+            referencedRelation: "assignment_room_participants"
+            referencedColumns: ["room_id", "id"]
+          },
+        ]
+      }
+      assignment_room_items: {
+        Row: {
+          description: string
+          id: string
+          ordinal: number
+          quantity_milliunits: number
+          revision: number
+          room_id: string
+          total_price_cents: number
+          unit_price_cents: number
+        }
+        Insert: {
+          description: string
+          id: string
+          ordinal: number
+          quantity_milliunits: number
+          revision?: number
+          room_id: string
+          total_price_cents: number
+          unit_price_cents: number
+        }
+        Update: {
+          description?: string
+          id?: string
+          ordinal?: number
+          quantity_milliunits?: number
+          revision?: number
+          room_id?: string
+          total_price_cents?: number
+          unit_price_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_room_items_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "assignment_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assignment_room_participants: {
+        Row: {
+          display_name: string
+          expense_participant_index: number | null
+          id: string
+          ordinal: number
+          removed_at: string | null
+          room_id: string
+          user_id: string | null
+        }
+        Insert: {
+          display_name: string
+          expense_participant_index?: number | null
+          id: string
+          ordinal: number
+          removed_at?: string | null
+          room_id: string
+          user_id?: string | null
+        }
+        Update: {
+          display_name?: string
+          expense_participant_index?: number | null
+          id?: string
+          ordinal?: number
+          removed_at?: string | null
+          room_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_room_participants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "assignment_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_room_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assignment_rooms: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          expense_id: string | null
+          group_target: Json
+          header: Json
+          host_user_id: string
+          id: string
+          revision: number
+          status: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_target: Json
+          header: Json
+          host_user_id: string
+          id: string
+          revision?: number
+          status?: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_target?: Json
+          header?: Json
+          host_user_id?: string
+          id?: string
+          revision?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_rooms_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: true
+            referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "assignment_rooms_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: true
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_rooms_host_user_id_fkey"
+            columns: ["host_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           client_id: string
@@ -906,6 +1086,34 @@ export type Database = {
         }
         Returns: undefined
       }
+      assignment_room_bill_breakdown: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: Json
+      }
+      assignment_room_expense_payload: {
+        Args: {
+          p_room_id: string
+          p_group_id: string
+          p_payers: Json
+        }
+        Returns: Json
+      }
+      assignment_room_topic_allowed: {
+        Args: {
+          p_topic: string
+        }
+        Returns: boolean
+      }
+      assignment_room_view: {
+        Args: {
+          p_room_id: string
+          p_self_participant_id: string
+          p_host: boolean
+        }
+        Returns: Json
+      }
       bootstrap: {
         Args: Record<PropertyKey, never>
         Returns: Json
@@ -913,6 +1121,14 @@ export type Database = {
       bootstrap_overview: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      broadcast_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_event?: string
+          p_topic?: string
+        }
+        Returns: undefined
       }
       broadcast_group: {
         Args: {
@@ -928,6 +1144,13 @@ export type Database = {
           p_group_id: string
         }
         Returns: undefined
+      }
+      cancel_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+        }
+        Returns: Json
       }
       cancel_vendor_charge: {
         Args: {
@@ -954,6 +1177,13 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: number
       }
+      close_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+        }
+        Returns: Json
+      }
       complete_onboarding: {
         Args: {
           p_handle: string
@@ -967,6 +1197,17 @@ export type Database = {
       confirm_vendor_charge: {
         Args: {
           p_charge_id: string
+        }
+        Returns: Json
+      }
+      create_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_group_target: Json
+          p_header: Json
+          p_items: Json
+          p_participants: Json
+          p_join_token: string
         }
         Returns: Json
       }
@@ -1100,10 +1341,25 @@ export type Database = {
         }
         Returns: Json
       }
+      finalize_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+          p_payload: Json
+        }
+        Returns: Json
+      }
       get_activity: {
         Args: {
           p_before_id: number
           p_limit?: number
+        }
+        Returns: Json
+      }
+      get_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
         }
         Returns: Json
       }
@@ -1119,6 +1375,12 @@ export type Database = {
         Returns: Json
       }
       get_expense: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: Json
+      }
+      get_expense_context: {
         Args: {
           p_expense_id: string
         }
@@ -1234,6 +1496,15 @@ export type Database = {
           p_user_id: string
         }
         Returns: boolean
+      }
+      join_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_join_token: string
+          p_member_token: string
+          p_display_name: string
+        }
+        Returns: Json
       }
       join_via_link: {
         Args: {
@@ -1374,6 +1645,22 @@ export type Database = {
         }
         Returns: Json
       }
+      refresh_assignment_room_member: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
+      remove_assignment_room_participant: {
+        Args: {
+          p_room_id: string
+          p_participant_id: string
+          p_expected_revision: number
+          p_join_token: string
+        }
+        Returns: Json
+      }
       remove_member: {
         Args: {
           p_group_id: string
@@ -1406,6 +1693,13 @@ export type Database = {
         }
         Returns: Json
       }
+      rotate_assignment_room_join: {
+        Args: {
+          p_room_id: string
+          p_join_token: string
+        }
+        Returns: Json
+      }
       send_message: {
         Args: {
           p_client_id: string
@@ -1418,6 +1712,17 @@ export type Database = {
         Args: {
           p_group_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      set_assignment_room_claim: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+          p_item_id: string
+          p_participant_id: string
+          p_expected_item_revision: number
+          p_ticks: number
         }
         Returns: Json
       }
@@ -1435,6 +1740,13 @@ export type Database = {
           p_name?: string
           p_handle?: string
           p_notification_preferences?: Json
+        }
+        Returns: Json
+      }
+      validate_assignment_room_receipt: {
+        Args: {
+          p_header: Json
+          p_items: Json
         }
         Returns: Json
       }

@@ -12,6 +12,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import toast from "react-hot-toast";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
 
 type AuthMode = "choose" | "scan";
@@ -31,6 +32,13 @@ function AuthPageContent() {
 
   const handleScanDecode = useCallback(
     (data: string) => {
+      const room = parseAssignmentRoomQrCode(data);
+      if (room) {
+        setScanPaused(true);
+        router.push(room.url);
+        return;
+      }
+
       const claim = parseClaimQrCode(data);
       if (claim) {
         // Stop scanning on a recognized payload: a second decode of the same

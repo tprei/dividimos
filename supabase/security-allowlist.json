@@ -10,15 +10,15 @@
     "missing function, any PUBLIC grant, or a privilege drift fails the gate."
   ],
   "policies": [
+    "realtime.messages.assignment_room_broadcast_authz",
     "realtime.messages.group_broadcast_authz"
   ],
   "policyNotes": {
+    "realtime.messages.assignment_room_broadcast_authz": "Realtime is broadcast-only. This policy authorizes the exact stored private topic for an active assignment room without granting snapshot access.",
     "realtime.messages.group_broadcast_authz": "Realtime is broadcast-only. This policy authorizes a member to read the private group:<id> and chat:<id> topics; no application table is exposed."
   },
   "grants": [],
-  "definerOwners": [
-    "postgres"
-  ],
+  "definerOwners": ["postgres"],
   "tablesWithoutRls": [],
   "schemas": [
     "_realtime",
@@ -39,10 +39,35 @@
     "vault"
   ],
   "functionPrivileges": {
+    "guest_credentials.normalize_assignment_room_topic()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal trigger helper; canonicalizes legacy room-topic generation before the row constraint runs."
+    },
     "public.accept_invitation(p_group_id uuid)": {
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.assignment_room_bill_breakdown(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal restricted projection of the current linked expense version for room members."
+    },
+    "public.assignment_room_expense_payload(p_room_id uuid, p_group_id uuid, p_payers jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal exact allocator used only by room finalization."
+    },
+    "public.assignment_room_topic_allowed(p_topic text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Boolean-only Realtime policy predicate; compares an exact stored topic for an active room."
+    },
+    "public.assignment_room_view(p_room_id uuid, p_self_participant_id uuid, p_host boolean)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal role-scoped serializer; called only after assignment-room authorization."
     },
     "public.assert_dm_pair_allowed(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
@@ -69,6 +94,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; bootstrap includes membership-checked group overviews."
     },
+    "public.broadcast_assignment_room(p_room_id uuid, p_event text, p_topic text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal broadcast helper; emits only a room revision on the stored private topic."
+    },
     "public.broadcast_group(p_group_id uuid, p_ledger_version bigint, p_event_id bigint)": {
       "anon": false,
       "authenticated": false,
@@ -78,6 +108,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal broadcast helper; called only inside ledger RPCs."
+    },
+    "public.cancel_assignment_room(p_room_id uuid, p_expected_revision bigint)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; cancels an open room and revokes its capabilities."
     },
     "public.cancel_vendor_charge(p_charge_id uuid)": {
       "anon": false,
@@ -99,6 +134,11 @@
       "authenticated": false,
       "note": "Internal rate-limit machinery; server-side callers only."
     },
+    "public.close_assignment_room(p_room_id uuid, p_expected_revision bigint)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; closes a fully claimed room at the expected room revision."
+    },
     "public.complete_onboarding(p_handle text, p_name text, p_pix_key_encrypted text, p_pix_key_hint text, p_pix_key_type pix_key_type)": {
       "anon": false,
       "authenticated": true,
@@ -108,6 +148,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_assignment_room(p_room_id uuid, p_group_target jsonb, p_header jsonb, p_items jsonb, p_participants jsonb, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; validates the reviewed receipt and binds the host to auth.uid()."
     },
     "public.create_expense(p_client_id uuid, p_group_id uuid, p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb, p_chave_acesso text)": {
       "anon": false,
@@ -179,10 +224,25 @@
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
     },
+    "public.enforce_assignment_room_immutability()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Table trigger that rejects changes to reviewed room inputs, immutable ordinals, and host removal."
+    },
     "public.expense_change_summary(p_expense_id uuid, p_from integer, p_to integer)": {
       "anon": false,
       "authenticated": false,
       "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.finalize_assignment_room(p_room_id uuid, p_expected_revision bigint, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; materializes one exact ledger expense from a closed room."
+    },
+    "public.get_assignment_room(p_room_id uuid, p_member_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability or authenticated-host read; returns only the role-scoped room view."
     },
     "public.get_activity(p_before_id bigint, p_limit integer)": {
       "anon": false,
@@ -198,6 +258,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_expense_context(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated single-round-trip expense detail plus linked assignment-room metadata."
     },
     "public.get_group(p_group_id uuid)": {
       "anon": false,
@@ -278,6 +343,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.join_assignment_room(p_room_id uuid, p_join_token text, p_member_token text, p_display_name text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability-authenticated room join; stores only token digests and never grants group membership."
     },
     "public.join_via_link(p_token text)": {
       "anon": false,
@@ -379,6 +449,16 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.refresh_assignment_room_member(p_room_id uuid, p_member_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability-authenticated refresh; extends only a currently valid active room membership."
+    },
+    "public.remove_assignment_room_participant(p_room_id uuid, p_participant_id uuid, p_expected_revision bigint, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; removes one participant and rotates room access."
+    },
     "public.remove_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -399,6 +479,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.rotate_assignment_room_join(p_room_id uuid, p_join_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; rotates the room join credential while the room is open."
+    },
     "public.revoke_guest_claim_token(p_guest_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -414,6 +499,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.set_assignment_room_claim(p_room_id uuid, p_member_token text, p_item_id uuid, p_participant_id uuid, p_expected_item_revision bigint, p_ticks bigint)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability RPC; active members claim only their own items while the host may correct any active participant."
+    },
     "public.set_group_avatar(p_group_id uuid, p_actor_id uuid, p_emoji text, p_photo_id uuid)": {
       "anon": false,
       "authenticated": false,
@@ -428,6 +518,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.validate_assignment_room_receipt(p_header jsonb, p_items jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal immutable receipt validator; called only inside assignment-room RPCs."
     },
     "public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)": {
       "anon": false,

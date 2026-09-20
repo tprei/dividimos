@@ -357,6 +357,44 @@ describe("applyExpensePage", () => {
   });
 });
 
+describe("applyExpenseContext", () => {
+  it("installs room metadata with detail and removes both with the group cache", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      groupOrder: ["g1"],
+    });
+    useAppStore.getState().applyExpenseContext({
+      detail: detail("e1"),
+      assignmentRoom: { id: "room-1", hostUserId: me.id },
+    });
+
+    expect(useAppStore.getState().expenseDetails.e1).toBeDefined();
+    expect(useAppStore.getState().assignmentRoomsByExpenseId.e1).toEqual({
+      id: "room-1",
+      hostUserId: me.id,
+    });
+
+    useAppStore.getState().removeGroup("g1");
+    expect(useAppStore.getState().expenseDetails.e1).toBeUndefined();
+    expect(useAppStore.getState().assignmentRoomsByExpenseId.e1).toBeUndefined();
+  });
+
+  it("clears stale room metadata when context says the expense is ordinary", () => {
+    useAppStore.setState({
+      assignmentRoomsByExpenseId: {
+        e1: { id: "room-1", hostUserId: me.id },
+      },
+    });
+    useAppStore.getState().applyExpenseContext({
+      detail: detail("e1"),
+      assignmentRoom: null,
+    });
+
+    expect(useAppStore.getState().assignmentRoomsByExpenseId.e1).toBeUndefined();
+  });
+});
+
 describe("replaceExpenseId", () => {
   it("renames in expenses, expense list ids and expense details", () => {
     useAppStore.setState({
@@ -519,6 +557,7 @@ describe("reset", () => {
     expect(state.expenseLists).toEqual({});
     expect(state.expenses).toEqual({});
     expect(state.expenseDetails).toEqual({});
+    expect(state.assignmentRoomsByExpenseId).toEqual({});
     expect(state.conversations).toEqual({});
     expect(state.vendorCharges).toEqual([]);
     expect(state.activity).toEqual({
