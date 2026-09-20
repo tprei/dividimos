@@ -15,6 +15,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { GroupSpendingSection } from "@/components/group/group-spending-section";
+import { GroupAvatarEditor } from "@/components/group/group-avatar-editor";
+import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
@@ -50,6 +53,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const [tab, setTab] = useState("saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const departedRef = useRef(false);
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
@@ -121,12 +125,21 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     (m) => m.userId === (myMember?.invitedBy ?? snapshot.group.creatorId),
   );
   const inviterName = inviter?.user.name ?? "Alguém";
+  const groupAvatar = (
+    <GroupAvatar
+      name={snapshot.group.name}
+      avatar={snapshot.overview?.avatar}
+      groupId={groupId}
+      size="sm"
+    />
+  );
 
   if (isPending) {
     return (
       <div className="mx-auto flex min-h-[calc(100dvh-9rem)] max-w-lg flex-col px-4 py-6">
         <ScreenHeader
           back
+          leading={groupAvatar}
           title={snapshot.group.name}
           onBack={() => router.push("/app/groups")}
         />
@@ -213,14 +226,44 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isCreator = meId === snapshot.group.creatorId;
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
-
+  const canEditAvatar = isAcceptedMember && snapshot.group.kind === "group";
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <ScreenHeader
         back
+        leading={
+          canEditAvatar ? (
+            <div className="relative z-30">
+              <button
+                type="button"
+                aria-label="Alterar imagem do grupo"
+                aria-expanded={showAvatarEditor}
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setShowAvatarEditor(true)}
+              >
+                {groupAvatar}
+              </button>
+              <GroupAvatarEditor
+                groupId={groupId}
+                open={showAvatarEditor}
+                onOpenChange={setShowAvatarEditor}
+              />
+            </div>
+          ) : (
+            groupAvatar
+          )
+        }
         eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
         title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
         onBack={() => router.push("/app/groups")}
+        titleBadge={
+          isBotGroup(members, meId ?? "") ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
+              <Bot className="size-3.5" aria-hidden="true" />
+              Grupo de bots
+            </span>
+          ) : null
+        }
         action={
           <div className="flex items-center gap-1">
             {isAcceptedMember && (
@@ -245,13 +288,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         }
       />
 
-      {isBotGroup(members, meId ?? "") && (
-        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
-          <Bot className="size-3.5" aria-hidden="true" />
-          Grupo de bots
-        </p>
-      )}
-
       <NotificationPrompt />
 
       <Tabs value={tab} onValueChange={setTab} className="mt-5">
@@ -267,7 +303,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             meId={meId ?? ""}
           />
         </TabsContent>
-        <TabsContent value="contas" className="mt-4">
+        <TabsContent value="contas" className="mt-4 space-y-4">
+          <GroupSpendingSection spending={snapshot.overview?.spending} meId={meId ?? ""} />
           <GroupExpensesSection groupId={groupId} members={members} />
         </TabsContent>
         <TabsContent value="membros" className="mt-4 space-y-4">
@@ -319,6 +356,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         groupId={groupId}
         groupName={snapshot.group.name}
       />
+
+      
 
     </div>
   );

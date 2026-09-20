@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Check, Pencil, Receipt, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ExpenseHistory } from "./expense-history";
 import { ExpenseItems } from "./expense-items";
@@ -14,15 +14,14 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { Skeleton } from "@/components/shared/skeleton";
+import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+} from "@/components/ui/popover";
 import { useMe } from "@/hooks/use-me";
 import { attributePayers } from "@/lib/expense-attribution";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -45,7 +44,12 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [unavailable, setUnavailable] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  const [deleteAnchor, setDeleteAnchor] = useState<HTMLButtonElement | null>(null);
   const [inviteIndex, setInviteIndex] = useState<number | null>(null);
+  const [inviteAnchor, setInviteAnchor] = useState<HTMLElement | null>(null);
+  // Default focus of the delete confirmation stays on the safe action.
+  const cancelFocusRef = useRef<HTMLButtonElement>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
   const inviteParticipant =
     inviteIndex === null
       ? null
@@ -286,7 +290,10 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                 <Button
                   variant="outline"
                   className="flex-1 gap-2 text-destructive hover:text-destructive"
-                  onClick={() => setConfirmOpen(true)}
+                  onClick={(event) => {
+                    setDeleteAnchor(event.currentTarget);
+                    setConfirmOpen(true);
+                  }}
                 >
                   <Trash2 className="h-4 w-4" />
                   Excluir
@@ -309,7 +316,10 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         participants={detail.participants}
         meId={me?.id ?? null}
         invitedUserIds={invitedUserIds}
-        onInviteGuest={(participant) => setInviteIndex(participant.participantIndex)}
+        onInviteGuest={(participant, anchor) => {
+          setInviteIndex(participant.participantIndex);
+          setInviteAnchor(anchor);
+        }}
       />
 
       {current.expenseType === "itemized" &&
@@ -334,7 +344,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         />
       </div>
 
-      <footer className="safe-bottom sticky bottom-0 mt-6 border-t bg-background/95 px-4 py-3 backdrop-blur">
+      <footer ref={footerRef} className="mt-6 border-t bg-background px-4 py-3">
         <Button
           type="button"
           size="lg"
@@ -344,33 +354,44 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           Pronto
         </Button>
       </footer>
+      <ScrollHint targetRef={footerRef} />
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excluir conta?</DialogTitle>
-            <DialogDescription>
-              Todas as pessoas do grupo vão ver que a conta foi excluída.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+      <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <PopoverContent
+          anchor={deleteAnchor}
+          side="bottom"
+          align="end"
+          initialFocus={cancelFocusRef}
+        >
+          <PopoverTitle>Excluir conta?</PopoverTitle>
+          <PopoverDescription>
+            Todas as pessoas do grupo vão ver que a conta foi excluída.
+          </PopoverDescription>
+          <div className="flex gap-2">
+            <Button
+              ref={cancelFocusRef}
+              variant="outline"
+              className="flex-1"
+              onClick={() => setConfirmOpen(false)}
+            >
               Cancelar
             </Button>
             <Button
               variant="destructive"
+              className="flex-1"
               disabled={working}
               onClick={handleDelete}
             >
               Excluir
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </PopoverContent>
+      </Popover>
 
       {inviteParticipant?.guest && (
         <GuestInviteDialog
           open
+          anchor={inviteAnchor}
           onOpenChange={(open) => {
             if (!open) setInviteIndex(null);
           }}
