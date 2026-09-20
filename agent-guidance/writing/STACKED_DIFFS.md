@@ -155,6 +155,8 @@ This recovery path is acceptable, but agents should avoid needing it by using `g
 - CI must pass for the PR being merged.
 - Merge from the bottom of the stack upward.
 - Human review is required for every PR.
+- A PR that changes rendering carries before/after evidence. Capture "before" from the PR's parent branch with the same seeded data, viewport, and theme; capture "after" from the PR head. Original bug-report screenshots are context, not a controlled before.
+- Publish that evidence as one secret gist per PR (`gh gist create evidence.md gallery.html --desc "..."`, no `--public`) with the images embedded as data URLs, and link it from the PR body. Screenshots never get committed to the repo.
 
 ## Agent Rules
 

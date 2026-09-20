@@ -34,6 +34,7 @@ export function ConversationsListContent() {
   const groupOrder = useAppStore((state) => state.groupOrder);
   const groups = useAppStore((state) => state.groups);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareAnchor, setShareAnchor] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BalanceFilter>("all");
 
@@ -77,7 +78,10 @@ export function ConversationsListContent() {
                 variant="ghost"
                 size="icon-lg"
                 className="size-11"
-                onClick={() => setShareOpen(true)}
+                onClick={(event) => {
+                  setShareAnchor(event.currentTarget);
+                  setShareOpen(true);
+                }}
                 aria-label="Compartilhar convite"
               >
                 <Share2 className="size-5" />
@@ -163,6 +167,7 @@ export function ConversationsListContent() {
           open={shareOpen}
           onClose={() => setShareOpen(false)}
           handle={me.handle}
+          anchor={shareAnchor}
         />
       )}
     </div>

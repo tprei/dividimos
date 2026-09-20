@@ -15,12 +15,14 @@ import { Input } from "@/components/ui/input";
 import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
 import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
 import { formatBRL } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import {
   centsText,
   computeDivision,
   divisionInvalidInputText,
   FULL_PERCENT_BASIS_POINTS,
   percentText,
+  previewDivision,
   type DivisionComputation,
   type ItemDivisionMode,
 } from "@/lib/item-division";
@@ -166,6 +168,10 @@ export function SingleBillDivision({
     [fixedValues, ids, mode, percentValues, totalCents],
   );
   const status = statusText(division, mode);
+  const preview = useMemo(
+    () => previewDivision(totalCents, mode, ids, percentValues, fixedValues, division),
+    [division, fixedValues, ids, mode, percentValues, totalCents],
+  );
   const invitedUserIds = useInvitedUserIds();
 
   useEffect(() => {
@@ -194,21 +200,37 @@ export function SingleBillDivision({
 
   return (
     <section>
-      <SectionHeading
-        title="Quem consumiu"
-        trailing={
-          <DivisionModePills
-            value={mode}
-            onChange={onModeChange}
-            groupLabel="Modo de divisão"
-            idPrefix="single-bill-division-mode"
-          />
-        }
-      />
+      <SectionHeading title="Quem consumiu" />
+      <div className="px-1 pb-2">
+        <DivisionModePills
+          value={mode}
+          onChange={onModeChange}
+          groupLabel="Modo de divisão"
+          idPrefix="single-bill-division-mode"
+        />
+      </div>
+      <div className="sticky top-0 z-10 -mx-4 bg-background px-4 py-2">
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">Total da conta</span>
+          <Money cents={totalCents} className="text-xs" />
+        </div>
+        <p
+          id="single-bill-division-status"
+          aria-live="polite"
+          className={cn(
+            "min-h-4 text-xs font-semibold",
+            division.ok ? "text-muted-foreground" : "text-destructive",
+          )}
+        >
+          {status}
+        </p>
+      </div>
       <div className="overflow-hidden rounded-2xl border bg-card">
         <div className="divide-y divide-border">
           {people.map((person) => {
-            const shareCents = division.ok ? division.centsById[person.id] : null;
+            const shareCents = division.ok
+              ? division.centsById[person.id]
+              : preview.centsById[person.id] ?? null;
             return (
               <div key={person.id} className="flex min-h-14 min-w-0 flex-wrap items-center gap-3 px-4 py-2">
                 {person.isGuest ? (
@@ -316,13 +338,6 @@ export function SingleBillDivision({
           })}
         </div>
       </div>
-      <p
-        id="single-bill-division-status"
-        aria-live="polite"
-        className="min-h-6 pt-2 text-xs font-semibold text-destructive"
-      >
-        {status}
-      </p>
     </section>
   );
 }
