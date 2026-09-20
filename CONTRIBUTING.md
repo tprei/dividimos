@@ -108,6 +108,11 @@ Avoid dependencies that introduce hidden services, unnecessary global state, or 
 - Never use `eslint-disable` comments. Fix the underlying code.
 - Keep user-facing copy in PT-BR.
 - Money is integer centavos in the store, types, and database. Never floating point for arithmetic.
+- Short contextual actions and notification previews use the anchored popover; dialogs are for substantial input or QR content; drawers need a demonstrated keyboard story.
+- Read viewport geometry from `useAppViewport`'s CSS properties instead of measuring the viewport again, and never add a second keyboard offset.
+- Editable text is 16px or larger on mobile, touch targets 44px or larger, and nothing disables pinch zoom.
+- Wizard footers stay in normal flow; pull-to-refresh stays on the allowlisted list routes.
+- A UI change carries before/after screenshots at 360x740, 390x844, and 430x932 per `agent-guidance/VISUAL_CHANGES.md`. A keyboard claim needs a real device, not a shortened viewport.
 
 ## Backend Review Rules
 

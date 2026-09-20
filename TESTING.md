@@ -62,7 +62,26 @@ npm run test:synthetic:ui
 
 # Run all E2E tests (flow tests + synthetic)
 npm run test:e2e
+
+# Same suite on mobile engines: iPhone 13 (WebKit) and Pixel 5 (mobile Chromium)
+npm run test:synthetic:mobile
+npm run test:synthetic:ios
+npm run test:synthetic:android
 ```
+
+The mobile projects need WebKit installed once: `npx playwright install --with-deps chromium webkit`. CI runs all three projects as a matrix axis.
+
+A second actor inside a synthetic test must come from the `newSession` fixture, not `browser.newContext()`. The raw call drops the project's device profile, so on the iPhone project every actor except the first would silently run at a desktop viewport.
+
+### What browser projects cannot prove
+
+WebKit catches engine and layout regressions. It does not exercise the iOS keyboard accessory bar, Add to Home Screen / standalone mode, native permission prompts, or the native camera UI. Before a release, accept those by hand:
+
+- iPhone Safari, then the same flows after Add to Home Screen: register a payment with the keyboard open, add a guest, open the receipt camera.
+- Android Chrome and the installed PWA: the same three flows.
+- The Capacitor WebView on a device or emulator (`npm run cap:dev:android`, or `scripts/cap-dev.sh android --device --run`): keyboard resize, back gesture, native camera and gallery.
+
+Native iOS parity stays a future macOS/Xcode task. Browser CI is not evidence for it.
 
 ### Architecture
 
