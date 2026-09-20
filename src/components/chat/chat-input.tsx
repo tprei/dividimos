@@ -68,7 +68,7 @@ export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
           placeholder="Mensagem..."
           disabled={disabled || sending}
           rows={1}
-          className="max-h-[120px] min-h-[36px] flex-1 resize-none rounded-xl bg-muted px-3 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
+          className="max-h-[120px] min-h-[36px] flex-1 resize-none rounded-xl bg-muted px-3 py-2 text-base outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-sm"
         />
         <button
           type="button"

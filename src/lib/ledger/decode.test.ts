@@ -18,6 +18,7 @@ import {
   decodeVendorCharge,
   decodeVendorCharges,
 } from "./decode";
+import { decodeSettlementDetail } from "./decode-settlement-detail";
 
 describe("decodeBootstrap", () => {
   const fixture: Bootstrap = {
@@ -464,6 +465,33 @@ describe("additional wire decoders", () => {
     }
   });
 
+  it("decodes me with every notification category update_profile accepts", () => {
+    const rawMe = {
+      ...meFixture,
+      notificationPreferences: {
+        expenses: true,
+        settlements: false,
+        nudges: true,
+        groups: false,
+        messages: true,
+      },
+    };
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects me with an unknown notification category", () => {
+    const rawMe = {
+      ...meFixture,
+      notificationPreferences: { ...meFixture.notificationPreferences, digest: true },
+    };
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path.at(-1)).toBe("digest");
+    }
+  });
+
   it("decodes group event with arbitrary json payload", () => {
     const event = {
       id: 1,
@@ -652,5 +680,39 @@ describe("additional wire decoders", () => {
         claimLinkGeneration: 1.5,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe("decodeSettlementDetail", () => {
+  const base = {
+    id: "set-1",
+    operationId: "op-1",
+    groupId: "group-1",
+    fromUserId: "user-1",
+    toUserId: "user-2",
+    amountCents: 3000,
+    status: "confirmed",
+    createdBy: "user-1",
+    createdAt: "2026-09-06T12:00:00.000Z",
+    confirmedAt: "2026-09-06T12:00:00.000Z",
+    voidedAt: null,
+    voidedBy: null,
+  };
+
+  it("unwraps the settlement key and decodes the payload", () => {
+    const result = decodeSettlementDetail({ settlement: base });
+    expect(result).toEqual({ ok: true, value: base });
+  });
+
+  it("rejects anything but the exact wrapper key", () => {
+    expect(decodeSettlementDetail({ settlement: base, extra: 1 }).ok).toBe(false);
+    expect(decodeSettlementDetail({}).ok).toBe(false);
+    expect(decodeSettlementDetail(null).ok).toBe(false);
+    expect(decodeSettlementDetail("settlement").ok).toBe(false);
+  });
+
+  it("rejects a malformed settlement payload", () => {
+    expect(decodeSettlementDetail({ settlement: { ...base, amountCents: "30" } }).ok).toBe(false);
+    expect(decodeSettlementDetail({ settlement: { ...base, status: "pending" } }).ok).toBe(false);
   });
 });

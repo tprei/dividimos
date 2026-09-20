@@ -38,7 +38,28 @@ export default defineConfig({
     // can safely run in parallel within each CI shard.
     {
       name: "synthetic",
-      use: { ...devices["Desktop Chrome"] },
+      // The app's service worker answers /api/** and /app/** from cache, which
+      // makes page.route mocks fire or not depending on the engine. Blocking
+      // it keeps every project's interception identical.
+      use: { ...devices["Desktop Chrome"], serviceWorkers: "block" },
+      testDir: "./e2e/synthetic",
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 1,
+    },
+    // Same synthetic suite on mobile browser engines. iPhone 13 runs WebKit and
+    // Pixel 5 runs mobile Chromium, so viewport, touch, and engine differences
+    // are exercised on every synthetic journey. These are Playwright device
+    // profiles, not a claim of emulating specific handset hardware.
+    {
+      name: "synthetic-ios",
+      use: { ...devices["iPhone 13"], serviceWorkers: "block" },
+      testDir: "./e2e/synthetic",
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 1,
+    },
+    {
+      name: "synthetic-android",
+      use: { ...devices["Pixel 5"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
       workers: process.env.CI ? 2 : 1,
