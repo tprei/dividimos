@@ -8,9 +8,10 @@ import type {
   GroupEvent,
   GroupSnapshot,
   Me,
+  Settlement,
   VendorCharge,
 } from "@/types/ledger";
-import { migrateAppState, useAppStore } from "./app-store";
+import { migrateAppState, settlementReadKey, useAppStore } from "./app-store";
 
 const me: Me = {
   id: "user-1",
@@ -705,5 +706,96 @@ describe("migrateAppState", () => {
 
     expect(migrated.me?.isBot).toBe(false);
     expect(migrated.groups.g1?.members[0]?.user.isBot).toBe(false);
+  });
+});
+
+describe("settlement details", () => {
+  function settlementDetail(
+    id: string,
+    groupId: string,
+    overrides: Partial<Settlement> = {},
+  ): Settlement {
+    return {
+      id,
+      operationId: `op-${id}`,
+      groupId,
+      fromUserId: "user-1",
+      toUserId: "user-2",
+      amountCents: 5000,
+      status: "confirmed",
+      createdBy: "user-1",
+      createdAt: "2026-09-06T12:00:00.000Z",
+      confirmedAt: "2026-09-06T12:00:00.000Z",
+      voidedAt: null,
+      voidedBy: null,
+      ...overrides,
+    };
+  }
+
+  it("keys reads by settlement id", () => {
+    expect(settlementReadKey("set-1")).toBe("settlement:set-1");
+  });
+
+  it("stores one detail per settlement id", () => {
+    const detail = settlementDetail("set-1", "g1");
+    useAppStore.getState().applySettlementDetail(detail);
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(detail);
+  });
+
+  it("never lets a confirmed response overwrite a cached voided record", () => {
+    const voided = settlementDetail("set-1", "g1", {
+      status: "voided",
+      voidedAt: "2026-09-07T10:00:00.000Z",
+    });
+    useAppStore.getState().applySettlementDetail(voided);
+
+    useAppStore.getState().applySettlementDetail(settlementDetail("set-1", "g1"));
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(voided);
+  });
+
+  it("lets an authoritative void overwrite a cached confirmed record", () => {
+    useAppStore.getState().applySettlementDetail(settlementDetail("set-1", "g1"));
+
+    const voided = settlementDetail("set-1", "g1", {
+      status: "voided",
+      voidedAt: "2026-09-07T10:00:00.000Z",
+    });
+    useAppStore.getState().applySettlementDetail(voided);
+
+    expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(voided);
+  });
+
+  it("prunes a group's details on removeGroup", () => {
+    useAppStore.getState().applyGroup(snapshot("g1", []));
+    useAppStore.getState().applySettlementDetail(settlementDetail("set-keep", "g1"));
+    useAppStore.getState().applySettlementDetail(settlementDetail("set-other", "g2"));
+
+    useAppStore.getState().removeGroup("g1");
+
+    expect(useAppStore.getState().settlementDetails["set-keep"]).toBeUndefined();
+    expect(useAppStore.getState().settlementDetails["set-other"]).toBeDefined();
+  });
+
+  it("clears every detail on reset", () => {
+    useAppStore.getState().applySettlementDetail(settlementDetail("set-1", "g1"));
+
+    useAppStore.getState().reset();
+
+    expect(useAppStore.getState().settlementDetails).toEqual({});
+  });
+
+  it("keeps details out of persisted migrations", () => {
+    const migrated = migrateAppState({
+      me,
+      groups: {},
+      groupOrder: [],
+      expenseLists: {},
+      expenses: {},
+      expenseDetails: {},
+    });
+
+    expect(migrated.settlementDetails).toEqual({});
   });
 });

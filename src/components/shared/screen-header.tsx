@@ -9,13 +9,15 @@ import { useScreenHeaderActions } from "./screen-header-actions";
 export interface ScreenHeaderProps {
   title: string;
   eyebrow?: string;
+  /** Small marker rendered on the title line, wrapping with the text. */
+  titleBadge?: ReactNode;
   back?: boolean;
   onBack?: () => void;
   leading?: ReactNode;
   action?: ReactNode;
 }
 
-export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, action }: ScreenHeaderProps) {
+export function ScreenHeader({ title, eyebrow, titleBadge, back = false, onBack, leading, action }: ScreenHeaderProps) {
   const router = useRouter();
   const shellActions = useScreenHeaderActions();
   return (
@@ -38,7 +40,10 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
             {eyebrow}
           </p>
         )}
-        <h1 className="truncate text-2xl leading-tight font-bold tracking-tight">{title}</h1>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h1 className="min-w-0 truncate text-2xl leading-tight font-bold tracking-tight">{title}</h1>
+          {titleBadge}
+        </div>
       </div>
       {(action || shellActions) && (
         <div className="-mr-2 flex items-center gap-1.5">

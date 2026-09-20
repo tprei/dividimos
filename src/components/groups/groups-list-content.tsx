@@ -6,6 +6,7 @@ import { Bot, ChevronRight, Plus, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { GroupAvatar } from "@/components/shared/group-avatar";
 import { AvatarStack } from "@/components/shared/avatar-stack";
 import { EmptyState } from "@/components/shared/empty-state";
 import { InvitationCard } from "@/components/groups/invitation-card";
@@ -59,6 +60,12 @@ function GroupRow({
           : "flex min-h-16 w-full items-center gap-3 px-4 py-2"
       }
     >
+      <GroupAvatar
+        name={snapshot.group.name}
+        avatar={snapshot.overview?.avatar}
+        groupId={snapshot.group.id}
+        size="sm"
+      />
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-[15px] font-semibold">
           {botGroup && <Bot className="size-3.5 shrink-0 text-gold" aria-hidden="true" />}
