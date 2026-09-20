@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import toast from "react-hot-toast";
+import QRCode from "qrcode";
 import { GuestInviteDialog } from "./guest-invite-dialog";
+import { buildClaimUrl } from "@/lib/claim-qr";
 import { readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
 import { LedgerError } from "@/lib/sync/errors";
 import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutations-group";
@@ -20,6 +22,10 @@ vi.mock("@/lib/sync/mutations-group", () => ({
 
 vi.mock("@/lib/sync/refresh", () => ({
   refreshExpense: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("qrcode", () => ({
+  default: { toCanvas: vi.fn() },
 }));
 
 const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -103,6 +109,28 @@ describe("GuestInviteDialog", () => {
       );
     });
     expect(toast.success).toHaveBeenCalledWith("Link copiado");
+  });
+
+  it("renders the claim QR over the popover and encodes the exact claim URL", async () => {
+    const user = userEvent.setup();
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    renderDialog();
+
+    expect(screen.getByText("Convidar Bruno")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Mostrar QR code" }));
+
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalled();
+    });
+    const canvasArgs = vi.mocked(QRCode.toCanvas).mock.calls[0];
+    expect(canvasArgs[1]).toBe(buildClaimUrl("gst1_cachedtoken"));
+
+    // The popover yields to the QR modal while it is open.
+    expect(screen.queryByText("Convidar Bruno")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Escaneie o QR code para entrar na conta"),
+    ).toBeInTheDocument();
   });
 
   it("toasts success after copying and keeps the failure visible when copy is denied", async () => {
