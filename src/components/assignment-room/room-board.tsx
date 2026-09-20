@@ -6,6 +6,7 @@ import { RoomItemClaim } from "@/components/assignment-room/room-item-claim";
 import { RoomShare } from "@/components/assignment-room/room-share";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { SelectField } from "@/components/ui/select-field";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import type { AssignmentRoomView } from "@/types/assignment-room";
 
@@ -168,21 +169,15 @@ export function RoomBoard({
 
             {view.role === "host" && (
               <div className="space-y-2">
-                <label htmlFor="host-claim-participant" className="text-sm font-medium">
-                  Editar escolhas de
-                </label>
-                <select
-                  id="host-claim-participant"
+                <SelectField
+                  label="Editar escolhas de"
                   value={selectedHostParticipantId}
-                  className="min-h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  onChange={(event) => setHostParticipantId(event.target.value)}
-                >
-                  {activeParticipants.map((participant) => (
-                    <option key={participant.id} value={participant.id}>
-                      {participant.displayName}
-                    </option>
-                  ))}
-                </select>
+                  options={activeParticipants.map((participant) => ({
+                    value: participant.id,
+                    label: participant.displayName,
+                  }))}
+                  onChange={setHostParticipantId}
+                />
               </div>
             )}
 
