@@ -65,12 +65,12 @@ describe("QuickChargeModal", () => {
 
   it("does not render when open is false", () => {
     render(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
-    expect(screen.queryByText("Cobrar rápido")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cobrar rápido" })).not.toBeInTheDocument();
   });
 
   it("renders input phase when open", () => {
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
-    expect(screen.getByText("Cobrar rápido")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cobrar rápido" })).toBeInTheDocument();
     expect(screen.getByText("Gerar QR Code")).toBeInTheDocument();
   });
 
