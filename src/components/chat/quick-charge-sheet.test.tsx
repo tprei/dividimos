@@ -7,6 +7,13 @@ import {
 } from "@/lib/capacitor/back-handler";
 import { QuickChargeSheet } from "./quick-charge-sheet";
 
+function createAnchor(): HTMLButtonElement {
+  const trigger = document.createElement("button");
+  trigger.textContent = "Nova cobrança";
+  document.body.appendChild(trigger);
+  return trigger;
+}
+
 const defaultProps = {
   counterpartyName: "Maria",
   counterpartyHandle: "maria123",
@@ -15,6 +22,7 @@ const defaultProps = {
   onEdit: vi.fn(),
   onDismiss: vi.fn(),
   onLeavePending: vi.fn(),
+  anchor: createAnchor(),
 };
 
 function renderSheet(overrides = {}) {

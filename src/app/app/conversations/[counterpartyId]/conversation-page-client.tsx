@@ -113,6 +113,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   } | null>(null);
 
   const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
+  const [chargeAnchor, setChargeAnchor] = useState<HTMLElement | null>(null);
   const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
   const [chargeError, setChargeError] = useState<string | undefined>();
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
@@ -607,21 +608,20 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         <>
           <AnimatePresence>
             {chargeSheetOpen && (
-              <div className="px-4 pb-2">
-                <QuickChargeSheet
-                  counterpartyName={counterparty.name}
-                  counterpartyHandle={counterparty.handle}
-                  currentUserHandle={me.handle}
-                  onConfirm={handleQuickChargeConfirm}
-                  onEdit={handleEditDraft}
-                  onDismiss={() => {
-                    if (chargeStatus !== "confirming") setChargeSheetOpen(false);
-                  }}
-                  onLeavePending={() => setChargeSheetOpen(false)}
-                  status={chargeStatus}
-                  errorMessage={chargeError}
-                />
-              </div>
+              <QuickChargeSheet
+                counterpartyName={counterparty.name}
+                counterpartyHandle={counterparty.handle}
+                currentUserHandle={me.handle}
+                onConfirm={handleQuickChargeConfirm}
+                onEdit={handleEditDraft}
+                onDismiss={() => {
+                  if (chargeStatus !== "confirming") setChargeSheetOpen(false);
+                }}
+                onLeavePending={() => setChargeSheetOpen(false)}
+                status={chargeStatus}
+                errorMessage={chargeError}
+                anchor={chargeAnchor}
+              />
             )}
           </AnimatePresence>
           <QuickSplitSheet
@@ -635,11 +635,12 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             errorMessage={splitError}
           />
           <ConversationQuickActions
-            onCharge={() => {
+            onCharge={(trigger) => {
               if (chargeStatus === "confirming") return;
               setSplitSheetOpen(false);
               setChargeStatus("idle");
               setChargeError(undefined);
+              setChargeAnchor(trigger);
               setChargeSheetOpen((prev) => !prev);
             }}
             onSplit={() => {

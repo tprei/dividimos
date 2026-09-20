@@ -101,7 +101,7 @@ export function AddParticipantByHandle({
               setState({ status: "idle" });
             }}
             onKeyDown={handleKeyDown}
-            className="h-8 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-8 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
           />
         </div>
         <Button
