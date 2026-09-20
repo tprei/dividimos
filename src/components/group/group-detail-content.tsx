@@ -12,11 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupSpendingSection } from "@/components/group/group-spending-section";
-import { GroupAvatarEditor } from "@/components/group/group-avatar-editor";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
@@ -41,8 +40,11 @@ const UNAVAILABLE_CODES: Record<string, true> = {
   group_not_found: true,
 };
 
+const TABS: Record<string, true> = { saldos: true, contas: true, membros: true };
+
 export function GroupDetailContent({ groupId }: { groupId: string }) {
   const router = useRouter();
+  const requestedTab = useSearchParams().get("tab");
   const { accept, decline, pendingGroupId } = useInvitationActions();
   const [confirmDecline, setConfirmDecline] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
@@ -50,10 +52,9 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const meId = useAppStore((s) => s.me?.id ?? null);
   const snapshot = useAppStore((s) => s.groups[groupId]);
   const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState("saldos");
+  const [tab, setTab] = useState(requestedTab !== null && TABS[requestedTab] ? requestedTab : "saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const departedRef = useRef(false);
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
@@ -226,36 +227,24 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isCreator = meId === snapshot.group.creatorId;
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
-  const canEditAvatar = isAcceptedMember && snapshot.group.kind === "group";
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <ScreenHeader
         back
         leading={
-          canEditAvatar ? (
-            <div className="relative z-30">
-              <button
-                type="button"
-                aria-label="Alterar imagem do grupo"
-                aria-expanded={showAvatarEditor}
-                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setShowAvatarEditor(true)}
-              >
-                {groupAvatar}
-              </button>
-              <GroupAvatarEditor
-                groupId={groupId}
-                open={showAvatarEditor}
-                onOpenChange={setShowAvatarEditor}
-              />
-            </div>
-          ) : (
-            groupAvatar
-          )
+          <Link
+            href={`/app/groups/${groupId}/info`}
+            aria-label="Ver perfil do grupo"
+            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {groupAvatar}
+          </Link>
         }
         eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
         title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
         onBack={() => router.push("/app/groups")}
+        onTitleClick={() => router.push(`/app/groups/${groupId}/info`)}
+        titleClickLabel="Ver perfil do grupo"
         titleBadge={
           isBotGroup(members, meId ?? "") ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
