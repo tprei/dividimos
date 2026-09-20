@@ -1,11 +1,11 @@
-import { test, expect, loginInContext } from "../fixtures";
+import { test, expect } from "../fixtures";
 
 test.describe("Expense Lifecycle", () => {
   test("active expense settles once the debtor records the payment", async ({
     page,
     seed,
     loginAs,
-    browser,
+    newSession,
     adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Lifecycle" });
@@ -28,9 +28,7 @@ test.describe("Expense Lifecycle", () => {
     await expect(total).toContainText("R$ 100,00");
 
     // Bob views the same expense in a separate context
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
+    const { context: bobContext, page: bobPage } = await newSession(bob);
 
     await bobPage.goto(`/app/bill/${expense.id}`);
     await bobPage.waitForLoadState("networkidle");
