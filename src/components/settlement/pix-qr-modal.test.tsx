@@ -184,6 +184,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "fetched-br-code",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 3000 });
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -556,6 +557,7 @@ describe("PixQrModal", () => {
       expect.anything(),
       "br-code-for-10000",
       expect.anything(),
+      expect.any(Function),
     );
   });
 
@@ -612,6 +614,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-10000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 3000 });
 
@@ -621,6 +624,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-5000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 4000 });
 
@@ -632,6 +636,7 @@ describe("PixQrModal", () => {
         expect.anything(),
         "br-code-10000",
         expect.anything(),
+        expect.any(Function),
       );
     }, { timeout: 4000 });
   });
