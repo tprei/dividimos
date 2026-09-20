@@ -6,6 +6,10 @@ import { createIdbStorage } from "@/lib/idb-storage";
 import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import { type LedgerErrorCode } from "@/lib/sync/errors";
 import type {
+  AssignmentRoomExpenseMetadata,
+  ExpenseContext,
+} from "@/lib/ledger/decode-assignment-room";
+import type {
   Bootstrap,
   ChargePage,
   ExpensePage,
@@ -101,6 +105,7 @@ interface AppStateData {
   myExpenses: ExpenseListState;
   expenses: Record<string, ExpenseSummary>;
   expenseDetails: Record<string, ExpenseDetail>;
+  assignmentRoomsByExpenseId: Record<string, AssignmentRoomExpenseMetadata>;
   activity: {
     items: GroupEvent[];
     oldestId: number | null;
@@ -149,6 +154,7 @@ export interface AppState extends AppStateData {
   applyGroup(s: GroupSnapshot): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
+  applyExpenseContext(context: ExpenseContext): void;
   applySettlementDetail(s: Settlement): void;
   applyExpensePage(groupId: string, page: ExpensePage): void;
   applyMyExpensePage(page: ExpensePage, reset: boolean): void;
@@ -175,6 +181,7 @@ const initialData: AppStateData = {
   myExpenses: { ids: [], cursor: null, complete: false, total: null },
   expenses: {},
   expenseDetails: {},
+  assignmentRoomsByExpenseId: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
   activityViewedAt: {},
   settlementDetails: {},
@@ -376,6 +383,29 @@ export function migrateAppState(persisted: unknown): AppStateData {
       participants,
     };
   }
+  const persistedAssignmentRooms =
+    root.assignmentRoomsByExpenseId !== null &&
+    typeof root.assignmentRoomsByExpenseId === "object" &&
+    !Array.isArray(root.assignmentRoomsByExpenseId)
+      ? (root.assignmentRoomsByExpenseId as Record<string, unknown>)
+      : {};
+  const assignmentRoomsByExpenseId: Record<
+    string,
+    AssignmentRoomExpenseMetadata
+  > = {};
+  for (const [expenseId, value] of Object.entries(persistedAssignmentRooms)) {
+    if (
+      expenseDetails[expenseId] &&
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      typeof (value as Record<string, unknown>).id === "string" &&
+      typeof (value as Record<string, unknown>).hostUserId === "string"
+    ) {
+      assignmentRoomsByExpenseId[expenseId] =
+        value as AssignmentRoomExpenseMetadata;
+    }
+  }
   const groupOrder = Array.isArray(root.groupOrder)
     ? root.groupOrder.filter((id): id is string => typeof id === "string")
     : [];
@@ -408,6 +438,7 @@ export function migrateAppState(persisted: unknown): AppStateData {
     myExpenses: normalizeExpenseList(root.myExpenses),
     expenses: persistedExpenses,
     expenseDetails,
+    assignmentRoomsByExpenseId,
     activity,
     activityViewedAt,
     conversations,
@@ -544,6 +575,11 @@ export const useAppStore = create<AppState>()(
           for (const [id, detail] of Object.entries(state.expenseDetails)) {
             if (detail.expense.groupId !== groupId) expenseDetails[id] = detail;
           }
+          const assignmentRoomsByExpenseId = Object.fromEntries(
+            Object.entries(state.assignmentRoomsByExpenseId).filter(
+              ([expenseId]) => expenseDetails[expenseId] !== undefined,
+            ),
+          );
           const settlementDetails: Record<string, Settlement> = {};
           for (const [id, settlement] of Object.entries(state.settlementDetails)) {
             if (settlement.groupId !== groupId) settlementDetails[id] = settlement;
@@ -555,6 +591,7 @@ export const useAppStore = create<AppState>()(
             conversations,
             expenses,
             expenseDetails,
+            assignmentRoomsByExpenseId,
             settlementDetails,
           };
         }),
@@ -564,6 +601,28 @@ export const useAppStore = create<AppState>()(
           expenseDetails: { ...state.expenseDetails, [d.expense.id]: d },
           expenses: upsertSummaries(state.expenses, [summaryFromDetail(d, state.me?.id ?? null)]),
         })),
+
+      applyExpenseContext: ({ detail, assignmentRoom }) =>
+        set((state) => {
+          const assignmentRoomsByExpenseId = {
+            ...state.assignmentRoomsByExpenseId,
+          };
+          if (assignmentRoom === null) {
+            delete assignmentRoomsByExpenseId[detail.expense.id];
+          } else {
+            assignmentRoomsByExpenseId[detail.expense.id] = assignmentRoom;
+          }
+          return {
+            expenseDetails: {
+              ...state.expenseDetails,
+              [detail.expense.id]: detail,
+            },
+            expenses: upsertSummaries(state.expenses, [
+              summaryFromDetail(detail, state.me?.id ?? null),
+            ]),
+            assignmentRoomsByExpenseId,
+          };
+        }),
 
       // Void is terminal: a later confirmed read must not resurrect a
       // payment the store already holds as Desfeito.
@@ -670,10 +729,19 @@ export const useAppStore = create<AppState>()(
           const expenseDetails = { ...state.expenseDetails };
           delete expenseDetails[oldId];
           expenseDetails[newId] = renameDetail(detail, newId);
+          const assignmentRoomsByExpenseId = {
+            ...state.assignmentRoomsByExpenseId,
+          };
+          const assignmentRoom = assignmentRoomsByExpenseId[oldId];
+          delete assignmentRoomsByExpenseId[oldId];
+          if (assignmentRoom) {
+            assignmentRoomsByExpenseId[newId] = assignmentRoom;
+          }
           return {
             expenses,
             expenseLists: renameInLists(state.expenseLists, oldId, newId),
             expenseDetails,
+            assignmentRoomsByExpenseId,
           };
         }),
       applyChargePage: (page, reset) =>
@@ -722,6 +790,7 @@ export const useAppStore = create<AppState>()(
         myExpenses: state.myExpenses,
         expenses: state.expenses,
         expenseDetails: state.expenseDetails,
+        assignmentRoomsByExpenseId: state.assignmentRoomsByExpenseId,
         activity: state.activity,
         activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,

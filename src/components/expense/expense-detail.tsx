@@ -34,6 +34,9 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const router = useRouter();
   const me = useMe();
   const detail = useAppStore((s) => s.expenseDetails[expenseId]);
+  const assignmentRoom = useAppStore(
+    (s) => s.assignmentRoomsByExpenseId[expenseId],
+  );
   const snapshot = useAppStore((s) =>
     detail ? s.groups[detail.group.id] : undefined,
   );
@@ -186,6 +189,8 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const { expense, current } = detail;
   const payers = attributePayers(current.payload.payers, current.totalCents);
   const isDeleted = expense.status === "deleted";
+  const canManage =
+    assignmentRoom === undefined || assignmentRoom.hostUserId === me?.id;
 
   async function handleDelete() {
     setWorking(true);
@@ -251,40 +256,52 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           </div>
         )}
 
-        <div className="mt-4 flex gap-2">
-          {isDeleted ? (
-            <Button
-              className="flex-1 gap-2"
-              disabled={working}
-              onClick={handleRestore}
-            >
-              <RotateCcw className="h-4 w-4" />
-              Restaurar
-            </Button>
-          ) : (
-            <>
+        {canManage && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {assignmentRoom && (
               <Button
                 variant="outline"
+                className="w-full gap-2"
+                onClick={() => router.push(`/room/${assignmentRoom.id}`)}
+              >
+                <Receipt className="h-4 w-4" />
+                Ver sala
+              </Button>
+            )}
+            {isDeleted ? (
+              <Button
                 className="flex-1 gap-2"
-                onClick={() => router.push(`/app/bill/new?edit=${expenseId}`)}
+                disabled={working}
+                onClick={handleRestore}
               >
-                <Pencil className="h-4 w-4" />
-                Editar
+                <RotateCcw className="h-4 w-4" />
+                Restaurar
               </Button>
-              <Button
-                variant="outline"
-                className="flex-1 gap-2 text-destructive hover:text-destructive"
-                onClick={(event) => {
-                  setDeleteAnchor(event.currentTarget);
-                  setConfirmOpen(true);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Excluir
-              </Button>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2"
+                  onClick={() => router.push(`/app/bill/new?edit=${expenseId}`)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Editar
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2 text-destructive hover:text-destructive"
+                  onClick={(event) => {
+                    setDeleteAnchor(event.currentTarget);
+                    setConfirmOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Excluir
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <div className="px-4">
         <ExpensePayers

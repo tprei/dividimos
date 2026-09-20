@@ -1,10 +1,10 @@
 import {
   decodeConversation,
-  decodeExpenseDetail,
   decodeExpensePage,
   decodeGroupEvents,
   decodeChargePage,
 } from "@/lib/ledger/decode";
+import { decodeExpenseContext } from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
 import { decodeGroupOverview } from "@/lib/ledger/decode-group-overview";
 import {
@@ -215,8 +215,13 @@ export async function refreshExpense(expenseId: string): Promise<void> {
   await trackedRead(
     key,
     attempt,
-    () => rpc("get_expense", { p_expense_id: expenseId }, decodeExpenseDetail),
-    (detail) => useAppStore.getState().applyExpenseDetail(detail),
+    () =>
+      rpc(
+        "get_expense_context",
+        { p_expense_id: expenseId },
+        decodeExpenseContext,
+      ),
+    (context) => useAppStore.getState().applyExpenseContext(context),
   );
 }
 

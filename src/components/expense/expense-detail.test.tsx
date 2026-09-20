@@ -233,7 +233,10 @@ function makeDetail(
   };
 }
 
-function seedStore(status: "active" | "deleted" = "active") {
+function seedStore(
+  status: "active" | "deleted" = "active",
+  assignmentRoom?: { id: string; hostUserId: string },
+) {
   const d = makeDetail(status);
   useAppStore.setState({
     hydrated: true,
@@ -241,6 +244,7 @@ function seedStore(status: "active" | "deleted" = "active") {
     groups: { g1: snapshot() },
     groupOrder: ["g1"],
     expenseDetails: { e1: d },
+    assignmentRoomsByExpenseId: assignmentRoom ? { e1: assignmentRoom } : {},
   });
 }
 
@@ -356,6 +360,26 @@ describe("ExpenseDetail", () => {
     await waitFor(() => {
       expect(deleteExpense).toHaveBeenCalledWith("e1");
     });
+  });
+
+  it("hides linked mutation actions from a nonhost party", () => {
+    seedStore("active", { id: "room-1", hostUserId: "user-2" });
+    render(<ExpenseDetail expenseId="e1" />);
+
+    expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Excluir" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ver sala" })).not.toBeInTheDocument();
+  });
+
+  it("links a room host back to the read-only board", async () => {
+    const user = userEvent.setup();
+    seedStore("active", { id: "room-1", hostUserId: me.id });
+    render(<ExpenseDetail expenseId="e1" />);
+
+    await user.click(screen.getByRole("button", { name: "Ver sala" }));
+    expect(routerMock.push).toHaveBeenCalledWith("/room/room-1");
+    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Excluir" })).toBeInTheDocument();
   });
 
   it("renders EmptyState when expense is not found", async () => {
