@@ -145,27 +145,29 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
           <DialogHeader className="shrink-0">
             <DialogTitle>Nova conversa</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-
-            <div className="mt-2">
-              <div className="flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5">
-                <span className="text-sm text-muted-foreground">@</span>
+          {/* The handle field stays outside the scroller so it remains visible
+              above the keyboard while results scroll underneath it. */}
+          <div className="mt-2 shrink-0">
+            <div className="flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5">
+              <span className="text-sm text-muted-foreground">@</span>
                 <input
                   autoFocus
                   placeholder="buscar por handle"
                   value={handleInput}
                   onChange={(e) => setHandleInput(e.target.value.replace(/ /g, "."))}
-                  className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="h-9 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
                 />
                 {searching ? (
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                   <Search className="h-4 w-4 text-muted-foreground" />
                 )}
-              </div>
+            </div>
+          </div>
 
-              {showSearchSection && (
-                <div className="mt-3">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {showSearchSection && (
+              <div className="mt-3">
                   {searching && (
                     <p className="text-sm text-muted-foreground">Buscando...</p>
                   )}
@@ -208,9 +210,8 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
                         )}
                       </button>
                     )}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {(knownContacts.length > 0) && (
               <div className="mt-4">
@@ -247,12 +248,12 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
                 </p>
               </div>
             )}
+          </div>
 
-            <div className="mt-4">
-              <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
-                Cancelar
-              </Button>
-            </div>
+          <div className="mt-4 shrink-0">
+            <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

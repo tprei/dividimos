@@ -80,6 +80,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
       }));
   }, [accepted, debtRows, me?.id]);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentAnchor, setPaymentAnchor] = useState<HTMLElement | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<GroupPaymentStatus>("idle");
   const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
   const paymentKey = useRef(crypto.randomUUID());
@@ -260,28 +261,28 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
         />
       </div>
       {paymentOpen && paymentCounterparties.length > 0 && (
-        <div className="shrink-0 px-4 pb-2">
-          <GroupRegisterPaymentSheet
-            currentUserHandle={me.handle}
-            counterparties={paymentCounterparties}
-            onConfirm={handleRegisterPayment}
-            onDismiss={() => {
-              if (paymentStatus !== "confirming") setPaymentOpen(false);
-            }}
-            onLeavePending={() => setPaymentOpen(false)}
-            status={paymentStatus}
-            errorMessage={paymentError}
-          />
-        </div>
+        <GroupRegisterPaymentSheet
+          currentUserHandle={me.handle}
+          counterparties={paymentCounterparties}
+          onConfirm={handleRegisterPayment}
+          onDismiss={() => {
+            if (paymentStatus !== "confirming") setPaymentOpen(false);
+          }}
+          onLeavePending={() => setPaymentOpen(false)}
+          status={paymentStatus}
+          errorMessage={paymentError}
+          anchor={paymentAnchor}
+        />
       )}
       {paymentCounterparties.length > 0 && (
         <div className="flex px-4 pb-2">
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
               if (paymentStatus === "confirming") return;
               setPaymentStatus("idle");
               setPaymentError(undefined);
+              setPaymentAnchor(event.currentTarget);
               setPaymentOpen((prev) => !prev);
             }}
             disabled={paymentStatus === "confirming"}
