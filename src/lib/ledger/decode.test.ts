@@ -465,6 +465,33 @@ describe("additional wire decoders", () => {
     }
   });
 
+  it("decodes me with every notification category update_profile accepts", () => {
+    const rawMe = {
+      ...meFixture,
+      notificationPreferences: {
+        expenses: true,
+        settlements: false,
+        nudges: true,
+        groups: false,
+        messages: true,
+      },
+    };
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects me with an unknown notification category", () => {
+    const rawMe = {
+      ...meFixture,
+      notificationPreferences: { ...meFixture.notificationPreferences, digest: true },
+    };
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path.at(-1)).toBe("digest");
+    }
+  });
+
   it("decodes group event with arbitrary json payload", () => {
     const event = {
       id: 1,
