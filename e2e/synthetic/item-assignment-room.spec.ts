@@ -562,12 +562,17 @@ test.describe("Assignment room multi-client acceptance", () => {
           expect(error).toBeNull();
         },
         async () => {
-          await expect(page.getByText("Cervejas geladas", { exact: true })).toBeVisible({
-            timeout: ROOM_TIMEOUT,
-          });
-          await expect(guestBPage.getByText("Cervejas geladas", { exact: true })).toBeVisible({
-            timeout: ROOM_TIMEOUT,
-          });
+          for (const surface of [page, guestBPage]) {
+            const ownRow = surface.getByRole("button", { name: /Ana Sala/ });
+            if ((await ownRow.getAttribute("aria-expanded")) === "false") {
+              await ownRow.click();
+            }
+            await expect(
+              surface.getByLabel("Por pessoa").getByText("Cervejas geladas", { exact: true }),
+            ).toBeVisible({
+              timeout: ROOM_TIMEOUT,
+            });
+          }
         },
       );
 
