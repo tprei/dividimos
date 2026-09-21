@@ -427,7 +427,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       const releaseBeer = rowButton(guestBPage, "Minha parte", "Cervejas");
       await expect(releaseBeer).toBeEnabled({ timeout: ROOM_TIMEOUT });
       await releaseBeer.click();
-      await guestBBeerDialog.getByRole("button", { name: /Remover escolha de/ }).click();
+      await guestBBeerDialog.getByRole("button", { name: /^Remover (minha escolha|escolha de)/ }).click();
       await guestBBeerDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
