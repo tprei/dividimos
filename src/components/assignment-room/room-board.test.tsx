@@ -118,6 +118,7 @@ const boardProps = {
   onRemoveParticipant: noop,
   onClose: noop,
   onCancel: noop,
+  onCreateBill: noop,
 };
 
 function rowIn(scope: HTMLElement, itemId: string): HTMLElement {
@@ -322,5 +323,53 @@ describe("RoomBoard", () => {
 
     rerender(<RoomBoard view={participantView([], "finalized")} {...boardProps} />);
     expect(screen.getByText("Conta registrada")).toBeInTheDocument();
+  });
+  it("offers a fresh bill after cancellation", async () => {
+    const user = userEvent.setup();
+    const onCreateBill = vi.fn();
+    render(
+      <RoomBoard
+        view={hostView([], "cancelled")}
+        {...boardProps}
+        onCreateBill={onCreateBill}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Sala cancelada" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Criar outra sala" }));
+    expect(onCreateBill).toHaveBeenCalledOnce();
+  });
+  it("offers a host closed-room path back to the review", async () => {
+    const user = userEvent.setup();
+    const onReview = vi.fn();
+    render(
+      <RoomBoard
+        view={hostView([], "closed")}
+        {...boardProps}
+        onReview={onReview}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Voltar à revisão" }));
+
+    expect(onReview).toHaveBeenCalledOnce();
+  });
+
+  it("renders the latest room activity strip when the store has one", () => {
+    render(
+      <RoomBoard
+        view={participantView([])}
+        {...boardProps}
+        activity={{
+          kind: "joined",
+          participantIds: ["person-b"],
+          burstStartedAt: 1,
+          revision: 4,
+          observedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Caio entrou")).toBeInTheDocument();
   });
 });
