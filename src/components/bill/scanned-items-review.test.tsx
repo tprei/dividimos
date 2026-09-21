@@ -15,6 +15,17 @@ const participants: ItemDivisionParticipant[] = [
   { id: "user-bob", name: "Bob", handle: "bob", avatarUrl: null, isGuest: false },
 ];
 
+const guest: ItemDivisionParticipant = {
+  id: "guest-carol",
+  name: "Carol Souza",
+  handle: null,
+  avatarUrl: null,
+  isGuest: true,
+};
+
+const blockedMessage =
+  "Você adicionou pessoas para dividir manualmente. Remova essas pessoas para criar uma sala.";
+
 const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => ({
   merchant: "Bar do Zé",
   items: [
@@ -41,18 +52,26 @@ function renderReview(
   result: ReceiptOcrResult = makeResult(),
   onConfirm = vi.fn(),
   onCancel = vi.fn(),
+  overrides: {
+    participants?: ItemDivisionParticipant[];
+    sharePending?: boolean;
+    shareError?: string | null;
+  } = {},
 ) {
+  const onShare = vi.fn();
   render(
     <ScannedItemsReview
       result={result}
-      participants={participants}
+      participants={overrides.participants ?? participants}
       onConfirm={onConfirm}
-      onShare={vi.fn()}
+      onShare={onShare}
       onCancel={onCancel}
       onManageParticipants={vi.fn()}
+      sharePending={overrides.sharePending}
+      shareError={overrides.shareError}
     />,
   );
-  return { onConfirm, onCancel };
+  return { onConfirm, onCancel, onShare };
 }
 
 describe("ScannedItemsReview", () => {
@@ -79,45 +98,97 @@ describe("ScannedItemsReview", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("disables continue with a single participant and enables it once a second is added", () => {
-    const onConfirm = vi.fn();
-    const onShare = vi.fn();
-    const result = makeResult();
-    const { rerender } = render(
-      <ScannedItemsReview
-        result={result}
-        participants={[participants[0]]}
-        onConfirm={onConfirm}
-        onShare={onShare}
-        onCancel={vi.fn()}
-        onManageParticipants={vi.fn()}
-      />,
-    );
+  it("creates a room when only self is selected and manual splitting waits for people", () => {
+    const { onConfirm, onShare } = renderReview(makeResult(), vi.fn(), vi.fn(), {
+      participants: [participants[0]],
+    });
 
+    const createRoom = screen.getByRole("button", { name: "Criar sala de divisão" });
+    expect(createRoom).toBeEnabled();
     expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Compartilhar para escolher itens" })).toBeEnabled();
     expect(
-      screen.getByText(/Você pode compartilhar agora/),
+      screen.getByText("Adicione pelo menos uma pessoa para dividir manualmente."),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Compartilhar para escolher itens" }));
+    expect(screen.queryByText(blockedMessage)).not.toBeInTheDocument();
+
+    fireEvent.click(createRoom);
     expect(onShare).toHaveBeenCalledOnce();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
 
-    rerender(
-      <ScannedItemsReview
-        result={result}
-        participants={participants}
-        onConfirm={onConfirm}
-        onShare={vi.fn()}
-        onCancel={vi.fn()}
-        onManageParticipants={vi.fn()}
-      />,
+  it("blocks room creation while a selected account is present", () => {
+    renderReview();
+
+    const createRoom = screen.getByRole("button", { name: "Criar sala de divisão" });
+    expect(createRoom).toBeDisabled();
+    expect(createRoom).toHaveAccessibleDescription(blockedMessage);
+    expect(screen.getByText(blockedMessage)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Gerenciar pessoas/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
+  });
+
+  it("blocks room creation while a named guest is present", () => {
+    renderReview(makeResult(), vi.fn(), vi.fn(), {
+      participants: [participants[0], guest],
+    });
+
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
+    expect(screen.getByText(blockedMessage)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
+  });
+
+  it("re-enables room creation after the added people are removed", () => {
+    const result = makeResult();
+    const shared = {
+      result,
+      onConfirm: vi.fn(),
+      onShare: vi.fn(),
+      onCancel: vi.fn(),
+      onManageParticipants: vi.fn(),
+    };
+    const { rerender } = render(<ScannedItemsReview {...shared} participants={participants} />);
+
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
+
+    rerender(<ScannedItemsReview {...shared} participants={[participants[0]]} />);
+
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeEnabled();
+    expect(screen.queryByText(blockedMessage)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Adicionar pessoas/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
+  });
+
+  it("disables both paths while the receipt is invalid", () => {
+    const { onConfirm, onShare } = renderReview(
+      makeResult({
+        items: [{ description: "Cerveja", quantity: 3, unitPriceCents: 334, totalCents: 1000 }],
+        totalCents: 1000,
+      }),
+      vi.fn(),
+      vi.fn(),
+      { participants: [participants[0]] },
     );
 
-    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
-    expect(
-      screen.queryByText(/Você pode compartilhar agora/),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
+    expect(onShare).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("prevents a second transition while a room is being created", () => {
+    renderReview(makeResult(), vi.fn(), vi.fn(), {
+      participants: [participants[0]],
+      sharePending: true,
+      shareError: "Não foi possível criar a sala. Tente novamente.",
+    });
+
+    expect(screen.getByRole("button", { name: "Criando sala..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Adicionar pessoas/ })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Não foi possível criar a sala. Tente novamente.",
+    );
   });
 
   it("opens only one row panel at a time", async () => {

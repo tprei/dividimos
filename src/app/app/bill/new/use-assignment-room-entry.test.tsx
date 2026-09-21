@@ -87,7 +87,7 @@ describe("useAssignmentRoomEntry", () => {
         },
       ],
     });
-    expect(mocks.push).toHaveBeenCalledWith(`/room/${roomView.room.id}`);
+    expect(mocks.push).toHaveBeenCalledWith(`/room/${roomView.room.id}?invite=1`);
   });
 
   it("uses an existing group target and surfaces creation failure", async () => {

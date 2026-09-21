@@ -56,11 +56,16 @@ export function RoomHostControls({
         )}
       </div>
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Pessoas</h3>
+      <details className="space-y-2">
+        <summary className="flex min-h-11 cursor-pointer items-center rounded-xl border px-3 text-sm font-semibold">
+          Gerenciar pessoas
+        </summary>
         <ul className="space-y-2">
           {participants.map((participant) => {
             const pending = pendingParticipantIds.includes(participant.id);
+            // The ordinal-zero host cannot be removed from their own room;
+            // everyone else keeps a correction path even after closing.
+            const removable = participant.ordinal !== 0;
             return (
               <li key={participant.id} className="flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2">
                 <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
@@ -69,24 +74,24 @@ export function RoomHostControls({
                 </span>
                 {participant.removed ? (
                   <span className="text-xs text-muted-foreground">Removido</span>
-                ) : (
+                ) : removable ? (
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
                     className="min-h-11 min-w-11"
                     aria-label={`Remover ${participant.displayName}`}
-                    disabled={pending || closed}
+                    disabled={pending}
                     onClick={() => setRemoveTarget(participant)}
                   >
                     <UserMinus className="size-4" />
                   </Button>
-                )}
+                ) : null}
               </li>
             );
           })}
         </ul>
-      </div>
+      </details>
 
       {!closed && (
         <div className="space-y-2 border-t pt-4">

@@ -40,28 +40,34 @@ test.describe("Receipt review participants", () => {
     await page.getByRole("button", { name: "Processar" }).click();
 
     await expect(page.getByRole("heading", { name: "Recibo" })).toBeVisible({ timeout: 20000 });
-    const participantsRow = page.getByRole("button", { name: /^Participantes:/ });
-    await expect(participantsRow).toHaveAccessibleName(/Alice$/);
 
+    const createRoom = page.getByRole("button", { name: "Criar sala de divisão" });
+    const managePeople = page.getByRole("button", { name: "Gerenciar pessoas" });
     const proceed = page.getByRole("button", { name: "Dividir manualmente" });
-    await expect(proceed).toBeDisabled();
-    await expect(
-      page.getByText("Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa."),
-    ).toBeVisible();
 
-    await participantsRow.click();
+    const addPeople = page.getByRole("button", { name: "Adicionar pessoas" });
+    await expect(addPeople).toBeVisible();
+    await expect(createRoom).toBeEnabled();
+    await expect(proceed).toBeDisabled();
+
+    await addPeople.click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
     await page.getByRole("button", { name: "Buscar handle" }).click();
     await page.getByRole("button", { name: "Adicionar" }).click();
     await page.getByRole("button", { name: "Concluir" }).click();
 
-    await expect(participantsRow).toHaveAccessibleName(/Alice, Bob$/);
+    await expect(managePeople).toBeVisible();
+    await expect(managePeople).toHaveAccessibleName(/^Gerenciar pessoas Alice/);
+    await expect(createRoom).toBeDisabled();
     await expect(
-      page.getByText("Você pode compartilhar agora. Para dividir manualmente, adicione outra pessoa."),
-    ).toBeHidden();
+      page.getByText(
+        "Você adicionou pessoas para dividir manualmente. Remova essas pessoas para criar uma sala.",
+      ),
+    ).toBeVisible();
     await expect(proceed).toBeEnabled();
+
     await proceed.click();
-    await expect(page.getByRole("button", { name: /^Participantes:/ })).toHaveCount(0);
+    await expect(managePeople).toHaveCount(0);
   });
 });

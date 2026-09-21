@@ -57,7 +57,10 @@ export function useAssignmentRoomEntry({
             },
           ],
         });
-        router.push(`/room/${view.room.id}`);
+        // The nonsecret flag asks the room screen to present the invitation
+        // dialog on arrival. It carries no access; the join token stays in
+        // the URL fragment.
+        router.push(`/room/${view.room.id}?invite=1`);
       } catch (cause) {
         setError(ledgerErrorMessage(cause));
       } finally {

@@ -753,7 +753,11 @@ function NewBillPageContent() {
         <ParticipantsDialog
           open={scanParticipantsOpen}
           onOpenChange={setScanParticipantsOpen}
-          description="Escolha quem divide esta conta."
+          description={
+            reviewingScan
+              ? "Adicione quem vai participar da divisão manual."
+              : "Escolha quem divide esta conta."
+          }
           participants={{
             me,
             participants: reviewingScan && scanDraftContext ? scanDraftContext.participants : store.participants,
