@@ -302,13 +302,17 @@ test.describe("Assignment room on a phone", () => {
       await chooseFraction(page, "Itens", "Toast Bacon Egg", "Inteiro").then((dialog) =>
         dialog.getByRole("button", { name: "Confirmar quantidade" }).click(),
       );
-      await rowButton(page, "Itens", "Caffe Latte S").click();
-      const latte = page.getByRole("dialog", { name: "Caffe Latte S" });
-      await latte.getByRole("combobox", { name: "Pra quem?" }).click();
-      await page.getByRole("option", { name: member.name, exact: true }).click();
+      // A claim is always self-made, so Rui takes the latte in his own session.
+      await rowButton(memberSession.page, "Disponíveis", "Caffe Latte S").click();
+      const latte = memberSession.page.getByRole("dialog", { name: "Caffe Latte S" });
       await latte.getByRole("button", { name: "Inteiro" }).click();
       await latte.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(latte).toBeHidden({ timeout: ROOM_TIMEOUT });
+      // The claim reaches the host only by sync, and closing before it lands
+      // would leave the latte unclaimed.
+      await expect(row(page, "Itens", "Caffe Latte S").getByText("Tudo escolhido")).toBeVisible({
+        timeout: ROOM_TIMEOUT,
+      });
 
       await page.getByRole("button", { name: "Fechar escolhas" }).click();
       await expect(page.getByText("Revise antes de registrar")).toBeVisible({
@@ -355,6 +359,41 @@ test.describe("Assignment room on a phone", () => {
     } finally {
       await guestContext?.close();
     }
+  });
+
+  test("keeps a dialog's content square with both edges", async ({
+    context,
+    loginAs,
+    page,
+    seed,
+  }) => {
+    const host = await seed.createUser({ name: "Ana Simetria" });
+    await recordClipboard(context);
+    await loginAs(host, { navigate: false });
+    await openRoom(page, TWO_LINES);
+
+    await rowButton(page, "Itens", "Toast Bacon Egg").click();
+    const dialog = page.getByRole("dialog", { name: "Toast Bacon Egg" });
+    await expect(dialog).toBeVisible();
+
+    // The close control used to reserve its width from the whole popup, which
+    // pushed every field and button in off the right edge. Only the header
+    // gives up room for it now, so the body sits evenly between both edges.
+    const popup = await dialog.boundingBox();
+    const confirm = await dialog
+      .getByRole("button", { name: "Confirmar quantidade" })
+      .boundingBox();
+    expect(popup).not.toBeNull();
+    expect(confirm).not.toBeNull();
+    if (popup && confirm) {
+      const leftInset = confirm.x - popup.x;
+      const rightInset = popup.x + popup.width - (confirm.x + confirm.width);
+      expect(Math.abs(leftInset - rightInset)).toBeLessThanOrEqual(2);
+      expect(rightInset).toBeLessThanOrEqual(24);
+    }
+
+    // Nothing asks who the item is for: everyone claims their own share.
+    await expect(dialog.getByRole("combobox", { name: "Pra quem?" })).toHaveCount(0);
   });
 
   test("scrolls a long room and keeps the footer reachable", async ({

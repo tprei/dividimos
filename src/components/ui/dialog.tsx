@@ -90,10 +90,12 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           // Anchored to the visual viewport rather than the layout viewport:
-          // with the keyboard open the two differ by half the screen. The
-          // right padding reserves room for the 44px close control.
+          // with the keyboard open the two differ by half the screen.
           "fixed left-1/2 top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] z-50 flex max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] w-full max-w-[calc(100%-2rem)] min-h-0 -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-xl bg-background p-4 text-sm ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          showCloseButton && "pr-16",
+          // Only the row the close control actually sits on gives up width to
+          // it. Padding the whole popup indents every field and button, which
+          // reads as a lopsided dialog.
+          showCloseButton && "[&>[data-slot=dialog-header]]:pr-11",
           className
         )}
         {...props}
