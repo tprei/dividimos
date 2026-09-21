@@ -1158,9 +1158,22 @@ export type Database = {
         }
         Returns: undefined
       }
+      claim_assignment_room_guest: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
       claim_guest: {
         Args: {
           p_token: string
+        }
+        Returns: Json
+      }
+      claim_guest_participant: {
+        Args: {
+          p_guest_id: string
         }
         Returns: Json
       }
@@ -1357,6 +1370,13 @@ export type Database = {
         Returns: Json
       }
       get_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
+      get_assignment_room_completion: {
         Args: {
           p_room_id: string
           p_member_token: string
