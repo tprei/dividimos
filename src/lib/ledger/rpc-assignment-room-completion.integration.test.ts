@@ -180,7 +180,7 @@ describe.skipIf(!isIntegrationTestReady)("assignment room completion RPCs", () =
       created.room.items[0].revision,
     );
     current = await closeRoom(hostClient, args.p_room_id, current.room.revision);
-    await finalizeRoom(hostClient, current);
+    const finalized = await finalizeRoom(hostClient, current);
     const hostCompletion = await readCompletion(hostClient, args.p_room_id, null);
     expect(hostCompletion).toMatchObject({
       roomId: args.p_room_id,
@@ -209,6 +209,15 @@ describe.skipIf(!isIntegrationTestReady)("assignment room completion RPCs", () =
       p_member_token: guestToken,
     });
     expect(ack.groupId).toBe(hostCompletion.action.groupId);
+    const claimedRoom = await rpc<RoomView>(
+      hostClient,
+      "get_assignment_room",
+      { p_room_id: args.p_room_id, p_member_token: null },
+    );
+    // The bridge invalidates once, and broadcast_group keeps the second
+    // invalidation because guest_claimed changes the effective bill without
+    // updating the expense row.
+    expect(claimedRoom.room.revision).toBe(finalized.room.room.revision + 2);
 
     const afterClaim = await readCompletion(guestClaimerClient, args.p_room_id, guestToken);
     expect(afterClaim.action).toMatchObject({

@@ -395,6 +395,17 @@ describe.skipIf(!isIntegrationTestReady)(
         [{ participantIndex: 0, amountCents: 4_000 }]
       );
       if (!built.ok) throw new Error(JSON.stringify(built.issue));
+      const channel = await joinSubscribed(() =>
+        anonClient.channel(closed.room.topic, {
+          config: { private: true },
+        })
+      );
+      // Consume finalization first so the freshly subscribed socket has
+      // delivered a room invalidation before the bill edit under test.
+      const finalizationMessage = nextRevisionBroadcast(
+        channel,
+        closed.room.revision + 1
+      );
       const finalized = await rpc<FinalizeResult>(
         hostClient,
         "finalize_assignment_room",
@@ -404,10 +415,9 @@ describe.skipIf(!isIntegrationTestReady)(
           p_payload: built.value,
         }
       );
-      const channel = await joinSubscribed(() =>
-        anonClient.channel(finalized.room.room.topic, {
-          config: { private: true },
-        })
+      expectRevisionPayload(
+        (await finalizationMessage).payload,
+        closed.room.revision + 1
       );
 
       const editMessage = nextRevisionBroadcast(
@@ -431,27 +441,41 @@ describe.skipIf(!isIntegrationTestReady)(
         editedMessage.payload,
         finalized.room.room.revision + 1
       );
+      // The expense trigger is the sole invalidation owner for bill edits,
+      // so the room revision advanced exactly once even though
+      // broadcast_group also carried the expense_edited group event.
+      const editedRoom = await rpc<RoomView>(
+        hostClient,
+        "get_assignment_room",
+        { p_room_id: setup.roomId, p_member_token: null }
+      );
+      expect(editedRoom.room.revision).toBe(finalized.room.room.revision + 1);
 
-      const unrelatedAbsence = expectNoBroadcast(channel, "assignment");
-      await withPg(async (db) => {
-        await db.query("begin");
-        try {
-          const event = await db.query<{ id: string }>(
-            "insert into public.group_events (group_id, actor_id, kind, payload) values ($1, $2, 'member_joined', '{}'::jsonb) returning id::text",
-            [finalized.ack.groupId, host.id]
-          );
-          await db.query("select public.broadcast_group($1, $2, $3)", [
-            finalized.ack.groupId,
-            1,
-            event.rows[0].id,
-          ]);
-          await db.query("commit");
-        } catch (error) {
-          await db.query("rollback");
-          throw error;
-        }
-      });
-      await unrelatedAbsence;
+      // Composing the absence window with the group-event transaction in a
+      // single await surfaces an unexpected delivery here instead of leaving
+      // a floating rejection while the transaction is still pending.
+      await Promise.all([
+        expectNoBroadcast(channel, "assignment"),
+        withPg(async (db) => {
+          await db.query("begin");
+          try {
+            const event = await db.query<{ id: string }>(
+              "insert into public.group_events (group_id, actor_id, kind, payload) values ($1, $2, 'member_joined', '{}'::jsonb) returning id::text",
+              [finalized.ack.groupId, host.id]
+            );
+            await db.query("select public.broadcast_group($1, $2, $3)", [
+              finalized.ack.groupId,
+              1,
+              event.rows[0].id,
+            ]);
+            await db.query("commit");
+          } catch (error) {
+            await db.query("rollback");
+            throw error;
+          }
+        }),
+      ]);
+
       await channel.unsubscribe();
     }, 180_000);
   }
