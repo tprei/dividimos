@@ -483,10 +483,6 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     }
   }
 
-  function handleCreateBill() {
-    const destination = "/app/bill/new";
-    router.push(accountId ? destination : `/auth?next=${encodeURIComponent(destination)}`);
-  }
 
   if (!fragmentReady) return <RoomLoading />;
 
