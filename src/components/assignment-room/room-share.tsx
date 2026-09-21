@@ -115,10 +115,10 @@ export function RoomShare({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger
-        render={<Button type="button" variant="ghost" className="min-h-11" />}
+        render={<Button type="button" variant="ghost" className="min-h-11 min-w-11 px-0 sm:px-3" />}
       >
-        <QrCode className="size-4" />
-        Convidar
+        <QrCode className="size-4" aria-hidden="true" />
+        <span className="sr-only sm:not-sr-only">Convidar</span>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

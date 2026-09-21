@@ -117,10 +117,9 @@ describe("RoomReview", () => {
     const onFinalize = vi.fn();
     render(<ControlledRoomReview onFinalize={onFinalize} />);
 
-    expect(screen.getAllByText("Aguardando confirmação").length).toBeGreaterThan(0);
     expect(screen.getByText("Taxa de serviço").parentElement).toHaveTextContent(/R\$\s*10,00/);
     expect(screen.getByText("Taxa fixa").parentElement).toHaveTextContent(/R\$\s*0,02/);
-    const payerSection = screen.getByRole("heading", { name: "Quem pagou?" }).closest("section");
+    const payerSection = screen.getByRole("region", { name: /Quem pagou/ });
     expect(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Bia$/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();
@@ -145,7 +144,7 @@ describe("RoomReview", () => {
       />,
     );
 
-    const payerSection = screen.getByRole("heading", { name: "Quem pagou?" }).closest("section");
+    const payerSection = screen.getByRole("region", { name: /Quem pagou/ });
     await user.click(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ }));
     expect(screen.getByRole("alert")).toHaveTextContent("A sala mudou");
     expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();

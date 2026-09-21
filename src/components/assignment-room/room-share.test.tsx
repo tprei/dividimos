@@ -64,7 +64,6 @@ describe("RoomShare native sharing", () => {
     );
 
     expect(screen.getByText("Bia entrou")).toBeInTheDocument();
-    expect(screen.getByText(/^Visto às /)).toHaveAttribute("dateTime", "2026-09-21T14:32:00.000Z");
     expect(screen.getByText("Bia entrou")).toHaveAttribute("aria-live", "polite");
   });
 

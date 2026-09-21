@@ -89,7 +89,7 @@ export function RoomActivity({
       : [];
 
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
       {joinParticipants.length > 0 ? (
         <span className="flex shrink-0" aria-hidden="true">
           {joinParticipants.slice(0, 3).map((participant, index) => (
@@ -114,9 +114,9 @@ export function RoomActivity({
       <time
         className="shrink-0 whitespace-nowrap text-[11px]"
         dateTime={observedAt.toISOString()}
-        title={observedAt.toLocaleString("pt-BR")}
+        title={observationLabel(activity.observedAt)}
       >
-        {observationLabel(activity.observedAt)}
+        {new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(observedAt)}
       </time>
       {connected && (
         <span

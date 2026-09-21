@@ -230,7 +230,7 @@ describe("RoomHostControls", () => {
     expect(disclosure.open).toBe(false);
     await user.click(screen.getByText("Gerenciar pessoas"));
     expect(disclosure.open).toBe(true);
-    expect(screen.getByRole("button", { name: "Fechar escolhas" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Remover Caio" }));
     expect(screen.getByText(/escolhas dessa pessoa serão liberadas/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remover e liberar itens" }));
@@ -258,7 +258,7 @@ describe("RoomHostControls", () => {
     await user.click(screen.getByText("Gerenciar pessoas"));
     expect(screen.queryByRole("button", { name: "Remover Bia" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remover Caio" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Fechar escolhas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Fechar escolhas/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Voltar à revisão" }));
     expect(onReturnToReview).toHaveBeenCalledOnce();
     expect(onRemove).not.toHaveBeenCalled();

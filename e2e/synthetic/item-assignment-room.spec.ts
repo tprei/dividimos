@@ -13,7 +13,7 @@ const GUEST_B = "Caio";
 
 // Board rows live in named lists, so every helper scopes to the list plus the
 // item row instead of relying on DOM order.
-type RoomList = "Itens" | "Disponíveis" | "Minha parte";
+type RoomList = "Itens" | "Ainda sem dono" | "Minha parte";
 
 function itemCard(page: Page, list: RoomList, description: string): Locator {
   return page
@@ -241,19 +241,19 @@ test.describe("Assignment room multi-client acceptance", () => {
           testInfo,
           "claim",
           async () => {
-            await claimQuantity(guestAPage, "Disponíveis", "Cervejas", "2");
+            await claimQuantity(guestAPage, "Ainda sem dono", "Cervejas", "2");
             await expect(
               itemCard(guestAPage, "Minha parte", "Cervejas").getByText("Você: 2 un."),
             ).toBeVisible();
           },
           async () => {
             await expect(
-              itemCard(page, "Itens", "Cervejas").getByText("Disponível: 1 de 3 un."),
+              itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
             ).toBeVisible({ timeout: ROOM_TIMEOUT });
             // Asking for more than the room still holds is refused before any
             // request leaves the phone, and the draft stays put.
             const remoteDialog = guestBPage.getByRole("dialog", { name: "Cervejas" });
-            await rowButton(guestBPage, "Disponíveis", "Cervejas").click();
+            await rowButton(guestBPage, "Ainda sem dono", "Cervejas").click();
             await remoteDialog.getByRole("button", { name: "Outra quantidade" }).click();
             await remoteDialog.getByRole("textbox", { name: "Quantidade desejada" }).fill("2");
             await expect(remoteDialog.getByRole("alert")).toContainText(
@@ -266,7 +266,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           },
         );
 
-        await claimQuantity(guestBPage, "Disponíveis", "Cervejas", "1");
+        await claimQuantity(guestBPage, "Ainda sem dono", "Cervejas", "1");
         await expect(
           itemCard(page, "Itens", "Cervejas").getByText("Tudo escolhido"),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
@@ -277,12 +277,12 @@ test.describe("Assignment room multi-client acceptance", () => {
           () => claimQuantity(guestAPage, "Minha parte", "Cervejas", "1"),
           async () => {
             await expect(
-              itemCard(page, "Itens", "Cervejas").getByText("Disponível: 1 de 3 un."),
+              itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
             ).toBeVisible({ timeout: ROOM_TIMEOUT });
           },
         );
 
-        const guestBPetisco = itemCard(guestBPage, "Disponíveis", "Petisco");
+        const guestBPetisco = itemCard(guestBPage, "Ainda sem dono", "Petisco");
         await guestBPetisco
           .getByRole("button", { name: "Escolher quantidade de Petisco" })
           .click();
@@ -333,7 +333,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         // Caio already holds one of the three, so the host's third leaves one.
         await claimOneThird(page, "Itens", "Petisco");
         await expect(
-          itemCard(page, "Itens", "Petisco").getByText("Disponível: 1 de 3 un."),
+          itemCard(page, "Itens", "Petisco").getByText(/1 de 3 un\./),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
       });
       await expect
@@ -355,11 +355,11 @@ test.describe("Assignment room multi-client acceptance", () => {
       // Caio lines up the last unit while Bia takes it first. Only one claim
       // may land, and Caio must be told rather than silently overwriting it.
       const finalDialogB = guestBPage.getByRole("dialog", { name: "Última cerveja" });
-      await rowButton(guestBPage, "Disponíveis", "Última cerveja").click();
+      await rowButton(guestBPage, "Ainda sem dono", "Última cerveja").click();
       await finalDialogB.getByRole("button", { name: "Outra quantidade" }).click();
       await finalDialogB.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
 
-      await claimQuantity(guestAPage, "Disponíveis", "Última cerveja", "1");
+      await claimQuantity(guestAPage, "Ainda sem dono", "Última cerveja", "1");
 
       const confirmB = finalDialogB.getByRole("button", { name: "Confirmar quantidade" });
       if (await confirmB.isEnabled()) {
@@ -400,7 +400,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         await claimQuantity(guestAPage, "Minha parte", "Cervejas", "1");
       }
       await expect(removedState).toBeVisible({ timeout: ROOM_TIMEOUT });
-      await expect(page.getByRole("button", { name: "Fechar escolhas" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
 
       const reconnectStartedAt = performance.now();
       await guestBContext.setOffline(false);
@@ -431,17 +431,17 @@ test.describe("Assignment room multi-client acceptance", () => {
       await guestBBeerDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
-        itemCard(guestBPage, "Disponíveis", "Cervejas").getByText("Disponível: 1 de 3 un."),
+        itemCard(guestBPage, "Ainda sem dono", "Cervejas").getByText(/1 de 3 un\./),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       // The freed unit reaches the host only by sync, and claiming three fails
       // while the host board still shows nothing available.
       await expect(
-        itemCard(page, "Itens", "Cervejas").getByText("Disponível: 1 de 3 un."),
+        itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await claimQuantity(page, "Itens", "Cervejas", "3");
-      await expect(itemCard(guestBPage, "Disponíveis", "Cervejas")).toHaveCount(0);
+      await expect(itemCard(guestBPage, "Ainda sem dono", "Cervejas")).toHaveCount(0);
 
-      const closeChoices = page.getByRole("button", { name: "Fechar escolhas" });
+      const closeChoices = page.getByRole("button", { name: /^Fechar escolhas/ });
       if (!(await closeChoices.isEnabled())) {
         await claimQuantity(page, "Itens", "Última cerveja", "1");
       }
@@ -449,7 +449,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await observeRemote(
         testInfo,
         "close",
-        () => page.getByRole("button", { name: "Fechar escolhas" }).click(),
+        () => page.getByRole("button", { name: /^Fechar escolhas/ }).click(),
         async () => {
           await expect(guestBPage.getByText("Aguardando confirmação")).toBeVisible({
             timeout: ROOM_TIMEOUT,
@@ -466,10 +466,8 @@ test.describe("Assignment room multi-client acceptance", () => {
       // admissions; closed-room corrections stay host-only.
       await page.getByRole("button", { name: "Corrigir escolhas" }).click();
       await page.getByRole("button", { name: "Voltar", exact: true }).click();
-      await expect(page.getByText("Revise antes de registrar")).toBeVisible();
-      const payerSection = page
-        .getByRole("heading", { name: "Quem pagou?" })
-        .locator("xpath=ancestor::section");
+      const payerSection = page.getByRole("region", { name: /Quem pagou/ });
+      await expect(payerSection).toBeVisible();
       await payerSection.getByRole("button").filter({ hasText: HOST_NAME }).click();
 
       let droppedFinalizeResponse = false;

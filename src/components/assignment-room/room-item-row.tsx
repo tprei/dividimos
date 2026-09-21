@@ -5,7 +5,6 @@ import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
-import { cn } from "@/lib/utils";
 import type {
   AssignmentRoomClaim,
   AssignmentRoomItem,
@@ -57,50 +56,44 @@ export function RoomItemRow({
 
   return (
     <li data-item-id={item.id}>
-      <div className="flex min-h-16 items-center gap-3 py-3 pr-3 pl-0">
+      <div className="flex min-h-14 items-center gap-1 pr-2">
         <button
           type="button"
           disabled={disabled}
           aria-label={`${action}${ownerNames}`}
           onClick={(event) => onOpen(event.currentTarget)}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-60"
+          className="flex min-h-14 min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] disabled:pointer-events-none disabled:opacity-60"
         >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "w-1 self-stretch rounded-r-full",
-              ownTicks > 0 ? "bg-primary" : taken ? "bg-success/70" : "bg-transparent",
-            )}
-          />
-          <span className="min-w-0 flex-1 pl-2">
+          <span className="min-w-0 flex-1">
             <span className="block text-sm leading-5 font-semibold wrap-anywhere">
               {item.description}
             </span>
-            <span className="mt-1 flex flex-wrap items-center gap-1.5">
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium",
-                  taken ? "bg-success/15 text-success-text" : "bg-muted text-muted-foreground",
-                )}
-              >
-                {taken
+            <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+              {mode === "mine"
+                ? `Você: ${formatRoomTicks(ownTicks)} un. · toque para editar`
+                : taken
                   ? "Tudo escolhido"
-                  : `Disponível: ${formatRoomTicks(availableTicks)} de ${original} un.`}
-              </span>
-              {ownTicks > 0 && (
-                <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[11px] leading-4 font-semibold text-primary-text">
-                  Você: {formatRoomTicks(ownTicks)} un.
-                </span>
-              )}
+                  : `Restam ${formatRoomTicks(availableTicks)} de ${original} un.`}
             </span>
+            {mode !== "mine" && ownTicks > 0 && (
+              <span className="mt-1 inline-flex rounded-full bg-primary/15 px-2 text-[11px] font-semibold text-primary-text">
+                Você: {formatRoomTicks(ownTicks)} un.
+              </span>
+            )}
             {pending && (
               <span role="status" className="mt-1 flex items-center gap-1 text-xs leading-4 text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" />
+                <Loader2 className="size-3 motion-safe:animate-spin" />
                 Salvando...
               </span>
             )}
           </span>
-          {mode === "host" && owners.length > 0 && (
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            {mode !== "mine" ? (
+              <Money cents={item.totalPriceCents} className="text-sm font-semibold tabular-nums" />
+            ) : (
+              <span className="text-xs font-medium text-muted-foreground">{formatRoomTicks(ownTicks)} un.</span>
+            )}
+          {mode !== "mine" && owners.length > 0 && (
             <span aria-hidden="true" className="flex shrink-0 items-center">
               {visibleOwners.map((owner) => (
                 <UserAvatar
@@ -118,7 +111,7 @@ export function RoomItemRow({
               )}
             </span>
           )}
-          <Money cents={item.totalPriceCents} className="shrink-0 text-sm font-semibold tabular-nums" />
+          </span>
         </button>
         {onToggleDetails && (claims.length > 0 || (mode === "host" && availableTicks > 0)) && (
           <button
@@ -133,20 +126,23 @@ export function RoomItemRow({
         )}
       </div>
       {expanded && (claims.length > 0 || (mode === "host" && availableTicks > 0)) && (
-        <ul className="space-y-1 border-t bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+        <ul className="space-y-1 border-t border-dashed bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
           {claims
             .filter((claim) => claim.ticks > 0)
             .map((claim) => {
               const owner = owners.find((candidate) => candidate.id === claim.participantId);
               return (
                 <li key={`${claim.itemId}:${claim.participantId}`} className="flex min-h-11 items-center justify-between gap-3">
+                  {owner && <UserAvatar name={owner.displayName} avatarUrl={owner.avatarUrl} size="xs" />}
                   {mode === "host" && owner ? (
                     <button
                       type="button"
-                      className="min-h-11 min-w-0 flex-1 truncate text-left font-medium text-primary-text underline-offset-2 hover:underline"
+                      aria-label={`Editar escolha de ${owner.displayName}`}
+                      disabled={disabled || pending}
+                      className="min-h-11 min-w-0 flex-1 text-left font-medium text-foreground underline-offset-2 hover:underline disabled:opacity-60"
                       onClick={(event) => onOpen(event.currentTarget, claim.participantId)}
                     >
-                      Editar escolha de {owner.displayName}
+                      {owner.displayName}
                     </button>
                   ) : (
                     <span className="min-w-0 truncate">{owner?.displayName ?? "Pessoa removida"}</span>
@@ -159,7 +155,8 @@ export function RoomItemRow({
             <li className="flex min-h-11 items-center justify-between gap-3 border-t pt-1">
               <button
                 type="button"
-                className="min-h-11 font-medium text-primary-text underline-offset-2 hover:underline"
+                disabled={disabled || pending}
+                className="min-h-11 font-medium text-primary-text underline-offset-2 hover:underline disabled:opacity-60"
                 onClick={(event) => onOpen(event.currentTarget)}
               >
                 Atribuir
