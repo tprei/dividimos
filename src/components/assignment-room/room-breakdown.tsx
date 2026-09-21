@@ -146,7 +146,7 @@ export function RoomBreakdown({
         </section>
       )}
 
-      <section aria-labelledby="room-people-breakdown-heading">
+      <section aria-label="Por pessoa">
         <div className="mb-1 flex items-center justify-between gap-3">
           <h2 id="room-people-breakdown-heading" className="text-sm font-semibold">
             Quadro final
