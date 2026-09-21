@@ -48,8 +48,6 @@ const other: AssignmentRoomParticipant = {
 interface HarnessOptions {
   item?: AssignmentRoomItem;
   initialClaims?: AssignmentRoomClaim[];
-  role?: "host" | "participant";
-  participants?: AssignmentRoomParticipant[];
   submit?: (participantId: string, ticks: number) => Promise<boolean>;
   error?: { participantId: string; message: string } | null;
 }
@@ -61,8 +59,6 @@ interface HarnessOptions {
 function Harness({
   item = singleItem,
   initialClaims = [],
-  role = "participant",
-  participants = [me, other],
   submit,
   error = null,
 }: HarnessOptions) {
@@ -85,11 +81,9 @@ function Harness({
         onOpenChange={setOpen}
         getReturnFocus={() => null}
         item={item}
-        participants={participants}
         claims={claims}
         availableTicks={capacity - claimed}
         selfParticipantId={me.id}
-        role={role}
         pending={false}
         disabled={false}
         error={error}
@@ -268,29 +262,19 @@ describe("RoomItemClaim", () => {
     ).toBeDisabled();
   });
 
-  it("lets a host pick who receives the item without touching other drafts", async () => {
+  it("claims for the person using it, with nobody else to pick", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn(async () => true);
-    render(
-      <Harness
-        role="host"
-        initialClaims={[
-          { itemId: singleItem.id, participantId: me.id, ticks: 60_000 },
-        ]}
-        submit={onSubmit}
-      />,
-    );
+    render(<Harness submit={onSubmit} />);
 
-    await user.click(screen.getByRole("combobox", { name: "Pra quem?" }));
-    await user.click(screen.getByRole("option", { name: "Bia" }));
-    expect(
-      screen.getByText("Escolha uma quantidade para continuar."),
-    ).toBeInTheDocument();
+    // The room used to let a host hand a line to somebody else; every session
+    // now edits its own share only, so there is no target to choose.
+    expect(screen.queryByRole("combobox", { name: "Pra quem?" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "1/2" }));
     await user.click(
       screen.getByRole("button", { name: "Confirmar quantidade" }),
     );
-    expect(onSubmit).toHaveBeenCalledWith("person-b", 60_000);
+    expect(onSubmit).toHaveBeenCalledWith(me.id, 60_000);
   });
 });

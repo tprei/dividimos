@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import type { AssignmentRoomParticipant } from "@/types/assignment-room";
 
 interface RoomHostControlsProps {
@@ -48,11 +49,25 @@ export function RoomHostControls({
     <section className="space-y-4 rounded-2xl border bg-card p-4" aria-labelledby="room-host-heading">
       <div>
         <h2 id="room-host-heading" className="font-heading font-semibold">Controle da sala</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p
+          className={cn(
+            "mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+            complete
+              ? "bg-success/15 text-success-text"
+              : "bg-warning/20 text-foreground",
+          )}
+        >
+          {complete ? (
+            <CheckCircle2 className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Lock className="size-3.5" aria-hidden="true" />
+          )}
           {fullyAssignedCount} de {totalItemCount} linhas totalmente escolhidas
         </p>
         {!complete && (
-          <p className="mt-1 text-sm">Ainda há quantidades sem dono.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Ainda há quantidades sem dono.
+          </p>
         )}
       </div>
 

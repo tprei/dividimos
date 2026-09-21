@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Minus, Plus, Trash2 } from "lucide-react";
+import { Check, Loader2, Minus, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,8 @@ import {
 } from "@/lib/assignment-room-money";
 import { formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { parseExpenseQuantity } from "@/lib/expense-quantity";
-import type {
-  AssignmentRoomClaim,
-  AssignmentRoomItem,
-  AssignmentRoomParticipant,
-} from "@/types/assignment-room";
+import { cn } from "@/lib/utils";
+import type { AssignmentRoomClaim, AssignmentRoomItem } from "@/types/assignment-room";
 
 /** Ticks in one whole item; the plus and minus controls move by this much. */
 const UNIT_TICKS = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
@@ -51,12 +48,10 @@ interface RoomItemClaimProps {
   onOpenChange: (open: boolean) => void;
   getReturnFocus: () => HTMLElement | null;
   item: AssignmentRoomItem;
-  participants: AssignmentRoomParticipant[];
   /** Claims for this item only. */
   claims: AssignmentRoomClaim[];
   availableTicks: number;
   selfParticipantId: string;
-  role: "host" | "participant";
   pending: boolean;
   disabled: boolean;
   error: { participantId: string; message: string } | null;
@@ -68,28 +63,24 @@ type DraftResolution =
   | { status: "invalid"; message: string }
   | { status: "ticks"; ticks: number };
 
+/** Selected fractions read as filled chips rather than a hairline border. */
+const CHIP =
+  "min-h-11 px-2 font-semibold transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground";
+
 export function RoomItemClaim({
   open,
   onOpenChange,
   getReturnFocus,
   item,
-  participants,
   claims,
   availableTicks,
   selfParticipantId,
-  role,
   pending,
   disabled,
   error,
   onSubmit,
 }: RoomItemClaimProps) {
   const capacityTicks = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
-  const selfIsActive = participants.some(
-    (participant) => participant.id === selfParticipantId,
-  );
-  const [targetId, setTargetId] = useState(
-    selfIsActive ? selfParticipantId : "",
-  );
   const [draft, setDraft] = useState<ClaimDraft>({ kind: "empty" });
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -97,15 +88,12 @@ export function RoomItemClaim({
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
 
+  // Everyone edits their own share, so the room never asks who this is for.
   const savedTicks = useMemo(
-    () =>
-      claims.find((claim) => claim.participantId === targetId)?.ticks ?? 0,
-    [claims, targetId],
+    () => claims.find((claim) => claim.participantId === selfParticipantId)?.ticks ?? 0,
+    [claims, selfParticipantId],
   );
   const maximumTicks = savedTicks + availableTicks;
-  const target = participants.find(
-    (participant) => participant.id === targetId,
-  );
 
   const seedDraft = useCallback((ticks: number): ClaimDraft => {
     return ticks > 0 ? { kind: "ticks", ticks } : { kind: "empty" };
@@ -117,27 +105,15 @@ export function RoomItemClaim({
   const wasOpenRef = useRef(false);
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      const initialTarget = selfIsActive ? selfParticipantId : "";
-      setTargetId(initialTarget);
       const initial =
-        claims.find((claim) => claim.participantId === initialTarget)?.ticks ??
-        0;
+        claims.find((claim) => claim.participantId === selfParticipantId)?.ticks ?? 0;
       setDraft(seedDraft(initial));
       setAdvancedOpen(false);
       setAttemptFailed(false);
       setSaveError(null);
     }
     wasOpenRef.current = open;
-  }, [claims, open, seedDraft, selfIsActive, selfParticipantId]);
-
-  function chooseTarget(nextId: string) {
-    setTargetId(nextId);
-    const next =
-      claims.find((claim) => claim.participantId === nextId)?.ticks ?? 0;
-    setDraft(seedDraft(next));
-    setAttemptFailed(false);
-    setSaveError(null);
-  }
+  }, [claims, open, seedDraft, selfParticipantId]);
 
   function chooseTicks(ticks: number) {
     setDraft({ kind: "ticks", ticks });
@@ -188,16 +164,10 @@ export function RoomItemClaim({
 
   const draftTicks = resolution.status === "ticks" ? resolution.ticks : null;
   const unchanged = draftTicks !== null && draftTicks === savedTicks;
-  const canSave =
-    !disabled &&
-    !pending &&
-    !saving &&
-    targetId.length > 0 &&
-    draftTicks !== null &&
-    !unchanged;
+  const canSave = !disabled && !pending && !saving && draftTicks !== null && !unchanged;
 
   const scopedError =
-    attemptFailed && error?.participantId === targetId ? error.message : null;
+    attemptFailed && error?.participantId === selfParticipantId ? error.message : null;
   const message =
     resolution.status === "invalid"
       ? resolution.message
@@ -219,13 +189,13 @@ export function RoomItemClaim({
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await onSubmit(targetId, draftTicks);
+      const saved = await onSubmit(selfParticipantId, draftTicks);
       if (saved) {
         onOpenChange(false);
         return;
       }
       setAttemptFailed(true);
-      if (!error || error.participantId !== targetId) {
+      if (!error || error.participantId !== selfParticipantId) {
         setSaveError("Não foi possível salvar. Tente novamente.");
       }
     } catch {
@@ -238,11 +208,6 @@ export function RoomItemClaim({
   }
 
   const remainder = draftTicks === null ? null : maximumTicks - draftTicks;
-  const quantityLabel = target
-    ? target.id === selfParticipantId
-      ? "Sua quantidade"
-      : `Quantidade de ${target.displayName}`
-    : "Quantidade";
 
   return (
     <Dialog
@@ -253,28 +218,30 @@ export function RoomItemClaim({
         onOpenChange(next);
       }}
     >
-      <DialogContent finalFocus={getReturnFocus}>
-        <DialogHeader>
+      <DialogContent finalFocus={getReturnFocus} className="gap-3">
+        <DialogHeader className="gap-1">
           <DialogTitle>{item.description}</DialogTitle>
-          <DialogDescription>
-            Linha inteira: {formatRoomTicks(capacityTicks)} un. ·{" "}
-            <Money cents={item.totalPriceCents} className="text-sm" />
+          <DialogDescription className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-primary/12 px-2 py-0.5 font-semibold text-primary-text">
+              <Money cents={item.totalPriceCents} className="text-xs" />
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+              Linha inteira: {formatRoomTicks(capacityTicks)} un.
+            </span>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                availableTicks > 0
+                  ? "bg-success/15 text-success-text"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {availableTicks > 0
+                ? `Livre: ${formatRoomTicks(availableTicks)} un.`
+                : "Tudo escolhido"}
+            </span>
           </DialogDescription>
         </DialogHeader>
-
-        {role === "host" && (
-          <SelectField
-            label="Pra quem?"
-            value={targetId}
-            placeholder="Escolha a pessoa"
-            disabled={saving}
-            options={participants.map((participant) => ({
-              value: participant.id,
-              label: participant.displayName,
-            }))}
-            onChange={chooseTarget}
-          />
-        )}
 
         <div>
           <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -285,7 +252,7 @@ export function RoomItemClaim({
               type="button"
               variant="outline"
               aria-pressed={draftTicks === capacityTicks}
-              className="min-h-11 px-2 aria-pressed:border-primary aria-pressed:bg-primary/10"
+              className={CHIP}
               disabled={saving || capacityTicks > maximumTicks}
               onClick={() => chooseTicks(capacityTicks)}
             >
@@ -299,7 +266,7 @@ export function RoomItemClaim({
                   type="button"
                   variant="outline"
                   aria-pressed={ticks !== null && draftTicks === ticks}
-                  className="min-h-11 px-2 aria-pressed:border-primary aria-pressed:bg-primary/10"
+                  className={CHIP}
                   disabled={saving || ticks === null || ticks > maximumTicks}
                   onClick={() => ticks !== null && chooseTicks(ticks)}
                 >
@@ -314,7 +281,7 @@ export function RoomItemClaim({
           <Button
             type="button"
             variant="outline"
-            className="min-h-11 w-full"
+            className="min-h-11 w-full border-success/40 bg-success/10 font-semibold text-success-text hover:bg-success/20"
             disabled={saving}
             onClick={() => chooseTicks(maximumTicks)}
           >
@@ -326,20 +293,20 @@ export function RoomItemClaim({
           <Button
             type="button"
             variant="ghost"
-            className="min-h-11 w-full"
+            className="min-h-11 w-full text-primary-text"
             disabled={saving}
             onClick={() => setAdvancedOpen(true)}
           >
             Outra quantidade
           </Button>
         ) : (
-          <div className="space-y-3 border-t pt-3">
+          <div className="space-y-3 rounded-xl bg-muted/60 p-3">
             <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
               <Button
                 type="button"
                 size="icon"
                 variant="outline"
-                className="min-h-11 min-w-11"
+                className="min-h-11 min-w-11 text-primary-text"
                 aria-label="Diminuir uma unidade"
                 disabled={saving || stepFrom() <= 0}
                 onClick={() => chooseTicks(Math.max(0, stepFrom() - UNIT_TICKS))}
@@ -357,7 +324,7 @@ export function RoomItemClaim({
                 inputMode="decimal"
                 aria-label="Quantidade desejada"
                 placeholder="Ex.: 1,5"
-                className="min-h-11"
+                className="min-h-11 bg-background text-center font-semibold"
                 disabled={saving}
                 onChange={(event) => typeQuantity(event.target.value)}
               />
@@ -365,7 +332,7 @@ export function RoomItemClaim({
                 type="button"
                 size="icon"
                 variant="outline"
-                className="min-h-11 min-w-11"
+                className="min-h-11 min-w-11 text-primary-text"
                 aria-label="Aumentar uma unidade"
                 disabled={saving || stepFrom() >= maximumTicks}
                 onClick={() =>
@@ -400,31 +367,33 @@ export function RoomItemClaim({
           <Button
             type="button"
             variant="ghost"
-            className="min-h-11 w-full text-destructive"
+            className="min-h-11 w-full text-destructive-text"
             disabled={saving}
             onClick={() => chooseTicks(0)}
           >
             <Trash2 className="size-4" />
-            {target && target.id !== selfParticipantId
-              ? `Remover escolha de ${target.displayName}`
-              : "Remover minha escolha"}
+            Remover minha escolha
           </Button>
         )}
 
-        <div className="rounded-xl bg-muted px-3 py-2 text-sm">
+        <div
+          className={cn(
+            "rounded-xl px-3 py-2.5 text-sm ring-1",
+            draftTicks === null
+              ? "bg-muted ring-transparent"
+              : "bg-primary/10 ring-primary/20",
+          )}
+        >
           {draftTicks === null ? (
-            <p className="text-muted-foreground">
-              {targetId.length === 0
-                ? "Escolha a pessoa que vai ficar com o item."
-                : "Escolha uma quantidade para continuar."}
-            </p>
+            <p className="text-muted-foreground">Escolha uma quantidade para continuar.</p>
           ) : (
             <>
-              <p className="font-semibold">
-                {quantityLabel}: {formatRoomTicks(draftTicks)} un.
+              <p className="flex items-center gap-1.5 font-semibold text-primary-text">
+                <Check className="size-4" aria-hidden="true" />
+                Sua quantidade: {formatRoomTicks(draftTicks)} un.
               </p>
               {remainder !== null && (
-                <p className="text-muted-foreground">
+                <p className="mt-0.5 text-muted-foreground">
                   Depois de confirmar, restam {formatRoomTicks(remainder)} un.
                 </p>
               )}
@@ -433,7 +402,7 @@ export function RoomItemClaim({
         </div>
 
         {message && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             {message}
           </p>
         )}
@@ -443,7 +412,7 @@ export function RoomItemClaim({
         <DialogFooter className="flex-col sm:flex-col sm:justify-stretch">
           <Button
             type="button"
-            className="min-h-11 w-full"
+            className="min-h-11 w-full font-semibold"
             disabled={!canSave}
             onClick={confirm}
           >

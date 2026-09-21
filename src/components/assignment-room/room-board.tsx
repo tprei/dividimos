@@ -5,6 +5,7 @@ import { RoomHostControls } from "@/components/assignment-room/room-host-control
 import { RoomItemClaim } from "@/components/assignment-room/room-item-claim";
 import { RoomItemRow } from "@/components/assignment-room/room-item-row";
 import { RoomShare } from "@/components/assignment-room/room-share";
+import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
@@ -209,33 +210,90 @@ export function RoomBoard({
 
         {!accessRemoved && view.room.status !== "cancelled" && view.room.status !== "finalized" && (
           <>
-            <section className="space-y-2" aria-labelledby="room-roster-heading">
+            <section
+              className="rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-success/10 p-4 ring-1 ring-primary/15"
+              aria-labelledby="room-roster-heading"
+            >
               <div className="flex items-baseline justify-between gap-3">
-                <h2 id="room-roster-heading" className="text-sm font-semibold">Na sala</h2>
+                <h2 id="room-roster-heading" className="text-sm font-semibold">
+                  Na sala
+                </h2>
                 <p className="text-xs text-muted-foreground">
                   {activeParticipants.length === 1
                     ? "1 pessoa na sala"
                     : `${activeParticipants.length} pessoas na sala`}
                 </p>
               </div>
-              <ul className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+              <ul className="-mx-4 mt-2 flex gap-3 overflow-x-auto px-4 pb-1">
                 {activeParticipants.map((participant) => (
                   <li
                     key={participant.id}
                     aria-label={participant.displayName}
-                    className="flex shrink-0 items-center gap-1.5"
+                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-background/70 py-1 pr-3 pl-1"
                   >
                     <UserAvatar
                       name={participant.displayName}
                       avatarUrl={participant.avatarUrl}
                       size="sm"
                     />
-                    <span className="max-w-24 truncate text-xs text-muted-foreground">
+                    <span className="max-w-24 truncate text-xs font-medium">
                       {participant.displayName.split(" ")[0]}
                     </span>
                   </li>
                 ))}
               </ul>
+
+              <div className="mt-3 flex items-end justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Conta toda</p>
+                  <Money
+                    cents={view.room.totalCents}
+                    className="text-base font-bold tabular-nums"
+                  />
+                </div>
+                {/* Only counts here: a live cent split would round differently
+                    from the allocation the bill is finally built with. */}
+                <div className="text-right">
+                  <p className="text-[11px] text-muted-foreground">Você escolheu</p>
+                  <p className="text-base font-bold tabular-nums text-primary-text">
+                    {mineRows.length} {mineRows.length === 1 ? "linha" : "linhas"}
+                  </p>
+                </div>
+              </div>
+
+              {/* The bar answers the only question the room keeps asking:
+                  how much of the receipt still has nobody's name on it. */}
+              {itemRows.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <span className="font-medium">
+                      {fullyAssignedCount} de {itemRows.length} linhas escolhidas
+                    </span>
+                    <span className="text-muted-foreground">
+                      {roomComplete ? "Tudo escolhido" : "Ainda falta gente escolher"}
+                    </span>
+                  </div>
+                  <div
+                    className="mt-1.5 h-2 overflow-hidden rounded-full bg-foreground/10"
+                    role="progressbar"
+                    aria-label="Linhas totalmente escolhidas"
+                    aria-valuemin={0}
+                    aria-valuemax={itemRows.length}
+                    aria-valuenow={fullyAssignedCount}
+                  >
+                    <div
+                      className={
+                        roomComplete
+                          ? "h-full rounded-full bg-success transition-[width] duration-300"
+                          : "h-full rounded-full bg-primary transition-[width] duration-300"
+                      }
+                      style={{
+                        width: `${Math.round((fullyAssignedCount / itemRows.length) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </section>
 
             {itemRows.length === 0 ? (
@@ -350,13 +408,11 @@ export function RoomBoard({
                 onOpenChange={setEditorOpen}
                 getReturnFocus={getReturnFocus}
                 item={selectedItem.item}
-                participants={activeParticipants}
                 claims={view.room.claims.filter(
                   (claim) => claim.itemId === selectedItem.item.id,
                 )}
                 availableTicks={selectedItem.availableTicks}
                 selfParticipantId={selfParticipantId}
-                role={view.role}
                 pending={pendingItemIds.includes(selectedItem.item.id)}
                 disabled={!roomEditable}
                 error={
