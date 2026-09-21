@@ -1,9 +1,15 @@
 "use client";
 
-import { Check, Copy, QrCode, RefreshCw } from "lucide-react";
+import { Check, Copy, QrCode, RefreshCw, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { RoomActivity } from "@/components/assignment-room/room-activity";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
+import type {
+  AssignmentRoomActivity,
+  AssignmentRoomItem,
+  AssignmentRoomParticipant,
+} from "@/types/assignment-room";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +28,10 @@ interface RoomShareProps {
   rotationDisabled: boolean;
   errorMessage: string | null;
   onRotate: () => void;
+  latestActivity?: AssignmentRoomActivity | null;
+  participants?: AssignmentRoomParticipant[];
+  items?: AssignmentRoomItem[];
+  connected?: boolean;
 }
 
 export function RoomShare({
@@ -32,6 +42,10 @@ export function RoomShare({
   rotationDisabled,
   errorMessage,
   onRotate,
+  latestActivity = null,
+  participants = [],
+  items = [],
+  connected = false,
 }: RoomShareProps) {
   // Feedback is remembered against the invite it belongs to, so a rotated
   // link or a reopened dialog drops stale "copiado" and QR failures without an
@@ -39,6 +53,8 @@ export function RoomShare({
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [copyFailedUrl, setCopyFailedUrl] = useState<string | null>(null);
   const [qrFailedUrl, setQrFailedUrl] = useState<string | null>(null);
+  const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+  const [shareFailedUrl, setShareFailedUrl] = useState<string | null>(null);
   // The dialog mounts its content in a portal, so the canvas can arrive after
   // the effect that wants to draw on it. Tracking the node as state makes the
   // draw run when the element exists instead of silently skipping it and
@@ -48,6 +64,8 @@ export function RoomShare({
   const copied = open && url !== null && copiedUrl === url;
   const copyFailed = open && url !== null && copyFailedUrl === url;
   const qrFailed = url !== null && qrFailedUrl === url;
+  const shareFailed = open && url !== null && shareFailedUrl === url;
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   // The QR stays hidden while a rotation is in flight so an old code is never
   // presented as current. The cancellation flag keeps a completion from an
@@ -77,6 +95,20 @@ export function RoomShare({
     } catch {
       setCopiedUrl(null);
       setCopyFailedUrl(url);
+    }
+  }
+
+  async function handleShare() {
+    if (!url || !navigator.share) return;
+    try {
+      await navigator.share({ title: "Dividimos", url });
+      setSharedUrl(url);
+      setShareFailedUrl(null);
+    } catch (error) {
+      // The share sheet closing counts as a cancel, not a failure.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSharedUrl(null);
+      setShareFailedUrl(url);
     }
   }
 
@@ -127,11 +159,23 @@ export function RoomShare({
           </p>
         )}
 
+        {shareFailed && (
+          <p role="alert" className="text-sm text-destructive">
+            Não foi possível compartilhar.
+          </p>
+        )}
+
         {copyFailed && (
           <p role="alert" className="text-sm text-destructive">
             Não foi possível copiar. Tente novamente.
           </p>
         )}
+        <RoomActivity
+          activity={latestActivity}
+          participants={participants}
+          items={items}
+          connected={connected}
+        />
 
         {/* Full-width actions stack in reading order; the shared footer's row
             layout would push them past the popup edge on a wide screen. */}
@@ -145,6 +189,17 @@ export function RoomShare({
             {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             {copied ? "Link copiado" : "Copiar link"}
           </Button>
+          {canShare && (
+            <Button
+              type="button"
+              className="min-h-11 w-full"
+              disabled={!url || rotating}
+              onClick={handleShare}
+            >
+              {sharedUrl === url ? <Check className="size-4" /> : <Share2 className="size-4" />}
+              Compartilhar
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
