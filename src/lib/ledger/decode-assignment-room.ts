@@ -3,14 +3,16 @@ import type {
   AssignmentBillBreakdown,
   AssignmentGroupTarget,
   AssignmentRoomClaim,
+  AssignmentRoomCompletion,
+  AssignmentRoomCompletionAction,
   AssignmentRoomItem,
   AssignmentRoomParticipant,
   AssignmentRoomSnapshot,
   AssignmentRoomView,
 } from "@/types/assignment-room";
 import type {
-  ExpenseDetail,
   MutationAck,
+  ExpenseDetail,
   ParticipantRef,
   WireIssue,
 } from "@/types/ledger";
@@ -406,6 +408,67 @@ export function decodeFinalizeAssignmentRoomResult(
   if (!room.ok) return room;
   const ack = decodeMutationAck(raw.ack, [...path, "ack"]);
   return ack.ok ? ok({ room: room.value, ack: ack.value }) : ack;
+}
+
+function decodeAssignmentRoomCompletionAction(
+  raw: unknown,
+  path: Path,
+): ValidationResult<AssignmentRoomCompletionAction, WireIssue> {
+  if (!isRecord(raw) || typeof raw.kind !== "string") return fail(path);
+  if (raw.kind === "view_expense" || raw.kind === "accept_invitation") {
+    const keys = exactKeys(raw, ["kind", "expenseId", "groupId"], path);
+    if (!keys.ok) return keys;
+    const expenseId = id(raw.expenseId, [...path, "expenseId"]);
+    if (!expenseId.ok) return expenseId;
+    const groupId = id(raw.groupId, [...path, "groupId"]);
+    if (!groupId.ok) return groupId;
+    return raw.kind === "view_expense"
+      ? ok({ kind: "view_expense", expenseId: expenseId.value, groupId: groupId.value })
+      : ok({ kind: "accept_invitation", expenseId: expenseId.value, groupId: groupId.value });
+  }
+  if (
+    raw.kind === "claim_guest" ||
+    raw.kind === "sign_in" ||
+    raw.kind === "unavailable"
+  ) {
+    const keys = exactKeys(raw, ["kind"], path);
+    if (!keys.ok) return keys;
+    return ok({ kind: raw.kind });
+  }
+  return fail([...path, "kind"]);
+}
+
+export function decodeAssignmentRoomCompletion(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<AssignmentRoomCompletion, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["roomId", "bill", "selfParticipantIndex", "action"], path);
+  if (!keys.ok) return keys;
+  const roomId = id(raw.roomId, [...path, "roomId"]);
+  if (!roomId.ok) return roomId;
+  const bill = decodeBill(raw.bill, [...path, "bill"]);
+  if (!bill.ok) return bill;
+  const selfParticipantIndex =
+    raw.selfParticipantIndex === null
+      ? ok(null)
+      : int(raw.selfParticipantIndex, [...path, "selfParticipantIndex"]);
+  if (!selfParticipantIndex.ok) return selfParticipantIndex;
+  const action = decodeAssignmentRoomCompletionAction(raw.action, [...path, "action"]);
+  if (!action.ok) return action;
+  return ok({
+    roomId: roomId.value,
+    bill: bill.value,
+    selfParticipantIndex: selfParticipantIndex.value,
+    action: action.value,
+  });
+}
+
+export function decodeAssignmentRoomGuestClaimResult(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<MutationAck, WireIssue> {
+  return decodeMutationAck(raw, path);
 }
 
 export function decodeExpenseContext(

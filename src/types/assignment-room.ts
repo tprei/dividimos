@@ -23,6 +23,24 @@ import type {
 
 export type AssignmentRoomStatus = "open" | "closed" | "finalized" | "cancelled";
 
+export type AssignmentRoomActivity =
+  { revision: number; observedAt: number } &
+  (
+    | { kind: "joined"; participantIds: string[]; burstStartedAt: number }
+    | {
+        kind: "claims";
+        changes: Array<{
+          itemId: string;
+          participantId: string;
+          beforeTicks: number;
+          afterTicks: number;
+        }>;
+      }
+    | { kind: "removed"; participantIds: string[] }
+    | { kind: "status"; status: AssignmentRoomStatus }
+    | { kind: "updated" }
+  );
+
 export type AssignmentGroupTarget =
   | { kind: "existing"; groupId: string }
   | { kind: "new"; name: string };
@@ -76,6 +94,20 @@ export interface AssignmentBillBreakdown {
   totalCents: number;
   serviceFeeBasisPoints: number;
   fixedFeeCents: number;
+}
+
+export type AssignmentRoomCompletionAction =
+  | { kind: "view_expense"; expenseId: string; groupId: string }
+  | { kind: "accept_invitation"; expenseId: string; groupId: string }
+  | { kind: "claim_guest" }
+  | { kind: "sign_in" }
+  | { kind: "unavailable" };
+
+export interface AssignmentRoomCompletion {
+  roomId: string;
+  bill: AssignmentBillBreakdown;
+  selfParticipantIndex: number | null;
+  action: AssignmentRoomCompletionAction;
 }
 
 /**
