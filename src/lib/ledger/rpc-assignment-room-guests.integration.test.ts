@@ -4,6 +4,7 @@ import type { Database, Json } from "@/types/database";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
+  createGroupWithMembers,
   createTestUsers,
   expectRpcError,
   withPg,
@@ -30,6 +31,7 @@ interface RoomView {
       id: string;
       ordinal: number;
       displayName: string;
+      isGuest: boolean;
       removed: boolean;
     }>;
   };
@@ -213,7 +215,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(created.room.topic).toBe(retry.room.topic);
     });
 
-    it("binds signed-in users only to their own preseeded row", async () => {
+    it("keeps a preseeded account on its own row and admits a new account holder", async () => {
       const selectedId = crypto.randomUUID();
       const args = createArgs(host, [
         { id: selectedId, displayName: selected.name, userId: selected.id },
@@ -229,22 +231,207 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       expect(view.room.selfParticipantId).toBe(selectedId);
 
-      expect(
-        await expectRpcError(
-          outsiderClient.rpc("join_assignment_room", {
-            p_room_id: args.p_room_id,
-            p_join_token: args.p_join_token,
-            p_member_token: memberToken("G"),
-            p_display_name: selected.name,
-          })
-        )
-      ).toContain("invalid_token");
+      // The invitation is the authorization. A display name in the request
+      // cannot impersonate anyone: the profile name wins.
+      const joined = await joinRoom(
+        outsiderClient,
+        args.p_room_id,
+        args.p_join_token,
+        memberToken("G"),
+        selected.name
+      );
+      expect(joined.role).toBe("participant");
+      expect(joined).not.toHaveProperty("groupTarget");
+      expect(joined).not.toHaveProperty("participantRefs");
+      expect(joined.room.selfParticipantId).not.toBe(selectedId);
+      const admitted = joined.room.participants.find(
+        (p) => p.id === joined.room.selfParticipantId
+      );
+      expect(admitted?.displayName).toBe(outsider.name);
+      expect(admitted?.isGuest).toBe(false);
+
+      const retry = await joinRoom(
+        outsiderClient,
+        args.p_room_id,
+        args.p_join_token,
+        memberToken("G"),
+        "Outro nome"
+      );
+      expect(retry.room.selfParticipantId).toBe(joined.room.selfParticipantId);
+      expect(retry.room.participants).toHaveLength(3);
 
       const hostView = await rpc<RoomView>(hostClient, "get_assignment_room", {
         p_room_id: args.p_room_id,
         p_member_token: null,
       });
       expect(hostView.role).toBe("host");
+      expect(
+        hostView.room.participants.filter((p) => !p.removed)
+      ).toHaveLength(3);
+    });
+
+    it("refuses a removed account and an account excluded from the group", async () => {
+      const args = createArgs(host);
+      const created = await createRoom(hostClient, args);
+      const joined = await joinRoom(
+        selectedClient,
+        args.p_room_id,
+        args.p_join_token,
+        memberToken("a"),
+        ""
+      );
+      await rpc<RoomView>(hostClient, "remove_assignment_room_participant", {
+        p_room_id: args.p_room_id,
+        p_participant_id: joined.room.selfParticipantId,
+        p_expected_revision: created.room.revision + 1,
+        p_join_token: joinToken("N"),
+      });
+
+      expect(
+        await expectRpcError(
+          selectedClient.rpc("join_assignment_room", {
+            p_room_id: args.p_room_id,
+            p_join_token: joinToken("N"),
+            p_member_token: memberToken("b"),
+            p_display_name: "",
+          })
+        )
+      ).toContain("invalid_token");
+
+      const groupId = await createGroupWithMembers(
+        host,
+        [outsider],
+        "Grupo com exclusao"
+      );
+      await rpc<unknown>(hostClient, "remove_member", {
+        p_group_id: groupId,
+        p_user_id: outsider.id,
+      });
+      const excludedRoom: CreateArgs = {
+        ...createArgs(host),
+        p_group_target: { kind: "existing", groupId },
+      };
+      await createRoom(hostClient, excludedRoom);
+      expect(
+        await expectRpcError(
+          outsiderClient.rpc("join_assignment_room", {
+            p_room_id: excludedRoom.p_room_id,
+            p_join_token: excludedRoom.p_join_token,
+            p_member_token: memberToken("c"),
+            p_display_name: "",
+          })
+        )
+      ).toContain("member_excluded");
+      const stillAlone = await rpc<RoomView>(
+        hostClient,
+        "get_assignment_room",
+        { p_room_id: excludedRoom.p_room_id, p_member_token: null }
+      );
+      expect(stillAlone.room.participants).toHaveLength(1);
+    });
+
+    it("never reuses the ordinal of a removed participant", async () => {
+      const args = createArgs(host);
+      const created = await createRoom(hostClient, args);
+      const guest = await joinRoom(
+        anonClient,
+        args.p_room_id,
+        args.p_join_token,
+        memberToken("d"),
+        "Bia"
+      );
+      expect(
+        guest.room.participants.find(
+          (p) => p.id === guest.room.selfParticipantId
+        )?.ordinal
+      ).toBe(1);
+
+      await rpc<RoomView>(hostClient, "remove_assignment_room_participant", {
+        p_room_id: args.p_room_id,
+        p_participant_id: guest.room.selfParticipantId,
+        p_expected_revision: created.room.revision + 1,
+        p_join_token: joinToken("R"),
+      });
+
+      const replacement = await joinRoom(
+        anonClient,
+        args.p_room_id,
+        joinToken("R"),
+        memberToken("e"),
+        "Caio"
+      );
+      const account = await joinRoom(
+        selectedClient,
+        args.p_room_id,
+        joinToken("R"),
+        memberToken("f"),
+        ""
+      );
+      const ordinals = account.room.participants.map((p) => p.ordinal);
+      expect(new Set(ordinals).size).toBe(ordinals.length);
+      expect(
+        replacement.room.participants.find(
+          (p) => p.id === replacement.room.selfParticipantId
+        )?.ordinal
+      ).toBe(2);
+      expect(
+        account.room.participants.find(
+          (p) => p.id === account.room.selfParticipantId
+        )?.ordinal
+      ).toBe(3);
+      expect(
+        account.room.participants.filter((p) => !p.removed)
+      ).toHaveLength(3);
+    });
+
+    it("keeps one active row when the same account joins twice at once", async () => {
+      const args = createArgs(host);
+      await createRoom(hostClient, args);
+      const [first, second] = await Promise.all([
+        selectedClient.rpc("join_assignment_room", {
+          p_room_id: args.p_room_id,
+          p_join_token: args.p_join_token,
+          p_member_token: memberToken("g"),
+          p_display_name: "",
+        }),
+        selectedClient.rpc("join_assignment_room", {
+          p_room_id: args.p_room_id,
+          p_join_token: args.p_join_token,
+          p_member_token: memberToken("h"),
+          p_display_name: "",
+        }),
+      ]);
+      const succeeded = [first, second].filter((result) => !result.error);
+      expect(succeeded.length).toBeGreaterThan(0);
+
+      const rows = await withPg(async (db) => {
+        const result = await db.query<{ count: number }>(
+          "select count(*)::int as count from public.assignment_room_participants where room_id = $1 and user_id = $2 and removed_at is null",
+          [args.p_room_id, selected.id]
+        );
+        return result.rows[0].count;
+      });
+      expect(rows).toBe(1);
+    });
+
+    it("applies the fifty-participant cap to account joins too", async () => {
+      const slots = Array.from({ length: 49 }, (_, index) => ({
+        id: crypto.randomUUID(),
+        displayName: `Convidado ${index}`,
+        userId: null,
+      }));
+      const args = createArgs(host, slots);
+      await createRoom(hostClient, args);
+      expect(
+        await expectRpcError(
+          selectedClient.rpc("join_assignment_room", {
+            p_room_id: args.p_room_id,
+            p_join_token: args.p_join_token,
+            p_member_token: memberToken("i"),
+            p_display_name: "",
+          })
+        )
+      ).toContain("too_many_participants");
     });
 
     it("keeps capabilities room-bound and rejects expired access opaquely", async () => {
