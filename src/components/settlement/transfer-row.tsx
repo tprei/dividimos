@@ -45,24 +45,25 @@ export function TransferRow({
   const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(transfer.amountCents)} para ${to.name}`;
   const content = (
     <>
-      <span className="flex shrink-0 items-center gap-1">
-        {from.isGuest ? (
-          <GuestAvatar size="xs" />
-        ) : (
-          <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="xs" />
-        )}
-        <ArrowRight className="size-3 text-muted-foreground" />
-        {to.isGuest ? (
-          <GuestAvatar size="xs" />
-        ) : (
-          <UserAvatar name={to.name} avatarUrl={to.avatarUrl} size="xs" />
-        )}
-      </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-start gap-1.5">
-          <PersonLabel name={from.name} handle={from.handle} nameClassName="text-[15px]" />
-          <ArrowRight className="mt-1 size-3 shrink-0 text-muted-foreground" />
-          <PersonLabel name={to.name} handle={to.handle} nameClassName="text-[15px]" />
+        <span className="flex min-w-0 items-center gap-1.5">
+          {from.isGuest ? (
+            <GuestAvatar size="xs" />
+          ) : (
+            <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="xs" />
+          )}
+          <PersonLabel name={from.name} handle={from.handle} nameClassName="min-w-0 text-[15px]" />
+        </span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {to.isGuest ? (
+            <GuestAvatar size="xs" />
+          ) : (
+            <UserAvatar name={to.name} avatarUrl={to.avatarUrl} size="xs" />
+          )}
+          <PersonLabel name={to.name} handle={to.handle} nameClassName="min-w-0 text-[15px]" />
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
           {(from.isGuest || to.isGuest) && <GuestBadge />}
           {(from.isPending || to.isPending) && (
             <Badge variant="secondary" className="shrink-0">
@@ -74,13 +75,13 @@ export function TransferRow({
       </span>
       <Money
         cents={transfer.amountCents}
-        className={cn("shrink-0 text-sm font-semibold", iPay && "text-destructive")}
+        className={cn("mt-1 shrink-0 self-start text-sm font-semibold", iPay && "text-destructive")}
       />
-      {actionable && <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+      {actionable && <ChevronRight className="mt-1 size-4 shrink-0 self-start text-muted-foreground" aria-hidden="true" />}
     </>
   );
   const rowClass = cn(
-    "flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left",
+    "flex min-h-14 w-full items-start gap-3 px-4 py-2 text-left",
     highlighted && "bg-primary/5",
   );
   if (!actionable) {

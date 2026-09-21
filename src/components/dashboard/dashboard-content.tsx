@@ -272,6 +272,17 @@ export function DashboardContent() {
         </div>
         <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
             <Link
+              href="/app/scan-invite"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "min-h-11 justify-start px-3 text-xs",
+                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
+              )}
+            >
+              <QrCode className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              Entrar por QR code
+            </Link>
+            <Link
               href="/app/bill/new?scan=true"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
@@ -319,13 +330,6 @@ export function DashboardContent() {
               >
                 <Plus className="size-4" />
                 Nova conta
-              </Link>
-              <Link
-                href="/app/scan-invite"
-                className={cn(buttonVariants({ variant: "outline" }), "min-h-11 rounded-lg gap-2 font-medium")}
-              >
-                <QrCode className="size-4" />
-                Ler convite
               </Link>
             </div>
           </div>
