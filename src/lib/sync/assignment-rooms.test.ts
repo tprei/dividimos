@@ -16,11 +16,13 @@ vi.mock("./refresh", () => ({ refreshGroup: mocks.refreshGroup }));
 
 import {
   cancelAssignmentRoom,
+  claimAssignmentRoomGuest,
   clearAssignmentRoomAccess,
   finalizeAssignmentRoom,
   getAssignmentRoomJoinToken,
   getAssignmentRoomMemberToken,
   joinAssignmentRoom,
+  refreshAssignmentRoomCompletion,
   resetAssignmentRoomRuntime,
   rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
@@ -347,5 +349,68 @@ describe("assignment room sync", () => {
     await expect(rotateAssignmentRoomJoin(ROOM_ID)).rejects.toMatchObject({ code: "not_a_member" });
 
     expect(getAssignmentRoomJoinToken(ROOM_ID)).toBe(oldJoinToken);
+  });
+  it("reads finalized completion with the stored member capability", async () => {
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ memberToken: `armm1_${"F".repeat(43)}` }),
+    );
+    const completion = {
+      roomId: ROOM_ID,
+      bill: {
+        status: "active",
+        versionNo: 1,
+        title: "Almoço",
+        occurredOn: "2026-09-19",
+        items: [],
+        itemAssignments: null,
+        participants: [],
+        shares: [],
+        payers: [],
+        totalCents: 0,
+        serviceFeeBasisPoints: 0,
+        fixedFeeCents: 0,
+      },
+      selfParticipantIndex: null,
+      action: { kind: "sign_in" },
+    } as const;
+    mocks.rpc.mockImplementation(async (name, args, decode) => {
+      expect(name).toBe("get_assignment_room_completion");
+      expect(args).toEqual({
+        p_room_id: ROOM_ID,
+        p_member_token: `armm1_${"F".repeat(43)}`,
+      });
+      return decodeThrough(completion)(name, args, decode);
+    });
+
+    await expect(refreshAssignmentRoomCompletion(ROOM_ID)).resolves.toEqual(completion);
+  });
+
+  it("refreshes room and group state after claiming a room guest", async () => {
+    const memberToken = `armm1_${"G".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ memberToken }),
+    );
+    const ack = {
+      groupId: "00000000-0000-4000-8000-000000000004",
+      expenseId: "00000000-0000-4000-8000-000000000005",
+      ledgerVersion: 4,
+      eventId: 8,
+    };
+    mocks.rpc
+      .mockImplementationOnce(async (name, args, decode) => {
+        expect(name).toBe("claim_assignment_room_guest");
+        expect(args).toEqual({ p_room_id: ROOM_ID, p_member_token: memberToken });
+        return decodeThrough(ack)(name, args, decode);
+      })
+      .mockImplementationOnce(decodeThrough(view(3)));
+
+    await expect(claimAssignmentRoomGuest(ROOM_ID)).resolves.toEqual(ack);
+    expect(mocks.refreshGroup).toHaveBeenCalledWith(ack.groupId);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "claim_assignment_room_guest",
+      "get_assignment_room",
+    ]);
   });
 });

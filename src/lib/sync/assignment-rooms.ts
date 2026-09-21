@@ -1,5 +1,6 @@
 import type {
   AssignmentGroupTarget,
+  AssignmentRoomCompletion,
   AssignmentRoomView,
   SetAssignmentClaimInput,
 } from "@/types/assignment-room";
@@ -9,6 +10,8 @@ import type {
   MutationAck,
 } from "@/types/ledger";
 import {
+  decodeAssignmentRoomCompletion,
+  decodeAssignmentRoomGuestClaimResult,
   decodeAssignmentRoomView,
   decodeFinalizeAssignmentRoomResult,
 } from "@/lib/ledger/decode-assignment-room";
@@ -373,7 +376,34 @@ export function refreshAssignmentRoomMember(roomId: string): Promise<AssignmentR
   if (!readCredentials(roomId).memberToken) {
     return Promise.reject(new LedgerError("invalid_token"));
   }
+
   return readRoom(roomId, true);
+}
+export async function refreshAssignmentRoomCompletion(
+  roomId: string,
+): Promise<AssignmentRoomCompletion> {
+  const memberToken = readCredentials(roomId).memberToken ?? null;
+  const completion = await rpc(
+    "get_assignment_room_completion",
+    { p_room_id: roomId, p_member_token: memberToken as string },
+    decodeAssignmentRoomCompletion,
+  );
+  return completion;
+}
+
+export async function claimAssignmentRoomGuest(roomId: string): Promise<MutationAck> {
+  const memberToken = readCredentials(roomId).memberToken;
+  if (!memberToken) throw new LedgerError("invalid_token");
+  const authGeneration = getAuthGeneration();
+  const ack = await rpc(
+    "claim_assignment_room_guest",
+    { p_room_id: roomId, p_member_token: memberToken },
+    decodeAssignmentRoomGuestClaimResult,
+  );
+  if (getAuthGeneration() === authGeneration) {
+    await Promise.all([refreshGroup(ack.groupId), refreshAssignmentRoom(roomId)]);
+  }
+  return ack;
 }
 
 export async function setAssignmentRoomClaim(
