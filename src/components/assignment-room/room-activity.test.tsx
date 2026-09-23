@@ -37,6 +37,23 @@ function activity(value: AssignmentRoomActivity): ReactElement {
 }
 
 describe("RoomActivity", () => {
+  it("distinguishes additions, reductions, undo, and multi-person changes in the guest ticker", () => {
+    const change = { itemId: "item-1", participantId: "a", beforeTicks: 0, afterTicks: 60_000 };
+    const show = (changes: typeof change[]) => (
+      <RoomActivity variant="ticker" activity={{ kind: "claims", changes, revision: 2, observedAt: 1 }} participants={participants} items={items} connected />
+    );
+    const { container, rerender } = render(show([change]));
+    expect(container).toHaveTextContent("Ana pegou Batata · metade");
+    expect(screen.queryByLabelText("Conectado")).not.toBeInTheDocument();
+    rerender(show([{ ...change, beforeTicks: 120_000 }]));
+    expect(container).toHaveTextContent("Ana mudou Batata · metade");
+    rerender(show([{ ...change, beforeTicks: 60_000, afterTicks: 0 }]));
+    expect(container).toHaveTextContent("Ana desfez Batata");
+    expect(container).not.toHaveTextContent("metade");
+    rerender(show([change, { ...change, participantId: "b" }]));
+    expect(container).toHaveTextContent("2 escolhas mudaram");
+  });
+
   it("summarizes one, two, and larger join bursts", () => {
     const { rerender } = render(
       activity({ kind: "joined", participantIds: ["a"], burstStartedAt: 1, revision: 2, observedAt: 1 }),

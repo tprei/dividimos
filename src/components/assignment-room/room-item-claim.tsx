@@ -15,6 +15,7 @@ import {
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import {
   claimOptionsFor,
+  claimQuantityLabel,
   formatRoomTicks,
 } from "@/lib/assignment-room-quantity";
 import { cn } from "@/lib/utils";
@@ -225,17 +226,9 @@ export function RoomItemClaim({
       ? Math.floor(draftTicks / UNIT_TICKS)
       : 1;
   const removing = draftTicks === 0 && savedTicks > 0;
-  const selectedFraction =
-    draftTicks !== null && claimOptions.kind === "fractions"
-      ? claimOptions.options.find((option) => option.ticks === draftTicks)
-      : null;
-  const actionQuantityLabel = selectedFraction
-    ? selectedFraction.label.startsWith("O resto")
-      ? "o resto"
-      : selectedFraction.label.toLocaleLowerCase("pt-BR")
-    : draftTicks === null
-      ? null
-      : formatRoomTicks(draftTicks);
+  const actionQuantityLabel = draftTicks === null
+    ? null
+    : claimQuantityLabel(item.quantityMilliunits, draftTicks);
 
   return (
     <Dialog

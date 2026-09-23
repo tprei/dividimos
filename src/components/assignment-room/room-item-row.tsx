@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ChevronDown, ChevronRight, Loader2, Undo2 } from "lucide-react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { formatRoomTicks } from "@/lib/assignment-room-quantity";
+import { claimQuantityLabel, formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import type {
   AssignmentRoomClaim,
@@ -25,6 +26,8 @@ interface RoomItemRowProps {
   expanded?: boolean;
   onOpen: (trigger: HTMLButtonElement, participantId?: string) => void;
   onToggleDetails?: () => void;
+  money?: { lineCents: number; unitCents: number; ownCents: number };
+  onUndo?: () => void;
 }
 
 export function RoomItemRow({
@@ -39,7 +42,10 @@ export function RoomItemRow({
   expanded = false,
   onOpen,
   onToggleDetails,
+  money,
+  onUndo,
 }: RoomItemRowProps) {
+  const reducedMotion = useReducedMotion();
   const capacityTicks = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
   const original = formatRoomTicks(capacityTicks);
   const visibleOwners = owners.slice(0, VISIBLE_OWNERS);
@@ -53,6 +59,65 @@ export function RoomItemRow({
       ? `. Com ${owners.map((owner) => owner.displayName).join(", ")}`
       : "";
   const taken = availableTicks === 0;
+  const ownLabel = claimQuantityLabel(item.quantityMilliunits, ownTicks);
+  const multiUnit = item.quantityMilliunits >= 2_000;
+
+  if (mode !== "host") {
+    return (
+      <motion.li
+        data-item-id={item.id}
+        initial={false}
+        exit={reducedMotion ? undefined : { height: 0, opacity: 0 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="overflow-hidden"
+      >
+        <div className="flex min-h-14 items-center">
+          <button
+            type="button"
+            disabled={disabled || pending}
+            aria-label={action}
+            onClick={(event) => onOpen(event.currentTarget)}
+            className="flex min-h-14 min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:pointer-events-none"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] leading-5 font-semibold wrap-anywhere">{item.description}</span>
+              {mode === "available" && (
+                <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                  {multiUnit ? (
+                    <>Restam {formatRoomTicks(availableTicks)} de {original}{money && <> · <Money cents={money.unitCents} />/un</>}</>
+                  ) : availableTicks === capacityTicks ? "Inteira" : (
+                    <>Falta {claimQuantityLabel(item.quantityMilliunits, availableTicks)}</>
+                  )}
+                </span>
+              )}
+              {pending && <span role="status" className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 aria-hidden="true" className="size-3 motion-safe:animate-spin" />Salvando...</span>}
+            </span>
+            {mode === "mine" ? (
+              <>
+                <span className="shrink-0 text-xs text-muted-foreground">{ownLabel}{multiUnit ? ` de ${original}` : ""}</span>
+                {money && <Money cents={money.ownCents} className="shrink-0 text-sm font-medium tabular-nums" />}
+              </>
+            ) : (
+              <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 max-[380px]:max-w-32">
+                {visibleOwners.length > 0 && (
+                  <span aria-hidden="true" className="flex shrink-0 items-center py-0.5 pl-0.5">
+                    {visibleOwners.map((owner) => <UserAvatar key={owner.id} name={owner.displayName} avatarUrl={owner.avatarUrl} size="xs" className="-ml-1 shrink-0 ring-2 ring-card first:ml-0" />)}
+                  </span>
+                )}
+                {ownTicks > 0 && <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-primary-foreground">Você: {ownLabel}</span>}
+                {money && <Money cents={money.lineCents} className="text-sm font-medium tabular-nums" />}
+              </span>
+            )}
+          </button>
+          {mode === "mine" && onUndo && (
+            <button type="button" disabled={disabled || pending} onClick={onUndo} aria-label={`Desfazer ${item.description}`} className="mr-1 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40">
+              <Undo2 className="size-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </motion.li>
+    );
+  }
 
   return (
     <li data-item-id={item.id}>
@@ -69,13 +134,9 @@ export function RoomItemRow({
               {item.description}
             </span>
             <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
-              {mode === "mine"
-                ? `Você: ${formatRoomTicks(ownTicks)} un. · toque para editar`
-                : taken
-                  ? "Tudo escolhido"
-                  : `Restam ${formatRoomTicks(availableTicks)} de ${original} un.`}
+              {taken ? "Tudo escolhido" : `Restam ${formatRoomTicks(availableTicks)} de ${original} un.`}
             </span>
-            {mode !== "mine" && ownTicks > 0 && (
+            {ownTicks > 0 && (
               <span className="mt-1 inline-flex rounded-full bg-primary/15 px-2 text-[11px] font-semibold text-primary-text">
                 Você: {formatRoomTicks(ownTicks)} un.
               </span>
@@ -88,12 +149,8 @@ export function RoomItemRow({
             )}
           </span>
           <span className="flex shrink-0 flex-col items-end gap-1">
-            {mode !== "mine" ? (
-              <Money cents={item.totalPriceCents} className="text-sm font-semibold tabular-nums" />
-            ) : (
-              <span className="text-xs font-medium text-muted-foreground">{formatRoomTicks(ownTicks)} un.</span>
-            )}
-          {mode !== "mine" && owners.length > 0 && (
+            <Money cents={item.totalPriceCents} className="text-sm font-semibold tabular-nums" />
+          {owners.length > 0 && (
             <span aria-hidden="true" className="flex shrink-0 items-center">
               {visibleOwners.map((owner) => (
                 <UserAvatar

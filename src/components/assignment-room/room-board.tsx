@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { ReceiptText } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { RoomActivity } from "@/components/assignment-room/room-activity";
@@ -12,10 +13,11 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
-import { previewClaimCents } from "@/lib/assignment-room-projection";
+import { previewClaimCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
 import { cn } from "@/lib/utils";
 import type {
   AssignmentRoomActivity,
+  AssignmentRoomItem,
   AssignmentRoomParticipant,
   AssignmentRoomView,
 } from "@/types/assignment-room";
@@ -73,6 +75,20 @@ export function RoomBoard({
   onCreateBill,
 }: RoomBoardProps) {
 
+  const projection = view.role === "participant" ? projectAssignmentRoomMoney(view.room) : null;
+  const guestMoney = projection?.ok ? projection.value : null;
+  const selfMoney = guestMoney?.byParticipant[view.room.selfParticipantId] ?? null;
+  const rowMoney = (item: AssignmentRoomItem) =>
+    guestMoney
+      ? {
+          lineCents: item.totalPriceCents,
+          unitCents: item.unitPriceCents,
+          ownCents:
+            guestMoney.byItem[item.id]?.claims.find(
+              (claim) => claim.participantId === view.room.selfParticipantId,
+            )?.amountCents ?? 0,
+        }
+      : undefined;
   const activeParticipants = useMemo(
     () => view.room.participants.filter((participant) => !participant.removed),
     [view.room.participants],
@@ -87,7 +103,9 @@ export function RoomBoard({
       .sort((left, right) => left.ordinal - right.ordinal)
       .map((item) => {
         const capacityTicks = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
-        const itemClaims = view.room.claims.filter((claim) => claim.itemId === item.id);
+        const itemClaims = view.room.claims.filter((claim) =>
+          claim.itemId === item.id && (view.role === "host" || participantById.get(claim.participantId)?.removed === false),
+        );
         const totalClaimedTicks = itemClaims.reduce((sum, claim) => sum + claim.ticks, 0);
         const ownClaimedTicks =
           itemClaims.find((claim) => claim.participantId === selfParticipantId)?.ticks ?? 0;
@@ -104,7 +122,7 @@ export function RoomBoard({
           owners,
         };
       });
-  }, [participantById, selfParticipantId, view.room.claims, view.room.items]);
+  }, [participantById, selfParticipantId, view.role, view.room.claims, view.room.items]);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [targetParticipantId, setTargetParticipantId] = useState(selfParticipantId);
@@ -175,11 +193,11 @@ export function RoomBoard({
   }
 
   return (
-    <div className="min-h-full bg-background [&>header]:mx-auto [&>header]:max-w-lg [&>header_h1]:whitespace-normal">
+    <div className={cn("min-h-full bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg [&>header_h1]:whitespace-normal", view.role === "participant" && "flex flex-col")}>
       <ScreenHeader
         title={view.role === "host" ? view.room.title : "O que você consumiu?"}
-        eyebrow={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "de divisão"} · ${activeParticipants.length} ${activeParticipants.length === 1 ? "pessoa" : "pessoas"}` : view.room.title}
-        back
+        eyebrow={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "de divisão"} · ${activeParticipants.length} ${activeParticipants.length === 1 ? "pessoa" : "pessoas"}` : `${view.room.title} · ${activeParticipants.length} na sala`}
+        back={view.role === "host"}
         onBack={onBack}
         action={
           inviteVisible ? (
@@ -199,10 +217,10 @@ export function RoomBoard({
           ) : undefined
         }
       />
-      <main className="mx-auto w-full max-w-lg space-y-5 px-4 pt-1 pb-8">
+      <main className={cn("mx-auto w-full max-w-lg space-y-5 px-4 pt-1 pb-8", view.role === "participant" && "flex-1")}>
         {!connected && !accessRemoved && view.room.status !== "cancelled" && (
           <p role="status" className="rounded-xl border bg-muted px-4 py-3 text-sm">
-            Reconectando. As escolhas ficam bloqueadas até os dados atuais chegarem.
+            {view.role === "host" ? "Reconectando. As escolhas ficam bloqueadas até os dados atuais chegarem." : "Reconectando…"}
           </p>
         )}
 
@@ -230,13 +248,11 @@ export function RoomBoard({
           </section>
         )}
 
-        {view.room.status === "closed" && (
+        {view.room.status === "closed" && view.role === "host" && (
           <section className="rounded-2xl border bg-card p-4">
             <h2 className="font-heading font-semibold">Aguardando confirmação</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {view.role === "host"
-                ? "Revise as escolhas antes de registrar a conta. Você ainda pode corrigir quantidades."
-                : "O anfitrião está revisando as escolhas. A conta ainda não foi registrada."}
+              Revise as escolhas antes de registrar a conta. Você ainda pode corrigir quantidades.
             </p>
           </section>
         )}
@@ -335,16 +351,21 @@ export function RoomBoard({
               )}
             </section>
 
-            <RoomActivity
-              activity={activity}
-              participants={view.room.participants}
-              items={view.room.items}
-              connected={connected}
-              live={!inviteOpen}
-            />
+            {view.role === "participant" && view.room.status === "closed" ? (
+              <p role="status" className="flex min-h-11 items-center rounded-xl bg-muted px-3 text-sm text-muted-foreground">Aguardando confirmação</p>
+            ) : (
+              <RoomActivity
+                activity={activity}
+                participants={view.room.participants}
+                items={view.room.items}
+                connected={connected}
+                live={!inviteOpen}
+                variant={view.role === "participant" ? "ticker" : "default"}
+              />
+            )}
 
 
-            {itemRows.length === 0 ? (
+            {itemRows.length === 0 && view.role === "host" ? (
               <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Esta sala não tem itens.</p>
             ) : view.role === "host" ? (
               <section className="space-y-2" aria-labelledby="room-items-heading">
@@ -373,13 +394,13 @@ export function RoomBoard({
               </section>
             ) : (
               <>
-                {availableRows.length > 0 ? (
-                  <section className="space-y-2" aria-labelledby="room-available-heading">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h2 id="room-available-heading" ref={availableHeadingRef} tabIndex={-1} className="text-sm font-semibold">Ainda sem dono</h2>
-                      <span className="text-xs text-muted-foreground">{availableRows.length} itens</span>
-                    </div>
-                    <ul className="overflow-hidden divide-y rounded-2xl border bg-card">
+                <section className="space-y-2" aria-labelledby="room-available-heading">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h2 id="room-available-heading" ref={availableHeadingRef} tabIndex={-1} className="text-sm font-semibold">Ainda sem dono</h2>
+                    <span className="text-xs text-muted-foreground">{availableRows.length} itens</span>
+                  </div>
+                  <ul className={cn("overflow-hidden divide-y rounded-2xl bg-card", availableRows.length > 0 && "border")}>
+                    <AnimatePresence initial={false}>
                       {availableRows.map((row) => (
                         <RoomItemRow
                           key={row.item.id}
@@ -387,46 +408,49 @@ export function RoomBoard({
                           availableTicks={row.availableTicks}
                           ownTicks={row.ownClaimedTicks}
                           owners={row.owners}
-                          claims={row.claims}
-                          expanded={expandedItemIds.has(row.item.id)}
-                          onToggleDetails={() => toggleDetails(row.item.id)}
                           pending={pendingItemIds.includes(row.item.id)}
                           disabled={!roomEditable}
                           mode="available"
-                          onOpen={(trigger, participantId) => openItemEditor(row.item.id, trigger, participantId)}
+                          money={rowMoney(row.item)}
+                          onOpen={(trigger) => openItemEditor(row.item.id, trigger)}
                         />
                       ))}
-                    </ul>
-                  </section>
-                ) : (
-                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Todos os itens já foram escolhidos.</p>
-                )}
+                    </AnimatePresence>
+                  </ul>
+                  {availableRows.length === 0 && <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Tudo com dono</p>}
+                </section>
 
-                {mineRows.length > 0 ? (
-                  <section className="space-y-2" aria-labelledby="room-mine-heading">
+                <section className="space-y-2" aria-labelledby="room-mine-heading">
+                  <div className="flex items-baseline justify-between gap-3">
                     <h2 id="room-mine-heading" ref={personalHeadingRef} tabIndex={-1} className="text-sm font-semibold">Minha parte</h2>
-                    <ul ref={personalListRef} className="overflow-hidden divide-y rounded-2xl border bg-card">
-                      {mineRows.map((row) => (
-                        <RoomItemRow
-                          key={row.item.id}
-                          item={row.item}
-                          availableTicks={row.availableTicks}
-                          ownTicks={row.ownClaimedTicks}
-                          owners={row.owners}
-                          claims={row.claims}
-                          expanded={expandedItemIds.has(row.item.id)}
-                          onToggleDetails={() => toggleDetails(row.item.id)}
-                          pending={pendingItemIds.includes(row.item.id)}
-                          disabled={!roomEditable}
-                          mode="mine"
-                          onOpen={(trigger, participantId) => openItemEditor(row.item.id, trigger, participantId)}
-                        />
-                      ))}
-                    </ul>
-                  </section>
-                ) : (
-                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Você ainda não escolheu nenhum item.</p>
-                )}
+                    {selfMoney && <Money cents={selfMoney.itemsCents} className="text-sm font-semibold tabular-nums" />}
+                  </div>
+                  <ul ref={personalListRef} className="overflow-hidden rounded-2xl border bg-card [&>li+li]:border-t">
+                    {mineRows.map((row) => (
+                      <RoomItemRow
+                        key={row.item.id}
+                        item={row.item}
+                        availableTicks={row.availableTicks}
+                        ownTicks={row.ownClaimedTicks}
+                        owners={row.owners}
+                        pending={pendingItemIds.includes(row.item.id)}
+                        disabled={!roomEditable}
+                        mode="mine"
+                        money={rowMoney(row.item)}
+                        onUndo={() => { void onClaim(row.item.id, selfParticipantId, 0, row.item.revision); }}
+                        onOpen={(trigger) => openItemEditor(row.item.id, trigger)}
+                      />
+                    ))}
+                    {mineRows.length === 0 && <li className="px-4 py-4 text-sm text-muted-foreground">Toque em um item acima pra marcar.</li>}
+                    {selfMoney && selfMoney.serviceFeeCents > 0 && (
+                      <li className="flex min-h-11 items-center justify-between gap-3 border-t border-dashed px-4 py-2 text-xs text-muted-foreground">
+                        <span>+ taxa de serviço {new Intl.NumberFormat("pt-BR").format(view.room.serviceFeeBasisPoints / 100)}%</span>
+                        <Money cents={selfMoney.serviceFeeCents} className="tabular-nums" />
+                      </li>
+                    )}
+                  </ul>
+                  {claimError && !editorOpen && <p role="alert" className="text-sm text-destructive">{claimError.message}</p>}
+                </section>
               </>
             )}
 
@@ -482,6 +506,17 @@ export function RoomBoard({
           </>
         )}
       </main>
+      {view.role === "participant" && !accessRemoved && (view.room.status === "open" || view.room.status === "closed") && (
+        <footer className="sticky bottom-0 z-10 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Sua parte</p>
+              {selfMoney && <Money cents={selfMoney.withFeeCents} className="text-xl font-bold tabular-nums" />}
+            </div>
+            <p className="text-xs text-muted-foreground">{availableRows.length > 0 ? `${availableRows.length} sem dono` : "Tudo com dono"}</p>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }

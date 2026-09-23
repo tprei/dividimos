@@ -493,7 +493,7 @@ test.describe("Assignment room on a phone", () => {
       const toast = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Metade");
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
-          /1 de 1 un\./,
+          "Inteira",
         ),
       ).toBeVisible();
 
@@ -502,7 +502,7 @@ test.describe("Assignment room on a phone", () => {
       await expect(toast).toBeHidden();
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
-          /1 de 1 un\./,
+          "Inteira",
         ),
       ).toBeVisible();
 
@@ -516,7 +516,7 @@ test.describe("Assignment room on a phone", () => {
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
-          /1\/2 de 1 un\./,
+          "Falta metade",
         ),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
 
@@ -539,11 +539,11 @@ test.describe("Assignment room on a phone", () => {
       await release.getByRole("button", { name: /^Tirar · libera/ }).click();
       await expect(release).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
-        row(guestPage, "Minha parte", "Toast Bacon Egg").getByText("Você: 1/2 un."),
+        row(guestPage, "Minha parte", "Toast Bacon Egg").getByText("metade"),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
-          /1\/2 de 1 un\./,
+          "Falta metade",
         ),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
     } finally {

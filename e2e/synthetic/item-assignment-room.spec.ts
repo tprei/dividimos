@@ -234,7 +234,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           async () => {
             await claimQuantity(guestAPage, "Ainda sem dono", "Cervejas", "2");
             await expect(
-              itemCard(guestAPage, "Minha parte", "Cervejas").getByText("Você: 2 un."),
+              itemCard(guestAPage, "Minha parte", "Cervejas").getByText("2 de 3"),
             ).toBeVisible();
           },
           async () => {
@@ -287,7 +287,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         await optionOne.click();
         await petiscoDialog.getByRole("button", { name: /^Peguei / }).click();
         await expect(
-          itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+          itemCard(guestBPage, "Minha parte", "Petisco").getByText("1 de 3"),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
 
         await itemCard(guestBPage, "Minha parte", "Petisco")
@@ -332,12 +332,12 @@ test.describe("Assignment room multi-client acceptance", () => {
       expect(
         await guestBPage.evaluate(() => window.matchMedia("(prefers-color-scheme: dark)").matches),
       ).toBe(true);
-      await guestBPage.getByRole("button", { name: "Voltar" }).click();
+      await guestBPage.goto("/");
       await expect(guestBPage).not.toHaveURL(/\/room\//, { timeout: ROOM_TIMEOUT });
       await guestBPage.goto(new URL(invitation).pathname);
       await waitForRoom(guestBPage);
       await expect(
-        itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+        itemCard(guestBPage, "Minha parte", "Petisco").getByText("1 de 3"),
       ).toBeVisible();
 
       // Caio lines up the last unit while Bia takes it first. Only one claim
@@ -398,7 +398,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await backgroundTab.close();
       await waitForRoom(guestBPage);
       await expect(
-        itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
+        itemCard(guestBPage, "Minha parte", "Petisco").getByText("1 de 3"),
       ).toBeVisible();
 
       await claimQuantity(page, "Itens", "Cervejas", "2");
@@ -414,7 +414,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await guestBBeerDialog.getByRole("button", { name: /^Tirar · libera/ }).click();
       await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
-        itemCard(guestBPage, "Ainda sem dono", "Cervejas").getByText(/1 de 3 un\./),
+        itemCard(guestBPage, "Ainda sem dono", "Cervejas").getByText(/Restam 1 de 3/),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       // The freed unit reaches the host only by sync, and claiming three fails
       // while the host board still shows nothing available.
