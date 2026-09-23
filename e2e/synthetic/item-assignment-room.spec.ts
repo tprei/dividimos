@@ -23,6 +23,12 @@ function itemCard(page: Page, list: RoomList, description: string): Locator {
 }
 
 function rowButton(page: Page, list: RoomList, description: string): Locator {
+  if (list === "Itens") {
+    return itemCard(page, list, description).getByRole("button", {
+      name: description,
+      exact: true,
+    });
+  }
   return itemCard(page, list, description).getByRole("button", {
     name: new RegExp(`(Escolher quantidade de|Editar escolhas de) ${description}`),
   });
@@ -46,11 +52,45 @@ async function claimQuantity(
   description: string,
   quantity: string,
 ): Promise<void> {
+  if (list === "Itens") {
+    const card = itemCard(page, "Itens", description);
+    const toggle = card.getByRole("button", { name: description, exact: true });
+    if ((await toggle.getAttribute("aria-expanded")) === "false") {
+      await toggle.click();
+    }
+    const hostClaim = card
+      .getByRole("button", { name: new RegExp(`^Mudar ${description} de `) })
+      .filter({ hasText: "Você" });
+    if (await hostClaim.isVisible()) {
+      await hostClaim.click();
+    } else {
+      await card
+        .getByRole("button", { name: /^(Atribuir o que sobrou|Atribuir a alguém)$/ })
+        .click();
+    }
+    const dialog = page.getByRole("dialog", { name: description });
+    await expect(dialog.getByRole("radio", { name: "Você" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    const option =
+      quantity === "1"
+        ? (await dialog.getByRole("button", { name: "Inteira", exact: true }).isVisible())
+          ? dialog.getByRole("button", { name: "Inteira", exact: true })
+          : dialog.getByRole("button", { name: "1", exact: true })
+        : dialog.getByRole("button", { name: quantity, exact: true });
+    await option.click();
+    await dialog.getByRole("button", { name: /^Dar / }).click();
+    await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
+    return;
+  }
   await rowButton(page, list, description).click();
   const dialog = page.getByRole("dialog", { name: description });
   const option =
     quantity === "1"
-      ? dialog.getByRole("button", { name: /^(1|Inteira)$/ })
+      ? (await dialog.getByRole("button", { name: "Inteira", exact: true }).isVisible())
+        ? dialog.getByRole("button", { name: "Inteira", exact: true })
+        : dialog.getByRole("button", { name: "1", exact: true })
       : dialog.getByRole("button", { name: quantity, exact: true });
   await option.click();
   await dialog.getByRole("button", { name: /^(Peguei|Dar) / }).click();
@@ -191,7 +231,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await inviteDialog.getByRole("button", { name: "Voltar para a sala" }).click();
       await expect(inviteDialog).toBeHidden();
       await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();
-      await expect(page.getByText("1 pessoa na sala")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Na sala" }).getByText("toque pra gerenciar")).toBeVisible();
 
       // The people who scan the QR are on phones, so the joiners run on the
       // real iPhone and Pixel descriptors instead of an invented viewport.
@@ -213,9 +253,15 @@ test.describe("Assignment room multi-client acceptance", () => {
 
       for (const roomPage of [page, guestAPage, guestBPage]) {
         const roster = roomPage.getByRole("region", { name: "Na sala" });
-        await expect(roster.getByText("3 pessoas na sala")).toBeVisible({
-          timeout: ROOM_TIMEOUT,
-        });
+        if (roomPage === page) {
+          await expect(roster.getByText("toque pra gerenciar")).toBeVisible({
+            timeout: ROOM_TIMEOUT,
+          });
+        } else {
+          await expect(roster.getByText("3 pessoas na sala")).toBeVisible({
+            timeout: ROOM_TIMEOUT,
+          });
+        }
         await expect(roster.getByLabel(HOST_NAME)).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
@@ -239,7 +285,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           },
           async () => {
             await expect(
-              itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
+              itemCard(page, "Itens", "Cervejas").getByText("1 sobrando"),
             ).toBeVisible({ timeout: ROOM_TIMEOUT });
             // Asking for more than the room still holds is refused before any
             // request leaves the phone, and the draft stays put.
@@ -255,8 +301,8 @@ test.describe("Assignment room multi-client acceptance", () => {
 
         await claimQuantity(guestBPage, "Ainda sem dono", "Cervejas", "1");
         await expect(
-          itemCard(page, "Itens", "Cervejas").getByText("Tudo escolhido"),
-        ).toBeVisible({ timeout: ROOM_TIMEOUT });
+          itemCard(page, "Itens", "Cervejas").getByText(/sobrando|Sem dono|incompleto/),
+        ).toHaveCount(0, { timeout: ROOM_TIMEOUT });
 
         await observeRemote(
           testInfo,
@@ -264,7 +310,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           () => claimQuantity(guestAPage, "Minha parte", "Cervejas", "1"),
           async () => {
             await expect(
-              itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
+              itemCard(page, "Itens", "Cervejas").getByText("1 sobrando"),
             ).toBeVisible({ timeout: ROOM_TIMEOUT });
           },
         );
@@ -321,7 +367,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         // Caio already holds one of the three, so the host's third leaves one.
         await claimQuantity(page, "Itens", "Petisco", "1");
         await expect(
-          itemCard(page, "Itens", "Petisco").getByText(/1 de 3 un\./),
+          itemCard(page, "Itens", "Petisco").getByText("1 sobrando"),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
       });
       await expect
@@ -370,10 +416,10 @@ test.describe("Assignment room multi-client acceptance", () => {
       await expect(finalDialogB).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       await guestBContext.setOffline(true);
-      await page.getByText("Gerenciar pessoas").click();
-      await page.getByRole("button", { name: `Remover ${GUEST_A}` }).click();
-      await page.getByRole("button", { name: "Remover e liberar itens" }).click();
-      await expect(page.getByText("Removido", { exact: true })).toBeVisible({
+      const roster = page.getByRole("region", { name: "Na sala" });
+      await roster.getByRole("button", { name: GUEST_A }).click();
+      await page.getByRole("button", { name: /^Remover (· libera|da sala)/ }).click();
+      await expect(roster.getByRole("button", { name: GUEST_A })).toHaveCount(0, {
         timeout: ROOM_TIMEOUT,
       });
       const removedState = guestAPage.getByRole("heading", {
@@ -383,7 +429,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         await claimQuantity(guestAPage, "Minha parte", "Cervejas", "1");
       }
       await expect(removedState).toBeVisible({ timeout: ROOM_TIMEOUT });
-      await expect(page.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^Encerrar sala/ })).toBeDisabled();
 
       const reconnectStartedAt = performance.now();
       await guestBContext.setOffline(false);
@@ -419,12 +465,12 @@ test.describe("Assignment room multi-client acceptance", () => {
       // The freed unit reaches the host only by sync, and claiming three fails
       // while the host board still shows nothing available.
       await expect(
-        itemCard(page, "Itens", "Cervejas").getByText(/1 de 3 un\./),
+        itemCard(page, "Itens", "Cervejas").getByText("1 sobrando"),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await claimQuantity(page, "Itens", "Cervejas", "3");
       await expect(itemCard(guestBPage, "Ainda sem dono", "Cervejas")).toHaveCount(0);
 
-      const closeChoices = page.getByRole("button", { name: /^Fechar escolhas/ });
+      const closeChoices = page.getByRole("button", { name: /^Encerrar sala/ });
       if (!(await closeChoices.isEnabled())) {
         await claimQuantity(page, "Itens", "Última cerveja", "1");
       }
@@ -432,7 +478,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await observeRemote(
         testInfo,
         "close",
-        () => page.getByRole("button", { name: /^Fechar escolhas/ }).click(),
+        () => page.getByRole("button", { name: /^Encerrar sala/ }).click(),
         async () => {
           await expect(guestBPage.getByText("Aguardando confirmação")).toBeVisible({
             timeout: ROOM_TIMEOUT,

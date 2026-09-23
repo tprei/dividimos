@@ -4,7 +4,7 @@ import { AnimatePresence } from "framer-motion";
 import { ReceiptText } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { RoomActivity } from "@/components/assignment-room/room-activity";
-import { RoomHostControls } from "@/components/assignment-room/room-host-controls";
+import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "@/components/assignment-room/room-host-controls";
 import { RoomItemClaim } from "@/components/assignment-room/room-item-claim";
 import { RoomItemRow } from "@/components/assignment-room/room-item-row";
 import { RoomShare } from "@/components/assignment-room/room-share";
@@ -75,16 +75,16 @@ export function RoomBoard({
   onCreateBill,
 }: RoomBoardProps) {
 
-  const projection = view.role === "participant" ? projectAssignmentRoomMoney(view.room) : null;
-  const guestMoney = projection?.ok ? projection.value : null;
-  const selfMoney = guestMoney?.byParticipant[view.room.selfParticipantId] ?? null;
+  const projection = projectAssignmentRoomMoney(view.room);
+  const roomMoney = projection?.ok ? projection.value : null;
+  const selfMoney = roomMoney?.byParticipant[view.room.selfParticipantId] ?? null;
   const rowMoney = (item: AssignmentRoomItem) =>
-    guestMoney
+    roomMoney
       ? {
           lineCents: item.totalPriceCents,
           unitCents: item.unitPriceCents,
           ownCents:
-            guestMoney.byItem[item.id]?.claims.find(
+            roomMoney.byItem[item.id]?.claims.find(
               (claim) => claim.participantId === view.room.selfParticipantId,
             )?.amountCents ?? 0,
         }
@@ -104,7 +104,7 @@ export function RoomBoard({
       .map((item) => {
         const capacityTicks = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
         const itemClaims = view.room.claims.filter((claim) =>
-          claim.itemId === item.id && (view.role === "host" || participantById.get(claim.participantId)?.removed === false),
+          claim.itemId === item.id && participantById.get(claim.participantId)?.removed === false,
         );
         const totalClaimedTicks = itemClaims.reduce((sum, claim) => sum + claim.ticks, 0);
         const ownClaimedTicks =
@@ -122,11 +122,10 @@ export function RoomBoard({
           owners,
         };
       });
-  }, [participantById, selfParticipantId, view.role, view.room.claims, view.room.items]);
+  }, [participantById, selfParticipantId, view.room.claims, view.room.items]);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [targetParticipantId, setTargetParticipantId] = useState(selfParticipantId);
-  const [assignmentParticipantId, setAssignmentParticipantId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set());
   const openTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -156,15 +155,11 @@ export function RoomBoard({
     ? itemRows.find((row) => row.item.id === selectedItemId) ?? null
     : null;
   const pickerParticipants = view.room.participants.filter((participant) => !participant.removed);
-  const assignmentParticipant = assignmentParticipantId
-    ? participantById.get(assignmentParticipantId) ?? null
-    : null;
 
   function openItemEditor(itemId: string, trigger: HTMLButtonElement, participantId?: string) {
     openTriggerRef.current = trigger;
     setSelectedItemId(itemId);
-    setTargetParticipantId(participantId ?? assignmentParticipantId ?? selfParticipantId);
-    if (participantId) setAssignmentParticipantId(null);
+    setTargetParticipantId(participantId ?? selfParticipantId);
     setEditorOpen(true);
   }
 
@@ -193,14 +188,15 @@ export function RoomBoard({
   }
 
   return (
-    <div className={cn("min-h-full bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg [&>header_h1]:whitespace-normal", view.role === "participant" && "flex flex-col")}>
+    <div className="flex min-h-full flex-col bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg [&>header_h1]:whitespace-normal">
       <ScreenHeader
         title={view.role === "host" ? view.room.title : "O que você consumiu?"}
-        eyebrow={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "de divisão"} · ${activeParticipants.length} ${activeParticipants.length === 1 ? "pessoa" : "pessoas"}` : `${view.room.title} · ${activeParticipants.length} na sala`}
+        eyebrow={view.role === "host" ? `SALA ${view.room.status === "open" ? "ABERTA" : "FECHADA"} · ${activeParticipants.length} NA SALA` : `${view.room.title} · ${activeParticipants.length} na sala`}
         back={view.role === "host"}
         onBack={onBack}
         action={
           inviteVisible ? (
+            <div className="flex items-center">
             <RoomShare
               url={joinUrl}
               open={inviteOpen}
@@ -214,13 +210,15 @@ export function RoomBoard({
               items={view.room.items}
               connected={connected}
             />
+            <RoomHostMenu disabled={hostControlsDisabled} onCancel={onCancel} />
+            </div>
           ) : undefined
         }
       />
-      <main className={cn("mx-auto w-full max-w-lg space-y-5 px-4 pt-1 pb-8", view.role === "participant" && "flex-1")}>
+      <main className="mx-auto w-full max-w-lg flex-1 space-y-5 px-4 pt-1 pb-8">
         {!connected && !accessRemoved && view.room.status !== "cancelled" && (
           <p role="status" className="rounded-xl border bg-muted px-4 py-3 text-sm">
-            {view.role === "host" ? "Reconectando. As escolhas ficam bloqueadas até os dados atuais chegarem." : "Reconectando…"}
+            {view.role === "host" ? "Reconectando..." : "Reconectando…"}
           </p>
         )}
 
@@ -248,14 +246,6 @@ export function RoomBoard({
           </section>
         )}
 
-        {view.room.status === "closed" && view.role === "host" && (
-          <section className="rounded-2xl border bg-card p-4">
-            <h2 className="font-heading font-semibold">Aguardando confirmação</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Revise as escolhas antes de registrar a conta. Você ainda pode corrigir quantidades.
-            </p>
-          </section>
-        )}
 
         {view.room.status === "finalized" && (
           <section className="rounded-2xl border bg-card p-4">
@@ -266,64 +256,33 @@ export function RoomBoard({
 
         {!accessRemoved && view.room.status !== "cancelled" && view.room.status !== "finalized" && (
           <>
-            {view.role === "host" && (
-            <section className="rounded-2xl border bg-card p-4" aria-labelledby="room-progress-heading">
-              <div className="flex items-baseline justify-between gap-3">
-                <p id="room-progress-heading" className="text-sm font-semibold">Dividindo a conta</p>
-                <Money cents={view.room.totalCents} className="text-sm font-semibold tabular-nums" />
-              </div>
-              {itemRows.length > 0 && (
-                <div className="mt-2">
-                  <div className="flex items-baseline justify-between gap-3 text-xs">
-                    <span className="font-medium">{fullyAssignedCount} de {itemRows.length} linhas escolhidas</span>
-                    <span className="shrink-0 text-muted-foreground">{Math.round((fullyAssignedCount / itemRows.length) * 100)}%</span>
-                  </div>
-                  <div
-                    className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted"
-                    role="progressbar"
-                    aria-label="Linhas totalmente escolhidas"
-                    aria-valuemin={0}
-                    aria-valuemax={itemRows.length}
-                    aria-valuenow={fullyAssignedCount}
-                  >
-                    <div
-                      className={roomComplete ? "h-full rounded-full bg-success motion-safe:transition-[width] motion-safe:duration-300" : "h-full rounded-full bg-primary motion-safe:transition-[width] motion-safe:duration-300"}
-                      style={{ width: `${Math.round((fullyAssignedCount / itemRows.length) * 100)}%` }}
-                    />
-                  </div>
+            {view.role === "host" && (roomMoney ? (
+              <section className="rounded-2xl border bg-card p-4" aria-label="Progresso da divisão">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-medium"><Money cents={roomMoney.claimedItemsCents} /> de <Money cents={roomMoney.itemsSubtotalCents} /> com dono</p>
+                  <span className="shrink-0 text-xs text-muted-foreground">{new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 }).format(roomMoney.itemsSubtotalCents > 0 ? roomMoney.claimedItemsCents / roomMoney.itemsSubtotalCents : 0)}</span>
                 </div>
-              )}
-            </section>
-            )}
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Valor com dono" aria-valuemin={0} aria-valuemax={roomMoney.itemsSubtotalCents} aria-valuenow={roomMoney.claimedItemsCents}>
+                  <div className="h-full rounded-full bg-primary motion-safe:transition-[width] motion-safe:duration-300" style={{ width: new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 2 }).format(roomMoney.itemsSubtotalCents > 0 ? roomMoney.claimedItemsCents / roomMoney.itemsSubtotalCents : 0) }} />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{roomMoney.unownedLineCount > 0 ? <>{roomMoney.unownedLineCount} itens sem dono · <Money cents={roomMoney.unclaimedItemsCents} /></> : "Tudo com dono"}</p>
+              </section>
+            ) : <p role="alert" className="text-sm text-destructive">Não foi possível calcular a divisão.</p>)}
 
             <section className={view.role === "host" ? "space-y-2" : "sr-only"} aria-labelledby="room-roster-heading">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 id="room-roster-heading" className="text-sm font-semibold">Na sala</h2>
                 <p className="text-xs text-muted-foreground">
-                  {activeParticipants.length === 1 ? "1 pessoa na sala" : `${activeParticipants.length} pessoas na sala`}
+                  {view.role === "host" ? "toque pra gerenciar" : activeParticipants.length === 1 ? "1 pessoa na sala" : `${activeParticipants.length} pessoas na sala`}
                 </p>
               </div>
               <ul className="flex gap-3 overflow-x-auto pb-1">
                 {activeParticipants.map((participant) => {
                   const selectable = view.role === "host";
-                  const selected = assignmentParticipantId === participant.id;
                   return (
-                    <li key={participant.id} aria-label={participant.displayName} className="shrink-0">
+                    <li key={participant.id} aria-label={selectable ? undefined : participant.displayName} className="shrink-0">
                       {selectable ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex min-h-11 w-20 flex-col items-center gap-1 rounded-xl border bg-card px-1 py-2 text-center disabled:opacity-60",
-                            selected && "border-primary bg-primary/10",
-                          )}
-                          aria-pressed={selected}
-                          disabled={!roomEditable}
-                          onClick={() => setAssignmentParticipantId(selected ? null : participant.id)}
-                        >
-                          <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="md" />
-                          <span className="w-full truncate text-xs font-semibold">{participant.displayName.split(" ")[0]}</span>
-                          <span className="text-[11px] text-muted-foreground">{participant.id === selfParticipantId ? "Você" : participant.isGuest ? "Convidado" : "Na sala"}</span>
-                        </button>
+                        <RoomHostPerson participant={participant} money={roomMoney?.byParticipant[participant.id]} disabled={hostControlsDisabled} removable={view.room.status === "open"} onRemove={onRemoveParticipant} />
                       ) : (
                         <span className="flex min-h-11 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1">
                           <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
@@ -334,24 +293,9 @@ export function RoomBoard({
                   );
                 })}
               </ul>
-              {assignmentParticipant && (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-                  <span>
-                    Atribuindo itens para <strong>{assignmentParticipant.displayName}</strong>
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="min-h-11 shrink-0 px-2 text-primary-text"
-                    onClick={() => setAssignmentParticipantId(null)}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              )}
             </section>
 
-            {view.role === "participant" && view.room.status === "closed" ? (
+            {view.role === "participant" && (view.room.status === "closed" ? (
               <p role="status" className="flex min-h-11 items-center rounded-xl bg-muted px-3 text-sm text-muted-foreground">Aguardando confirmação</p>
             ) : (
               <RoomActivity
@@ -360,20 +304,18 @@ export function RoomBoard({
                 items={view.room.items}
                 connected={connected}
                 live={!inviteOpen}
-                variant={view.role === "participant" ? "ticker" : "default"}
+                variant="ticker"
               />
-            )}
+            ))}
 
 
-            {itemRows.length === 0 && view.role === "host" ? (
-              <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Esta sala não tem itens.</p>
-            ) : view.role === "host" ? (
+            {view.role === "host" ? (
               <section className="space-y-2" aria-labelledby="room-items-heading">
                 <div className="flex items-baseline justify-between gap-3">
                   <h2 id="room-items-heading" ref={hostHeadingRef} tabIndex={-1} className="text-sm font-semibold">Itens</h2>
-                  <p className="text-xs text-muted-foreground">{fullyAssignedCount} de {itemRows.length} completos</p>
+                  <p className="text-xs text-muted-foreground">{roomMoney?.unownedLineCount ?? availableRows.length} sem dono</p>
                 </div>
-                <ul className="overflow-hidden divide-y rounded-2xl border bg-card">
+                <ul className={cn("overflow-hidden divide-y rounded-2xl bg-card", itemRows.length > 0 && "border")}>
                   {itemRows.map((row) => (
                     <RoomItemRow
                       key={row.item.id}
@@ -387,10 +329,15 @@ export function RoomBoard({
                       pending={pendingItemIds.includes(row.item.id)}
                       disabled={!roomEditable}
                       mode="host"
+                      money={rowMoney(row.item)}
+                      claimMoney={roomMoney?.byItem[row.item.id]?.claims}
+                      selfParticipantId={selfParticipantId}
+                      onUndoParticipant={(participantId) => { void onClaim(row.item.id, participantId, 0, row.item.revision); }}
                       onOpen={(trigger, participantId) => openItemEditor(row.item.id, trigger, participantId)}
                     />
                   ))}
                 </ul>
+                {itemRows.length === 0 && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Esta sala não tem itens.</p>}
               </section>
             ) : (
               <>
@@ -486,26 +433,13 @@ export function RoomBoard({
               />
             )}
 
-            {view.role === "host" && (
-              <RoomHostControls
-                participants={view.room.participants}
-                fullyAssignedCount={fullyAssignedCount}
-                totalItemCount={itemRows.length}
-                complete={roomComplete}
-                closed={view.room.status === "closed"}
-                disabled={hostControlsDisabled}
-                pendingParticipantIds={pendingParticipantIds}
-                closePending={closePending}
-                cancelPending={cancelPending}
-                onRemove={onRemoveParticipant}
-                onReturnToReview={onReview}
-                onClose={onClose}
-                onCancel={onCancel}
-              />
-            )}
+            {view.role === "host" && claimError && !editorOpen && <p role="alert" className="text-sm text-destructive">{claimError.message}</p>}
           </>
         )}
       </main>
+      {view.role === "host" && (view.room.status === "open" || view.room.status === "closed") && (
+        <RoomHostControls unownedLineCount={roomMoney?.unownedLineCount ?? availableRows.length} complete={Boolean(roomMoney) && roomComplete} closed={view.room.status === "closed"} disabled={hostControlsDisabled} closePending={closePending} onReturnToReview={onReview} onClose={onClose} />
+      )}
       {view.role === "participant" && !accessRemoved && (view.room.status === "open" || view.room.status === "closed") && (
         <footer className="sticky bottom-0 z-10 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
