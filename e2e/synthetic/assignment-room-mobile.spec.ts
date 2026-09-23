@@ -542,7 +542,7 @@ test.describe("Assignment room on a phone", () => {
       // Releasing the host's half hands it back rather than wiping the guest's.
       await rowButton(page, "Itens", "Toast Bacon Egg").click();
       const release = page.getByRole("dialog", { name: "Toast Bacon Egg" });
-      await release.getByRole("button", { name: "Remover minha escolha" }).click();
+      await release.getByRole("button", { name: /Remover escolha de/ }).click();
       await release.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(release).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
@@ -576,7 +576,7 @@ test.describe("Assignment room on a phone", () => {
       await joinAsGuest(guestPage, invitation, "Bia Terço");
 
       const third = await chooseFraction(page, "Itens", "Caffe Latte S", "1/3");
-      await expect(third.getByText("Sua quantidade: 1/3 un.")).toBeVisible();
+      await expect(third.getByText(/Ana Terço: 1\/3 un\./)).toBeVisible();
       await third.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(third).toBeHidden({ timeout: ROOM_TIMEOUT });
 
