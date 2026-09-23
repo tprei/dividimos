@@ -100,4 +100,166 @@ describe("assignment room store", () => {
       room: { ...other.room, topic: null },
     });
   });
+  it("derives claim activity only from a newer accepted snapshot", () => {
+    const initial = {
+      ...view(1),
+      room: {
+        ...view(1).room,
+        items: [
+          {
+            id: "item-1",
+            ordinal: 0,
+            revision: 1,
+            description: "Batata",
+            quantityMilliunits: 1_000,
+            unitPriceCents: 100,
+            totalPriceCents: 100,
+          },
+        ],
+        participants: [
+          {
+            id: "participant-1",
+            ordinal: 0,
+            displayName: "Ana",
+            avatarUrl: null,
+            isGuest: false,
+            removed: false,
+          },
+        ],
+        claims: [{ itemId: "item-1", participantId: "participant-1", ticks: 0 }],
+      },
+    } satisfies AssignmentRoomView;
+    const updated = {
+      ...initial,
+      room: {
+        ...initial.room,
+        revision: 2,
+        claims: [{ itemId: "item-1", participantId: "participant-1", ticks: 60 }],
+      },
+    };
+
+    const store = useAssignmentRoomStore.getState();
+    store.install(initial);
+    store.install(updated);
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].latestActivity).toMatchObject({
+      kind: "claims",
+      revision: 2,
+      changes: [
+        {
+          itemId: "item-1",
+          participantId: "participant-1",
+          beforeTicks: 0,
+          afterTicks: 60,
+        },
+      ],
+    });
+
+    store.install({ ...updated, room: { ...updated.room, revision: 2, claims: [] } });
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].latestActivity).toMatchObject({
+      kind: "claims",
+      revision: 2,
+    });
+  });
+
+  it("coalesces nearby joins into one visible burst", () => {
+    const initial = view(1);
+    const firstJoin = {
+      ...initial,
+      room: {
+        ...initial.room,
+        revision: 2,
+        participants: [
+          {
+            id: "participant-1",
+            ordinal: 0,
+            displayName: "Ana",
+            avatarUrl: null,
+            isGuest: false,
+            removed: false,
+          },
+        ],
+      },
+    } satisfies AssignmentRoomView;
+    const secondJoin = {
+      ...firstJoin,
+      room: {
+        ...firstJoin.room,
+        revision: 3,
+        participants: [
+          ...firstJoin.room.participants,
+          {
+            id: "participant-2",
+            ordinal: 1,
+            displayName: "Bia",
+            avatarUrl: null,
+            isGuest: true,
+            removed: false,
+          },
+        ],
+      },
+    };
+    const store = useAssignmentRoomStore.getState();
+    store.install(initial);
+    store.install(firstJoin);
+    store.install(secondJoin);
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].latestActivity).toMatchObject({
+      kind: "joined",
+      participantIds: ["participant-1", "participant-2"],
+      revision: 3,
+    });
+  });
+  it("uses a neutral activity for independent join and removal deltas", () => {
+    const initial = {
+      ...view(1),
+      room: {
+        ...view(1).room,
+        participants: [
+          {
+            id: "participant-1",
+            ordinal: 0,
+            displayName: "Ana",
+            avatarUrl: null,
+            isGuest: false,
+            removed: false,
+          },
+          {
+            id: "participant-2",
+            ordinal: 1,
+            displayName: "Bia",
+            avatarUrl: null,
+            isGuest: true,
+            removed: false,
+          },
+        ],
+      },
+    } satisfies AssignmentRoomView;
+    const mixed = {
+      ...initial,
+      room: {
+        ...initial.room,
+        revision: 2,
+        participants: [
+          initial.room.participants[0],
+          { ...initial.room.participants[1], removed: true },
+          {
+            id: "participant-3",
+            ordinal: 2,
+            displayName: "Caio",
+            avatarUrl: null,
+            isGuest: true,
+            removed: false,
+          },
+        ],
+      },
+    };
+
+    const store = useAssignmentRoomStore.getState();
+    store.install(initial);
+    store.install(mixed);
+
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].latestActivity).toMatchObject({
+      kind: "updated",
+      revision: 2,
+    });
+  });
 });

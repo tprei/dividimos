@@ -1,9 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import type { LedgerErrorCode } from "@/lib/sync/errors";
-import type { AssignmentRoomView } from "@/types/assignment-room";
+import type {
+  AssignmentRoomActivity,
+  AssignmentRoomSnapshot,
+  AssignmentRoomView,
+} from "@/types/assignment-room";
 
+import type { LedgerErrorCode } from "@/lib/sync/errors";
 export type AssignmentRoomLoadStatus = "idle" | "loading" | "ready" | "error";
 
 export interface AssignmentRoomEntry {
@@ -12,6 +16,7 @@ export interface AssignmentRoomEntry {
   connected: boolean;
   pendingItemIds: string[];
   errorCode: LedgerErrorCode | null;
+  latestActivity: AssignmentRoomActivity | null;
 }
 
 export interface AssignmentRoomAttempt {
@@ -42,6 +47,7 @@ const EMPTY_ENTRY: AssignmentRoomEntry = {
   connected: false,
   pendingItemIds: [],
   errorCode: null,
+  latestActivity: null,
 };
 
 function entryFor(
@@ -53,6 +59,141 @@ function entryFor(
 
 function withoutTopic(view: AssignmentRoomView): AssignmentRoomView {
   return { ...view, room: { ...view.room, topic: null } };
+}
+
+function sameRoomIdentity(
+  previous: AssignmentRoomView,
+  next: AssignmentRoomView,
+): boolean {
+  return (
+    previous.role === next.role &&
+    previous.room.id === next.room.id &&
+    previous.room.selfParticipantId === next.room.selfParticipantId
+  );
+}
+
+function participantOrder(snapshot: AssignmentRoomSnapshot): Map<string, number> {
+  return new Map(
+    snapshot.participants
+      .map((participant, index) => ({ participant, index }))
+      .sort((left, right) =>
+        left.participant.ordinal === right.participant.ordinal
+          ? left.index - right.index
+          : left.participant.ordinal - right.participant.ordinal,
+      )
+      .map(({ participant }, index) => [participant.id, index]),
+  );
+}
+
+function itemOrder(snapshot: AssignmentRoomSnapshot): Map<string, number> {
+  return new Map(
+    snapshot.items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) =>
+        left.item.ordinal === right.item.ordinal
+          ? left.index - right.index
+          : left.item.ordinal - right.item.ordinal,
+      )
+      .map(({ item }, index) => [item.id, index]),
+  );
+}
+
+export function deriveAssignmentRoomActivity(
+  previous: AssignmentRoomSnapshot,
+  next: AssignmentRoomSnapshot,
+  latest: AssignmentRoomActivity | null,
+  observedAt: number,
+): AssignmentRoomActivity | null {
+  const previousParticipants = new Map(
+    previous.participants.map((participant) => [participant.id, participant]),
+  );
+  const joined = next.participants
+    .filter(
+      (participant) =>
+        !participant.removed &&
+        !previousParticipants.has(participant.id),
+    )
+    .map((participant) => participant.id);
+  const removed = next.participants
+    .filter(
+      (participant) =>
+        participant.removed &&
+        previousParticipants.get(participant.id)?.removed === false,
+    )
+    .map((participant) => participant.id);
+
+  if (previous.status !== next.status) {
+    return { kind: "status", status: next.status, revision: next.revision, observedAt };
+  }
+
+  const previousClaims = new Map(
+    previous.claims.map((claim) => [`${claim.itemId}\u0000${claim.participantId}`, claim.ticks]),
+  );
+  const nextClaims = new Map(
+    next.claims.map((claim) => [`${claim.itemId}\u0000${claim.participantId}`, claim.ticks]),
+  );
+  const itemPositions = new Map([...itemOrder(previous), ...itemOrder(next)]);
+  const participantPositions = new Map([
+    ...participantOrder(previous),
+    ...participantOrder(next),
+  ]);
+  const keys = new Set([...previousClaims.keys(), ...nextClaims.keys()]);
+  const changes = [...keys]
+    .map((key) => {
+      const [itemId, participantId] = key.split("\u0000");
+      const beforeTicks = previousClaims.get(key) ?? 0;
+      const afterTicks = nextClaims.get(key) ?? 0;
+      return { itemId, participantId, beforeTicks, afterTicks };
+    })
+    .filter((change) => change.beforeTicks !== change.afterTicks)
+    .sort(
+      (left, right) =>
+        (itemPositions.get(left.itemId) ?? Number.MAX_SAFE_INTEGER) -
+          (itemPositions.get(right.itemId) ?? Number.MAX_SAFE_INTEGER) ||
+        (participantPositions.get(left.participantId) ?? Number.MAX_SAFE_INTEGER) -
+          (participantPositions.get(right.participantId) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const removedIds = new Set(removed);
+  const removalOnly =
+    changes.length === 0 ||
+    changes.every(
+      (change) =>
+        removedIds.has(change.participantId) &&
+        change.beforeTicks > 0 &&
+        change.afterTicks === 0,
+    );
+  if (removed.length > 0 && joined.length === 0 && removalOnly) {
+    return { kind: "removed", participantIds: removed, revision: next.revision, observedAt };
+  }
+
+  if (joined.length > 0 && removed.length === 0 && changes.length === 0) {
+    if (
+      latest?.kind === "joined" &&
+      observedAt - latest.burstStartedAt <= 1_500
+    ) {
+      return {
+        kind: "joined",
+        participantIds: [...new Set([...latest.participantIds, ...joined])],
+        burstStartedAt: latest.burstStartedAt,
+        revision: next.revision,
+        observedAt,
+      };
+    }
+    return {
+      kind: "joined",
+      participantIds: joined,
+      burstStartedAt: observedAt,
+      revision: next.revision,
+      observedAt,
+    };
+  }
+  if (changes.length > 0 && joined.length === 0 && removed.length === 0) {
+    return { kind: "claims", changes, revision: next.revision, observedAt };
+  }
+  if (joined.length > 0 || removed.length > 0 || changes.length > 0) {
+    return { kind: "updated", revision: next.revision, observedAt };
+  }
+  return latest;
 }
 
 export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => ({
@@ -94,8 +235,23 @@ export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => 
   install(view, attempt) {
     const roomId = view.room.id;
     if (attempt && !get().isCurrent(roomId, attempt)) return false;
-    const existing = get().rooms[roomId]?.view;
+    const currentEntry = entryFor(get().rooms, roomId);
+    const existing = currentEntry.view;
     if (existing && existing.room.revision > view.room.revision) return false;
+
+    let latestActivity: AssignmentRoomActivity | null = null;
+    if (existing && sameRoomIdentity(existing, view)) {
+      latestActivity = currentEntry.latestActivity;
+      if (view.room.revision > existing.room.revision) {
+        latestActivity = deriveAssignmentRoomActivity(
+          existing.room,
+          view.room,
+          latestActivity,
+          Date.now(),
+        );
+      }
+    }
+
     set((state) => ({
       rooms: {
         ...state.rooms,
@@ -104,6 +260,7 @@ export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => 
           view: withoutTopic(view),
           status: "ready",
           errorCode: null,
+          latestActivity,
         },
       },
     }));

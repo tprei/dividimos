@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decodeAssignmentRoomCompletion,
   decodeAssignmentRoomView,
   decodeFinalizeAssignmentRoomResult,
 } from "./decode-assignment-room";
@@ -123,6 +124,78 @@ describe("decodeAssignmentRoomView", () => {
         room: { role: "host" },
         ack: { groupId: ID, expenseId: ITEM_ID, versionNo: 1 },
       },
+    });
+  });
+});
+
+function completion(action: unknown = { kind: "sign_in" }) {
+  return {
+    roomId: ID,
+    bill: {
+      status: "active",
+      versionNo: 1,
+      title: "Almoço",
+      occurredOn: "2026-09-19",
+      items: [
+        {
+          description: "Prato",
+          quantityMilliunits: 1_000,
+          unitPriceCents: 100,
+          totalPriceCents: 100,
+        },
+      ],
+      itemAssignments: null,
+      participants: [
+        {
+          participantIndex: 0,
+          displayName: "Ana",
+          avatarUrl: null,
+          isGuest: false,
+        },
+      ],
+      shares: [111],
+      payers: [],
+      totalCents: 111,
+      serviceFeeBasisPoints: 1_000,
+      fixedFeeCents: 1,
+    },
+    selfParticipantIndex: 0 as number | null,
+    action,
+  };
+}
+
+describe("decodeAssignmentRoomCompletion", () => {
+  it("decodes a signed-in account action with its stable index", () => {
+    const decoded = decodeAssignmentRoomCompletion(
+      completion({ kind: "view_expense", expenseId: ITEM_ID, groupId: ID }),
+    );
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        roomId: ID,
+        selfParticipantIndex: 0,
+        action: { kind: "view_expense", expenseId: ITEM_ID, groupId: ID },
+      },
+    });
+  });
+
+  it("accepts a null index for a deleted or unmapped bill", () => {
+    const raw = completion({ kind: "unavailable" });
+    raw.selfParticipantIndex = null;
+    const decoded = decodeAssignmentRoomCompletion(raw);
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: { selfParticipantIndex: null, action: { kind: "unavailable" } },
+    });
+  });
+
+  it("rejects action fields that are not allowed for their kind", () => {
+    const decoded = decodeAssignmentRoomCompletion(
+      completion({ kind: "sign_in", groupId: ID }),
+    );
+    expect(decoded).toMatchObject({
+      ok: false,
+      issue: { code: "invalid_wire", path: ["action", "groupId"] },
     });
   });
 });
