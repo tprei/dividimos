@@ -19,7 +19,6 @@ import {
 } from "@/lib/expense-money";
 import { centsToBasisPoints, FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
 import { cn } from "@/lib/utils";
-import type { UserProfile } from "@/types";
 
 function percentBasisPoints(text: string | undefined): number {
   const parsed = parseAllocationPercentText(text ?? "");
@@ -30,8 +29,20 @@ function percentLabel(basisPoints: number): string {
   return basisPoints % 100 === 0 ? String(basisPoints / 100) : percentText(basisPoints);
 }
 
+/**
+ * Minimal participant identity the payer step renders; both bill profiles and
+ * room participants satisfy it. The handle is optional because room guests
+ * have none.
+ */
+export interface PayerStepParticipant {
+  id: string;
+  name: string;
+  handle?: string | null;
+  avatarUrl?: string | null;
+}
+
 interface PayerStepProps {
-  participants: UserProfile[];
+  participants: readonly PayerStepParticipant[];
   payers: { userId: string; amountCents: number }[];
   grandTotal: number;
   onSetPayerFull: (userId: string) => void;
@@ -187,14 +198,13 @@ export function PayerStep({
                     : "bg-card hover:border-primary/30"
                 }`}
               >
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-primary/10 text-primary-text"
-                  }`}
-                >
-                  {isSelected ? <Check className="h-4 w-4" /> : user.name.charAt(0)}
+                <span className="relative shrink-0">
+                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                  {isSelected && (
+                    <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
+                      <Check className="size-3" aria-hidden="true" />
+                    </span>
+                  )}
                 </span>
                 <div className="flex-1">
                   <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
@@ -307,9 +317,7 @@ export function PayerStep({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary-text">
-                            {user.name.charAt(0)}
-                          </span>
+                          <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                           <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                         </div>
                         <div className="text-right">
@@ -404,9 +412,7 @@ export function PayerStep({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary-text">
-                    {user.name.charAt(0)}
-                  </span>
+                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                   <PersonLabel name={user.name} handle={user.handle} className="flex-1" nameClassName="text-sm font-medium" />
                   {showFillRemaining ? (
                     <Button
@@ -464,10 +470,11 @@ export function PayerStep({
               size="sm"
               className="w-full gap-2"
               onClick={() => {
+                const even = allocateEvenly(grandTotal, participants.length);
+                if (!even.ok) return;
                 onSplitPaymentEqually(participants.map((p) => p.id));
-                const perPerson = Math.round(grandTotal / participants.length);
                 const m = new Map<string, number>();
-                participants.forEach((p) => m.set(p.id, perPerson));
+                participants.forEach((p, index) => m.set(p.id, even.value[index]));
                 setLocalAmounts(m);
               }}
             >

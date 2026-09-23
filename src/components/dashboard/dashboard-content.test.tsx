@@ -159,25 +159,33 @@ describe("DashboardContent", () => {
     useAppStore.getState().reset();
   });
 
-  it("renders first-use onboarding card when user has zero groups and zero expenses", () => {
+  it("keeps QR room entry available on first use", () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
     render(<DashboardContent />);
 
     expect(screen.getByText("Comece por aqui")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Comece por aqui" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Entrar por QR code/ })).toHaveAttribute(
+      "href",
+      "/app/scan-invite",
+    );
     expect(
-      screen.getByText("Crie uma conta pra rachar ou entre num grupo pelo convite."),
-    ).toBeInTheDocument();
-    const novaLinks = screen.getAllByRole("link", { name: /Nova conta/ });
-    expect(novaLinks.some((link) => link.getAttribute("href") === "/app/bill/new")).toBe(true);
-    expect(screen.getByRole("link", { name: /Ler convite/ })).toHaveAttribute("href", "/app/scan-invite");
-    expect(screen.queryByText("Tudo em dia")).not.toBeInTheDocument();
-    expect(screen.queryByText("A pagar")).not.toBeInTheDocument();
-    expect(screen.queryByText("A receber")).not.toBeInTheDocument();
-    // Quick actions stay reachable on first use (home-quick-charge synthetic contract).
+      screen.getAllByRole("link", { name: /Nova conta/ }).some(
+        (link) => link.getAttribute("href") === "/app/bill/new",
+      ),
+    ).toBe(true);
     expect(screen.getByText("Escanear nota")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeInTheDocument();
-    expect(document.querySelector("[data-tour='debt-lists']")?.contains(screen.getByText("Comece por aqui"))).toBe(true);
+    expect(screen.queryByText("Ler convite")).not.toBeInTheDocument();
+  });
+
+  it("keeps QR room entry available with populated groups", () => {
+    seedStore([snapshot({ balances: [] })]);
+    render(<DashboardContent />);
+
+    expect(screen.getByRole("link", { name: /Entrar por QR code/ })).toHaveAttribute(
+      "href",
+      "/app/scan-invite",
+    );
   });
 
   it("renders settled affirmative state when user has groups but zero debt", () => {

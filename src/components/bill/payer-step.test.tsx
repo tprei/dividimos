@@ -272,3 +272,28 @@ describe("PayerStep mode-switch seeding", () => {
     expect(anaPercentSlider).toHaveAttribute("aria-valuetext", "50%");
   });
 });
+
+describe("PayerStep participant input", () => {
+  it("renders and picks a minimal room participant without a handle", async () => {
+    const user = userEvent.setup();
+    const onSetPayerFull = vi.fn();
+    render(
+      <PayerStep
+        participants={[{ id: "room-participant-1", name: "Duda", avatarUrl: null }]}
+        payers={[]}
+        grandTotal={5_000}
+        onSetPayerFull={onSetPayerFull}
+        onSplitPaymentEqually={vi.fn()}
+        onSetPayerAmount={vi.fn()}
+        onRemovePayerEntry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Duda")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Duda/ }));
+
+    expect(onSetPayerFull).toHaveBeenCalledTimes(1);
+    expect(onSetPayerFull).toHaveBeenCalledWith("room-participant-1");
+  });
+});

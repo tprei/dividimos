@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ROOM_TICKS_PER_MILLIUNIT,
   allocateAssignmentItemCents,
+  buildAssignmentDivision,
   buildAssignmentExpense,
   claimTicksForFraction,
   claimTicksForQuantity,
@@ -689,5 +690,32 @@ describe("buildAssignmentExpense", () => {
     expect(
       buildAssignmentExpense(hostView(badRoomTotal, USER_REFS), []).ok,
     ).toBe(false);
+  });
+});
+
+describe("buildAssignmentDivision", () => {
+  it("previews the exact division with no payers attached", () => {
+    const view = hostView(parityRoom(), USER_REFS);
+    const division = buildAssignmentDivision(view);
+    expect(division.ok).toBe(true);
+    if (!division.ok) {
+      return;
+    }
+    expect(division.value.payers).toEqual([]);
+    const payload = buildOk(view, [{ participantIndex: 0, amountCents: 111 }]);
+    expect(division.value).toEqual({ ...payload, payers: [] });
+  });
+
+  it("fails before payers exactly where buildAssignmentExpense fails", () => {
+    const openRoom = parityRoom();
+    openRoom.status = "open";
+    expect(buildAssignmentDivision(hostView(openRoom, USER_REFS))).toEqual(
+      buildAssignmentExpense(hostView(openRoom, USER_REFS), []),
+    );
+    const shortLine = parityRoom();
+    shortLine.claims = shortLine.claims.slice(0, 2);
+    expect(buildAssignmentDivision(hostView(shortLine, USER_REFS))).toEqual(
+      buildAssignmentExpense(hostView(shortLine, USER_REFS), []),
+    );
   });
 });

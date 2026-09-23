@@ -20,6 +20,7 @@ import {
 } from "@/lib/expense-quantity";
 import type {
   AssignmentRoomItem,
+  AssignmentRoomParticipant,
   AssignmentRoomView,
 } from "@/types/assignment-room";
 import type {
@@ -297,7 +298,10 @@ export function allocateAssignmentItemCents(
 }
 
 /**
- * Materialize the canonical `ExpensePayload` for a finalized receipt room.
+ * Payer-independent materialization shared by the division and expense
+ * builders: the canonical payload with no payers attached, plus the
+ * intermediate active participants, refs, and grand total that the payer
+ * validation reuses.
  *
  * Active participants (removed omitted) are ordered by immutable ordinal —
  * snapshot order breaking exact ties — and compacted to canonical participant
@@ -305,19 +309,20 @@ export function allocateAssignmentItemCents(
  * consumption, so `shares` is dense over every active participant. Every item
  * must first satisfy exact capacity equality: the ticks its active
  * participants claim must sum to `quantityMilliunits *
- * ROOM_TICKS_PER_MILLIUNIT`. Only then are item cents, fees, shares, and
- * payers materialized; claims of removed participants are omitted while
- * claims of unknown participants fail.
- *
- * `payers` reference canonical participant indexes and must be registered
- * eligible user participants — a host-supplied `ParticipantRef` of kind
- * `"user"` with a nonempty user id. Guests never become payers, payer indexes
- * are unique, and the payer sum must equal the grand total exactly.
+ * ROOM_TICKS_PER_MILLIUNIT`. Only then are item cents, fees, and shares
+ * materialized; claims of removed participants are omitted while claims of
+ * unknown participants fail.
  */
-export function buildAssignmentExpense(
+interface AssignmentDivisionState {
+  payload: ExpensePayload;
+  active: { participant: AssignmentRoomParticipant; index: number }[];
+  refByParticipantId: Map<string, ParticipantRef>;
+  grandTotalCents: number;
+}
+
+function buildAssignmentDivisionState(
   view: Extract<AssignmentRoomView, { role: "host" }>,
-  payers: readonly ExpensePayerPayload[],
-): ValidationResult<ExpensePayload> {
+): ValidationResult<AssignmentDivisionState> {
   const room = view.room;
   if (
     room.items.length === 0 ||
@@ -576,6 +581,75 @@ export function buildAssignmentExpense(
       itemCents + serviceShareResult.value[i] + fixedShareResult.value[i],
   );
 
+  const items: ExpenseItemPayload[] = orderedItems.map(({ item }) => ({
+    description: item.description,
+    quantityMilliunits: item.quantityMilliunits,
+    unitPriceCents: item.unitPriceCents,
+    totalPriceCents: item.totalPriceCents,
+  }));
+  const participants: ParticipantRef[] = active.map(({ participant }) => {
+    const ref = refByParticipantId.get(participant.id);
+    return (
+      ref ?? {
+        kind: "guest",
+        guestId: null,
+        displayName: participant.displayName,
+      }
+    );
+  });
+  return {
+    ok: true,
+    value: {
+      payload: {
+        items,
+        participants,
+        shares,
+        payers: [],
+        itemAssignments,
+        splitMethod: null,
+      },
+      active,
+      refByParticipantId,
+      grandTotalCents: Number(grandBig),
+    },
+  };
+}
+
+/**
+ * Materialize the canonical `ExpensePayload` for a finalized receipt room
+ * without payer attribution. Validation is identical to
+ * `buildAssignmentExpense` minus the payer handling; the returned payload
+ * carries `payers: []` and is otherwise the value `buildAssignmentExpense`
+ * returns once matching payers are attached. This is the honest preview used
+ * before any payer split exists.
+ */
+export function buildAssignmentDivision(
+  view: Extract<AssignmentRoomView, { role: "host" }>,
+): ValidationResult<ExpensePayload> {
+  const division = buildAssignmentDivisionState(view);
+  return division.ok ? { ok: true, value: division.value.payload } : division;
+}
+
+/**
+ * Materialize the canonical `ExpensePayload` for a finalized receipt room,
+ * validating and attaching `payers` on top of `buildAssignmentDivision`.
+ *
+ * `payers` reference canonical participant indexes and must be registered
+ * eligible user participants — a host-supplied `ParticipantRef` of kind
+ * `"user"` with a nonempty user id. Guests never become payers, payer indexes
+ * are unique, and the payer sum must equal the grand total exactly.
+ */
+export function buildAssignmentExpense(
+  view: Extract<AssignmentRoomView, { role: "host" }>,
+  payers: readonly ExpensePayerPayload[],
+): ValidationResult<ExpensePayload> {
+  const division = buildAssignmentDivisionState(view);
+  if (!division.ok) {
+    return division;
+  }
+  const { active, refByParticipantId, grandTotalCents } = division.value;
+  const shares = division.value.payload.shares;
+
   const payerRows: ExpensePayerPayload[] = [];
   const payerCents: ExpenseCents[] = [];
   const payerIndexes = new Set<number>();
@@ -620,7 +694,7 @@ export function buildAssignmentExpense(
   }
 
   const totalsResult = validateActivationAllocationTotals({
-    totalAmountCents: brandExpenseCents(Number(grandBig)),
+    totalAmountCents: brandExpenseCents(grandTotalCents),
     userShareCents: shares.map((shareCents) => brandExpenseCents(shareCents)),
     guestShareCents: [],
     payerCents,
@@ -629,31 +703,11 @@ export function buildAssignmentExpense(
     return totalsResult;
   }
 
-  const items: ExpenseItemPayload[] = orderedItems.map(({ item }) => ({
-    description: item.description,
-    quantityMilliunits: item.quantityMilliunits,
-    unitPriceCents: item.unitPriceCents,
-    totalPriceCents: item.totalPriceCents,
-  }));
-  const participants: ParticipantRef[] = active.map(({ participant }) => {
-    const ref = refByParticipantId.get(participant.id);
-    return (
-      ref ?? {
-        kind: "guest",
-        guestId: null,
-        displayName: participant.displayName,
-      }
-    );
-  });
   return {
     ok: true,
     value: {
-      items,
-      participants,
-      shares,
+      ...division.value.payload,
       payers: payerRows,
-      itemAssignments,
-      splitMethod: null,
     },
   };
 }
