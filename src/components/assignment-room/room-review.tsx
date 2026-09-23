@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PayerStep, type PayerStepParticipant } from "@/components/bill/payer-step";
-import { RoomBreakdown } from "@/components/assignment-room/room-breakdown";
+import { RoomFinalBoard } from "@/components/assignment-room/room-final-board";
+import { Money } from "@/components/shared/money";
 import { Button } from "@/components/ui/button";
 import { buildAssignmentDivision } from "@/lib/assignment-room-money";
 import type { AssignmentRoomView } from "@/types/assignment-room";
@@ -45,6 +46,9 @@ export function RoomReview({
   onEditClaims,
   onFinalize,
 }: RoomReviewProps) {
+  const [attempted, setAttempted] = useState(false);
+  const [payerEdited, setPayerEdited] = useState(false);
+  const initializedPayer = useRef(false);
   const activeParticipants = useMemo(
     () =>
       view.room.participants
@@ -77,6 +81,16 @@ export function RoomReview({
       ? [{ id: ref.userId, name: participant.displayName, avatarUrl: participant.avatarUrl }]
       : [];
   });
+  const hostPayerId = eligiblePayers.find(
+    ({ participant }) => participant.id === view.room.selfParticipantId,
+  )?.participant.id;
+  const hostRef = hostPayerId ? refByParticipantId.get(hostPayerId) : undefined;
+  const hostUserId = hostRef?.kind === "user" ? hostRef.userId : undefined;
+  useEffect(() => {
+    if (initializedPayer.current) return;
+    initializedPayer.current = true;
+    if (payers.length === 0 && hostUserId) onSetPayerFull(hostUserId);
+  }, [hostUserId, onSetPayerFull, payers.length]);
   const payerIndexes = new Map(
     eligiblePayers.flatMap(({ participant, participantIndex }) => {
       const ref = refByParticipantId.get(participant.id);
@@ -131,67 +145,61 @@ export function RoomReview({
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Aguardando confirmação</p>
+    <div className="flex min-h-full flex-1 flex-col">
+      <div className="flex-1 space-y-6 px-4 py-6">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{view.room.title}</p>
         <h2 className="mt-2 font-heading text-2xl font-bold tracking-tight">Tudo escolhido. Vamos fechar?</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Confira a divisão atual e escolha uma ou mais pessoas que pagaram o valor total.
-        </p>
-      </div>
+      </header>
 
-
-      <section className="space-y-4 rounded-2xl border bg-card p-4" aria-labelledby="room-payer-heading">
-        <div>
-          <h2 id="room-payer-heading" className="sr-only">Quem pagou a conta?</h2>
-          <p className="text-sm text-muted-foreground">
-            Pessoas convidadas sem conta podem escolher itens, mas não podem ser pagadoras.
-          </p>
-        </div>
+      <section className="rounded-2xl border bg-card p-4" aria-label="Quem pagou?">
         <PayerStep
           participants={payerParticipants}
           payers={payers}
           grandTotal={view.room.totalCents}
-          onSetPayerFull={onSetPayerFull}
-          onSplitPaymentEqually={onSplitPaymentEqually}
-          onSetPayerAmount={onSetPayerAmount}
-          onRemovePayerEntry={onRemovePayerEntry}
-          hasGuests={activeParticipants.some(({ participant }) => participant.isGuest)}
+          onSetPayerFull={(userId) => { setPayerEdited(true); onSetPayerFull(userId); }}
+          onSplitPaymentEqually={(userIds) => { setPayerEdited(true); onSplitPaymentEqually(userIds); }}
+          onSetPayerAmount={(userId, amountCents) => { setPayerEdited(true); onSetPayerAmount(userId, amountCents); }}
+          onRemovePayerEntry={(userId) => { setPayerEdited(true); onRemovePayerEntry(userId); }}
         />
       </section>
       {previewBill && (
-        <RoomBreakdown
-          bill={previewBill}
-          selfParticipantIndex={null}
-          heading="Divisão proposta"
-          statusLabel="Aguardando confirmação"
-        />
+        <section className="space-y-3" aria-labelledby="room-review-board-heading">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="room-review-board-heading" className="text-base font-medium">Quadro final</h2>
+            <Money cents={previewBill.totalCents} className="text-base font-semibold" />
+          </div>
+          <RoomFinalBoard
+            bill={previewBill}
+            selfParticipantIndex={activeParticipants.findIndex(({ participant }) => participant.id === view.room.selfParticipantId)}
+          />
+        </section>
       )}
 
-      {blocker && (
-        <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      {blocker && (attempted || (payerEdited && paidCents !== view.room.totalCents)) && (
+        <p role="alert" className="text-sm text-destructive">
           {blocker}
         </p>
       )}
 
-      <details className="text-xs text-muted-foreground">
-        <summary className="flex min-h-11 cursor-pointer items-center font-medium">O que acontece ao registrar?</summary>
-        <p className="pb-2">Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.</p>
-        <p className="pb-2">Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já participa continua no grupo; convidados continuam sem precisar de conta.</p>
-      </details>
-      <div className="grid gap-2 border-t pt-4 sm:grid-cols-2">
-        <Button type="button" variant="outline" className="min-h-11" disabled={pending} onClick={onEditClaims}>
+      </div>
+      <footer className="sticky bottom-0 z-10 grid gap-2 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:grid-cols-[auto_1fr]">
+        <Button type="button" variant="outline" className="h-12" disabled={pending} onClick={onEditClaims}>
           Corrigir escolhas
         </Button>
         <Button
           type="button"
-          className="min-h-12 font-semibold"
-          disabled={pending || blocker !== null || previewBill === null}
-          onClick={onFinalize}
+          className="h-12 font-semibold"
+          disabled={pending}
+          aria-busy={pending}
+          onClick={() => {
+            setAttempted(true);
+            if (!blocker && previewBill) onFinalize();
+          }}
         >
-          {pending ? "Registrando..." : "Registrar conta"}
+          Registrar conta · <Money cents={view.room.totalCents} />
         </Button>
-      </div>
+      </footer>
     </div>
   );
 }

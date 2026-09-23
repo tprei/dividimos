@@ -350,7 +350,7 @@ test.describe("Assignment room on a phone", () => {
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       const payerSection = page.getByRole("region", { name: /Quem pagou/ });
       await payerSection.getByRole("button").filter({ hasText: host.name }).click();
-      await page.getByRole("button", { name: "Registrar conta" }).click();
+      await page.getByRole("button", { name: /^Registrar conta/ }).click();
       await expect(page.getByText("Conta registrada").first()).toBeVisible({
         timeout: 20_000,
       });
