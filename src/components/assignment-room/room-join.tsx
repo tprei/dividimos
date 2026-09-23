@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,7 +32,6 @@ export function RoomJoin({
   pending,
   errorMessage,
   onJoin,
-  onBack,
 }: RoomJoinProps) {
   const [displayName, setDisplayName] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -47,27 +47,18 @@ export function RoomJoin({
     onJoin(normalized);
   }
 
-  // Loading and error render no join action at all, so only `pending` gates
-  // the buttons that exist.
-  const joinDisabled = pending;
+  const firstName = identity.status === "account" ? identity.name?.trim().split(/\s+/)[0] : null;
 
   return (
-    <section className="mx-auto w-full max-w-md space-y-5 rounded-2xl border bg-card p-5">
-      <div className="space-y-1">
-        <h1 className="font-heading text-xl font-semibold">Entre para escolher seus itens</h1>
-        {identity.status === "guest" && (
-          <p className="text-sm text-muted-foreground">
-            Você entra como convidado, sem precisar criar conta.
-          </p>
-        )}
-        {identity.status === "account" && (
-          <p className="text-sm text-muted-foreground">
-            {identity.name
-              ? `Você entra como ${identity.name}.`
-              : "Você entra com sua conta conectada."}{" "}
-            Ao registrar a conta, você recebe um convite para o grupo.
-          </p>
-        )}
+    <section className="mx-auto w-full max-w-md space-y-6">
+      <header className="flex min-h-11 items-center">
+        <Logo />
+      </header>
+      <div className="gradient-primary rounded-2xl p-6 text-primary-foreground">
+        <p className="text-sm font-medium">Sala de itens</p>
+        <h1 className="mt-3 font-heading text-3xl font-bold leading-tight tracking-tight">
+          Entre pra marcar o que consumiu
+        </h1>
       </div>
 
       {identity.status === "loading" && (
@@ -77,14 +68,14 @@ export function RoomJoin({
       )}
 
       {identity.status === "error" && (
-        <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
           <p role="alert" className="text-sm text-destructive">
             {identity.message}
           </p>
           <Button
             type="button"
-            variant="outline"
-            className="min-h-11 w-full"
+            variant="ghost"
+            className="min-h-11 px-2 text-muted-foreground motion-reduce:transform-none motion-reduce:transition-none"
             onClick={onRetryIdentity}
           >
             Tentar novamente
@@ -93,35 +84,46 @@ export function RoomJoin({
       )}
 
       {identity.status === "guest" && (
-        <form className="space-y-4" onSubmit={handleGuestSubmit} noValidate>
+        <form className="space-y-3" onSubmit={handleGuestSubmit} noValidate>
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="room-display-name">
               Seu nome
             </label>
-            <Input
-              id="room-display-name"
-              className="min-h-11"
-              value={displayName}
-              maxLength={80}
-              autoComplete="name"
-              autoFocus
-              disabled={pending}
-              aria-invalid={Boolean(localError || errorMessage)}
-              aria-describedby={localError || errorMessage ? "room-join-error" : undefined}
-              onChange={(event) => {
-                setDisplayName(event.target.value);
-                setLocalError(null);
-              }}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="room-display-name"
+                className="h-12 min-w-0 flex-1 text-base md:text-sm"
+                placeholder="Como te chamam?"
+                value={displayName}
+                maxLength={80}
+                autoComplete="name"
+                disabled={pending}
+                aria-invalid={Boolean(localError || errorMessage)}
+                aria-describedby={localError || errorMessage ? "room-join-error" : undefined}
+                onChange={(event) => {
+                  setDisplayName(event.target.value);
+                  setLocalError(null);
+                }}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                className="min-h-12 px-4 motion-reduce:transform-none motion-reduce:transition-none"
+                aria-label="Entrar na sala"
+                disabled={pending}
+              >
+                {pending ? "Entrando..." : "Entrar"}
+              </Button>
+            </div>
           </div>
           {(localError || errorMessage) && (
             <p id="room-join-error" role="alert" className="text-sm text-destructive">
               {localError || errorMessage}
             </p>
           )}
-          <Button type="submit" className="min-h-11 w-full" disabled={pending}>
-            {pending ? "Entrando..." : "Entrar na sala"}
-          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Você pode vincular sua conta depois.
+          </p>
         </form>
       )}
 
@@ -134,25 +136,14 @@ export function RoomJoin({
           )}
           <Button
             type="button"
-            className="min-h-11 w-full"
-            disabled={joinDisabled}
+            className="min-h-12 w-full font-semibold motion-reduce:transform-none motion-reduce:transition-none"
+            aria-label="Entrar na sala"
+            disabled={pending}
             onClick={() => onJoin("")}
           >
-            {pending ? "Entrando..." : "Entrar na sala"}
+            {pending ? "Entrando..." : firstName ? `Entrar como ${firstName}` : "Entrar"}
           </Button>
         </div>
-      )}
-
-      {onBack && (
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-11 w-full"
-          disabled={pending}
-          onClick={onBack}
-        >
-          Voltar
-        </Button>
       )}
     </section>
   );

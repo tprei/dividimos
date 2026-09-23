@@ -14,7 +14,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -120,36 +119,41 @@ export function RoomShare({
         <QrCode className="size-4" aria-hidden="true" />
         <span className="sr-only sm:not-sr-only">Convidar</span>
       </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Convide o pessoal</DialogTitle>
-          <DialogDescription>
-            Escaneie o QR ou copie o link. Quem já tem conta entra com ela; quem não tem entra
-            com um nome.
-          </DialogDescription>
+      <DialogContent variant="sheet">
+        <DialogHeader className="gap-1">
+          <DialogTitle>Sala de itens</DialogTitle>
+          <DialogDescription>Cada pessoa marca o que consumiu</DialogDescription>
         </DialogHeader>
 
         {url && (
-          <canvas
-            key={url}
-            ref={setCanvas}
-            aria-label="QR code do convite"
-            aria-hidden={rotating || qrFailed}
-            hidden={rotating || qrFailed}
-            width={224}
-            height={224}
-            className="mx-auto max-w-full rounded-xl bg-white p-2"
-          />
-        )}
-        {qrFailed && !rotating && (
-          <p role="status" className="text-sm text-muted-foreground">
-            Não foi possível gerar o QR. Você ainda pode copiar o link.
-          </p>
+          <div className="space-y-3">
+            <div className="flex min-h-64 items-center justify-center rounded-2xl border bg-card p-4">
+              <canvas
+                key={url}
+                ref={setCanvas}
+                aria-label="QR code do convite"
+                aria-hidden={rotating || qrFailed}
+                hidden={rotating || qrFailed}
+                width={224}
+                height={224}
+                className="max-w-full rounded-lg"
+              />
+              {rotating && (
+                <p role="status" className="text-sm text-muted-foreground">Gerando convite...</p>
+              )}
+              {qrFailed && !rotating && (
+                <p role="status" className="text-center text-sm text-muted-foreground">
+                  Não foi possível gerar o QR. Você ainda pode copiar o link.
+                </p>
+              )}
+            </div>
+            <p className="text-center text-xs text-muted-foreground">Aponte a câmera do celular</p>
+          </div>
         )}
 
-        {url === null && !rotating && (
+        {url === null && (
           <p className="text-sm text-muted-foreground">
-            Este aparelho não tem o convite atual. Gere um novo para compartilhar.
+            Gere um convite pra mostrar o QR.
           </p>
         )}
 
@@ -177,54 +181,62 @@ export function RoomShare({
           connected={connected}
         />
 
-        {/* Full-width actions stack in reading order; the shared footer's row
-            layout would push them past the popup edge on a wide screen. */}
-        <DialogFooter className="flex-col sm:flex-col sm:justify-stretch">
-          <Button
-            type="button"
-            className="min-h-11 w-full"
-            disabled={!url || rotating}
-            onClick={handleCopy}
-          >
-            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-            {copied ? "Link copiado" : "Copiar link"}
-          </Button>
-          {canShare && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {canShare && (
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-12 min-w-0 flex-1 gap-2 motion-reduce:transform-none motion-reduce:transition-none"
+                disabled={!url || rotating}
+                onClick={handleShare}
+              >
+                {sharedUrl === url ? <Check className="size-4" aria-hidden="true" /> : <Share2 className="size-4" aria-hidden="true" />}
+                Compartilhar
+              </Button>
+            )}
             <Button
               type="button"
-              className="min-h-11 w-full"
+              variant="outline"
+              className="min-h-12 min-w-0 flex-1 gap-2 motion-reduce:transform-none motion-reduce:transition-none"
               disabled={!url || rotating}
-              onClick={handleShare}
+              onClick={handleCopy}
             >
-              {sharedUrl === url ? <Check className="size-4" /> : <Share2 className="size-4" />}
-              Compartilhar
+              {copied ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+              {copied ? "Link copiado" : "Copiar link"}
+            </Button>
+          </div>
+          {url ? (
+            <Button
+              type="button"
+              className="min-h-12 w-full font-semibold motion-reduce:transform-none motion-reduce:transition-none"
+              onClick={() => onOpenChange(false)}
+            >
+              Entrar na sala
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="min-h-12 w-full font-semibold motion-reduce:transform-none motion-reduce:transition-none"
+              disabled={rotationDisabled || rotating}
+              onClick={onRotate}
+            >
+              {rotating ? "Gerando convite..." : "Gerar convite"}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full"
-            onClick={() => onOpenChange(false)}
-          >
-            Voltar para a sala
-          </Button>
-        </DialogFooter>
-
-        {url !== null && !rotating && (
-          <p className="text-xs text-muted-foreground">
-            O link anterior deixará de funcionar. Quem já entrou continua na sala.
-          </p>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-11 w-full"
-          disabled={rotationDisabled || rotating}
-          onClick={onRotate}
-        >
-          <RefreshCw className={rotating ? "size-4 animate-spin" : "size-4"} />
-          {rotating ? "Gerando convite..." : url ? "Gerar novo convite" : "Gerar convite"}
-        </Button>
+          {url && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11 w-full text-xs text-muted-foreground motion-reduce:transform-none motion-reduce:transition-none"
+              disabled={rotationDisabled || rotating}
+              onClick={onRotate}
+            >
+              <RefreshCw className={rotating ? "size-3.5 motion-safe:animate-spin" : "size-3.5"} aria-hidden="true" />
+              {rotating ? "Gerando convite..." : "Gerar novo link"}
+            </Button>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

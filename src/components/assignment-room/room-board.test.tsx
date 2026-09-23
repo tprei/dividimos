@@ -288,11 +288,11 @@ describe("RoomBoard", () => {
     expect(screen.getByRole("button", { name: "Convidar" })).toBeInTheDocument();
 
     rerender(<RoomBoard view={hostView([])} {...boardProps} inviteOpen />);
-    expect(screen.getByRole("dialog", { name: "Convide o pessoal" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Sala de itens" })).toBeInTheDocument();
 
     rerender(<RoomBoard view={participantView([])} {...boardProps} inviteOpen />);
     expect(screen.queryByRole("button", { name: "Convidar" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Convide o pessoal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Sala de itens" })).not.toBeInTheDocument();
 
     rerender(<RoomBoard view={hostView([], "closed")} {...boardProps} inviteOpen />);
     expect(screen.queryByRole("button", { name: "Convidar" })).not.toBeInTheDocument();

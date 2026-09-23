@@ -488,7 +488,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
 
   if (inviteToken && !view) {
     return (
-      <main className="flex min-h-full items-center px-4 py-8">
+      <main className="min-h-full px-4 py-6 sm:px-6 sm:py-8">
         <RoomJoin
           identity={identity}
           onRetryIdentity={() => setIdentityRetry((current) => current + 1)}

@@ -220,7 +220,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       expect(roomId).toMatch(/^[0-9a-f-]{36}$/i);
       // Creating the room presents the invitation on arrival; the header
       // trigger keeps it reachable without scrolling.
-      const inviteDialog = page.getByRole("dialog", { name: "Convide o pessoal" });
+      const inviteDialog = page.getByRole("dialog", { name: "Sala de itens" });
       await expect(inviteDialog).toBeVisible();
       await inviteDialog.getByRole("button", { name: "Copiar link" }).click();
       await expect(inviteDialog.getByRole("button", { name: "Link copiado" })).toBeVisible();
@@ -228,7 +228,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         "window.__copiedText ?? ''",
       );
       expect(invitation).toMatch(new RegExp(`/room/${roomId}#armj1_`));
-      await inviteDialog.getByRole("button", { name: "Voltar para a sala" }).click();
+      await inviteDialog.getByRole("button", { name: "Entrar na sala" }).click();
       await expect(inviteDialog).toBeHidden();
       await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();
       await expect(page.getByRole("region", { name: "Na sala" }).getByText("toque pra gerenciar")).toBeVisible();
