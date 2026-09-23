@@ -111,14 +111,15 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const [completion, setCompletion] = useState<AssignmentRoomCompletion | null>(null);
   const [completionPending, setCompletionPending] = useState(false);
   const [completionActionPending, setCompletionActionPending] = useState(false);
-  const payerIdentityRef = useRef(`${roomId}:${accountId ?? ""}`);
-
-  useEffect(() => {
-    const identity = `${roomId}:${accountId ?? ""}`;
-    if (payerIdentityRef.current === identity) return;
-    payerIdentityRef.current = identity;
+  // Draft payers belong to one room and one account; when either changes the
+  // next render must already see an empty list, so this resets during render
+  // instead of one committed frame later.
+  const payerIdentity = `${roomId}:${accountId ?? ""}`;
+  const [lastPayerIdentity, setLastPayerIdentity] = useState(payerIdentity);
+  if (payerIdentity !== lastPayerIdentity) {
+    setLastPayerIdentity(payerIdentity);
     setPayers([]);
-  }, [accountId, roomId]);
+  }
 
   useEffect(() => {
     const fragmentToken =
@@ -211,11 +212,15 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
       return next.length === current.length ? current : next;
     });
   }, [view]);
-  useEffect(() => {
-    if (view?.room.status !== "closed") {
-      setEditingClosed(false);
-    }
-  }, [view?.room.status]);
+  // "Edit claims" is only meaningful for the current closing; a new status
+  // must land back on the review screen in the same render it appears.
+  const roomStatus = view?.room.status ?? null;
+  const [lastRoomStatus, setLastRoomStatus] = useState(roomStatus);
+  if (roomStatus !== lastRoomStatus) {
+    setLastRoomStatus(roomStatus);
+    setEditingClosed(false);
+  }
+
   const wasGuestRef = useRef(false);
 
   useEffect(() => {

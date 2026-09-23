@@ -111,7 +111,6 @@ function AuthenticatedProfilePage({
   const [shareOpen, setShareOpen] = useState(false);
 
   const aliveRef = useRef(true);
-  const identityRef = useRef({ userId });
 
   useEffect(() => {
     aliveRef.current = true;
@@ -119,10 +118,6 @@ function AuthenticatedProfilePage({
       aliveRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    identityRef.current = { userId };
-  });
 
   const handleSignOut = async () => {
     const result = await signOut();
@@ -141,17 +136,16 @@ function AuthenticatedProfilePage({
     const cleanHandle = handleInput.trim().replace(/^@/, "");
     if (!cleanName || !cleanHandle) return;
 
-    const ownerId = userId;
     setIsSavingProfile(true);
     setProfileError("");
 
     try {
       await updateProfile({ name: cleanName, handle: cleanHandle });
-      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      if (!aliveRef.current) return;
       toast.success("Perfil atualizado");
       setEditingProfile(false);
     } catch (err) {
-      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      if (!aliveRef.current) return;
       setProfileError(ledgerErrorMessage(err));
     } finally {
       if (aliveRef.current) {

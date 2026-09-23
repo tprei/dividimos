@@ -36,7 +36,7 @@ async function reconcileWithRetry(
   }
 }
 
-type RollbackStep = () => void;
+export type RollbackStep = () => void;
 
 /** Restores `prior` only while the store still holds the entry this mutation wrote — a concurrent server refresh replaces it and wins. */
 function revertGroup(groupId: string, patched: GroupSnapshot, prior: GroupSnapshot): RollbackStep {
@@ -95,7 +95,7 @@ function removeOptimisticMessage(groupId: string, clientId: string): RollbackSte
   };
 }
 
-function rollbackAndReconcile(
+export function rollbackAndReconcile(
   rollback: RollbackStep[],
   groupId: string | undefined,
   error: unknown,
