@@ -190,7 +190,7 @@ function AuthPageContent() {
                     <button
                       type="button"
                       onClick={() => setMode("scan")}
-                      className="flex w-full items-center justify-center gap-2 text-sm text-primary hover:underline"
+                      className="flex w-full items-center justify-center gap-2 text-sm text-primary-text hover:underline"
                     >
                       <QrCode className="h-4 w-4" />
                       Ler um convite

@@ -119,7 +119,7 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold">9. Privacidade</h2>
           <p className="mt-2">
             O tratamento dos seus dados pessoais é regido pela nossa{" "}
-            <Link href="/privacy" className="font-medium text-primary underline">
+            <Link href="/privacy" className="font-medium text-primary-text underline">
               Política de Privacidade
             </Link>
             , que complementa estes Termos de Uso.
@@ -132,7 +132,7 @@ export default function TermsPage() {
             Para dúvidas sobre estes termos:{" "}
             <a
               href="mailto:contato@dividimos.ai"
-              className="font-medium text-primary underline"
+              className="font-medium text-primary-text underline"
             >
               contato@dividimos.ai
             </a>

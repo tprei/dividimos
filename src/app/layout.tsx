@@ -4,6 +4,8 @@ import { Geist_Mono } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import { MotionProvider } from "@/components/motion-provider";
 import { RegisterSW } from "@/components/pwa/register-sw";
+import { ThemeSync } from "@/components/theme-sync";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -59,6 +61,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         <script
           dangerouslySetInnerHTML={{
             __html: `window.__pwaInstallPrompt=null;window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__pwaInstallPrompt=e});`,
@@ -69,6 +72,7 @@ export default function RootLayout({
           the measured visual viewport, so overlays and the shell agree on
           where the usable screen ends when the keyboard is up. */}
       <body className="fixed inset-x-0 top-[var(--app-viewport-top)] h-[var(--app-viewport-height)] w-full overflow-hidden flex flex-col safe-top safe-bottom">
+        <ThemeSync />
         <RegisterSW />
         <MotionProvider>{children}</MotionProvider>
         <Toaster

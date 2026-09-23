@@ -32,6 +32,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
+import { readThemePreference, resolveTheme, setThemePreference } from "@/lib/theme";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import type { UpdatePixKeySuccess } from "./actions";
@@ -48,20 +49,16 @@ export default function ProfilePage() {
   const me = useMe();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof document === "undefined") return false;
-    const stored = localStorage.getItem("theme");
-    if (stored) {
-      const isDark = stored === "dark";
-      document.documentElement.classList.toggle("dark", isDark);
-      return isDark;
-    }
-    return document.documentElement.classList.contains("dark");
+    return (
+      resolveTheme(readThemePreference(), window.matchMedia("(prefers-color-scheme: dark)").matches) ===
+      "dark"
+    );
   });
 
   const toggleDark = () => {
     const next = !darkMode;
     setDarkMode(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+    setThemePreference(next ? "dark" : "light");
   };
 
   if (!me) {

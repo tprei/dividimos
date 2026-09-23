@@ -19,7 +19,7 @@ function retryPage(destination: string) {
         <p className="text-sm text-muted-foreground">
           Tente novamente para continuar.
         </p>
-        <a className="text-sm font-medium text-primary underline" href={retryUrl}>
+        <a className="text-sm font-medium text-primary-text underline" href={retryUrl}>
           Tentar novamente
         </a>
       </section>
