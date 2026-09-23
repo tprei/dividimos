@@ -198,10 +198,9 @@ describe("RoomBoard", () => {
     );
 
     const items = screen.getByRole("region", { name: "Itens" });
-    expect(rowIn(items, "beer")).toHaveTextContent("Tudo escolhido");
+    expect(rowIn(items, "beer")).toBeInTheDocument();
     expect(rowIn(items, "fries")).toBeInTheDocument();
-    expect(items).toHaveTextContent("1 de 2 completos");
-    expect(screen.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Encerrar sala/ })).toBeDisabled();
   });
 
   it("opens one shared editor without changing ownership and saves through the Promise", async () => {
@@ -328,7 +327,7 @@ describe("RoomBoard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Sem itens para fechar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Encerrar sala/ })).toBeDisabled();
   });
 
   it("shows closed and terminal guest states without host actions", () => {
@@ -372,4 +371,37 @@ describe("RoomBoard", () => {
     expect(onReview).toHaveBeenCalledOnce();
   });
 
+  it("expands host claims, undoes only the selected person and preserves the item revision", async () => {
+    const user = userEvent.setup();
+    const onClaim = vi.fn(async () => true);
+    const view = hostView([
+      { itemId: "beer", participantId: "person-a", ticks: 60_000 },
+      { itemId: "beer", participantId: "person-b", ticks: 30_000 },
+    ]);
+    render(<RoomBoard view={view} {...boardProps} onClaim={onClaim} />);
+    const toggle = screen.getByRole("button", { name: "Cerveja" });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Desfazer Cerveja de Caio" }));
+    expect(onClaim).toHaveBeenCalledWith("beer", "person-b", 0, 2);
+    await user.click(screen.getByRole("button", { name: "Mudar Cerveja de Caio" }));
+    expect(screen.getByRole("dialog", { name: "Cerveja" })).toBeInTheDocument();
+  });
+
+  it("projects money by ownership and excludes removed participants from the host roster", async () => {
+    const user = userEvent.setup();
+    const onRemoveParticipant = vi.fn();
+    const view = hostView([{ itemId: "beer", participantId: "person-b", ticks: 60_000 }]);
+    const { rerender } = render(<RoomBoard view={view} {...boardProps} onRemoveParticipant={onRemoveParticipant} />);
+    const progress = screen.getByRole("progressbar", { name: "Valor com dono" });
+    expect(progress).toHaveAttribute("aria-valuenow", "500");
+    expect(progress).toHaveAttribute("aria-valuemax", "4000");
+    await user.click(within(screen.getByRole("region", { name: "Na sala" })).getByRole("button", { name: "Caio" }));
+    await user.click(screen.getByRole("button", { name: /Remover · libera/ }));
+    expect(onRemoveParticipant).toHaveBeenCalledWith("person-b");
+    rerender(<RoomBoard view={{ ...view, room: { ...view.room, participants: view.room.participants.map((person) => person.id === "person-b" ? { ...person, removed: true } : person) } }} {...boardProps} />);
+    expect(within(screen.getByRole("region", { name: "Na sala" })).queryByRole("listitem", { name: "Caio" })).not.toBeInTheDocument();
+    expect(progress).toHaveAttribute("aria-valuenow", "0");
+  });
 });

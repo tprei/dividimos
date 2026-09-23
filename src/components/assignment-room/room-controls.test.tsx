@@ -2,7 +2,7 @@ import * as React from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { RoomHostControls } from "./room-host-controls";
+import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "./room-host-controls";
 import { RoomJoin } from "./room-join";
 import { RoomShare } from "./room-share";
 
@@ -207,80 +207,51 @@ describe("RoomShare", () => {
   });
 });
 
-describe("RoomHostControls", () => {
-  it("confirms claim release before removing a participant after opening Gerenciar pessoas", async () => {
+describe("Host controls", () => {
+  it("removes through the anchored person confirmation and blocks pending removal", async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    render(
-      <RoomHostControls
-        participants={participants}
-        fullyAssignedCount={0}
-        totalItemCount={1}
-        complete={false}
-        closed={false}
-        onRemove={onRemove}
-        onClose={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    const disclosure = screen
-      .getByText("Gerenciar pessoas")
-      .closest("details") as HTMLDetailsElement;
-    expect(disclosure.open).toBe(false);
-    await user.click(screen.getByText("Gerenciar pessoas"));
-    expect(disclosure.open).toBe(true);
-    expect(screen.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Remover Caio" }));
-    expect(screen.getByText(/escolhas dessa pessoa serão liberadas/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Remover e liberar itens" }));
+    const { rerender } = render(<RoomHostPerson participant={participants[1]} disabled removable onRemove={onRemove} />);
+    await user.click(screen.getByRole("button", { name: "Caio" }));
+    expect(screen.getByRole("button", { name: "Remover da sala" })).toBeDisabled();
+    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable onRemove={onRemove} />);
+    await user.click(screen.getByRole("button", { name: "Remover da sala" }));
     expect(onRemove).toHaveBeenCalledWith("person-2");
+    expect(screen.queryByRole("button", { name: "Remover da sala" })).not.toBeInTheDocument();
   });
 
-  it("keeps participant removal unavailable while the room is closed", async () => {
+  it("keeps the host non-removable and closed-room people read-only", async () => {
     const user = userEvent.setup();
-    const onRemove = vi.fn();
-    const onReturnToReview = vi.fn();
-    render(
-      <RoomHostControls
-        participants={participants}
-        fullyAssignedCount={2}
-        totalItemCount={2}
-        complete
-        closed
-        onRemove={onRemove}
-        onReturnToReview={onReturnToReview}
-        onClose={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
+    const { rerender } = render(<RoomHostPerson participant={participants[0]} disabled={false} removable onRemove={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Bia" }));
+    expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
+    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable={false} onRemove={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByText("Gerenciar pessoas"));
-    expect(screen.queryByRole("button", { name: "Remover Bia" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Remover Caio" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Fechar escolhas/ })).not.toBeInTheDocument();
+  it("gates closing and returns closed rooms to review", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onReturnToReview = vi.fn();
+    const { rerender } = render(<RoomHostControls unownedLineCount={1} complete={false} closed={false} onClose={onClose} />);
+    expect(screen.getByRole("button", { name: /Encerrar sala/ })).toBeDisabled();
+    rerender(<RoomHostControls unownedLineCount={0} complete closed={false} onClose={onClose} />);
+    await user.click(screen.getByRole("button", { name: "Encerrar sala" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    rerender(<RoomHostControls unownedLineCount={0} complete closed onClose={onClose} onReturnToReview={onReturnToReview} />);
     await user.click(screen.getByRole("button", { name: "Voltar à revisão" }));
     expect(onReturnToReview).toHaveBeenCalledOnce();
-    expect(onRemove).not.toHaveBeenCalled();
   });
 
-  it("blocks the remove action while that participant's removal is pending", async () => {
+  it("requires the existing dialog confirmation after opening Mais", async () => {
     const user = userEvent.setup();
-    render(
-      <RoomHostControls
-        participants={participants}
-        fullyAssignedCount={0}
-        totalItemCount={1}
-        complete={false}
-        closed={false}
-        pendingParticipantIds={["person-2"]}
-        onRemove={vi.fn()}
-        onClose={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByText("Gerenciar pessoas"));
-    expect(screen.getByRole("button", { name: "Remover Caio" })).toBeDisabled();
+    const onCancel = vi.fn();
+    render(<RoomHostMenu onCancel={onCancel} />);
+    await user.click(screen.getByRole("button", { name: "Mais" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar sala" }));
+    expect(onCancel).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Cancelar sala" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar sala" }));
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });
