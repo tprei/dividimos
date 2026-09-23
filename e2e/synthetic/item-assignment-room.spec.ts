@@ -462,8 +462,8 @@ test.describe("Assignment room multi-client acceptance", () => {
         },
       );
 
-      // The host reviews what the room produced; correcting somebody else's
-      // line is no longer possible, so this only walks back to the review.
+      // The host reviews the room and can return to the review without reopening
+      // admissions; closed-room corrections stay host-only.
       await page.getByRole("button", { name: "Corrigir escolhas" }).click();
       await page.getByRole("button", { name: "Voltar", exact: true }).click();
       await expect(page.getByText("Revise antes de registrar")).toBeVisible();
