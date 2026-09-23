@@ -5,7 +5,7 @@ import { Loader2, Mic, Plus, Receipt } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import type { ExpenseSummary, GroupMember } from "@/types/ledger";
+import type { GroupMember } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
@@ -17,6 +17,7 @@ import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { loadMoreExpenses } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
+import { selectExpenseList } from "@/stores/app-selectors";
 import { useBillStore } from "@/stores/bill-store";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { hasMeaningfulDraft } from "@/lib/bill-draft";
@@ -47,18 +48,8 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
     isItemized: boolean;
   } | null>(null);
 
-  const list = useAppStore((s) => s.expenseLists[groupId]);
-  const expensesMap = useAppStore((s) => s.expenses);
-  const complete = list?.complete ?? true;
-  const expenses = useMemo(() => {
-    if (!list) return [];
-    const summaries: ExpenseSummary[] = [];
-    for (const id of list.ids) {
-      const summary = expensesMap[id];
-      if (summary) summaries.push(summary);
-    }
-    return summaries;
-  }, [list, expensesMap]);
+  const expenses = useAppStore(useShallow((s) => selectExpenseList(s, groupId)));
+  const complete = useAppStore((s) => s.expenseLists[groupId]?.complete ?? true);
 
   const billStore = useBillStore(
     useShallow((s) => ({
@@ -69,19 +60,22 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
     })),
   );
 
-  const accepted = members.filter((m) => m.status === "accepted");
-  const voiceMembers = accepted.map((m) => ({
-    handle: m.user.handle,
-    name: m.user.name,
-  }));
-  const modalMembers = accepted.map((m) => ({
-    id: m.userId,
-    handle: m.user.handle,
-    name: m.user.name,
-    avatarUrl: m.user.avatarUrl ?? undefined,
-  }));
-
-  const activeExpenses = expenses.filter((e) => e.status !== "deleted");
+  const { voiceMembers, modalMembers, activeExpenses } = useMemo(() => {
+    const acceptedMembers = members.filter((m) => m.status === "accepted");
+    return {
+      voiceMembers: acceptedMembers.map((m) => ({
+        handle: m.user.handle,
+        name: m.user.name,
+      })),
+      modalMembers: acceptedMembers.map((m) => ({
+        id: m.userId,
+        handle: m.user.handle,
+        name: m.user.name,
+        avatarUrl: m.user.avatarUrl ?? undefined,
+      })),
+      activeExpenses: expenses.filter((e) => e.status !== "deleted"),
+    };
+  }, [members, expenses]);
 
   const handleLoadMore = async () => {
     if (loadingMore) return;

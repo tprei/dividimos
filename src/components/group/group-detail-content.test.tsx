@@ -198,6 +198,35 @@ describe("GroupDetailContent", () => {
     expect(refreshGroup).not.toHaveBeenCalled();
   });
 
+  it("renders a cached group without a skeleton or a refetch", async () => {
+    seedLoaded();
+    const { container } = render(<GroupDetailContent groupId={groupId} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Viagem" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("Acerto")).toBeInTheDocument();
+    expect(container.querySelectorAll(".animate-pulse, [class*='shimmer']")).toHaveLength(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
+  });
+
+  it("stops at the unavailable state when a completed read has no snapshot", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {},
+      groupOrder: [],
+      reads: { [groupReadKey(groupId)]: { status: "ready" } },
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(
+      screen.getByText("Esse grupo não está mais disponível"),
+    ).toBeInTheDocument();
+    expect(refreshGroup).not.toHaveBeenCalled();
+  });
+
   it("fetches the group when hydrated without a snapshot", async () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
 
