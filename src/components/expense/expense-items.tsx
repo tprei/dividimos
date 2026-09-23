@@ -21,6 +21,7 @@ interface ExpenseItemsProps {
   participantName: (participantIndex: number) => string;
   participantAvatarUrl: (participantIndex: number) => string | null;
   participantIsGuest: (participantIndex: number) => boolean;
+  showHeading?: boolean;
 }
 
 export function ExpenseItems({
@@ -30,16 +31,21 @@ export function ExpenseItems({
   participantName,
   participantAvatarUrl,
   participantIsGuest,
+  showHeading = true,
 }: ExpenseItemsProps) {
   const solePayerName =
     payers.length === 1 ? participantName(payers[0].participantIndex) : null;
 
   return (
-    <section className="mt-5">
-      <h2 className="mb-1 text-sm font-semibold">Itens</h2>
-      <p className="mb-2 text-xs text-muted-foreground">
-        Quanto cada pessoa consumiu de cada item.
-      </p>
+    <section className={showHeading ? "mt-5" : undefined}>
+      {showHeading && (
+        <>
+          <h2 className="mb-1 text-sm font-semibold">Itens</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Quanto cada pessoa consumiu de cada item.
+          </p>
+        </>
+      )}
       <div className="space-y-2">
         {items.map((item, itemIndex) => {
           const attribution = attributeItem(

@@ -16,6 +16,7 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Popover,
   PopoverContent,
@@ -217,6 +218,39 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     }
   }
 
+  const participantList = (
+    <ExpenseParticipantList
+      participants={detail.participants}
+      meId={me?.id ?? null}
+      invitedUserIds={invitedUserIds}
+      showHeading={!assignmentRoom}
+      onInviteGuest={(participant, anchor) => {
+        setInviteIndex(participant.participantIndex);
+        setInviteAnchor(anchor);
+      }}
+    />
+  );
+  const items = current.expenseType === "itemized" &&
+    current.payload.items.length > 0 ? (
+      <ExpenseItems
+        items={current.payload.items}
+        itemAssignments={current.payload.itemAssignments}
+        participantName={participantName}
+        payers={payers}
+        participantAvatarUrl={participantAvatarUrl}
+        participantIsGuest={participantIsGuest}
+        showHeading={!assignmentRoom}
+      />
+    ) : null;
+  const history = (
+    <ExpenseHistory
+      versions={detail.versions}
+      nameOf={nameOf}
+      avatarUrlOf={avatarUrlOf}
+      showHeading={!assignmentRoom}
+    />
+  );
+
   return (
     <div className="mx-auto flex min-h-full w-full max-w-lg flex-col">
       <ScreenHeader
@@ -257,17 +291,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         )}
 
         {canManage && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {assignmentRoom && (
-              <Button
-                variant="outline"
-                className="w-full gap-2"
-                onClick={() => router.push(`/room/${assignmentRoom.id}`)}
-              >
-                <Receipt className="h-4 w-4" />
-                Ver sala
-              </Button>
-            )}
+          <div className="mt-4 flex gap-2 [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1">
             {isDeleted ? (
               <Button
                 className="flex-1 gap-2"
@@ -300,6 +324,16 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                 </Button>
               </>
             )}
+            {assignmentRoom && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => router.push(`/room/${assignmentRoom.id}`)}
+              >
+                <Receipt className="h-4 w-4" />
+                Ver sala
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -312,37 +346,41 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         />
       </div>
 
-      <ExpenseParticipantList
-        participants={detail.participants}
-        meId={me?.id ?? null}
-        invitedUserIds={invitedUserIds}
-        onInviteGuest={(participant, anchor) => {
-          setInviteIndex(participant.participantIndex);
-          setInviteAnchor(anchor);
-        }}
-      />
-
-      {current.expenseType === "itemized" &&
-        current.payload.items.length > 0 && (
-          <div className="px-4">
-            <ExpenseItems
-              items={current.payload.items}
-              itemAssignments={current.payload.itemAssignments}
-              participantName={participantName}
-              payers={payers}
-              participantAvatarUrl={participantAvatarUrl}
-              participantIsGuest={participantIsGuest}
-            />
-          </div>
-        )}
-
-      <div className="px-4">
-        <ExpenseHistory
-          versions={detail.versions}
-          nameOf={nameOf}
-          avatarUrlOf={avatarUrlOf}
-        />
-      </div>
+      {assignmentRoom ? (
+        <section className="mt-5 px-4" aria-label="Sala de itens">
+          <h2 className="text-sm font-semibold">Sala de itens</h2>
+          <Tabs key={expenseId} defaultValue="people" className="mt-3 gap-4">
+            <TabsList
+              variant="line"
+              aria-label="Sala de itens"
+              className="w-full justify-start gap-0 border-b p-0 group-data-horizontal/tabs:h-11"
+            >
+              {[
+                ["items", "Por item"],
+                ["people", "Por pessoa"],
+                ["history", "Histórico"],
+              ].map(([value, label]) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="h-11 flex-none rounded-none px-3 after:bg-primary group-data-horizontal/tabs:after:bottom-0 motion-reduce:transition-none motion-reduce:after:transition-none"
+                >
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value="items">{items}</TabsContent>
+            <TabsContent value="people">{participantList}</TabsContent>
+            <TabsContent value="history">{history}</TabsContent>
+          </Tabs>
+        </section>
+      ) : (
+        <>
+          {participantList}
+          {items && <div className="px-4">{items}</div>}
+          <div className="px-4">{history}</div>
+        </>
+      )}
 
       <footer ref={footerRef} className="mt-6 border-t bg-background px-4 py-3">
         <Button
