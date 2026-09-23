@@ -8,6 +8,7 @@ interface ExpenseHistoryProps {
   versions: ExpenseVersion[];
   nameOf: (userId: string) => string;
   avatarUrlOf: (userId: string) => string | null;
+  showHeading?: boolean;
 }
 
 const MINUTE_MS = 60_000;
@@ -31,12 +32,13 @@ export function ExpenseHistory({
   versions,
   nameOf,
   avatarUrlOf,
+  showHeading = true,
 }: ExpenseHistoryProps) {
   const ordered = [...versions].sort((a, b) => b.versionNo - a.versionNo);
 
   return (
-    <section className="mt-5">
-      <h2 className="mb-2 text-sm font-semibold">Histórico</h2>
+    <section className={showHeading ? "mt-5" : undefined}>
+      {showHeading && <h2 className="mb-2 text-sm font-semibold">Histórico</h2>}
       <ol className="space-y-2">
         {ordered.map((v) => {
           const author = nameOf(v.authorId);

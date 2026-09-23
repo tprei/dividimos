@@ -12,6 +12,7 @@ interface ExpenseParticipantListProps {
   meId: string | null;
   invitedUserIds: ReadonlySet<string>;
   onInviteGuest: (participant: Participant, anchor: HTMLButtonElement) => void;
+  showHeading?: boolean;
 }
 
 export function ExpenseParticipantList({
@@ -19,13 +20,18 @@ export function ExpenseParticipantList({
   meId,
   invitedUserIds,
   onInviteGuest,
+  showHeading = true,
 }: ExpenseParticipantListProps) {
   return (
-    <section className="mt-5">
-      <h2 className="mb-1 text-sm font-semibold">Resumo por pessoa</h2>
-      <p className="mb-2 text-xs text-muted-foreground">
-        Consumo, pagamento e o saldo de cada um nessa conta.
-      </p>
+    <section className={showHeading ? "mt-5" : undefined}>
+      {showHeading && (
+        <>
+          <h2 className="mb-1 text-sm font-semibold">Resumo por pessoa</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Consumo, pagamento e o saldo de cada um nessa conta.
+          </p>
+        </>
+      )}
       <ul
         aria-label="Participantes"
         className="divide-y divide-border overflow-hidden rounded-2xl border bg-card"
@@ -41,39 +47,43 @@ export function ExpenseParticipantList({
               >
                 <GuestAvatar size="md" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[15px] font-semibold">
-                      {participant.guest.displayName}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="text-[15px] font-semibold wrap-anywhere">
+                        {participant.guest.displayName}
+                      </span>
+                      <GuestBadge />
                     </span>
-                    <GuestBadge />
+                    <Money
+                      cents={participant.paidCents - participant.shareCents}
+                      signed
+                      className="shrink-0 text-sm font-semibold"
+                      label={`Saldo de ${participant.guest.displayName} nessa conta`}
+                    />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Consumiu <Money cents={participant.shareCents} className="text-xs" />
-                    {participant.paidCents > 0 && (
-                      <>
-                        {" · Pagou "}
-                        <Money cents={participant.paidCents} className="text-xs" />
-                      </>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      Consumiu <Money cents={participant.shareCents} className="text-xs" />
+                      {participant.paidCents > 0 && (
+                        <>
+                          {" · Pagou "}
+                          <Money cents={participant.paidCents} className="text-xs" />
+                        </>
+                      )}
+                    </p>
+                    {participant.guest.claimedBy === null && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        aria-label={`Convidar ${participant.guest.displayName}`}
+                        className="h-11 shrink-0 rounded-full px-4"
+                        onClick={(event) => onInviteGuest(participant, event.currentTarget)}
+                      >
+                        Convidar
+                      </Button>
                     )}
-                  </p>
+                  </div>
                 </div>
-                {participant.guest.claimedBy === null && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    aria-label={`Convidar ${participant.guest.displayName}`}
-                    className="h-11 shrink-0 rounded-full px-4"
-                    onClick={(event) => onInviteGuest(participant, event.currentTarget)}
-                  >
-                    Convidar
-                  </Button>
-                )}
-                <Money
-                  cents={participant.paidCents - participant.shareCents}
-                  signed
-                  className="shrink-0 text-sm font-semibold"
-                  label={`Saldo de ${participant.guest.displayName} nessa conta`}
-                />
               </li>
             );
           }

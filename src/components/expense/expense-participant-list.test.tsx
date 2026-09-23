@@ -65,7 +65,8 @@ describe("ExpenseParticipantList reconciliation", () => {
     expect(
       within(rows[0]).getByText(
         (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") ===
+          element?.tagName === "P" &&
+          element.textContent?.replace(/\s+/g, " ") ===
           "Consumiu R$ 50,00 · Pagou R$ 120,00",
       ),
     ).toBeInTheDocument();
@@ -78,7 +79,8 @@ describe("ExpenseParticipantList reconciliation", () => {
     expect(
       within(rows[1]).getByText(
         (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") ===
+          element?.tagName === "P" &&
+          element.textContent?.replace(/\s+/g, " ") ===
           "Consumiu R$ 50,00 · Pagou R$ 30,00",
       ),
     ).toBeInTheDocument();
@@ -103,7 +105,8 @@ describe("ExpenseParticipantList reconciliation", () => {
     expect(
       within(row).getByText(
         (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") === "Consumiu R$ 50,00",
+          element?.tagName === "P" &&
+          element.textContent?.replace(/\s+/g, " ") === "Consumiu R$ 50,00",
       ),
     ).toBeInTheDocument();
     expect(within(row).getByLabelText("Saldo de Carol Souza nessa conta").textContent).toBe(

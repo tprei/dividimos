@@ -261,6 +261,7 @@ describe("ExpenseDetail", () => {
     render(<ExpenseDetail expenseId="e1" />);
 
     expect(screen.getByText("Convidado")).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.getByText("Alice criou a conta")).toBeInTheDocument();
     expect(
       screen.getByText("Carol Souza mudou o nome de “Almoço” para “Jantar”"),
@@ -380,6 +381,50 @@ describe("ExpenseDetail", () => {
     expect(routerMock.push).toHaveBeenCalledWith("/room/room-1");
     expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Excluir" })).toBeInTheDocument();
+  });
+
+  it("audits room consumption and history in keyboard-accessible tabs without losing guest actions", async () => {
+    const user = userEvent.setup();
+    seedStore("active", { id: "room-1", hostUserId: me.id });
+    const detail = makeDetail();
+    detail.current.expenseType = "itemized";
+    detail.current.payload.items = [{
+      description: "Jantar completo",
+      quantityMilliunits: 1000,
+      unitPriceCents: 12000,
+      totalPriceCents: 12000,
+    }];
+    detail.current.payload.itemAssignments = [
+      { itemIndex: 0, participantIndex: 0, amountCents: 7000 },
+      { itemIndex: 0, participantIndex: 1, amountCents: 5000 },
+    ];
+    useAppStore.setState({ expenseDetails: { e1: detail } });
+    const { unmount } = render(<ExpenseDetail expenseId="e1" />);
+
+    const people = screen.getByRole("tab", { name: "Por pessoa" });
+    expect(people).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Saldo de Bruno nessa conta")).toHaveTextContent("−R$ 50,00");
+    expect(screen.queryByText("Jantar completo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alice criou a conta")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Resumo por pessoa" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Por item" }));
+    expect(screen.getByRole("tabpanel", { name: "Por item" })).toHaveTextContent("Jantar completo");
+    expect(screen.queryByRole("list", { name: "Participantes" })).not.toBeInTheDocument();
+
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Histórico" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("tabpanel", { name: "Histórico" })).toHaveTextContent("Alice criou a conta");
+
+    await user.click(people);
+    await user.click(screen.getByRole("button", { name: "Convidar Bruno" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Parte de R$ 50,00 em Jantar");
+    expect(createGuestClaimToken).not.toHaveBeenCalled();
+
+    unmount();
+    render(<ExpenseDetail expenseId="e1" />);
+    expect(screen.getByRole("tab", { name: "Por pessoa" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("renders EmptyState when expense is not found", async () => {
