@@ -1,15 +1,12 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   Bell,
   Home,
   Loader2,
   MessageSquare,
   Plus,
-  RefreshCw,
-  Search,
-  Settings,
   User,
   Users,
 } from "lucide-react";
@@ -18,12 +15,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
-import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
-import { Logo } from "@/components/shared/logo";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UnreadBadge } from "@/components/shared/unread-badge";
+import { IconButton } from "@/components/ui/icon-button";
+import { springs } from "@/lib/animations";
 import { haptics } from "@/hooks/use-haptics";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
@@ -55,78 +52,50 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
-const SCREEN_HEADER_PREFIXES = ["/app/conversations", "/app/groups", "/app/bill", "/app/profile"] as const;
-
-export function usesScreenHeader(pathname: string): boolean {
-  if (pathname === "/app") return true;
-  return SCREEN_HEADER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-}
 
 function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
   const pathname = usePathname();
   const unreadTotal = useAppStore(selectUnreadTotal);
+  const reducedMotion = useReducedMotion();
 
   if (keyboardOpen || pathname.startsWith(WIZARD_PREFIX)) return null;
 
   return (
     <nav
+      aria-label="Navegação principal"
       data-tour="nav-bar"
-      className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50 safe-bottom"
+      className="z-30 shrink-0 border-t border-border glass md:order-first md:w-28 md:border-t-0 md:border-r compact:md:order-last compact:md:w-full compact:md:border-r-0 compact:md:border-t"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">
+      <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2 md:h-full md:flex-col md:justify-start md:gap-3 md:px-3 md:py-6 compact:h-12 compact:md:flex-row compact:md:justify-around compact:md:gap-0 compact:md:px-2 compact:md:py-0">
         {navItems.map((item) => {
-          const isActive =
-            item.href === "/app"
-              ? pathname === "/app"
-              : pathname.startsWith(item.href);
-
-          if (item.primary) {
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-label="Nova conta"
-                onClick={() => haptics.tap()}
-                className="-mt-5 flex flex-col items-center gap-0.5 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                <motion.div
-                  whileTap={{ scale: 0.92 }}
-                  className="gradient-primary flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
-                >
-                  <item.icon className="h-6 w-6 text-gradient-foreground" strokeWidth={2.5} />
-                </motion.div>
-                <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
-              </Link>
-            );
-          }
-
-          const showBadge = "badge" in item && item.badge;
-
+          const isActive = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+          const primary = "primary" in item;
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-label={primary ? "Nova conta" : `${item.label}${"badge" in item && unreadTotal > 0 ? `, ${unreadTotal} não lidas` : ""}`}
               aria-current={isActive ? "page" : undefined}
               onClick={() => haptics.tap()}
-              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              className={cn(
+                "relative flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:w-full md:py-3 compact:md:w-auto compact:md:py-0",
+                primary && "-mt-5 md:order-first md:mt-0 md:mb-3 compact:mt-0 compact:md:order-none compact:md:mb-0",
+                isActive ? "text-primary-text" : "text-muted-foreground",
+              )}
             >
-              <motion.div whileTap={{ scale: 0.9 }} className="relative">
-                <item.icon
-                  className={`h-5 w-5 transition-colors ${
-                    isActive ? "text-primary-text" : "text-muted-foreground"
-                  }`}
-                  strokeWidth={isActive ? 2.5 : 2}
-                />
-                {showBadge && <UnreadBadge count={unreadTotal} />}
-              </motion.div>
-              <span
-                className={`text-xs font-medium transition-colors ${
-                  isActive ? "text-primary-text" : "text-muted-foreground"
-                }`}
+              {isActive && <motion.span
+                layoutId={reducedMotion ? undefined : "shell-nav-active"}
+                transition={springs.snappy}
+                className="absolute inset-0 rounded-2xl bg-primary/10"
+              />}
+              <motion.span
+                whileTap={reducedMotion ? undefined : { scale: 0.92 }}
+                className={cn("relative flex items-center justify-center", primary && "gradient-primary size-14 rounded-2xl text-gradient-foreground shadow-lg shadow-primary/20 compact:size-11")}
               >
-                {item.label}
-              </span>
-              <span className={`mt-0.5 h-0.5 w-4 rounded-full ${isActive ? "bg-primary-text" : "bg-transparent"}`} />
+                <item.icon aria-hidden="true" className={primary ? "size-6" : "size-5"} strokeWidth={isActive ? 2.5 : 2} />
+                {"badge" in item && <UnreadBadge count={unreadTotal} />}
+              </motion.span>
+              <span className="relative text-xs font-semibold compact:hidden">{item.label}</span>
             </Link>
           );
         })}
@@ -241,6 +210,7 @@ function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
       }
 
       const next = Math.min(deltaY * 0.4, threshold * 1.5);
+      if (distance.current < threshold && next >= threshold) haptics.selectionChanged();
       distance.current = next;
       setPullDistance(next);
     },
@@ -275,7 +245,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { keyboardOpen } = useAppViewport();
   const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
-  const [refreshing, setRefreshing] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsAnchor, setNotificationsAnchor] = useState<HTMLElement | null>(null);
   const invitations = useAppStore(selectPendingInvitations);
@@ -363,29 +332,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const unifiedBell = useMemo(
     () => (
-      <button
-        type="button"
+      <IconButton
         aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} convite${invitations.length > 1 ? "s" : ""}` : ""}${unread ? ", atividade nova" : ""}`}
         onClick={(event) => {
           haptics.tap();
-          // Captured before the state update: the surface positions against
-          // whichever bell was pressed, shell header or screen header.
           setNotificationsAnchor(event.currentTarget);
           setNotificationsOpen(true);
         }}
-        className="relative flex min-h-11 min-w-11 items-center justify-center rounded-full text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="relative rounded-full"
       >
         <Bell className="size-5" aria-hidden="true" />
         {invitations.length > 0 && (
           <span
             aria-hidden="true"
-            className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+            className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-2xs font-bold text-destructive-foreground"
           >
             {invitations.length}
           </span>
         )}
         {unread && <span aria-hidden="true" className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-primary" />}
-      </button>
+      </IconButton>
     ),
     [invitations.length, unread],
   );
@@ -432,7 +398,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const handleRefresh = useCallback(async (): Promise<boolean> => {
-    setRefreshing(true);
     try {
       const shouldRefreshActivity = useAppStore.getState().activity.read.status !== "idle";
       await Promise.all([
@@ -447,8 +412,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
       toast.error(ledgerErrorMessage(err));
       return false;
-    } finally {
-      setRefreshing(false);
     }
   }, [router]);
 
@@ -480,7 +443,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
         </div>
       ) : (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+        <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background md:flex-row compact:md:flex-col">
+
+          {(pulling || pullDistance > 0) && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={springs.snappy} className="absolute inset-x-0 top-2 z-40 flex justify-center pointer-events-none">
+              <span role="status" aria-label={pulling ? "Atualizando" : "Puxe para atualizar"} className="rounded-full border border-border bg-card p-2 shadow-sm">
+                <Loader2 className={cn("size-4 text-muted-foreground", pulling && "motion-safe:animate-spin")} style={{ opacity: pulling ? 1 : pullDistance / 80 }} />
+              </span>
+            </motion.div>
+          )}
+
+          <main
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchCancel}
+          >
           {bootstrapStatus === "error" && (
             <div
               role="alert"
@@ -499,74 +478,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           )}
-          {!usesScreenHeader(pathname) && (
-          <header className="sticky top-0 z-40 glass border-b border-border/50">
-            <div className="flex h-14 items-center justify-between px-4">
-              <Logo size="sm" />
-              <div className="flex items-center gap-1">
-                <InstallPrompt />
-                <Link
-                  href="/app/search"
-                  aria-label="Buscar"
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  <Search className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/app/settings"
-                  aria-label="Configurações"
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  <Settings className="h-4 w-4" />
-                </Link>
-                {refreshEligible && (
-                  <button
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    aria-label="Atualizar"
-                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-                  >
-                    {refreshing ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                  </button>
-                )}
-                {unifiedBell}
-              </div>
-            </div>
-          </header>
-          )}
-
-          {(pulling || pullDistance > 0) && (
-            <div className="flex justify-center py-2">
-              <Loader2
-                className={`h-5 w-5 text-muted-foreground ${
-                  pulling ? "animate-spin" : ""
-                }`}
-                style={{ opacity: pulling ? 1 : pullDistance / 80 }}
-              />
-            </div>
-          )}
-
-          <main
-            className={cn("flex-1 overflow-y-auto overscroll-y-contain", !navHidden && "pb-20")}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            onTouchCancel={onTouchCancel}
-          >
             <ScreenHeaderActionsContext.Provider
               value={
-                usesScreenHeader(pathname) &&
                   !pathname.startsWith("/app/bill/new") &&
                   pathname !== "/app"
                   ? unifiedBell
                   : null
               }
             >
-              {children}
+              <div className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0")}>{children}</div>
             </ScreenHeaderActionsContext.Provider>
           </main>
 

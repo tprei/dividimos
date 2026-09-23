@@ -1,11 +1,15 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight, PartyPopper, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
 import { useMounted } from "@/hooks/use-client-only";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { springs } from "@/lib/animations";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 interface TourStep {
   target: string;
@@ -18,28 +22,25 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: "[data-tour='balance-card']",
     title: "Seu saldo",
-    description: "Seu saldo geral, mais quanto você tem a pagar e a receber.",
+    description: "O que você tem a pagar e a receber.",
     placement: "bottom",
   },
   {
     target: "[data-tour='quick-actions']",
     title: "Ações rápidas",
-    description:
-      "Crie uma nova conta, escaneie um cupom, acesse seus grupos ou leia um convite por QR code.",
+    description: "Contas, cupons e convites.",
     placement: "bottom",
   },
   {
     target: "[data-tour='debt-lists']",
     title: "Quem deve o quê",
-    description:
-      "Quem você precisa pagar e quem precisa te pagar. Toque numa dívida pra gerar o Pix.",
+    description: "Seus acertos com cada pessoa.",
     placement: "top",
   },
   {
     target: "[data-tour='nav-bar']",
     title: "Navegação",
-    description:
-      "Use a barra para ir ao início, ver contas, criar despesas, acessar grupos ou seu perfil.",
+    description: "Conversas, grupos e seu perfil.",
     placement: "top",
   },
 ];
@@ -59,7 +60,7 @@ function getTargetRect(selector: string): SpotlightRect | null {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
   return {
-    top: rect.top - PADDING + window.scrollY,
+    top: rect.top - PADDING,
     left: rect.left - PADDING,
     width: rect.width + PADDING * 2,
     height: rect.height + PADDING * 2,
@@ -78,7 +79,7 @@ function scrollToTarget(selector: string): void {
   const rect = el.getBoundingClientRect();
   const viewportH = window.innerHeight;
   if (rect.top < 80 || rect.bottom > viewportH - 80) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
   }
 }
 
@@ -88,6 +89,9 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const mounted = useMounted();
+  const reducedMotion = useReducedMotion();
+  const card = useRef<HTMLDivElement>(null);
+  useBackHandler(shouldShow, completeTour);
 
   const recalcTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -148,6 +152,9 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
       window.removeEventListener("scroll", handler);
     };
   }, [shouldShow, recalcSpotlight]);
+  useEffect(() => {
+    if (spotlight && shouldShow) card.current?.focus();
+  }, [spotlight, shouldShow]);
 
   const handleSkip = useCallback(() => {
     completeTour();
@@ -157,14 +164,10 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
 
   const step = TOUR_STEPS[currentStep];
 
-  const tooltipTop =
-    step.placement === "bottom" && spotlight
-      ? spotlight.top + spotlight.height + 12 - window.scrollY
-      : undefined;
-  const tooltipBottom =
-    step.placement === "top" && spotlight
-      ? window.innerHeight - (spotlight.top - 12 - window.scrollY)
-      : undefined;
+  const anchorTop = spotlight
+    ? step.placement === "bottom" ? spotlight.top + spotlight.height + 12 : spotlight.top - 200
+    : 16;
+  const tooltipTop = `clamp(16px, ${anchorTop}px, calc(var(--app-viewport-height, 100dvh) - 200px))`;
 
   return createPortal(
     <AnimatePresence mode="wait">
@@ -177,16 +180,16 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
         >
           <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
+            initial={reducedMotion ? false : { scale: 0.97, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+            exit={{ opacity: 0 }}
+            transition={springs.snappy}
             className="flex flex-col items-center gap-3 rounded-2xl bg-card p-8 shadow-2xl"
           >
             <PartyPopper className="h-12 w-12 text-primary" />
             <p className="text-lg font-bold">Pronto!</p>
             <p className="text-sm text-muted-foreground">
-              Agora é só dividir as contas.
+              Tudo pronto pra dividir.
             </p>
           </motion.div>
         </motion.div>
@@ -207,16 +210,11 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
               <mask id="tour-spotlight-mask">
                 <rect x="0" y="0" width="100%" height="100%" fill="white" />
                 {spotlight && (
-                  <motion.rect
-                    initial={{ opacity: 0 }}
-                    animate={{
-                      x: spotlight.left,
-                      y: spotlight.top - window.scrollY,
-                      width: spotlight.width,
-                      height: spotlight.height,
-                      opacity: 1,
-                    }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  <rect
+                    x={spotlight.left}
+                    y={spotlight.top}
+                    width={spotlight.width}
+                    height={spotlight.height}
                     rx={BORDER_RADIUS}
                     ry={BORDER_RADIUS}
                     fill="black"
@@ -239,37 +237,57 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
           {spotlight && (
             <motion.div
               key={currentStep}
-              initial={{ opacity: 0, y: step.placement === "bottom" ? -8 : 8 }}
+              ref={card}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tour-title"
+              aria-describedby="tour-description"
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") handleSkip();
+                if (event.key !== "Tab") return;
+                const buttons = card.current?.querySelectorAll("button");
+                if (!buttons?.length) return;
+                const first = buttons[0];
+                const last = buttons[buttons.length - 1];
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === card.current)) {
+                  event.preventDefault();
+                  last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first.focus();
+                }
+              }}
+              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ delay: 0.15, duration: 0.3 }}
-              className="absolute left-4 right-4 mx-auto max-w-sm rounded-2xl bg-card p-4 shadow-2xl"
+              transition={springs.snappy}
+              className="absolute left-4 right-4 mx-auto max-h-[calc(var(--app-viewport-height,100dvh)-32px)] max-w-sm overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-2xl outline-none"
               style={{
                 top: tooltipTop,
-                bottom: tooltipBottom,
               }}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <p className="text-sm font-bold">{step.title}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p id="tour-title" className="text-base font-bold">{step.title}</p>
+                  <p id="tour-description" className="mt-1 text-sm text-muted-foreground">
                     {step.description}
                   </p>
                 </div>
-                <button
+                <IconButton
                   onClick={handleSkip}
-                  className="ml-2 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted"
+                  className="ml-2 shrink-0"
                   aria-label="Pular tour"
                 >
                   <X className="h-4 w-4" />
-                </button>
+                </IconButton>
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <div className="flex gap-1">
                   {TOUR_STEPS.map((_, i) => (
                     <div
                       key={i}
-                      className={`h-1.5 rounded-full transition-all ${
+                      className={`h-1.5 rounded-full ${
                         i === currentStep
                           ? "w-4 bg-primary"
                           : i < currentStep
@@ -279,9 +297,9 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
                     />
                   ))}
                 </div>
-                <button
+                <Button
                   onClick={handleNext}
-                  className="flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  size="sm"
                 >
                   {currentStep === TOUR_STEPS.length - 1 ? (
                     "Concluir"
@@ -291,7 +309,7 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
                       <ChevronRight className="h-3 w-3" />
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </motion.div>
           )}
