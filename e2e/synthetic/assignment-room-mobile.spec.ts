@@ -117,12 +117,12 @@ async function openRoom(page: Page, items: OcrItem[]): Promise<string> {
   await page.getByRole("button", { name: "Criar sala de divisão" }).click();
   await waitForRoom(page);
 
-  const invite = page.getByRole("dialog", { name: "Convide o pessoal" });
+  const invite = page.getByRole("dialog", { name: "Sala de itens" });
   await expect(invite).toBeVisible();
   await invite.getByRole("button", { name: "Copiar link" }).click();
   await expect(invite.getByRole("button", { name: "Link copiado" })).toBeVisible();
   const invitation = await page.evaluate<string>("window.__copiedText ?? ''");
-  await invite.getByRole("button", { name: "Voltar para a sala" }).click();
+  await invite.getByRole("button", { name: "Entrar na sala" }).click();
   await expect(invite).toBeHidden();
   return invitation;
 }
@@ -267,20 +267,20 @@ test.describe("Assignment room on a phone", () => {
     // Reading the drawn modules back and comparing them with the library's
     // encoding of that URL is the same check a scanner performs.
     await invite.click();
-    const inviteDialog = page.getByRole("dialog", { name: "Convide o pessoal" });
+    const inviteDialog = page.getByRole("dialog", { name: "Sala de itens" });
     await expect(inviteDialog.getByLabel("QR code do convite")).toBeVisible();
     const expected = QRCode.create(invitation, {}).modules;
     await expect
       .poll(() => readQrModules(page, expected.size), { timeout: ROOM_TIMEOUT })
       .toEqual(Array.from(expected.data, (bit) => (bit ? 1 : 0)));
-    await inviteDialog.getByRole("button", { name: "Voltar para a sala" }).click();
+    await inviteDialog.getByRole("button", { name: "Entrar na sala" }).click();
 
     // A signed-in invitee joins as themselves and never types a name; an
     // anonymous invitee still gets the guest form.
     const memberSession = await newSession(member);
     await memberSession.page.goto(localInvitation(invitation));
     await expect(
-      memberSession.page.getByText(new RegExp(`Você entra como ${member.name}`)),
+      memberSession.page.getByText(`Entrar como ${member.name.split(" ")[0]}`),
     ).toBeVisible({ timeout: 20_000 });
     await expect(
       memberSession.page.getByRole("textbox", { name: "Seu nome" }),
@@ -318,13 +318,13 @@ test.describe("Assignment room on a phone", () => {
       await page.reload();
       await waitForRoom(page);
       await page.getByRole("button", { name: "Convidar" }).click();
-      await page.getByRole("dialog", { name: "Convide o pessoal" })
+      await page.getByRole("dialog", { name: "Sala de itens" })
         .getByRole("button", { name: "Copiar link" })
         .click();
       expect(await page.evaluate<string>("window.__copiedText ?? ''")).toBe(invitation);
       await page
-        .getByRole("dialog", { name: "Convide o pessoal" })
-        .getByRole("button", { name: "Voltar para a sala" })
+        .getByRole("dialog", { name: "Sala de itens" })
+        .getByRole("button", { name: "Entrar na sala" })
         .click();
 
       // Register the bill and check the signed-in joiner kept an account share
@@ -480,8 +480,8 @@ test.describe("Assignment room on a phone", () => {
     // Opening and closing both dialogs must leave the room scrollable.
     await page.getByRole("button", { name: "Convidar" }).click();
     await page
-      .getByRole("dialog", { name: "Convide o pessoal" })
-      .getByRole("button", { name: "Voltar para a sala" })
+      .getByRole("dialog", { name: "Sala de itens" })
+      .getByRole("button", { name: "Entrar na sala" })
       .click();
     const item = row(page, "Itens", "Item longo número 1");
     await item.getByRole("button", { name: "Item longo número 1", exact: true }).click();

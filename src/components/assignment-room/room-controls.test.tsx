@@ -59,7 +59,6 @@ describe("RoomJoin", () => {
       />,
     );
 
-    expect(screen.getByText("Você entra como convidado, sem precisar criar conta.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Digite um nome");
 
@@ -80,10 +79,6 @@ describe("RoomJoin", () => {
       />,
     );
 
-    expect(screen.getByText(/Você entra como Bia\./)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Ao registrar a conta, você recebe um convite para o grupo\./),
-    ).toBeInTheDocument();
     expect(screen.queryByLabelText("Seu nome")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
@@ -97,9 +92,9 @@ describe("RoomJoin", () => {
         onJoin={onJoin}
       />,
     );
-    expect(
-      screen.getByText(/Você entra com sua conta conectada\./),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Seu nome")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
+    expect(onJoin).toHaveBeenCalledTimes(2);
   });
 
   it("shows the identity check and a retry on failure without a join action", async () => {
@@ -114,7 +109,7 @@ describe("RoomJoin", () => {
       />,
     );
 
-    expect(screen.getByText("Verificando sua conta...")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Entrar na sala" })).not.toBeInTheDocument();
 
     rerender(
@@ -138,15 +133,10 @@ describe("RoomShare", () => {
     render(<ControlledShare {...shareProps} onOpenChange={onOpenChange} />);
 
     await user.click(screen.getByRole("button", { name: "Convidar" }));
-    const dialog = screen.getByRole("dialog", { name: "Convide o pessoal" });
-    expect(
-      within(dialog).getByText(
-        "Escaneie o QR ou copie o link. Quem já tem conta entra com ela; quem não tem entra com um nome.",
-      ),
-    ).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Sala de itens" });
     expect(within(dialog).queryByText(/secret/)).not.toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "Voltar para a sala" }));
+    await user.click(within(dialog).getByRole("button", { name: "Entrar na sala" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Convidar" })).toHaveFocus(),
     );
@@ -166,9 +156,9 @@ describe("RoomShare", () => {
       />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Convide o pessoal" });
+    const dialog = screen.getByRole("dialog", { name: "Sala de itens" });
     expect(within(dialog).getByRole("alert")).toHaveTextContent("Não foi possível gerar o convite");
-    await user.click(within(dialog).getByRole("button", { name: "Gerar novo convite" }));
+    await user.click(within(dialog).getByRole("button", { name: "Gerar novo link" }));
     expect(onRotate).toHaveBeenCalledOnce();
 
     rerender(
@@ -187,23 +177,24 @@ describe("RoomShare", () => {
     rerender(
       <RoomShare {...shareProps} open onOpenChange={vi.fn()} rotationDisabled onRotate={onRotate} />,
     );
-    expect(within(dialog).getByRole("button", { name: "Gerar novo convite" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Gerar novo link" })).toBeDisabled();
   });
 
-  it("asks for a fresh invite when this device has none", () => {
+  it("generates an invite rather than entering when this device has none", async () => {
+    const user = userEvent.setup();
+    const onRotate = vi.fn();
     render(
-      <RoomShare {...shareProps} url={null} open onOpenChange={vi.fn()} onRotate={vi.fn()} />,
+      <RoomShare {...shareProps} url={null} open onOpenChange={vi.fn()} onRotate={onRotate} />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Convide o pessoal" });
-    expect(
-      within(dialog).getByText(
-        "Este aparelho não tem o convite atual. Gere um novo para compartilhar.",
-      ),
-    ).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Sala de itens" });
+    expect(within(dialog).queryByLabelText("QR code do convite")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Entrar na sala" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Copiar link" })).toBeDisabled();
     const generate = within(dialog).getByRole("button", { name: "Gerar convite" });
     expect(generate).toBeEnabled();
+    await user.click(generate);
+    expect(onRotate).toHaveBeenCalledOnce();
   });
 });
 
