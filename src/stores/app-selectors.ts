@@ -1,10 +1,5 @@
 import { transfersFromBalances, transfersInvolving } from "@/lib/ledger/transfers";
 import { conversationRow, type ConversationRowData } from "@/lib/conversations";
-import {
-  groupNameOf,
-  selectRecentBills,
-  type RecentBillItem,
-} from "@/components/dashboard/home-selectors";
 import type { BalanceRow, ExpenseSummary, GroupSnapshot, Me, Transfer } from "@/types/ledger";
 import type { ExpenseListState } from "./app-store";
 import type { LedgerErrorCode } from "@/lib/sync/errors";
@@ -331,6 +326,62 @@ interface RecentBillsCache {
   groups: Record<string, GroupSnapshot>;
   me: Me | null;
   bills: RecentBillItem[];
+}
+
+/**
+ * Display date for a bill row: yyyy-mm-dd as dd/mm/yyyy, returned as-is when
+ * the string is not a calendar date.
+ */
+export function formatOccurredOn(occurredOn: string): string {
+  const [year, month, day] = occurredOn.split("-");
+  if (!year || !month || !day) return occurredOn;
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Display name for a group. A DM is shown as the counterparty's name, because
+ * "conversa com Ana" is what the user calls it, not the stored group name.
+ */
+export function groupNameOf(
+  snapshot: GroupSnapshot | undefined,
+  meId: string,
+): string {
+  if (!snapshot) return "";
+  if (snapshot.group.kind === "dm") {
+    const other = snapshot.members.find((m) => m.userId !== meId);
+    if (other) return other.user.name;
+  }
+  return snapshot.group.name;
+}
+
+export interface RecentBillItem {
+  id: string;
+  title: string;
+  totalCents: number;
+  occurredOn: string;
+  groupName: string;
+}
+
+export function selectRecentBills(
+  state: Pick<AppState, "expenses" | "groups" | "me" | "myExpenses">,
+  limit = 3,
+): RecentBillItem[] {
+  const me = state.me;
+  if (!me) return [];
+  const result: RecentBillItem[] = [];
+  for (const id of state.myExpenses.ids) {
+    if (result.length >= limit) break;
+    const exp = state.expenses[id];
+    if (!exp || exp.status === "deleted") continue;
+    result.push({
+      id: exp.id,
+      title: exp.title,
+      totalCents: exp.totalCents,
+      occurredOn: formatOccurredOn(exp.occurredOn),
+      groupName: groupNameOf(state.groups[exp.groupId], me.id),
+    });
+  }
+  return result;
 }
 
 let recentBillsCache: RecentBillsCache | null = null;

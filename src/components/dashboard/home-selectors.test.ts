@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ExpenseSummary, GroupSnapshot, Me } from "@/types/ledger";
+import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import {
-  formatOccurredOn,
-  groupNameOf,
-  selectHomeMode,
-  selectRecentBills,
-} from "./home-selectors";
+import { selectHomeMode } from "./home-selectors";
 
 const me: Me = {
   id: "user-1",
@@ -136,102 +131,5 @@ describe("selectHomeMode", () => {
       groupOrder: [debtGroup.group.id],
     });
     expect(selectHomeMode(useAppStore.getState())).toBe("outstanding");
-  });
-});
-
-describe("formatOccurredOn", () => {
-  it("formats yyyy-mm-dd as dd/mm/yyyy", () => {
-    expect(formatOccurredOn("2026-09-17")).toBe("17/09/2026");
-  });
-
-  it("returns original string on invalid format", () => {
-    expect(formatOccurredOn("invalid")).toBe("invalid");
-  });
-});
-
-describe("groupNameOf", () => {
-  it("returns empty string if snapshot undefined", () => {
-    expect(groupNameOf(undefined, "u1")).toBe("");
-  });
-
-  it("returns other member name for DM group", () => {
-    const dmGroup = snapshot({
-      group: {
-        id: "dm1",
-        kind: "dm",
-        name: "Direct",
-        creatorId: carol.id,
-        dmUserA: carol.id,
-        dmUserB: me.id,
-        ledgerVersion: 1,
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-    });
-    expect(groupNameOf(dmGroup, me.id)).toBe("Carol Souza");
-  });
-
-  it("returns group name for regular group", () => {
-    const regular = snapshot();
-    expect(groupNameOf(regular, me.id)).toBe("Grupo 1");
-  });
-});
-
-describe("selectRecentBills", () => {
-  it("returns up to limit active expenses skipping deleted ones", () => {
-    const regular = snapshot();
-    const e1: ExpenseSummary = {
-      id: "e1",
-      groupId: regular.group.id,
-      creatorId: me.id,
-      status: "active",
-      occurredOn: "2026-09-10",
-      createdAt: "2026-09-10T00:00:00Z",
-      versionNo: 1,
-      title: "Churrasco",
-      merchantName: null,
-      expenseType: "single_amount",
-      totalCents: 10000,
-      myShareCents: 5000,
-      myPaidCents: 10000,
-      participantCount: 2,
-    };
-    const e2: ExpenseSummary = {
-      ...e1,
-      id: "e2",
-      status: "deleted",
-      title: "Cancelado",
-    };
-    const e3: ExpenseSummary = {
-      ...e1,
-      id: "e3",
-      title: "Uber",
-      totalCents: 4500,
-    };
-    const e4: ExpenseSummary = {
-      ...e1,
-      id: "e4",
-      title: "Padaria",
-      totalCents: 2000,
-    };
-    const e5: ExpenseSummary = {
-      ...e1,
-      id: "e5",
-      title: "Cinema",
-      totalCents: 6000,
-    };
-
-    useAppStore.setState({
-      hydrated: true,
-      me,
-      groups: { [regular.group.id]: regular },
-      expenses: { e1, e2, e3, e4, e5 },
-      myExpenses: { ids: ["e1", "e2", "e3", "e4", "e5"], cursor: null, complete: true, total: 5 },
-    });
-
-    const recent = selectRecentBills(useAppStore.getState(), 3);
-    expect(recent).toHaveLength(3);
-    expect(recent.map((r) => r.title)).toEqual(["Churrasco", "Uber", "Padaria"]);
-    expect(recent[0].occurredOn).toBe("10/09/2026");
-    expect(recent[0].groupName).toBe("Grupo 1");
   });
 });

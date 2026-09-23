@@ -9,6 +9,8 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "./app-store";
 import {
+  formatOccurredOn,
+  groupNameOf,
   selectConversationRows,
   selectDmMembership,
   selectExpenseList,
@@ -16,6 +18,7 @@ import {
   selectMyDebts,
   selectMyExpenseRows,
   selectPendingInvitations,
+  selectRecentBills,
   selectTransfers,
   selectUnreadTotal,
 } from "./app-selectors";
@@ -585,5 +588,64 @@ describe("selectHomeRecentBills", () => {
 
     expect(after).not.toBe(before);
     expect(after.map((bill) => bill.id)).toEqual(["e2", "e1"]);
+  });
+});
+
+describe("formatOccurredOn", () => {
+  it("formats yyyy-mm-dd as dd/mm/yyyy", () => {
+    expect(formatOccurredOn("2026-09-17")).toBe("17/09/2026");
+  });
+
+  it("returns the original string when it is not a calendar date", () => {
+    expect(formatOccurredOn("invalid")).toBe("invalid");
+  });
+});
+
+describe("groupNameOf", () => {
+  it("returns an empty string without a snapshot", () => {
+    expect(groupNameOf(undefined, me.id)).toBe("");
+  });
+
+  it("names a DM by the counterparty and a group by its own name", () => {
+    expect(groupNameOf(dmSnapshot("dm1"), me.id)).toBe("User user-2");
+    expect(groupNameOf(snapshot("g1"), me.id)).toBe("Group g1");
+  });
+});
+
+describe("selectRecentBills", () => {
+  it("returns up to the limit of active expenses, skipping deleted ones", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1") },
+      expenses: {
+        e1: summary("e1", "g1"),
+        e2: { ...summary("e2", "g1"), status: "deleted" as const },
+        e3: summary("e3", "g1"),
+        e4: summary("e4", "g1"),
+        e5: summary("e5", "g1"),
+      },
+      myExpenses: { ids: ["e1", "e2", "e3", "e4", "e5"], cursor: null, complete: true, total: 5 },
+    });
+
+    const recent = selectRecentBills(useAppStore.getState(), 3);
+
+    expect(recent.map((bill) => bill.title)).toEqual([
+      "Expense e1",
+      "Expense e3",
+      "Expense e4",
+    ]);
+    expect(recent[0]?.occurredOn).toBe("01/01/2026");
+    expect(recent[0]?.groupName).toBe("Group g1");
+  });
+
+  it("returns nothing without a viewer", () => {
+    useAppStore.setState({
+      me: null,
+      groups: { g1: snapshot("g1") },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+
+    expect(selectRecentBills(useAppStore.getState(), 3)).toEqual([]);
   });
 });

@@ -29,8 +29,7 @@ import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { deleteExpense } from "@/lib/sync/mutations";
 import { useMe } from "@/hooks/use-me";
 import { IDLE_READ, MY_EXPENSES_READ_KEY, useAppStore } from "@/stores/app-store";
-import { selectMyExpenseRows } from "@/stores/app-selectors";
-import { formatOccurredOn } from "@/components/dashboard/home-selectors";
+import { formatOccurredOn, selectMyExpenseRows } from "@/stores/app-selectors";
 
 export function BillsListContent() {
   const router = useRouter();
