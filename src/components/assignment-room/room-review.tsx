@@ -131,27 +131,19 @@ export function RoomReview({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-lg space-y-5">
       <div>
-        <p className="text-sm font-medium text-primary">Aguardando confirmação</p>
-        <h2 className="mt-1 font-heading text-xl font-semibold">Revise antes de registrar</h2>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Aguardando confirmação</p>
+        <h2 className="mt-2 font-heading text-2xl font-bold tracking-tight">Tudo escolhido. Vamos fechar?</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Confira a divisão atual e escolha uma ou mais pessoas que pagaram o valor total.
         </p>
       </div>
 
-      {previewBill && (
-        <RoomBreakdown
-          bill={previewBill}
-          selfParticipantIndex={null}
-          heading="Divisão proposta"
-          statusLabel="Aguardando confirmação"
-        />
-      )}
 
-      <section className="space-y-3 rounded-2xl border bg-card p-4" aria-labelledby="room-payer-heading">
+      <section className="space-y-4 rounded-2xl border bg-card p-4" aria-labelledby="room-payer-heading">
         <div>
-          <h2 id="room-payer-heading" className="font-heading font-semibold">Quem pagou?</h2>
+          <h2 id="room-payer-heading" className="sr-only">Quem pagou a conta?</h2>
           <p className="text-sm text-muted-foreground">
             Pessoas convidadas sem conta podem escolher itens, mas não podem ser pagadoras.
           </p>
@@ -167,6 +159,14 @@ export function RoomReview({
           hasGuests={activeParticipants.some(({ participant }) => participant.isGuest)}
         />
       </section>
+      {previewBill && (
+        <RoomBreakdown
+          bill={previewBill}
+          selfParticipantIndex={null}
+          heading="Divisão proposta"
+          statusLabel="Aguardando confirmação"
+        />
+      )}
 
       {blocker && (
         <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -174,19 +174,18 @@ export function RoomReview({
         </p>
       )}
 
-      <p className="text-sm text-muted-foreground">
-        Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.
-      </p>
-      <p className="text-sm text-muted-foreground">
-        Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já participa continua no grupo; convidados continuam sem precisar de conta.
-      </p>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <details className="text-xs text-muted-foreground">
+        <summary className="flex min-h-11 cursor-pointer items-center font-medium">O que acontece ao registrar?</summary>
+        <p className="pb-2">Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.</p>
+        <p className="pb-2">Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já participa continua no grupo; convidados continuam sem precisar de conta.</p>
+      </details>
+      <div className="grid gap-2 border-t pt-4 sm:grid-cols-2">
         <Button type="button" variant="outline" className="min-h-11" disabled={pending} onClick={onEditClaims}>
           Corrigir escolhas
         </Button>
         <Button
           type="button"
-          className="min-h-11"
+          className="min-h-12 font-semibold"
           disabled={pending || blocker !== null || previewBill === null}
           onClick={onFinalize}
         >

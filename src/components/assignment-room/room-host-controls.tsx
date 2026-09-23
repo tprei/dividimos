@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import type { AssignmentRoomParticipant } from "@/types/assignment-room";
 
 interface RoomHostControlsProps {
@@ -50,31 +49,9 @@ export function RoomHostControls({
   const [cancelOpen, setCancelOpen] = useState(false);
 
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-4" aria-labelledby="room-host-heading">
+    <section className="space-y-3 border-t pt-4" aria-labelledby="room-host-heading">
 
-      <div>
-        <h2 id="room-host-heading" className="font-heading font-semibold">Controle da sala</h2>
-        <p
-          className={cn(
-            "mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-            complete
-              ? "bg-success/15 text-success-text"
-              : "bg-warning/20 text-foreground",
-          )}
-        >
-          {complete ? (
-            <CheckCircle2 className="size-3.5" aria-hidden="true" />
-          ) : (
-            <Lock className="size-3.5" aria-hidden="true" />
-          )}
-          {fullyAssignedCount} de {totalItemCount} linhas totalmente escolhidas
-        </p>
-        {!complete && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Ainda há quantidades sem dono.
-          </p>
-        )}
-      </div>
+      <h2 id="room-host-heading" className="sr-only">Controle da sala</h2>
 
       <details className="space-y-2">
         <summary className="flex min-h-11 cursor-pointer items-center rounded-xl border px-3 text-sm font-semibold">
@@ -115,7 +92,7 @@ export function RoomHostControls({
         <div className="border-t pt-4">
           <Button
             type="button"
-            className="min-h-11 w-full"
+            className="min-h-12 w-full text-base font-semibold"
             disabled={disabled || !onReturnToReview}
             onClick={onReturnToReview}
           >
@@ -126,12 +103,18 @@ export function RoomHostControls({
         <div className="space-y-2 border-t pt-4">
           <Button
             type="button"
-            className="min-h-11 w-full"
+            className="min-h-12 w-full text-base font-semibold"
             disabled={!complete || closePending || disabled}
             onClick={onClose}
           >
             {complete ? <CheckCircle2 className="size-4" /> : <Lock className="size-4" />}
-            {closePending ? "Fechando..." : "Fechar escolhas"}
+            {closePending
+              ? "Fechando..."
+              : complete
+                ? "Fechar escolhas"
+                : totalItemCount === 0
+                  ? "Sem itens para fechar"
+                  : `Fechar escolhas · ${totalItemCount - fullyAssignedCount} ${totalItemCount - fullyAssignedCount === 1 ? "pendente" : "pendentes"}`}
           </Button>
           <Button
             type="button"

@@ -136,9 +136,9 @@ describe("RoomBoard", () => {
       />,
     );
 
-    const available = screen.getByRole("region", { name: "Disponíveis" });
+    const available = screen.getByRole("region", { name: "Ainda sem dono" });
     const mine = screen.getByRole("region", { name: "Minha parte" });
-    expect(rowIn(available, "beer")).toHaveTextContent("Disponível: 1/2 de 1 un.");
+    expect(rowIn(available, "beer")).toHaveTextContent(/1\/2 de 1 un\./);
     expect(rowIn(mine, "beer")).toHaveTextContent("Você: 1/2 un.");
   });
 
@@ -149,8 +149,8 @@ describe("RoomBoard", () => {
         {...boardProps}
       />,
     );
-    expect(rowIn(first.getByRole("region", { name: "Disponíveis" }), "beer")).toHaveTextContent(
-      "Disponível: 1/2 de 1 un.",
+    expect(rowIn(first.getByRole("region", { name: "Ainda sem dono" }), "beer")).toHaveTextContent(
+      /1\/2 de 1 un\./,
     );
     first.unmount();
 
@@ -164,8 +164,8 @@ describe("RoomBoard", () => {
         {...boardProps}
       />,
     );
-    expect(rowIn(screen.getByRole("region", { name: "Disponíveis" }), "beer")).toHaveTextContent(
-      "Disponível: 1/2 de 1 un.",
+    expect(rowIn(screen.getByRole("region", { name: "Ainda sem dono" }), "beer")).toHaveTextContent(
+      /1\/2 de 1 un\./,
     );
     expect(screen.queryByRole("region", { name: "Minha parte" })).not.toBeInTheDocument();
     expect(screen.getByText("Você ainda não escolheu nenhum item.")).toBeInTheDocument();
@@ -183,7 +183,7 @@ describe("RoomBoard", () => {
     expect(rowIn(items, "beer")).toHaveTextContent("Tudo escolhido");
     expect(rowIn(items, "fries")).toBeInTheDocument();
     expect(items).toHaveTextContent("1 de 2 completos");
-    expect(screen.getByRole("button", { name: "Fechar escolhas" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Fechar escolhas/ })).toBeDisabled();
   });
 
   it("opens one shared editor without changing ownership and saves through the Promise", async () => {
@@ -203,9 +203,9 @@ describe("RoomBoard", () => {
     const dialog = screen.getByRole("dialog", { name: "Batata" });
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
-    const available = screen.getByRole("region", { name: "Disponíveis" });
+    const available = screen.getByRole("region", { name: "Ainda sem dono" });
     const mine = screen.getByRole("region", { name: "Minha parte" });
-    expect(rowIn(available, "beer")).toHaveTextContent("Disponível: 1/2 de 1 un.");
+    expect(rowIn(available, "beer")).toHaveTextContent(/1\/2 de 1 un\./);
     expect(rowIn(mine, "beer")).toHaveTextContent("Você: 1/2 un.");
 
     await user.click(within(dialog).getByRole("button", { name: "Confirmar quantidade" }));
@@ -240,7 +240,7 @@ describe("RoomBoard", () => {
       />,
     );
 
-    const available = screen.getByRole("region", { name: "Disponíveis" });
+    const available = screen.getByRole("region", { name: "Ainda sem dono" });
     await user.click(
       within(rowIn(available, "beer")).getByRole("button", {
         name: "Escolher quantidade de Cerveja",
@@ -310,8 +310,7 @@ describe("RoomBoard", () => {
       />,
     );
 
-    expect(screen.getByText("Esta sala não tem itens.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fechar escolhas" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sem itens para fechar" })).toBeDisabled();
   });
 
   it("shows closed and terminal guest states without host actions", () => {

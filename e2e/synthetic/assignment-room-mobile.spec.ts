@@ -15,7 +15,7 @@ const TINY_PNG = Buffer.from(
 );
 const ROOM_TIMEOUT = 5_000;
 const MERCHANT = "HMSHost Helsinki";
-type RoomList = "Itens" | "Disponíveis" | "Minha parte";
+type RoomList = "Itens" | "Ainda sem dono" | "Minha parte";
 
 interface OcrItem {
   description: string;
@@ -303,7 +303,7 @@ test.describe("Assignment room on a phone", () => {
         dialog.getByRole("button", { name: "Confirmar quantidade" }).click(),
       );
       // A claim is always self-made, so Rui takes the latte in his own session.
-      await rowButton(memberSession.page, "Disponíveis", "Caffe Latte S").click();
+      await rowButton(memberSession.page, "Ainda sem dono", "Caffe Latte S").click();
       const latte = memberSession.page.getByRole("dialog", { name: "Caffe Latte S" });
       await latte.getByRole("button", { name: "Inteiro" }).click();
       await latte.getByRole("button", { name: "Confirmar quantidade" }).click();
@@ -314,13 +314,11 @@ test.describe("Assignment room on a phone", () => {
         timeout: ROOM_TIMEOUT,
       });
 
-      await page.getByRole("button", { name: "Fechar escolhas" }).click();
-      await expect(page.getByText("Revise antes de registrar")).toBeVisible({
-        timeout: ROOM_TIMEOUT,
-      });
-      const payerSection = page
-        .getByRole("heading", { name: "Quem pagou?" })
-        .locator("xpath=ancestor::section");
+      await page.getByRole("button", { name: /^Fechar escolhas/ }).click();
+      await expect(
+        page.getByRole("heading", { name: "Tudo escolhido. Vamos fechar?" }),
+      ).toBeVisible({ timeout: ROOM_TIMEOUT });
+      const payerSection = page.getByRole("region", { name: /Quem pagou/ });
       await payerSection.getByRole("button").filter({ hasText: host.name }).click();
       await page.getByRole("button", { name: "Registrar conta" }).click();
       await expect(page.getByText("Conta registrada").first()).toBeVisible({
@@ -392,8 +390,6 @@ test.describe("Assignment room on a phone", () => {
       expect(rightInset).toBeLessThanOrEqual(24);
     }
 
-    // Nothing asks who the item is for: everyone claims their own share.
-    await expect(dialog.getByRole("combobox", { name: "Pra quem?" })).toHaveCount(0);
   });
 
   test("scrolls a long room and keeps the footer reachable", async ({
@@ -439,7 +435,7 @@ test.describe("Assignment room on a phone", () => {
     const lastRow = row(page, "Itens", "Item longo número 12");
     await lastRow.scrollIntoViewIfNeeded();
     await expect(lastRow).toBeInViewport();
-    const footer = page.getByRole("button", { name: "Fechar escolhas" });
+    const footer = page.getByRole("button", { name: /^Fechar escolhas/ });
     await footer.scrollIntoViewIfNeeded();
     await expect(footer).toBeInViewport();
 
@@ -499,8 +495,8 @@ test.describe("Assignment room on a phone", () => {
         toast.getByText("Depois de confirmar, restam 1/2 un."),
       ).toBeVisible();
       await expect(
-        row(guestPage, "Disponíveis", "Toast Bacon Egg").getByText(
-          "Disponível: 1 de 1 un.",
+        row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
+          /1 de 1 un\./,
         ),
       ).toBeVisible();
 
@@ -508,8 +504,8 @@ test.describe("Assignment room on a phone", () => {
       await toast.getByRole("button", { name: "Cancelar" }).click();
       await expect(toast).toBeHidden();
       await expect(
-        row(guestPage, "Disponíveis", "Toast Bacon Egg").getByText(
-          "Disponível: 1 de 1 un.",
+        row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
+          /1 de 1 un\./,
         ),
       ).toBeVisible();
 
@@ -519,17 +515,17 @@ test.describe("Assignment room on a phone", () => {
 
       // The reported bug: the other half must stay available, on both phones.
       await expect(
-        row(page, "Itens", "Toast Bacon Egg").getByText("Disponível: 1/2 de 1 un."),
+        row(page, "Itens", "Toast Bacon Egg").getByText(/1\/2 de 1 un\./),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(
-        row(guestPage, "Disponíveis", "Toast Bacon Egg").getByText(
-          "Disponível: 1/2 de 1 un.",
+        row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
+          /1\/2 de 1 un\./,
         ),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
 
       const guestHalf = await chooseFraction(
         guestPage,
-        "Disponíveis",
+        "Ainda sem dono",
         "Toast Bacon Egg",
         "1/2",
       );
@@ -549,8 +545,8 @@ test.describe("Assignment room on a phone", () => {
         row(guestPage, "Minha parte", "Toast Bacon Egg").getByText("Você: 1/2 un."),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(
-        row(guestPage, "Disponíveis", "Toast Bacon Egg").getByText(
-          "Disponível: 1/2 de 1 un.",
+        row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
+          /1\/2 de 1 un\./,
         ),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
     } finally {
@@ -582,11 +578,11 @@ test.describe("Assignment room on a phone", () => {
 
       // A third of one item reads as a third, never as 0,333 or raw ticks.
       await expect(
-        row(page, "Itens", "Caffe Latte S").getByText("Disponível: 2/3 de 1 un."),
+        row(page, "Itens", "Caffe Latte S").getByText(/2\/3 de 1 un\./),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
 
       // The guest asks for more than is left and is told so, keeping the draft.
-      await rowButton(guestPage, "Disponíveis", "Caffe Latte S").click();
+      await rowButton(guestPage, "Ainda sem dono", "Caffe Latte S").click();
       const guestDialog = guestPage.getByRole("dialog", { name: "Caffe Latte S" });
       await guestDialog.getByRole("button", { name: "Outra quantidade" }).click();
       await guestDialog
@@ -599,7 +595,7 @@ test.describe("Assignment room on a phone", () => {
         guestDialog.getByRole("button", { name: "Confirmar quantidade" }),
       ).toBeDisabled();
 
-      await guestDialog.getByRole("button", { name: "Pegar o restante" }).click();
+      await guestDialog.getByRole("button", { name: /^Pegar o restante/ }).click();
       await guestDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(guestDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(

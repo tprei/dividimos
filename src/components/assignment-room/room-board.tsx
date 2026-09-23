@@ -174,10 +174,10 @@ export function RoomBoard({
   }
 
   return (
-    <div className="min-h-full bg-background">
+    <div className="min-h-full bg-background [&>header]:mx-auto [&>header]:max-w-lg [&>header_h1]:whitespace-normal">
       <ScreenHeader
-        title={view.room.title}
-        eyebrow="Sala de divisão"
+        title={view.role === "host" ? view.room.title : "O que você consumiu?"}
+        eyebrow={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "de divisão"} · ${activeParticipants.length} ${activeParticipants.length === 1 ? "pessoa" : "pessoas"}` : view.room.title}
         back
         onBack={onBack}
         action={
@@ -198,7 +198,7 @@ export function RoomBoard({
           ) : undefined
         }
       />
-      <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-3 pb-8">
+      <main className="mx-auto w-full max-w-lg space-y-5 px-4 pt-1 pb-8">
         {!connected && !accessRemoved && view.room.status !== "cancelled" && (
           <p role="status" className="rounded-xl border bg-muted px-4 py-3 text-sm">
             Reconectando. As escolhas ficam bloqueadas até os dados atuais chegarem.
@@ -249,24 +249,17 @@ export function RoomBoard({
 
         {!accessRemoved && view.room.status !== "cancelled" && view.room.status !== "finalized" && (
           <>
+            {view.role === "host" && (
             <section className="rounded-2xl border bg-card p-4" aria-labelledby="room-progress-heading">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <p id="room-progress-heading" className="text-xs font-medium text-muted-foreground">Conta toda</p>
-                  <Money cents={view.room.totalCents} className="mt-1 text-lg font-bold tabular-nums" />
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Você escolheu</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-primary-text">
-                    {mineRows.length} {mineRows.length === 1 ? "linha" : "linhas"}
-                  </p>
-                </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <p id="room-progress-heading" className="text-sm font-semibold">Dividindo a conta</p>
+                <Money cents={view.room.totalCents} className="text-sm font-semibold tabular-nums" />
               </div>
               {itemRows.length > 0 && (
-                <div className="mt-4">
+                <div className="mt-2">
                   <div className="flex items-baseline justify-between gap-3 text-xs">
                     <span className="font-medium">{fullyAssignedCount} de {itemRows.length} linhas escolhidas</span>
-                    <span className="text-muted-foreground">{roomComplete ? "Tudo escolhido" : "Ainda falta gente escolher"}</span>
+                    <span className="shrink-0 text-muted-foreground">{Math.round((fullyAssignedCount / itemRows.length) * 100)}%</span>
                   </div>
                   <div
                     className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted"
@@ -277,17 +270,18 @@ export function RoomBoard({
                     aria-valuenow={fullyAssignedCount}
                   >
                     <div
-                      className={roomComplete ? "h-full rounded-full bg-success transition-[width] duration-300" : "h-full rounded-full bg-primary transition-[width] duration-300"}
+                      className={roomComplete ? "h-full rounded-full bg-success motion-safe:transition-[width] motion-safe:duration-300" : "h-full rounded-full bg-primary motion-safe:transition-[width] motion-safe:duration-300"}
                       style={{ width: `${Math.round((fullyAssignedCount / itemRows.length) * 100)}%` }}
                     />
                   </div>
                 </div>
               )}
             </section>
+            )}
 
-            <section className="space-y-2" aria-labelledby="room-roster-heading">
+            <section className={view.role === "host" ? "space-y-2" : "sr-only"} aria-labelledby="room-roster-heading">
               <div className="flex items-baseline justify-between gap-3">
-                <h2 id="room-roster-heading" className="font-heading text-lg font-semibold">Na sala</h2>
+                <h2 id="room-roster-heading" className="text-sm font-semibold">Na sala</h2>
                 <p className="text-xs text-muted-foreground">
                   {activeParticipants.length === 1 ? "1 pessoa na sala" : `${activeParticipants.length} pessoas na sala`}
                 </p>
@@ -302,15 +296,16 @@ export function RoomBoard({
                         <button
                           type="button"
                           className={cn(
-                            "flex min-h-11 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1 text-left",
+                            "flex min-h-11 w-20 flex-col items-center gap-1 rounded-xl border bg-card px-1 py-2 text-center disabled:opacity-60",
                             selected && "border-primary bg-primary/10",
                           )}
                           aria-pressed={selected}
                           disabled={!roomEditable}
                           onClick={() => setAssignmentParticipantId(selected ? null : participant.id)}
                         >
-                          <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
-                          <span className="max-w-24 truncate text-xs font-medium">{participant.displayName.split(" ")[0]}</span>
+                          <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="md" />
+                          <span className="w-full truncate text-xs font-semibold">{participant.displayName.split(" ")[0]}</span>
+                          <span className="text-[11px] text-muted-foreground">{participant.id === selfParticipantId ? "Você" : participant.isGuest ? "Convidado" : "Na sala"}</span>
                         </button>
                       ) : (
                         <span className="flex min-h-11 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1">
@@ -353,10 +348,10 @@ export function RoomBoard({
             ) : view.role === "host" ? (
               <section className="space-y-2" aria-labelledby="room-items-heading">
                 <div className="flex items-baseline justify-between gap-3">
-                  <h2 id="room-items-heading" ref={hostHeadingRef} tabIndex={-1} className="font-heading text-lg font-semibold">Itens</h2>
+                  <h2 id="room-items-heading" ref={hostHeadingRef} tabIndex={-1} className="text-sm font-semibold">Itens</h2>
                   <p className="text-xs text-muted-foreground">{fullyAssignedCount} de {itemRows.length} completos</p>
                 </div>
-                <ul className="divide-y rounded-2xl border bg-card">
+                <ul className="overflow-hidden divide-y rounded-2xl border bg-card">
                   {itemRows.map((row) => (
                     <RoomItemRow
                       key={row.item.id}
@@ -379,8 +374,11 @@ export function RoomBoard({
               <>
                 {availableRows.length > 0 ? (
                   <section className="space-y-2" aria-labelledby="room-available-heading">
-                    <h2 id="room-available-heading" ref={availableHeadingRef} tabIndex={-1} className="font-heading text-lg font-semibold">Disponíveis</h2>
-                    <ul className="divide-y rounded-2xl border bg-card">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h2 id="room-available-heading" ref={availableHeadingRef} tabIndex={-1} className="text-sm font-semibold">Ainda sem dono</h2>
+                      <span className="text-xs text-muted-foreground">{availableRows.length} itens</span>
+                    </div>
+                    <ul className="overflow-hidden divide-y rounded-2xl border bg-card">
                       {availableRows.map((row) => (
                         <RoomItemRow
                           key={row.item.id}
@@ -405,8 +403,8 @@ export function RoomBoard({
 
                 {mineRows.length > 0 ? (
                   <section className="space-y-2" aria-labelledby="room-mine-heading">
-                    <h2 id="room-mine-heading" ref={personalHeadingRef} tabIndex={-1} className="font-heading text-lg font-semibold">Minha parte</h2>
-                    <ul ref={personalListRef} className="divide-y rounded-2xl border bg-card">
+                    <h2 id="room-mine-heading" ref={personalHeadingRef} tabIndex={-1} className="text-sm font-semibold">Minha parte</h2>
+                    <ul ref={personalListRef} className="overflow-hidden divide-y rounded-2xl border bg-card">
                       {mineRows.map((row) => (
                         <RoomItemRow
                           key={row.item.id}

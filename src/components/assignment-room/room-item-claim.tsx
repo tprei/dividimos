@@ -238,28 +238,18 @@ export function RoomItemClaim({
         onOpenChange(next);
       }}
     >
-      <DialogContent finalFocus={getReturnFocus} className="gap-3">
-        <DialogHeader className="gap-1">
-          <DialogTitle>{item.description}</DialogTitle>
-          <DialogDescription className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-primary/12 px-2 py-0.5 font-semibold text-primary-text">
-              <Money cents={item.totalPriceCents} className="text-xs" />
-            </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-              Linha inteira: {formatRoomTicks(capacityTicks)} un.
-            </span>
-            <span className={cn(
-              "rounded-full px-2 py-0.5 text-xs font-medium",
-              availableTicks > 0 ? "bg-success/15 text-success-text" : "bg-muted text-muted-foreground",
-            )}>
-              {availableTicks > 0 ? `Livre: ${formatRoomTicks(availableTicks)} un.` : "Tudo escolhido"}
-            </span>
+      <DialogContent finalFocus={getReturnFocus} className="gap-5 rounded-3xl">
+        <DialogHeader className="gap-2">
+          <DialogTitle className="pr-6 text-xl">{item.description}</DialogTitle>
+          <DialogDescription className="flex flex-wrap items-baseline justify-between gap-2">
+            <span>{formatRoomTicks(capacityTicks)} un. · {availableTicks > 0 ? `${formatRoomTicks(availableTicks)} livres` : "Tudo escolhido"}</span>
+            <Money cents={item.totalPriceCents} className="text-base font-semibold text-foreground" />
           </DialogDescription>
         </DialogHeader>
 
         {canSelectParticipant && (
           <div>
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Pra quem?</p>
+            <p className="mb-2 text-sm font-semibold">Pra quem?</p>
             <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Pra quem?">
               {participants.filter((participant) => !participant.removed).map((participant) => (
                 <Button
@@ -268,7 +258,7 @@ export function RoomItemClaim({
                   variant="outline"
                   role="radio"
                   aria-checked={participant.id === targetParticipantId}
-                  className="min-h-11 gap-1.5 rounded-full px-2"
+                  className={cn("min-h-11 gap-1.5 rounded-full px-2", participant.id === targetParticipantId && "border-primary bg-primary/15 text-primary-text")}
                   disabled={saving}
                   onClick={() => onTargetChange(participant.id)}
                 >
@@ -281,8 +271,8 @@ export function RoomItemClaim({
         )}
 
         <div>
-          <p className="mb-2 text-xs font-medium text-muted-foreground">{quantityLabel}</p>
-          <div className="grid grid-cols-4 gap-2">
+          <p className="mb-2 text-sm font-semibold">{quantityLabel}</p>
+          <div className="grid grid-cols-2 gap-2 min-[360px]:grid-cols-4">
             <Button type="button" variant="outline" aria-pressed={draftTicks === capacityTicks} className={CHIP} disabled={saving || stale || !targetActive || capacityTicks > maximumTicks} onClick={() => chooseTicks(capacityTicks)}>
               Inteiro
             </Button>
@@ -335,7 +325,7 @@ export function RoomItemClaim({
           </Button>
         )}
 
-        <div className={cn("rounded-xl px-3 py-2.5 text-sm ring-1", draftTicks === null ? "bg-muted ring-transparent" : "bg-primary/10 ring-primary/20")}>
+        <div className="border-t border-dashed pt-3 text-sm">
           {draftTicks === null ? (
             <p className="text-muted-foreground">Escolha uma quantidade para continuar.</p>
           ) : (
@@ -357,7 +347,7 @@ export function RoomItemClaim({
         )}
 
         <DialogFooter className="flex-col sm:flex-col sm:justify-stretch">
-          <Button type="button" className="min-h-11 w-full font-semibold" disabled={!canSave} onClick={confirm}>
+          <Button type="button" className="min-h-12 w-full text-base font-semibold" disabled={!canSave} onClick={confirm}>
             {saving ? <Loader2 className="size-4" /> : null}
             {saving ? "Salvando..." : canSelectParticipant ? "Confirmar quantidade" : "Confirmar quantidade"}
           </Button>
