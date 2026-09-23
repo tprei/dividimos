@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AssignmentBillBreakdown, AssignmentRoomView } from "@/types/assignment-room";
 import { RoomBreakdown } from "./room-breakdown";
-import { RoomReview } from "./room-review";
+import { RoomReview, type RoomPayerDraft } from "./room-review";
 
 const ROOM_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -77,18 +78,44 @@ function currentBill(overrides: Partial<AssignmentBillBreakdown> = {}): Assignme
   };
 }
 
+function ControlledRoomReview({
+  onFinalize,
+  blockerMessage,
+}: {
+  onFinalize: () => void;
+  blockerMessage?: string;
+}) {
+  const [payers, setPayers] = useState<RoomPayerDraft[]>([]);
+  return (
+    <RoomReview
+      view={hostView()}
+      pending={false}
+      blockerMessage={blockerMessage}
+      payers={payers}
+      onSetPayerFull={(userId) =>
+        setPayers([{ userId, amountCents: hostView().room.totalCents }])
+      }
+      onSplitPaymentEqually={() => undefined}
+      onSetPayerAmount={(userId, amountCents) =>
+        setPayers((current) => [
+          ...current.filter((payer) => payer.userId !== userId),
+          { userId, amountCents },
+        ])
+      }
+      onRemovePayerEntry={(userId) =>
+        setPayers((current) => current.filter((payer) => payer.userId !== userId))
+      }
+      onEditClaims={vi.fn()}
+      onFinalize={onFinalize}
+    />
+  );
+}
+
 describe("RoomReview", () => {
   it("previews exact shares and fees but requires an explicit eligible payer", async () => {
     const user = userEvent.setup();
     const onFinalize = vi.fn();
-    render(
-      <RoomReview
-        view={hostView()}
-        pending={false}
-        onEditClaims={vi.fn()}
-        onFinalize={onFinalize}
-      />,
-    );
+    render(<ControlledRoomReview onFinalize={onFinalize} />);
 
     expect(screen.getAllByText("Aguardando confirmação").length).toBeGreaterThan(0);
     expect(screen.getByText("Taxa de serviço").parentElement).toHaveTextContent(/R\$\s*10,00/);
@@ -97,7 +124,8 @@ describe("RoomReview", () => {
     expect(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Bia$/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Selecione quem pagou");
+    expect(screen.getByRole("alert")).toHaveTextContent("Escolha pelo menos uma pessoa");
+
     await user.click(screen.getByRole("button", { name: /Bia/ }));
     expect(screen.getByText(/Sem consumo, com a parte da taxa fixa/)).toBeInTheDocument();
 
@@ -105,22 +133,14 @@ describe("RoomReview", () => {
     await user.click(screen.getByRole("button", { name: "Registrar conta" }));
 
     expect(onFinalize).toHaveBeenCalledOnce();
-    expect(onFinalize.mock.calls[0][0]).toMatchObject({
-      shares: [11_001, 1],
-      payers: [{ participantIndex: 0, amountCents: 11_002 }],
-      itemAssignments: [{ itemIndex: 0, participantIndex: 0, amountCents: 10_000 }],
-    });
   });
 
   it("names stale blockers and never submits while blocked", async () => {
     const user = userEvent.setup();
     const onFinalize = vi.fn();
     render(
-      <RoomReview
-        view={hostView()}
-        pending={false}
+      <ControlledRoomReview
         blockerMessage="A sala mudou. Revise os dados atuais."
-        onEditClaims={vi.fn()}
         onFinalize={onFinalize}
       />,
     );
@@ -133,14 +153,7 @@ describe("RoomReview", () => {
   });
 
   it("explains account invitations and the correction path before confirming", () => {
-    render(
-      <RoomReview
-        view={hostView()}
-        pending={false}
-        onEditClaims={vi.fn()}
-        onFinalize={vi.fn()}
-      />,
-    );
+    render(<ControlledRoomReview onFinalize={vi.fn()} />);
 
     expect(
       screen.getByText(
@@ -153,12 +166,15 @@ describe("RoomReview", () => {
       ),
     ).toBeInTheDocument();
   });
+
 });
 
 describe("RoomBreakdown", () => {
   it("keeps an expanded person on current-bill updates and focuses the heading when removed", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<RoomBreakdown bill={currentBill()} roomId={ROOM_ID} />);
+    const { rerender } = render(
+      <RoomBreakdown bill={currentBill()} selfParticipantIndex={null} />,
+    );
 
     const biaButton = screen.getByRole("button", { name: /Bia/ });
     await user.click(biaButton);
@@ -169,7 +185,7 @@ describe("RoomBreakdown", () => {
 
     rerender(
       <RoomBreakdown
-        roomId={ROOM_ID}
+        selfParticipantIndex={null}
         bill={currentBill({
           versionNo: 2,
           itemAssignments: [
@@ -188,7 +204,7 @@ describe("RoomBreakdown", () => {
 
     rerender(
       <RoomBreakdown
-        roomId={ROOM_ID}
+        selfParticipantIndex={null}
         bill={currentBill({
           versionNo: 3,
           participants: [{ participantIndex: 0, displayName: "Ana", avatarUrl: null, isGuest: false }],
@@ -197,24 +213,32 @@ describe("RoomBreakdown", () => {
         })}
       />,
     );
-    await waitFor(() => expect(screen.getByText("Por pessoa")).toHaveFocus());
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Conta registrada" })).toHaveFocus(),
+    );
   });
 
-  it("uses a secret-free login destination and sanitizes deleted bills", () => {
-    const { rerender } = render(
-      <RoomBreakdown bill={currentBill()} roomId={ROOM_ID} showLogin />,
+  it("exposes the completion action without embedding room credentials", async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(
+      <RoomBreakdown
+        bill={currentBill()}
+        selfParticipantIndex={null}
+        actionLabel="Entrar no Dividimos"
+        onAction={onAction}
+      />,
     );
-    const login = screen.getByRole("link", { name: "Entrar no Dividimos" });
-    expect(login).toHaveAttribute(
-      "href",
-      `/auth?next=${encodeURIComponent(`/room/${ROOM_ID}`)}`,
-    );
-    expect(login.getAttribute("href")).not.toContain("#");
 
-    rerender(
+    await user.click(screen.getByRole("button", { name: "Entrar no Dividimos" }));
+    expect(onAction).toHaveBeenCalledOnce();
+  });
+
+  it("sanitizes deleted bills", () => {
+    render(
       <RoomBreakdown
         bill={currentBill({ status: "deleted" })}
-        roomId={ROOM_ID}
+        selfParticipantIndex={null}
       />,
     );
     const deleted = screen.getByText("Conta excluída").closest("section");

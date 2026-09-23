@@ -2,10 +2,11 @@ import { StrictMode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssignmentRoomView } from "@/types/assignment-room";
+import type { AssignmentBillBreakdown, AssignmentRoomView } from "@/types/assignment-room";
 
 const mocks = vi.hoisted(() => ({
   back: vi.fn(),
+  push: vi.fn(),
   me: null as { id: string; name: string } | null,
   memberToken: null as string | null,
   joinToken: null as string | null,
@@ -14,6 +15,9 @@ const mocks = vi.hoisted(() => ({
   attachAuth: vi.fn(),
   startRealtime: vi.fn(),
   refresh: vi.fn(),
+  refreshCompletion: vi.fn(),
+  claimGuest: vi.fn(),
+  acceptInvitation: vi.fn(),
   join: vi.fn(),
   joinAccount: vi.fn(),
   authGeneration: vi.fn(),
@@ -25,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   finalize: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ back: mocks.back }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ back: mocks.back, push: mocks.push }) }));
 vi.mock("@/stores/app-store", () => ({
   useAppStore: (selector: (state: { me: typeof mocks.me }) => unknown) =>
     selector({ me: mocks.me }),
@@ -40,6 +44,8 @@ vi.mock("@/lib/sync/assignment-rooms", () => ({
   getAssignmentRoomJoinToken: () => mocks.joinToken,
   getAssignmentRoomJoinAccount: mocks.joinAccount,
   refreshAssignmentRoom: mocks.refresh,
+  refreshAssignmentRoomCompletion: mocks.refreshCompletion,
+  claimAssignmentRoomGuest: mocks.claimGuest,
   joinAssignmentRoom: mocks.join,
   setAssignmentRoomClaim: mocks.claim,
   removeAssignmentRoomParticipant: mocks.removeParticipant,
@@ -75,6 +81,9 @@ vi.mock("@/components/assignment-room/room-join", () => ({
       </button>
     </section>
   ),
+}));
+vi.mock("@/lib/sync/mutations-group", () => ({
+  acceptInvitation: mocks.acceptInvitation,
 }));
 vi.mock("@/components/assignment-room/room-board", () => ({
   RoomBoard: ({
@@ -113,16 +122,42 @@ vi.mock("@/components/assignment-room/room-board", () => ({
   ),
 }));
 vi.mock("@/components/assignment-room/room-review", () => ({
-  RoomReview: ({ onEditClaims, onFinalize }: { onEditClaims: () => void; onFinalize: (payload: never) => void }) => (
+  RoomReview: ({
+    onEditClaims,
+    onFinalize,
+    onSetPayerFull,
+  }: {
+    onEditClaims: () => void;
+    onFinalize: (payload: never) => void;
+    onSetPayerFull: (userId: string) => void;
+  }) => (
     <section>
       <p>Revisar conta</p>
       <button type="button" onClick={onEditClaims}>Corrigir escolhas</button>
+      <button type="button" onClick={() => onSetPayerFull("user-host")}>
+        Selecionar pagador
+      </button>
       <button type="button" onClick={() => onFinalize({} as never)}>Confirmar</button>
     </section>
   ),
 }));
 vi.mock("@/components/assignment-room/room-breakdown", () => ({
-  RoomBreakdown: () => <p>Conta registrada</p>,
+  RoomBreakdown: ({
+    actionLabel,
+    onAction,
+  }: {
+    actionLabel?: string;
+    onAction?: () => void;
+  }) => (
+    <>
+      <p>Conta registrada</p>
+      {actionLabel && (
+        <button type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
+    </>
+  ),
 }));
 
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
@@ -131,6 +166,7 @@ import { RoomPageClient } from "./room-page-client";
 const ROOM_ID = "00000000-0000-4000-8000-000000000001";
 const ITEM_ID = "00000000-0000-4000-8000-000000000002";
 const PARTICIPANT_ID = "00000000-0000-4000-8000-000000000003";
+const USER_PARTICIPANT_ID = "00000000-0000-4000-8000-000000000004";
 const INVITE = `armj1_${"A".repeat(43)}`;
 
 function roomView(
@@ -179,6 +215,64 @@ function roomView(
     participantRefs: [],
   };
 }
+function hostViewWithCanonicalPayer(): Extract<AssignmentRoomView, { role: "host" }> {
+  const base = roomView("host", "closed");
+  if (base.role !== "host") throw new Error("expected host");
+  return {
+    ...base,
+    room: {
+      ...base.room,
+      selfParticipantId: USER_PARTICIPANT_ID,
+      participants: [
+        base.room.participants[0],
+        {
+          id: USER_PARTICIPANT_ID,
+          ordinal: 1,
+          displayName: "Ana",
+          avatarUrl: null,
+          isGuest: false,
+          removed: false,
+        },
+      ],
+      claims: [{
+        itemId: ITEM_ID,
+        participantId: USER_PARTICIPANT_ID,
+        ticks: 120_000,
+      }],
+    },
+    participantRefs: [{
+      participantId: USER_PARTICIPANT_ID,
+      ref: { kind: "user", userId: "user-host" },
+    }],
+  };
+}
+function completionBill(): AssignmentBillBreakdown {
+  return {
+    status: "active",
+    versionNo: 1,
+    title: "Bar da esquina",
+    occurredOn: "2026-09-19",
+    items: [{
+      description: "Prato",
+      quantityMilliunits: 1_000,
+      unitPriceCents: 1_000,
+      totalPriceCents: 1_000,
+    }],
+    itemAssignments: [{ itemIndex: 0, participantIndex: 0, amountCents: 1_000 }],
+    participants: [{
+      participantIndex: 0,
+      displayName: "Bia",
+      avatarUrl: null,
+      isGuest: false,
+    }],
+    shares: [1_000],
+    payers: [{ participantIndex: 0, amountCents: 1_000 }],
+    totalCents: 1_000,
+    serviceFeeBasisPoints: 0,
+    fixedFeeCents: 0,
+  };
+}
+
 
 beforeEach(() => {
   useAssignmentRoomStore.getState().reset();
@@ -324,6 +418,100 @@ describe("RoomPageClient", () => {
     expect(await screen.findByText("Deu ruim aqui. Tente de novo em instantes.")).toBeInTheDocument();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
+  it("opens the registered expense from the authorized completion action", async () => {
+    mocks.joinToken = INVITE;
+    mocks.me = { id: "user-1", name: "Ana" };
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(roomView("host", "finalized"));
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.refreshCompletion.mockResolvedValue({
+      roomId: ROOM_ID,
+      bill: completionBill(),
+      selfParticipantIndex: 0,
+      action: {
+        kind: "view_expense",
+        expenseId: "00000000-0000-4000-8000-000000000004",
+        groupId: "00000000-0000-4000-8000-000000000005",
+      },
+    });
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Ver conta" }));
+    expect(mocks.push).toHaveBeenCalledWith(
+      "/app/bill/00000000-0000-4000-8000-000000000004",
+    );
+  });
+
+  it("accepts an invited account only after the explicit completion action", async () => {
+    mocks.joinToken = INVITE;
+    mocks.me = { id: "user-1", name: "Ana" };
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(roomView("host", "finalized"));
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.refreshCompletion.mockResolvedValue({
+      roomId: ROOM_ID,
+      bill: completionBill(),
+      selfParticipantIndex: 0,
+      action: {
+        kind: "accept_invitation",
+        expenseId: "00000000-0000-4000-8000-000000000006",
+        groupId: "00000000-0000-4000-8000-000000000007",
+      },
+    });
+    mocks.acceptInvitation.mockResolvedValue(undefined);
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aceitar convite e ver conta" }),
+    );
+    expect(mocks.acceptInvitation).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000007",
+    );
+    expect(mocks.push).toHaveBeenCalledWith(
+      "/app/bill/00000000-0000-4000-8000-000000000006",
+    );
+  });
+  it("links a guest share only after explicit consent and opens the expense", async () => {
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.me = { id: "user-2", name: "Bia" };
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(roomView("host", "finalized"));
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    const expenseId = "00000000-0000-4000-8000-000000000008";
+    mocks.refreshCompletion
+      .mockResolvedValueOnce({
+        roomId: ROOM_ID,
+        bill: completionBill(),
+        selfParticipantIndex: 0,
+        action: { kind: "claim_guest" },
+      })
+      .mockResolvedValueOnce({
+        roomId: ROOM_ID,
+        bill: completionBill(),
+        selfParticipantIndex: 0,
+        action: {
+          kind: "view_expense",
+          expenseId,
+          groupId: "00000000-0000-4000-8000-000000000009",
+        },
+      });
+    mocks.claimGuest.mockResolvedValue({ expenseId });
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Vincular minha parte e ver conta" }),
+    );
+    expect(mocks.claimGuest).toHaveBeenCalledWith(ROOM_ID);
+    await waitFor(() => {
+      expect(mocks.push).toHaveBeenCalledWith(`/app/bill/${expenseId}`);
+    });
+  });
 
   it("opens the invitation from the one-time ?invite=1 flag and strips it from history", async () => {
     const user = userEvent.setup();
@@ -355,6 +543,31 @@ describe("RoomPageClient", () => {
 
     expect(await screen.findByText("host:open")).toBeInTheDocument();
     expect(screen.getByText("convite-fechado")).toBeInTheDocument();
+  });
+
+  it("maps canonical payer identities to active room participant indexes", async () => {
+    const user = userEvent.setup();
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(hostViewWithCanonicalPayer());
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.finalize.mockResolvedValue(undefined);
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    expect(await screen.findByText("Revisar conta")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Selecionar pagador" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    await waitFor(() => {
+      expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({
+        roomId: ROOM_ID,
+        expectedRevision: 4,
+        payload: expect.objectContaining({
+          payers: [{ participantIndex: 1, amountCents: 1_000 }],
+        }),
+      }));
+    });
   });
 
   it("lets the host return from closed review to correct choices", async () => {

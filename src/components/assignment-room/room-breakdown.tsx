@@ -1,58 +1,67 @@
 "use client";
 
-import { ChevronDown, ChevronUp, LogIn } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ExpenseItems } from "@/components/expense/expense-items";
+import { ChevronDown, Lock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
+import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { attributePayers } from "@/lib/expense-attribution";
+import { cn } from "@/lib/utils";
 import type { AssignmentBillBreakdown } from "@/types/assignment-room";
 
 interface RoomBreakdownProps {
   bill: AssignmentBillBreakdown;
-  roomId: string;
-  showLogin?: boolean;
+  selfParticipantIndex?: number | null;
   heading?: string;
   statusLabel?: string;
+  actionLabel?: string;
+  actionDescription?: string;
+  onAction?: () => void;
+  actionDisabled?: boolean;
 }
 
-function participantKey(
-  participant: AssignmentBillBreakdown["participants"][number],
-): string {
-  return `${participant.displayName}\u0000${participant.avatarUrl ?? ""}\u0000${participant.isGuest}`;
+function serviceFeePercentText(basisPoints: number): string {
+  return (basisPoints / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+}
+
+function feeDescription(bill: AssignmentBillBreakdown): string | null {
+  const parts: string[] = [];
+  if (bill.serviceFeeBasisPoints > 0) {
+    parts.push(`taxa de serviço de ${serviceFeePercentText(bill.serviceFeeBasisPoints)}%`);
+  }
+  if (bill.fixedFeeCents > 0) {
+    parts.push("taxa fixa");
+  }
+  return parts.length > 0 ? `Inclui ${parts.join(" e ")}` : null;
+}
+
+function itemsCountLine(count: number): string {
+  return count === 1 ? "1 item" : count === 0 ? "sem itens" : `${count} itens`;
 }
 
 export function RoomBreakdown({
   bill,
-  roomId,
-  showLogin = false,
+  selfParticipantIndex,
   heading = "Conta registrada",
   statusLabel = "Conta registrada",
+  actionLabel,
+  actionDescription,
+  onAction,
+  actionDisabled = false,
 }: RoomBreakdownProps) {
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const peopleHeadingRef = useRef<HTMLHeadingElement>(null);
-  const participantKeys = useMemo(
-    () => new Set(bill.participants.map(participantKey)),
-    [bill.participants],
-  );
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const [expandedParticipantIndex, setExpandedParticipantIndex] = useState<number | null>(null);
+
+  const expandedParticipantPresent =
+    expandedParticipantIndex !== null &&
+    bill.participants.some((participant) => participant.participantIndex === expandedParticipantIndex);
 
   useEffect(() => {
-    if (!expandedKey || participantKeys.has(expandedKey)) return;
-    const timer = setTimeout(() => {
-      setExpandedKey(null);
-      peopleHeadingRef.current?.focus();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [expandedKey, participantKeys]);
-
-  const login = showLogin ? (
-    <Button render={<Link href={`/auth?next=${encodeURIComponent(`/room/${roomId}`)}`} />} variant="outline" className="min-h-11 w-full">
-      <LogIn className="size-4" />
-      Entrar no Dividimos
-    </Button>
-  ) : null;
+    if (expandedParticipantIndex !== null && !expandedParticipantPresent) {
+      headingRef.current?.focus();
+    }
+  }, [expandedParticipantIndex, expandedParticipantPresent]);
 
   if (bill.status === "deleted") {
     return (
@@ -63,27 +72,44 @@ export function RoomBreakdown({
             Esta conta não entra mais nos saldos do grupo.
           </p>
         </div>
-        {login}
       </section>
     );
   }
 
   const subtotalCents = bill.items.reduce((sum, item) => sum + item.totalPriceCents, 0);
   const serviceFeeCents = bill.totalCents - subtotalCents - bill.fixedFeeCents;
-  const payers = attributePayers(bill.payers, bill.totalCents);
-  const participantName = (index: number) =>
-    bill.participants[index]?.displayName ?? "Participante";
-  const participantAvatarUrl = (index: number) =>
-    bill.participants[index]?.avatarUrl ?? null;
-  const participantIsGuest = (index: number) =>
-    bill.participants[index]?.isGuest ?? true;
+  const assignmentsByParticipant = new Map<number, NonNullable<AssignmentBillBreakdown["itemAssignments"]>>();
+  for (const assignment of bill.itemAssignments ?? []) {
+    const owned = assignmentsByParticipant.get(assignment.participantIndex);
+    if (owned) {
+      owned.push(assignment);
+    } else {
+      assignmentsByParticipant.set(assignment.participantIndex, [assignment]);
+    }
+  }
+
+  const requestedSelfIndex = selfParticipantIndex ?? null;
+  const selfIndex =
+    requestedSelfIndex !== null &&
+    bill.participants[requestedSelfIndex] !== undefined &&
+    bill.shares[requestedSelfIndex] !== undefined
+      ? requestedSelfIndex
+      : null;
+  const selfShareCents = selfIndex === null ? 0 : bill.shares[selfIndex];
+  const selfAssignments = selfIndex === null ? [] : assignmentsByParticipant.get(selfIndex) ?? [];
+  const feeLine = feeDescription(bill);
 
   return (
     <section className="space-y-5" aria-labelledby="room-breakdown-heading">
       <div className="rounded-2xl border bg-card p-5">
         <p className="text-sm font-medium text-primary">{statusLabel}</p>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <h2 id="room-breakdown-heading" className="font-heading text-xl font-semibold">
+          <h2
+            id="room-breakdown-heading"
+            ref={headingRef}
+            tabIndex={-1}
+            className="font-heading text-xl font-semibold outline-none"
+          >
             {heading}
           </h2>
           <Money cents={bill.totalCents} className="text-xl font-bold" />
@@ -93,93 +119,131 @@ export function RoomBreakdown({
             <dt className="text-muted-foreground">Itens</dt>
             <dd><Money cents={subtotalCents} /></dd>
           </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">Taxa de serviço</dt>
-            <dd><Money cents={serviceFeeCents} /></dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">Taxa fixa</dt>
-            <dd><Money cents={bill.fixedFeeCents} /></dd>
-          </div>
+          {serviceFeeCents > 0 && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Taxa de serviço</dt>
+              <dd><Money cents={serviceFeeCents} /></dd>
+            </div>
+          )}
+          {bill.fixedFeeCents > 0 && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Taxa fixa</dt>
+              <dd><Money cents={bill.fixedFeeCents} /></dd>
+            </div>
+          )}
         </dl>
       </div>
 
-      <ExpenseItems
-        items={bill.items}
-        itemAssignments={bill.itemAssignments}
-        payers={payers}
-        participantName={participantName}
-        participantAvatarUrl={participantAvatarUrl}
-        participantIsGuest={participantIsGuest}
-      />
-
-      <section aria-labelledby="room-people-breakdown-heading">
-        <h2
-          ref={peopleHeadingRef}
-          id="room-people-breakdown-heading"
-          tabIndex={-1}
-          className="mb-2 text-sm font-semibold outline-none"
+      {selfIndex !== null && (
+        <section
+          aria-label="Sua parte"
+          className="rounded-2xl bg-gradient-to-br from-primary to-primary/70 p-5 text-primary-foreground"
         >
-          Por pessoa
-        </h2>
+          <p className="text-sm font-medium opacity-90">Sua parte</p>
+          <Money cents={selfShareCents} className="mt-1 block text-4xl font-bold" />
+          <p className="mt-2 text-sm opacity-90">{itemsCountLine(selfAssignments.length)}</p>
+          {feeLine && <p className="mt-0.5 text-xs opacity-75">{feeLine}</p>}
+        </section>
+      )}
+
+      <section aria-label="Por pessoa">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <h2 id="room-people-breakdown-heading" className="text-sm font-semibold">
+            Quadro final
+          </h2>
+          <Badge variant="outline" className="gap-1">
+            <Lock aria-hidden className="size-3" />
+            só leitura
+          </Badge>
+        </div>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Todo mundo na sala vê este quadro. Correções aparecem aqui e no detalhe da conta.
+        </p>
         <ul className="space-y-2">
-          {bill.participants.map((participant, index) => {
-            const key = participantKey(participant);
-            const expanded = expandedKey === key;
-            const assignments = (bill.itemAssignments ?? []).filter(
-              (assignment) => assignment.participantIndex === index,
-            );
-            const itemCents = assignments.reduce(
-              (sum, assignment) => sum + assignment.amountCents,
-              0,
-            );
+          {bill.participants.map((participant) => {
+            const index = participant.participantIndex;
+            const assignments = assignmentsByParticipant.get(index) ?? [];
+            const itemCents = assignments.reduce((sum, assignment) => sum + assignment.amountCents, 0);
             const feeCents = bill.shares[index] - itemCents;
+            const isSelf = index === selfIndex;
+            const expanded = expandedParticipantIndex === index;
+            const detailsId = `room-person-details-${index}`;
             return (
-              <li key={key} className="overflow-hidden rounded-2xl border bg-card">
-                <Button
+              <li
+                key={index}
+                className={cn(
+                  "overflow-hidden rounded-2xl border bg-card",
+                  isSelf && "border-primary/40 bg-primary/5",
+                )}
+              >
+                <button
                   type="button"
-                  variant="ghost"
-                  className="min-h-14 w-full justify-start rounded-none px-4"
+                  className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left"
                   aria-expanded={expanded}
-                  onClick={() => setExpandedKey(expanded ? null : key)}
+                  aria-controls={detailsId}
+                  onClick={() => setExpandedParticipantIndex(expanded ? null : index)}
                 >
                   <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
-                  <span className="min-w-0 flex-1 truncate text-left font-semibold">
-                    {participant.displayName}
+                  <span className="min-w-0 flex-1">
+                    <PersonLabel name={participant.displayName} />
+                    <span className="block text-xs text-muted-foreground">
+                      {itemsCountLine(assignments.length)}
+                    </span>
                   </span>
+                  {isSelf && <Badge>Sua parte</Badge>}
                   <Money cents={bill.shares[index]} className="shrink-0" />
-                  {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                </Button>
-                {expanded && (
-                  <div className="space-y-2 border-t px-4 py-3 text-sm">
-                    {assignments.map((assignment) => (
-                      <div key={assignment.itemIndex} className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          {bill.items[assignment.itemIndex]?.description ?? "Item"}
-                        </span>
-                        <Money cents={assignment.amountCents} />
-                      </div>
-                    ))}
-                    {feeCents > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">Taxas</span>
-                        <Money cents={feeCents} />
-                      </div>
+                  <ChevronDown
+                    aria-hidden
+                    className={cn(
+                      "size-4 shrink-0 text-muted-foreground transition-transform",
+                      expanded && "rotate-180",
                     )}
-                    {itemCents === 0 && bill.fixedFeeCents > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Sem consumo, com a parte da taxa fixa incluída.
-                      </p>
-                    )}
-                  </div>
-                )}
+                  />
+                </button>
+                <div
+                  id={detailsId}
+                  hidden={!expanded}
+                  className="space-y-2 border-t px-4 py-3 text-sm"
+                >
+                  {assignments.map((assignment) => (
+                    <div key={assignment.itemIndex} className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">
+                        {bill.items[assignment.itemIndex]?.description ?? "Item"}
+                      </span>
+                      <Money cents={assignment.amountCents} />
+                    </div>
+                  ))}
+                  {feeCents > 0 && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Taxas</span>
+                      <Money cents={feeCents} />
+                    </div>
+                  )}
+                  {assignments.length === 0 && bill.fixedFeeCents > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Sem consumo, com a parte da taxa fixa incluída.
+                    </p>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
       </section>
+      {actionDescription && (
+        <p className="text-sm text-muted-foreground">{actionDescription}</p>
+      )}
 
-      {login}
+      {onAction && (
+        <Button
+          type="button"
+          className="min-h-11 w-full"
+          disabled={actionDisabled}
+          onClick={onAction}
+        >
+          {actionLabel}
+        </Button>
+      )}
     </section>
   );
 }

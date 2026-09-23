@@ -5,12 +5,22 @@ import { useEffect, useRef, useState } from "react";
 import { RoomBoard } from "@/components/assignment-room/room-board";
 import { RoomBreakdown } from "@/components/assignment-room/room-breakdown";
 import { RoomJoin, type RoomJoinIdentity } from "@/components/assignment-room/room-join";
-import { RoomReview } from "@/components/assignment-room/room-review";
+import {
+  buildAssignmentRoomFailureMessage,
+  RoomReview,
+  type RoomPayerDraft,
+} from "@/components/assignment-room/room-review";
 import { Button } from "@/components/ui/button";
+import { buildAssignmentExpense } from "@/lib/assignment-room-money";
 import { buildAssignmentRoomUrl, readAssignmentRoomFragment } from "@/lib/assignment-room-qr";
+import { allocateEvenly } from "@/lib/expense-money";
 import { startAssignmentRoomRealtime } from "@/lib/sync/assignment-room-realtime";
 import {
+  acceptInvitation,
+} from "@/lib/sync/mutations-group";
+import {
   cancelAssignmentRoom,
+  claimAssignmentRoomGuest,
   closeAssignmentRoom,
   finalizeAssignmentRoom,
   getAssignmentRoomJoinAccount,
@@ -18,6 +28,7 @@ import {
   getAssignmentRoomMemberToken,
   joinAssignmentRoom,
   refreshAssignmentRoom,
+  refreshAssignmentRoomCompletion,
   removeAssignmentRoomParticipant,
   rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
@@ -27,10 +38,47 @@ import { getAuthGeneration } from "@/lib/sync/client";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
-import type { ExpensePayload } from "@/types/ledger";
+import type {
+  AssignmentRoomCompletion,
+  AssignmentRoomView,
+} from "@/types/assignment-room";
+import type { ExpensePayerPayload } from "@/types/ledger";
 
 interface RoomPageClientProps {
   roomId: string;
+}
+
+function activeRoomParticipants(view: Extract<AssignmentRoomView, { role: "host" }>) {
+  return view.room.participants
+    .map((participant, snapshotIndex) => ({ participant, snapshotIndex }))
+    .filter(({ participant }) => !participant.removed)
+    .sort((left, right) =>
+      left.participant.ordinal === right.participant.ordinal
+        ? left.snapshotIndex - right.snapshotIndex
+        : left.participant.ordinal - right.participant.ordinal,
+    );
+}
+
+function roomPayerPayload(
+  view: Extract<AssignmentRoomView, { role: "host" }>,
+  payers: RoomPayerDraft[],
+): ExpensePayerPayload[] {
+  const refByParticipantId = new Map(
+    view.participantRefs.map((entry) => [entry.participantId, entry.ref]),
+  );
+  const participantIndexes = new Map<string, number>();
+  let participantIndex = 0;
+  for (const { participant } of activeRoomParticipants(view)) {
+    const ref = refByParticipantId.get(participant.id);
+    if (!participant.isGuest && ref?.kind === "user" && ref.userId.length > 0) {
+      participantIndexes.set(ref.userId, participantIndex);
+    }
+    participantIndex += 1;
+  }
+  return payers.flatMap((payer) => {
+    const index = participantIndexes.get(payer.userId);
+    return index === undefined ? [] : [{ participantIndex: index, amountCents: payer.amountCents }];
+  });
 }
 
 export function RoomPageClient({ roomId }: RoomPageClientProps) {
@@ -59,6 +107,18 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const [cancelPending, setCancelPending] = useState(false);
   const [finalizePending, setFinalizePending] = useState(false);
   const [editingClosed, setEditingClosed] = useState(false);
+  const [payers, setPayers] = useState<RoomPayerDraft[]>([]);
+  const [completion, setCompletion] = useState<AssignmentRoomCompletion | null>(null);
+  const [completionPending, setCompletionPending] = useState(false);
+  const [completionActionPending, setCompletionActionPending] = useState(false);
+  const payerIdentityRef = useRef(`${roomId}:${accountId ?? ""}`);
+
+  useEffect(() => {
+    const identity = `${roomId}:${accountId ?? ""}`;
+    if (payerIdentityRef.current === identity) return;
+    payerIdentityRef.current = identity;
+    setPayers([]);
+  }, [accountId, roomId]);
 
   useEffect(() => {
     const fragmentToken =
@@ -75,30 +135,19 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     } catch (error) {
       setPageError(ledgerErrorMessage(error));
     }
-    // The nonsecret first-use flag is captured once per room, before any URL
-    // cleanup rewrites history. Strict Mode's effect replay reads the same
-    // latch instead of seeing the parameter already gone and closing the
-    // dialog. It only requests initial presentation and never reaches an RPC.
     if (inviteRequestRef.current?.roomId !== roomId) {
       inviteRequestRef.current = {
         roomId,
-        requested:
-          new URLSearchParams(window.location.search).get("invite") === "1",
+        requested: new URLSearchParams(window.location.search).get("invite") === "1",
       };
     }
-    if (inviteRequestRef.current.requested) {
-      setInviteOpen(true);
-    }
+    if (inviteRequestRef.current.requested) setInviteOpen(true);
     const params = new URLSearchParams(window.location.search);
     const hadInviteParam = params.get("invite") !== null;
     params.delete("invite");
     const query = params.toString();
     if (window.location.hash || hadInviteParam) {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${query ? `?${query}` : ""}`,
-      );
+      window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
     }
     setFragmentReady(true);
   }, [roomId]);
@@ -139,12 +188,45 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   }, [accountId, fragmentReady, inviteToken, roomId]);
 
   const view = entry?.view ?? null;
+  useEffect(() => {
+    if (!view || view.role !== "host") return;
+    const refsByParticipantId = new Map(
+      view.participantRefs.map((entry) => [entry.participantId, entry.ref]),
+    );
+    const eligibleIds = new Set(
+      activeRoomParticipants(view).flatMap(({ participant }) => {
+        const ref = refsByParticipantId.get(participant.id);
+        return !participant.isGuest && ref?.kind === "user" && ref.userId.length > 0
+          ? [ref.userId]
+          : [];
+      }),
+    );
+    setPayers((current) => {
+      const next = current.filter(
+        (payer) =>
+          eligibleIds.has(payer.userId) &&
+          Number.isSafeInteger(payer.amountCents) &&
+          payer.amountCents > 0,
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [view]);
+  useEffect(() => {
+    if (view?.room.status !== "closed") {
+      setEditingClosed(false);
+    }
+  }, [view?.room.status]);
   const wasGuestRef = useRef(false);
 
-  // Resolve the visitor's identity for the public join form only: with an
-  // invite in hand and no room view yet. Disposal plus the auth generation
-  // discard results that a sign-out/sign-in made stale. This is presentation
-  // only — the join RPC still identifies the actor through `auth.uid()`.
+  useEffect(() => {
+    if (view?.role === "participant") {
+      wasGuestRef.current = true;
+      return;
+    }
+    if (!view && wasGuestRef.current) {
+      setPageError((current) => current ?? "Seu acesso foi removido.");
+    }
+  }, [view]);
   useEffect(() => {
     if (!fragmentReady || !inviteToken || view) return;
     setIdentity({ status: "loading" });
@@ -157,8 +239,6 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
           setIdentity({ status: "guest" });
           return;
         }
-        // A cached `me` may supply a display name only while its id matches
-        // the resolved account; otherwise render a generic account label.
         const name = accountId === account.id ? accountName : null;
         setIdentity({ status: "account", name });
       })
@@ -180,14 +260,27 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   ]);
 
   useEffect(() => {
-    if (view?.role === "participant") {
-      wasGuestRef.current = true;
+    if (view?.room.status !== "finalized") {
+      setCompletion(null);
+      setCompletionPending(false);
       return;
     }
-    if (!view && wasGuestRef.current) {
-      setPageError((current) => current ?? "Seu acesso foi removido.");
-    }
-  }, [view]);
+    let active = true;
+    setCompletionPending(true);
+    void refreshAssignmentRoomCompletion(roomId)
+      .then((value) => {
+        if (active) setCompletion(value);
+      })
+      .catch((error) => {
+        if (active) setPageError(ledgerErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setCompletionPending(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [roomId, view?.room.status, view?.room.revision]);
 
   let joinUrl: string | null = null;
   if (view?.role === "host") {
@@ -217,8 +310,17 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     itemId: string,
     participantId: string,
     ticks: number,
+    expectedItemRevision?: number,
   ): Promise<boolean> {
     if (!view || !entry?.connected) return false;
+    const target = view.room.participants.find((participant) => participant.id === participantId);
+    if (!target || target.removed) return false;
+    if (
+      (view.role === "participant" && (participantId !== view.room.selfParticipantId || view.room.status !== "open")) ||
+      (view.role === "host" && view.room.status !== "open" && view.room.status !== "closed")
+    ) {
+      return false;
+    }
     const item = view.room.items.find((candidate) => candidate.id === itemId);
     if (!item) return false;
     setClaimError(null);
@@ -227,7 +329,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         roomId,
         itemId,
         participantId,
-        expectedItemRevision: item.revision,
+        expectedItemRevision: expectedItemRevision ?? item.revision,
         ticks,
       });
       return true;
@@ -249,6 +351,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
       setRotatingInvite(false);
     }
   }
+
   async function handleRemoveParticipant(participantId: string) {
     if (!view || pendingParticipantIds.includes(participantId)) return;
     setPendingParticipantIds((current) => [...current, participantId]);
@@ -265,6 +368,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
       setPendingParticipantIds((current) => current.filter((id) => id !== participantId));
     }
   }
+
   async function handleClose() {
     if (!view || closePending) return;
     setClosePending(true);
@@ -297,16 +401,48 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   }
 
 
-  async function handleFinalize(payload: ExpensePayload) {
-    if (!view || finalizePending) return;
+  function handleSetPayerFull(userId: string) {
+    if (!view || view.role !== "host") return;
+    setPayers([{ userId, amountCents: view.room.totalCents }]);
+  }
+
+  function handleSplitPaymentEqually(userIds: string[]) {
+    if (!view || userIds.length === 0) return;
+    const amounts = allocateEvenly(view.room.totalCents, userIds.length);
+    if (!amounts.ok) return;
+    setPayers(
+      userIds.map((userId, index) => ({ userId, amountCents: amounts.value[index] })),
+    );
+  }
+
+  function handleSetPayerAmount(userId: string, amountCents: number) {
+    setPayers((current) => {
+      const rest = current.filter((payer) => payer.userId !== userId);
+      return amountCents > 0 ? [...rest, { userId, amountCents }] : rest;
+    });
+  }
+
+  function handleRemovePayerEntry(userId: string) {
+    setPayers((current) => current.filter((payer) => payer.userId !== userId));
+  }
+
+  async function handleFinalize() {
+    if (!view || view.role !== "host" || finalizePending) return;
+    const payerPayload = roomPayerPayload(view, payers);
+    const built = buildAssignmentExpense(view, payerPayload);
+    if (!built.ok) {
+      setPageError(buildAssignmentRoomFailureMessage(built.issue.code));
+      return;
+    }
     setFinalizePending(true);
     setPageError(null);
     try {
       await finalizeAssignmentRoom({
         roomId,
         expectedRevision: view.room.revision,
-        payload,
+        payload: built.value,
       });
+      setPayers([]);
     } catch (error) {
       setPageError(ledgerErrorMessage(error));
     } finally {
@@ -314,9 +450,41 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     }
   }
 
-  if (!fragmentReady) {
-    return <RoomLoading />;
+  async function handleCompletionAction() {
+    if (!completion || completionActionPending) return;
+    const action = completion.action;
+    if (action.kind === "unavailable") return;
+    if (action.kind === "sign_in") {
+      router.push(`/auth?next=${encodeURIComponent(`/room/${roomId}`)}`);
+      return;
+    }
+    const authGeneration = getAuthGeneration();
+    setCompletionActionPending(true);
+    setPageError(null);
+    try {
+      if (action.kind === "claim_guest") {
+        const ack = await claimAssignmentRoomGuest(roomId);
+        if (getAuthGeneration() !== authGeneration) return;
+        const updated = await refreshAssignmentRoomCompletion(roomId);
+        if (getAuthGeneration() !== authGeneration) return;
+        setCompletion(updated);
+        router.push(`/app/bill/${ack.expenseId}`);
+      } else if (action.kind === "accept_invitation") {
+        await acceptInvitation(action.groupId);
+        if (getAuthGeneration() !== authGeneration) return;
+        router.push(`/app/bill/${action.expenseId}`);
+      } else if (action.kind === "view_expense") {
+        router.push(`/app/bill/${action.expenseId}`);
+      }
+    } catch (error) {
+      setPageError(ledgerErrorMessage(error));
+    } finally {
+      setCompletionActionPending(false);
+    }
   }
+
+
+  if (!fragmentReady) return <RoomLoading />;
 
   if (inviteToken && !view) {
     return (
@@ -352,13 +520,40 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     );
   }
 
-  if (view.room.status === "finalized" && view.room.currentBill) {
+  if (view.room.status === "finalized" && (completion?.bill ?? view.room.currentBill)) {
+    const bill = completion?.bill ?? view.room.currentBill;
+    if (!bill) return <RoomLoading />;
+    const actionLabel =
+      completion?.action.kind === "view_expense"
+        ? "Ver conta"
+        : completion?.action.kind === "accept_invitation"
+          ? "Aceitar convite e ver conta"
+          : completion?.action.kind === "claim_guest"
+            ? "Vincular minha parte e ver conta"
+            : completion?.action.kind === "sign_in"
+              ? "Entrar com Google para vincular minha parte"
+              : undefined;
+    const actionDescription =
+      completion?.action.kind === "accept_invitation"
+        ? "Ao aceitar, você entra no grupo e vê a conta."
+        : completion?.action.kind === "claim_guest"
+          ? "Isso vincula sua parte e entra você no grupo."
+          : completion?.action.kind === "sign_in"
+            ? "Depois do login, você escolhe explicitamente se quer vincular sua parte."
+            : undefined;
     return (
       <main className="mx-auto min-h-full w-full max-w-2xl space-y-4 px-4 py-6">
+        {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{pageError}</p>}
+        {completionPending && <p role="status" className="text-sm text-muted-foreground">Atualizando sua parte...</p>}
         <RoomBreakdown
-          bill={view.room.currentBill}
-          roomId={roomId}
-          showLogin={view.role === "participant"}
+          bill={bill}
+          selfParticipantIndex={completion?.selfParticipantIndex ?? null}
+          heading="Conta registrada"
+          statusLabel="Sala encerrada"
+          actionLabel={actionLabel}
+          actionDescription={actionDescription}
+          actionDisabled={completionActionPending}
+          onAction={completion ? handleCompletionAction : undefined}
         />
       </main>
     );
@@ -371,7 +566,18 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         <RoomReview
           view={view}
           pending={finalizePending}
-          blockerMessage={entry?.connected ? null : "Reconectando. Aguarde os dados atuais da sala."}
+          blockerMessage={
+            !entry?.connected
+              ? "Reconectando. Aguarde os dados atuais da sala."
+              : entry.pendingItemIds.length > 0 || pendingParticipantIds.length > 0
+                ? "Salvando uma alteração. Aguarde antes de registrar a conta."
+                : null
+          }
+          payers={payers}
+          onSetPayerFull={handleSetPayerFull}
+          onSplitPaymentEqually={handleSplitPaymentEqually}
+          onSetPayerAmount={handleSetPayerAmount}
+          onRemovePayerEntry={handleRemovePayerEntry}
           onEditClaims={() => setEditingClosed(true)}
           onFinalize={handleFinalize}
         />
@@ -381,17 +587,14 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
 
   return (
     <>
-      {pageError && (
-        <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive">
-          {pageError}
-        </p>
-      )}
+      {pageError && <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive">{pageError}</p>}
       <RoomBoard
         view={view}
         connected={entry?.connected ?? false}
         joinUrl={joinUrl}
         pendingItemIds={entry?.pendingItemIds ?? []}
         claimError={claimError}
+        activity={entry?.latestActivity ?? null}
         pendingParticipantIds={pendingParticipantIds}
         rotatingInvite={rotatingInvite}
         inviteOpen={inviteOpen}
@@ -400,6 +603,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         closePending={closePending}
         cancelPending={cancelPending}
         onBack={editingClosed ? () => setEditingClosed(false) : () => router.back()}
+        onReview={view.role === "host" && view.room.status === "closed" ? () => setEditingClosed(false) : undefined}
         onClaim={handleClaim}
         onRotateInvite={handleRotateInvite}
         onRemoveParticipant={handleRemoveParticipant}
