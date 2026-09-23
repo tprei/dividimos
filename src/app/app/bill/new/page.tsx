@@ -30,7 +30,7 @@ import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useBillStore } from "@/stores/bill-store";
-import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import { expenseReadKey, IDLE_READ, useAppStore, type ResourceReadState } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
@@ -61,8 +61,20 @@ const TypeStep = dynamic(
 type ExpenseConflict =
   | { status: "none" }
   | { status: "loading" }
-  | { status: "ready"; detail: ExpenseDetail }
+  | { status: "ready"; staleVersionNo: number | null }
   | { status: "error" };
+
+function conflictPanelStatus(
+  conflict: ExpenseConflict,
+  latestDetail: ExpenseDetail | null,
+  read: ResourceReadState,
+): "loading" | "ready" | "error" {
+  if (conflict.status === "error") return "error";
+  if (latestDetail) return "ready";
+  if (read.status === "error") return "error";
+  return "loading";
+}
+
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
@@ -539,6 +551,7 @@ function NewBillPageContent() {
   const handleStaleVersion = useCallback(async () => {
     const editId = modes.editExpenseId ?? resumedEditExpenseId;
     if (!editId) return;
+    const staleVersionNo = effectiveBaseVersionNo;
     setConflict({ status: "loading" });
     try {
       await refreshExpense(editId);
@@ -547,18 +560,32 @@ function NewBillPageContent() {
       setConflict({ status: "error" });
       return;
     }
-    const detail = useAppStore.getState().expenseDetails[editId];
-    if (!detail) {
+    if (!useAppStore.getState().expenseDetails[editId]) {
       setConflict({ status: "error" });
       return;
     }
-    setConflict({ status: "ready", detail });
-  }, [modes.editExpenseId, resumedEditExpenseId]);
+    setConflict({ status: "ready", staleVersionNo });
+  }, [modes.editExpenseId, resumedEditExpenseId, effectiveBaseVersionNo]);
+
+  const conflictExpenseId = modes.editExpenseId ?? resumedEditExpenseId;
+  const conflictDetail = useAppStore((s) =>
+    conflictExpenseId ? s.expenseDetails[conflictExpenseId] ?? null : null,
+  );
+  const conflictRead = useAppStore((s) =>
+    conflictExpenseId ? (s.reads[expenseReadKey(conflictExpenseId)] ?? IDLE_READ) : IDLE_READ,
+  );
+  const latestConflictDetail =
+    conflict.status === "ready" &&
+    conflictDetail !== null &&
+    (conflict.staleVersionNo === null ||
+      conflictDetail.expense.currentVersionNo > conflict.staleVersionNo)
+      ? conflictDetail
+      : null;
 
   const handleAcceptConflict = useCallback(() => {
     const editId = modes.editExpenseId ?? resumedEditExpenseId;
-    if (!editId || conflict.status !== "ready") return;
-    const candidate = conflict.detail;
+    if (!editId || !latestConflictDetail) return;
+    const candidate = latestConflictDetail;
     if (candidate.expense.id !== editId) return;
     const snapshot = useAppStore.getState().groups[candidate.expense.groupId];
     useBillStore.getState().hydrateFromDetail(candidate, snapshot?.members ?? []);
@@ -574,13 +601,13 @@ function NewBillPageContent() {
     }
     setConflict({ status: "none" });
     toast.success("Conta atualizada.");
-  }, [modes.editExpenseId, resumedEditExpenseId, conflict]);
+  }, [modes.editExpenseId, resumedEditExpenseId, latestConflictDetail]);
 
   const conflictPanel = conflict.status !== "none" ? (
     <div className="px-4 pt-4">
       <ExpenseConflictPanel
-        status={conflict.status}
-        detail={conflict.status === "ready" ? conflict.detail : null}
+        status={conflictPanelStatus(conflict, latestConflictDetail, conflictRead)}
+        detail={latestConflictDetail}
         onRetry={handleStaleVersion}
         onAccept={handleAcceptConflict}
       />
