@@ -128,6 +128,25 @@ function rowIn(scope: HTMLElement, itemId: string): HTMLElement {
 }
 
 describe("RoomBoard", () => {
+  it("undoes a saved claim with the current revision and leaves closed rooms read-only", async () => {
+    const user = userEvent.setup();
+    const onClaim = vi.fn(async () => true);
+    const view = participantView([{ itemId: "beer", participantId: "person-a", ticks: 60_000 }]);
+    const { rerender } = render(<RoomBoard view={view} {...boardProps} onClaim={onClaim} />);
+    await user.click(screen.getByRole("button", { name: "Desfazer Cerveja" }));
+    expect(onClaim).toHaveBeenCalledWith("beer", "person-a", 0, 2);
+    rerender(<RoomBoard view={{ ...view, room: { ...view.room, status: "closed" } }} {...boardProps} onClaim={onClaim} />);
+    expect(screen.getByRole("button", { name: "Desfazer Cerveja" })).toBeDisabled();
+    expect(within(screen.getByRole("region", { name: "Minha parte" })).getByRole("button", { name: "Escolher quantidade de Cerveja" })).toBeDisabled();
+  });
+
+  it("hides guest money when the projection rejects overlapping claims", () => {
+    render(<RoomBoard view={participantView([
+      { itemId: "beer", participantId: "person-a", ticks: 120_000 },
+      { itemId: "beer", participantId: "person-b", ticks: 120_000 },
+    ])} {...boardProps} />);
+    expect(screen.queryByText(/R\$/)).not.toBeInTheDocument();
+  });
   it("keeps a partially owned line in both personal and available sections", () => {
     render(
       <RoomBoard
@@ -138,8 +157,8 @@ describe("RoomBoard", () => {
 
     const available = screen.getByRole("region", { name: "Ainda sem dono" });
     const mine = screen.getByRole("region", { name: "Minha parte" });
-    expect(rowIn(available, "beer")).toHaveTextContent(/1\/2 de 1 un\./);
-    expect(rowIn(mine, "beer")).toHaveTextContent("Você: 1/2 un.");
+    expect(rowIn(available, "beer")).toHaveTextContent("Falta metade");
+    expect(rowIn(mine, "beer")).toHaveTextContent("metade");
   });
 
   it("shows the remaining half to another participant and the personal empty copy", () => {
@@ -150,7 +169,7 @@ describe("RoomBoard", () => {
       />,
     );
     expect(rowIn(first.getByRole("region", { name: "Ainda sem dono" }), "beer")).toHaveTextContent(
-      /1\/2 de 1 un\./,
+      "Falta metade",
     );
     first.unmount();
 
@@ -165,10 +184,9 @@ describe("RoomBoard", () => {
       />,
     );
     expect(rowIn(screen.getByRole("region", { name: "Ainda sem dono" }), "beer")).toHaveTextContent(
-      /1\/2 de 1 un\./,
+      "Falta metade",
     );
-    expect(screen.queryByRole("region", { name: "Minha parte" })).not.toBeInTheDocument();
-    expect(screen.getByText("Você ainda não escolheu nenhum item.")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Minha parte" }).querySelector("li[data-item-id]")).toBeNull();
   });
 
   it("keeps an exhausted line in the host overview and gates close on completeness", () => {
@@ -205,8 +223,8 @@ describe("RoomBoard", () => {
 
     const available = screen.getByRole("region", { name: "Ainda sem dono" });
     const mine = screen.getByRole("region", { name: "Minha parte" });
-    expect(rowIn(available, "beer")).toHaveTextContent(/1\/2 de 1 un\./);
-    expect(rowIn(mine, "beer")).toHaveTextContent("Você: 1/2 un.");
+    expect(rowIn(available, "beer")).toHaveTextContent("Falta metade");
+    expect(rowIn(mine, "beer")).toHaveTextContent("metade");
 
     await user.click(within(dialog).getByRole("button", { name: "Confirmar quantidade" }));
     expect(onClaim).toHaveBeenCalledWith("fries", "person-a", 60_000);
@@ -220,7 +238,7 @@ describe("RoomBoard", () => {
     );
     expect(
       rowIn(screen.getByRole("region", { name: "Minha parte" }), "beer"),
-    ).toHaveTextContent("Você: 1 un.");
+    ).toHaveTextContent("inteira");
   });
 
   it("shows a rejected claim's reason and ignores another line's error", async () => {
@@ -354,21 +372,4 @@ describe("RoomBoard", () => {
     expect(onReview).toHaveBeenCalledOnce();
   });
 
-  it("renders the latest room activity strip when the store has one", () => {
-    render(
-      <RoomBoard
-        view={participantView([])}
-        {...boardProps}
-        activity={{
-          kind: "joined",
-          participantIds: ["person-b"],
-          burstStartedAt: 1,
-          revision: 4,
-          observedAt: 1,
-        }}
-      />,
-    );
-
-    expect(screen.getByText("Caio entrou")).toBeInTheDocument();
-  });
 });

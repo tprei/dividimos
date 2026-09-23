@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   claimOptionsFor,
+  claimQuantityLabel,
   formatRoomTicks,
 } from "./assignment-room-quantity";
 
@@ -98,5 +99,22 @@ describe("claimOptionsFor", () => {
         { label: "¼", ticks: 30_000 },
       ],
     });
+  });
+});
+
+describe("claimQuantityLabel", () => {
+  it("distinguishes units from fractions of a single line", () => {
+    expect(claimQuantityLabel(3_000, 300_000)).toBe("2,5");
+    expect(claimQuantityLabel(3_000, 60_000)).toBe("0,5");
+    expect(claimQuantityLabel(1_000, 120_000)).toBe("inteira");
+    expect(claimQuantityLabel(1_000, 60_000)).toBe("metade");
+    expect(claimQuantityLabel(1_000, 40_000)).toBe("⅓");
+    expect(claimQuantityLabel(1_000, 30_000)).toBe("¼");
+    expect(claimQuantityLabel(1_000, 80_000)).toBe("⅔");
+    expect(claimQuantityLabel(1_000, 90_000)).toBe("¾");
+    expect(claimQuantityLabel(500, 30_000)).toBe("metade");
+    expect(claimQuantityLabel(1_000, 17_143)).toBe("17143/120000");
+    expect(claimQuantityLabel(1_000, 0)).toBe("0");
+    expect(() => claimQuantityLabel(1_000, -1)).toThrow(RangeError);
   });
 });

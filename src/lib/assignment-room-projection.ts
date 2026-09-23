@@ -17,6 +17,8 @@ import type {
 export interface RoomParticipantMoney {
   itemsCents: number;
   withFeeCents: number;
+  serviceFeeCents: number;
+  fixedFeeCents: number;
   lineCount: number;
 }
 
@@ -143,6 +145,8 @@ export function projectAssignmentRoomMoney(
     byParticipant[participant.id] = {
       itemsCents: itemsCents[index],
       withFeeCents: itemsCents[index] + serviceShares.value[index] + fixedShares.value[index],
+      serviceFeeCents: serviceShares.value[index],
+      fixedFeeCents: fixedShares.value[index],
       lineCount: lineCounts[index],
     };
   });

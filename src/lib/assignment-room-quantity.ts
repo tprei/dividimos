@@ -80,6 +80,27 @@ export function formatRoomTicks(ticks: number): string {
   return `${numerator}/${denominator}`;
 }
 
+/** Shared spoken quantity for a claim; single-line fractions are relative to its capacity. */
+export function claimQuantityLabel(quantityMilliunits: number, ticks: number): string {
+  assertRoomQuantity(quantityMilliunits, "quantity milliunits");
+  assertRoomQuantity(ticks, "claim ticks");
+  if (quantityMilliunits >= 2_000) {
+    return ticks % ROOM_TICKS_PER_MILLIUNIT === 0
+      ? formatExpenseQuantity((ticks / ROOM_TICKS_PER_MILLIUNIT) as ExpenseQuantity)
+      : formatRoomTicks(ticks);
+  }
+  const capacity = quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
+  if (capacity > 0) {
+    if (ticks === capacity) return "inteira";
+    if (ticks === capacity / 2) return "metade";
+    if (ticks === capacity / 3) return "⅓";
+    if (ticks === capacity / 4) return "¼";
+    if (ticks === (capacity / 3) * 2) return "⅔";
+    if (ticks === (capacity / 4) * 3) return "¾";
+  }
+  return formatRoomTicks(ticks);
+}
+
 /**
  * Build the finite set of quantities offered by the claim sheet.
  *
