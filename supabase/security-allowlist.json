@@ -119,10 +119,20 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.claim_assignment_room_guest(p_room_id uuid, p_member_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated room-member bearer bridge; the RPC rechecks the finalized guest identity and performs the existing claim transition."
+    },
     "public.claim_guest(p_token text)": {
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.claim_guest_participant(p_guest_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal-only guest claim transition; reachable only from credential-checked RPCs."
     },
     "public.claim_push_subscription(p_user_id uuid, p_channel text, p_endpoint_digest bytea, p_subscription_encrypted text)": {
       "anon": false,
@@ -239,6 +249,11 @@
       "authenticated": true,
       "note": "Authenticated host-only RPC; materializes one exact ledger expense from a closed room."
     },
+    "public.get_assignment_room_completion(p_room_id uuid, p_member_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability-authorized finalized-room completion read; identity-sensitive actions expose expense and group ids only to the matching account."
+    },
     "public.get_assignment_room(p_room_id uuid, p_member_token text)": {
       "anon": true,
       "authenticated": true,
@@ -328,6 +343,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal rate-limit machinery; server-side callers only."
+    },
+    "public.invalidate_assignment_room_expense()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal expense trigger; advances finalized room revisions without exposing a client execution path."
     },
     "public.invite_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
