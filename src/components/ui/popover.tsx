@@ -83,7 +83,7 @@ export function PopoverTitle({
   return (
     <PopoverPrimitive.Title
       data-slot="popover-title"
-      className={cn("text-sm font-semibold text-foreground", className)}
+      className={cn("text-base font-bold text-foreground", className)}
       {...props}
     />
   );
@@ -96,7 +96,7 @@ export function PopoverDescription({
   return (
     <PopoverPrimitive.Description
       data-slot="popover-description"
-      className={cn("text-xs text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   );
@@ -141,8 +141,8 @@ export function PopoverContent({
           // Base UI skips a disconnected node rather than focusing a stale one.
           finalFocus
           className={cn(
-            "flex max-h-(--available-height) w-[min(22rem,calc(var(--app-viewport-width)-24px))] origin-(--transform-origin) flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg outline-none",
-            "duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            "flex max-h-(--available-height) w-[min(22rem,calc(var(--app-viewport-width)-24px))] origin-(--transform-origin) flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-lg outline-none",
+            "duration-200 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:duration-120 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             "motion-reduce:duration-0 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none",
             className,
           )}

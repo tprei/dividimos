@@ -218,7 +218,7 @@ export function ItemizedBillForm({
 
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col">
-      <ScreenHeader back onBack={onBack} eyebrow="Nova conta" title="Conta detalhada" />
+      <ScreenHeader back onBack={onBack} subtitle="Nova conta" title="Conta detalhada" />
       {conflictPanel}
       <ItemizedWorkspace
         conflictBlocked={conflictBlocked}

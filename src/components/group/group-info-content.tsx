@@ -15,7 +15,7 @@ import { GroupAvatar } from "@/components/shared/group-avatar";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
@@ -105,14 +105,13 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
   const actions = (
     <div className="mt-5 grid grid-cols-3 gap-2">
       {isAcceptedMember && (
-        <Button
-          variant="outline"
-          className="min-h-11 flex-col gap-1 text-xs"
-          render={<Link href={`/app/groups/${groupId}/chat`} />}
+        <Link
+          href={`/app/groups/${groupId}/chat`}
+          className={buttonVariants({ variant: "outline", className: "flex-col gap-1" })}
         >
           <MessageSquare className="size-4" aria-hidden="true" />
           Conversa
-        </Button>
+        </Link>
       )}
       <Button
         variant="outline"

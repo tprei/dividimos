@@ -190,7 +190,7 @@ describe("BillsListContent", () => {
     const { container } = render(<BillsListContent />);
 
     expect(screen.queryByText("Suas contas")).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
     expect(container.querySelector("a")).toBeNull();
   });
 

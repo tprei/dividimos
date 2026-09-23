@@ -464,7 +464,7 @@ export function DebtGraph({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             className="text-muted-foreground"
             onClick={toggleRawView}
           >

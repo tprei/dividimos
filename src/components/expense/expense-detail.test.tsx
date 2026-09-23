@@ -401,21 +401,20 @@ describe("ExpenseDetail", () => {
     useAppStore.setState({ expenseDetails: { e1: detail } });
     const { unmount } = render(<ExpenseDetail expenseId="e1" />);
 
-    const people = screen.getByRole("tab", { name: "Por pessoa" });
-    expect(people).toHaveAttribute("aria-selected", "true");
+    const people = screen.getByRole("radio", { name: "Por pessoa" });
+    expect(people).toBeChecked();
     expect(screen.getByLabelText("Saldo de Bruno nessa conta")).toHaveTextContent("−R$ 50,00");
     expect(screen.queryByText("Jantar completo")).not.toBeInTheDocument();
     expect(screen.queryByText("Alice criou a conta")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Resumo por pessoa" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Por item" }));
-    expect(screen.getByRole("tabpanel", { name: "Por item" })).toHaveTextContent("Jantar completo");
+    await user.click(screen.getByRole("radio", { name: "Por item" }));
+    expect(screen.getByText("Jantar completo")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Participantes" })).not.toBeInTheDocument();
 
-    await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "Histórico" })).toHaveFocus();
-    await user.keyboard("{Enter}");
-    expect(screen.getByRole("tabpanel", { name: "Histórico" })).toHaveTextContent("Alice criou a conta");
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(screen.getByRole("radio", { name: "Histórico" })).toHaveFocus();
+    expect(screen.getByText("Alice criou a conta")).toBeInTheDocument();
 
     await user.click(people);
     await user.click(screen.getByRole("button", { name: "Convidar Bruno" }));
@@ -424,7 +423,7 @@ describe("ExpenseDetail", () => {
 
     unmount();
     render(<ExpenseDetail expenseId="e1" />);
-    expect(screen.getByRole("tab", { name: "Por pessoa" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Por pessoa" })).toBeChecked();
   });
 
   it("renders EmptyState when expense is not found", async () => {

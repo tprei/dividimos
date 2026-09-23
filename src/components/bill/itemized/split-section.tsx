@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import { ChevronDown, Equal } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
@@ -235,9 +235,9 @@ export function SplitSection({
                       </span>
                     </>
                   ) : (
-                    <Badge variant="secondary" className="shrink-0">
+                    <Chip tone="warning" className="shrink-0">
                       Pendente
-                    </Badge>
+                    </Chip>
                   )}
                   <ChevronDown
                     aria-hidden="true"

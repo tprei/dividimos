@@ -23,7 +23,7 @@ import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -322,7 +322,7 @@ function AuthenticatedProfilePage({
               {me.pixKeyHint || "Nenhuma chave cadastrada"}
             </p>
             {me.pixKeyType && (
-              <Badge variant="secondary">{pixKeyTypeLabels[me.pixKeyType]}</Badge>
+              <Chip tone="primary">{pixKeyTypeLabels[me.pixKeyType]}</Chip>
             )}
           </div>
           <div className="px-4 pb-3">

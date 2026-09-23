@@ -18,7 +18,7 @@ test.describe("Group Invite & Accept", () => {
 
     await expect(page.getByText("Invite Test Group")).toBeVisible();
 
-    await page.getByRole("tab", { name: "Membros" }).click();
+    await page.getByRole("radio", { name: "Membros" }).click();
     await page.getByRole("button", { name: /Convidar/i }).click();
 
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
@@ -56,7 +56,7 @@ test.describe("Group Invite & Accept", () => {
     await bobPage.getByRole("link", { name: /Invite Test Group/ }).click();
     await bobPage.waitForLoadState("networkidle");
 
-    await bobPage.getByRole("tab", { name: "Membros" }).click();
+    await bobPage.getByRole("radio", { name: "Membros" }).click();
 
     await expect(bobPage.getByText("Alice Invite")).toBeVisible({ timeout: 10000 });
     await expect(bobPage.getByText("Bob Invite")).toBeVisible();
@@ -111,7 +111,7 @@ test.describe("Group Invite & Accept", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await page.getByRole("tab", { name: "Membros" }).click();
+    await page.getByRole("radio", { name: "Membros" }).click();
 
     await expect(page.getByText("Alice Pending")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Bob Pending")).toBeVisible();

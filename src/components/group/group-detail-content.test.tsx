@@ -255,9 +255,8 @@ describe("GroupDetailContent", () => {
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    expect(screen.getByText("Acerto do grupo")).toBeInTheDocument();
     expect(screen.getByText("Viagem")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Saldos" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Saldos" })).toBeChecked();
     expect(screen.getByTestId("settlement-stub")).toBeInTheDocument();
 
     const props = settlementProps.at(-1)!;
@@ -315,11 +314,10 @@ describe("GroupDetailContent", () => {
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    await userEvent.click(screen.getByRole("tab", { name: "Contas" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Contas" }));
 
     expect(screen.getByText(/2 membros/)).toBeInTheDocument();
     expect(screen.getByText("Jantar")).toBeInTheDocument();
-    expect(screen.queryByText("Acerto do grupo")).not.toBeInTheDocument();
   });
 
   it("reveals the bills panel when the Contas tab is selected", async () => {
@@ -329,7 +327,7 @@ describe("GroupDetailContent", () => {
 
     expect(screen.queryByText("Jantar")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Contas" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Contas" }));
 
     expect(screen.getByText("Jantar")).toBeInTheDocument();
   });
@@ -341,7 +339,7 @@ describe("GroupDetailContent", () => {
 
     expect(screen.queryByText("Pendente")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Membros" }));
 
     expect(screen.getByText("Pendente")).toBeInTheDocument();
     expect(screen.getByText("Convidado")).toBeInTheDocument();
@@ -363,7 +361,7 @@ describe("GroupDetailContent", () => {
 
     expect(screen.queryByTestId("invite-modal-stub")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Membros" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Compartilhar link e QR code do grupo" }),
     );
@@ -379,7 +377,7 @@ describe("GroupDetailContent", () => {
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Membros" }));
     await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
     expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
   });
@@ -400,7 +398,7 @@ describe("GroupDetailContent", () => {
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Membros" }));
 
     await userEvent.click(
       screen.getByRole("button", { name: "Compartilhar link e QR code do grupo" }),
@@ -530,9 +528,9 @@ describe("GroupDetailContent", () => {
 
     // After acceptance, full group tabs render in place
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Saldos" })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: "Contas" })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: "Membros" })).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Saldos" })).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Contas" })).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Membros" })).toBeInTheDocument();
     });
     expect(screen.queryByText("Convite para o grupo")).not.toBeInTheDocument();
   });

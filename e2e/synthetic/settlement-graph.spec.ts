@@ -30,7 +30,7 @@ test.describe("Settlement plan graph", () => {
     await loginAs(alice, { navigate: false });
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByRole("tab", { name: "Saldos" }).click();
+    await page.getByRole("radio", { name: "Saldos" }).click();
 
     const plan = page.getByRole("region", { name: "Plano sugerido" });
     await expect(plan).toContainText("Simplificação · 3 → 1");
@@ -87,7 +87,7 @@ test.describe("Settlement plan graph", () => {
     await loginAs(alice, { navigate: false });
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByRole("tab", { name: "Saldos" }).click();
+    await page.getByRole("radio", { name: "Saldos" }).click();
 
     const card = page.getByRole("region", { name: "Saldo consolidado" });
     await expect(card).toBeVisible();

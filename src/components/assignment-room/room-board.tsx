@@ -191,7 +191,7 @@ export function RoomBoard({
     <div className="flex min-h-full flex-col bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg [&>header_h1]:whitespace-normal">
       <ScreenHeader
         title={view.role === "host" ? view.room.title : "O que você consumiu?"}
-        eyebrow={view.role === "host" ? `SALA ${view.room.status === "open" ? "ABERTA" : "FECHADA"} · ${activeParticipants.length} NA SALA` : `${view.room.title} · ${activeParticipants.length} na sala`}
+        subtitle={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "fechada"} · ${activeParticipants.length} na sala` : `${view.room.title} · ${activeParticipants.length} na sala`}
         back={view.role === "host"}
         onBack={onBack}
         action={
