@@ -1,4 +1,5 @@
 import { formatBRL } from "@/lib/currency";
+import { sentenceStart } from "@/lib/people";
 import type { ChangeSummary, GroupEvent } from "@/types/ledger";
 
 export interface EventCopyContext {
@@ -111,7 +112,7 @@ function describeExpenseEdited(
 }
 
 export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string {
-  const actor = ctx.actorName?.trim() || "Alguém";
+  const actor = sentenceStart(ctx.actorName?.trim() || "Alguém");
 
   switch (event.kind) {
     case "expense_created": {
@@ -201,12 +202,12 @@ export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string 
 
     case "member_joined": {
       const subject = resolveName(ctx.nameOf, event.subjectUserId);
-      return `${subject} entrou no grupo`;
+      return `${sentenceStart(subject)} entrou no grupo`;
     }
 
     case "member_left": {
       const subject = resolveName(ctx.nameOf, event.subjectUserId);
-      return `${subject} saiu do grupo`;
+      return `${sentenceStart(subject)} saiu do grupo`;
     }
 
     case "member_removed": {
@@ -221,7 +222,7 @@ export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string 
         event.payload.displayName.trim().length > 0
           ? event.payload.displayName
           : "convidado";
-      return `${subject} entrou como ${displayName}`;
+      return `${sentenceStart(subject)} entrou como ${displayName}`;
     }
 
     case "nudge": {

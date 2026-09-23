@@ -21,7 +21,8 @@ export function getGroupName(
 /**
  * Resolver from a participant id to the name event copy should use. Members
  * and guests of the event's own group win; other groups are a fallback for
- * actors who have since left.
+ * actors who have since left. Self resolves to the mid-sentence "você";
+ * callers capitalize it with sentenceStart where it opens a sentence.
  */
 export function makeNameOf(
   groupId: string,
