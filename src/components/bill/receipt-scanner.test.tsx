@@ -7,16 +7,11 @@ import type { PhotoOutcome } from "@/lib/capacitor/camera";
 
 const mockGetPlatform = vi.fn(() => "web");
 
-vi.mock("@capacitor/core", () => ({
-  Capacitor: {
-    getPlatform: () => mockGetPlatform(),
-  },
-}));
-
 const mockTakeNativePhoto = vi.fn();
 const mockPickNativeGalleryPhoto = vi.fn();
 
 vi.mock("@/lib/capacitor/camera", () => ({
+  isNativeCameraAvailable: () => mockGetPlatform() !== "web",
   takeNativePhoto: () => mockTakeNativePhoto(),
   pickNativeGalleryPhoto: () => mockPickNativeGalleryPhoto(),
 }));

@@ -17,7 +17,6 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +38,8 @@ import {
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { generatePixCode, PixRequestError } from "@/lib/sync/pix";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/platform/clipboard";
+import { qrToCanvas } from "@/lib/qr";
 
 type PixQrModalSource =
   | { pixKey: string; recipientUserId?: never; groupId?: never }
@@ -267,32 +268,31 @@ export function PixQrModal({
   const paintQr = useCallback(
     (node: HTMLCanvasElement | null) => {
       if (!node || !copiaECola) return;
-      QRCode.toCanvas(
-        node,
-        copiaECola,
-        { width: 240, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } },
-        () => {
-          // The library pins the drawn size with inline styles, which would
-          // outrank the class that shrinks the code on a short screen. The
-          // bitmap stays 240px; only its display size follows the layout.
-          node.style.removeProperty("width");
-          node.style.removeProperty("height");
-        },
-      );
+      // The library pins the drawn size with inline styles, which would
+      // outrank the class that shrinks the code on a short screen. The
+      // bitmap stays 240px; only its display size follows the layout.
+      const unpinSize = () => {
+        node.style.removeProperty("width");
+        node.style.removeProperty("height");
+      };
+      void qrToCanvas(node, copiaECola, {
+        width: 240,
+        margin: 2,
+        color: { dark: "#1a1d2e", light: "#ffffff" },
+      }).then(unpinSize, unpinSize);
     },
     [copiaECola],
   );
 
   const handleCopy = async () => {
     if (!copiaECola) return;
-    try {
-      await navigator.clipboard.writeText(copiaECola);
+    if (await copyText(copiaECola)) {
       haptics.success();
       setCopied(true);
       setCopyFailed(false);
       toast.success("Código Pix copiado!");
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       toast.error(
         "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
       );

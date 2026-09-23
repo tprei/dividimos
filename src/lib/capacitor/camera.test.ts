@@ -6,6 +6,7 @@ const mockGetPhoto = vi.fn();
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
     getPlatform: () => mockGetPlatform(),
+    isNativePlatform: () => mockGetPlatform() !== "web",
   },
 }));
 
@@ -47,10 +48,10 @@ describe("isNativeCameraAvailable", () => {
     expect(isNativeCameraAvailable()).toBe(false);
   });
 
-  it("returns false on ios", async () => {
+  it("returns true on ios", async () => {
     mockGetPlatform.mockReturnValue("ios");
     const { isNativeCameraAvailable } = await import("./camera");
-    expect(isNativeCameraAvailable()).toBe(false);
+    expect(isNativeCameraAvailable()).toBe(true);
   });
 });
 

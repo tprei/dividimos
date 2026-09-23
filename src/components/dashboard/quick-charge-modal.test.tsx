@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import QRCode from "qrcode";
+import { qrToCanvas } from "@/lib/qr";
 import { QuickChargeModal } from "./quick-charge-modal";
 import { useAppStore } from "@/stores/app-store";
 
-vi.mock("qrcode", () => ({
-  default: {
-    toCanvas: vi.fn(),
-  },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 const toastError = vi.fn();
@@ -116,11 +114,10 @@ describe("QuickChargeModal", () => {
     // The canvas only exists once this phase renders, so a payload-keyed
     // effect would have run too early and left an empty white box.
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "00020126580014br.gov.bcb.pix",
         expect.anything(),
-        expect.any(Function),
       );
     });
   });

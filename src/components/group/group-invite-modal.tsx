@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { InviteContactsList, type InviteContact } from "@/components/group/group-invite-contacts";
 import { useClientOnly } from "@/hooks/use-client-only";
@@ -28,6 +27,9 @@ import {
   isContactPickerSupported,
   pickContacts,
 } from "@/lib/contacts";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
 
 interface GroupInviteModalProps {
   open: boolean;
@@ -46,9 +48,7 @@ export function GroupInviteModal({
 }: GroupInviteModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestedRef = useRef(false);
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [contacts, setContacts] = useState<InviteContact[]>([]);
   const [picking, setPicking] = useState(false);
@@ -98,37 +98,34 @@ export function GroupInviteModal({
 
   useEffect(() => {
     if (!open || !joinUrl || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, joinUrl, {
+    // A failed paint just leaves the canvas untouched; no state follows,
+    // so only the rejection needs handling.
+    void qrToCanvas(canvasRef.current, joinUrl, {
       width: 200,
       margin: 2,
       color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
+    }).catch(() => {});
   }, [open, joinUrl]);
 
   const inviteMessage = `Entre no grupo "${groupName}" no Dividimos!`;
 
   const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Dividimos",
-          text: inviteMessage,
-          url: joinUrl,
-        });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${inviteMessage}\n${joinUrl}`);
-      toast.success("Link copiado!");
+    if (!canShare) {
+      if (await copyText(`${inviteMessage}\n${joinUrl}`)) toast.success("Link copiado!");
+      else toast.error("Não deu pra copiar");
+      return;
     }
-  }, [inviteMessage, joinUrl]);
+    const outcome = await shareLink({
+      title: "Dividimos",
+      text: inviteMessage,
+      url: joinUrl,
+    });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
+  }, [canShare, inviteMessage, joinUrl]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(joinUrl);
-    toast.success("Link copiado!");
+    if (await copyText(joinUrl)) toast.success("Link copiado!");
+    else toast.error("Não deu pra copiar");
   }, [joinUrl]);
 
   const handleWhatsAppDirect = useCallback(() => {

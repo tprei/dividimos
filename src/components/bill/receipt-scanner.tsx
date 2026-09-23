@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RotateCcw, ScanLine, X } from "lucide-react";
-import { Capacitor } from "@capacitor/core";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
 import {
+  isNativeCameraAvailable,
   pickNativeGalleryPhoto,
   takeNativePhoto,
   type PhotoOutcome,
@@ -26,12 +26,12 @@ export function ReceiptScanner({
   onBack,
   processing = false,
 }: ReceiptScannerProps) {
-  const isAndroid = Capacitor.getPlatform() === "android";
+  const isNative = isNativeCameraAvailable();
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(!isAndroid);
-  const [nativeCamera, setNativeCamera] = useState(isAndroid);
+  const [cameraOpen, setCameraOpen] = useState(!isNative);
+  const [nativeCamera, setNativeCamera] = useState(isNative);
   const galleryRef = useRef<HTMLInputElement>(null);
   /**
    * The one in-flight native camera promise for the current entry intent. A
@@ -187,9 +187,9 @@ export function ReceiptScanner({
 
   const handleRetake = useCallback(() => {
     clearPreview();
-    if (isAndroid) startNativeCamera();
+    if (isNative) startNativeCamera();
     else startWebCamera();
-  }, [clearPreview, isAndroid, startNativeCamera, startWebCamera]);
+  }, [clearPreview, isNative, startNativeCamera, startWebCamera]);
 
   return (
     <div className="space-y-4">
@@ -285,7 +285,7 @@ export function ReceiptScanner({
               variant="outline"
               className="min-h-11 w-full"
               onClick={
-                isAndroid
+                isNative
                   ? handleNativeGallery
                   : () => galleryRef.current?.click()
               }

@@ -4,12 +4,14 @@ import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
 import { buildClaimUrl } from "@/lib/claim-qr";
 import { formatBRL } from "@/lib/currency";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
 
 interface GuestClaimShareModalProps {
   open: boolean;
@@ -32,9 +34,7 @@ export function GuestClaimShareModal({
   footer,
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
 
   // The credential lives only in the fragment; buildClaimUrl never puts it in
   // a path, query, or header. With no transient token there is nothing to show.
@@ -42,11 +42,13 @@ export function GuestClaimShareModal({
 
   useEffect(() => {
     if (!open || !claimUrl || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, claimUrl, {
+    // A failed paint just leaves the canvas untouched; no state follows,
+    // so only the rejection needs handling.
+    void qrToCanvas(canvasRef.current, claimUrl, {
       width: 240,
       margin: 2,
       color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
+    }).catch(() => {});
   }, [open, claimUrl]);
 
   const shareText = shareAmountCents
@@ -54,23 +56,18 @@ export function GuestClaimShareModal({
     : `Participe da conta "${expenseTitle}" no Dividimos!`;
 
   const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "Dividimos", text: shareText, url: claimUrl });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${shareText}\n${claimUrl}`);
-      toast.success("Link copiado!");
+    if (!canShare) {
+      if (await copyText(`${shareText}\n${claimUrl}`)) toast.success("Link copiado!");
+      else toast.error("Não deu pra copiar");
+      return;
     }
+    const outcome = await shareLink({ title: "Dividimos", text: shareText, url: claimUrl });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(claimUrl);
-    toast.success("Link copiado!");
+    if (await copyText(claimUrl)) toast.success("Link copiado!");
+    else toast.error("Não deu pra copiar");
   };
 
   if (!open || token === null) return null;

@@ -24,6 +24,8 @@ import {
   isContactPickerSupported,
   pickContacts,
 } from "@/lib/contacts";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
 
 interface ConversationShareModalProps {
   open: boolean;
@@ -45,9 +47,7 @@ export function ConversationShareModal({
   handle,
   anchor,
 }: ConversationShareModalProps) {
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [contacts, setContacts] = useState<SelectedContact[]>([]);
   const [picking, setPicking] = useState(false);
@@ -63,27 +63,22 @@ export function ConversationShareModal({
   const inviteMessage = `Me adicione no Dividimos! Meu usuário é @${handle}`;
 
   const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Dividimos",
-          text: inviteMessage,
-          url: appUrl,
-        });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${inviteMessage}\n${appUrl}`);
-      toast.success("Mensagem copiada!");
+    if (!canShare) {
+      if (await copyText(`${inviteMessage}\n${appUrl}`)) toast.success("Mensagem copiada!");
+      else toast.error("Não deu pra copiar");
+      return;
     }
-  }, [inviteMessage, appUrl]);
+    const outcome = await shareLink({
+      title: "Dividimos",
+      text: inviteMessage,
+      url: appUrl,
+    });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
+  }, [canShare, inviteMessage, appUrl]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(`${inviteMessage}\n${appUrl}`);
-    toast.success("Mensagem copiada!");
+    if (await copyText(`${inviteMessage}\n${appUrl}`)) toast.success("Mensagem copiada!");
+    else toast.error("Não deu pra copiar");
   }, [inviteMessage, appUrl]);
 
   const handleWhatsAppDirect = useCallback(() => {

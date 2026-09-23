@@ -9,7 +9,7 @@ const subscribeNoop = () => () => {};
  * server render and the initial hydration render, then the real client value —
  * the same semantics as a mount-time `setState`-in-effect probe, but without
  * triggering `react-hooks/set-state-in-effect`. Use for stable
- * platform-capability reads (navigator.share, the Contact Picker API, etc.).
+ * platform-capability reads (Web Share, the Contact Picker API, etc.).
  */
 export function useClientOnly(getValue: () => boolean): boolean {
   return useSyncExternalStore(subscribeNoop, getValue, () => false);

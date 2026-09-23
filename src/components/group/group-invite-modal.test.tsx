@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import QRCode from "qrcode";
+import { qrToCanvas } from "@/lib/qr";
 import toast from "react-hot-toast";
 import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { GroupInviteModal } from "./group-invite-modal";
@@ -14,10 +14,8 @@ import {
   pickContacts,
 } from "@/lib/contacts";
 
-vi.mock("qrcode", () => ({
-  default: {
-    toCanvas: vi.fn(),
-  },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("react-hot-toast", () => ({
@@ -118,10 +116,10 @@ describe("GroupInviteModal", () => {
       );
       const [, expiresAt] = vi.mocked(createInviteLink).mock.calls[0];
       expect(Date.parse(expiresAt as string)).toBeGreaterThan(Date.now());
-      expect(QRCode.toCanvas).toHaveBeenCalled();
+      expect(qrToCanvas).toHaveBeenCalled();
     });
 
-    const canvasArgs = vi.mocked(QRCode.toCanvas).mock.calls[0];
+    const canvasArgs = vi.mocked(qrToCanvas).mock.calls[0];
     expect(canvasArgs[1]).toBe(`${window.location.origin}/join/tok123`);
   });
 

@@ -91,7 +91,7 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
   const mounted = useMounted();
   const reducedMotion = useReducedMotion();
   const card = useRef<HTMLDivElement>(null);
-  useBackHandler(shouldShow, completeTour);
+  useBackHandler(shouldShow && !showCelebration, completeTour);
 
   const recalcTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
