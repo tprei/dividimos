@@ -5,6 +5,7 @@ import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { displayNames } from "@/lib/people";
 import type { BalanceRow } from "@/types/ledger";
 
 export interface SettlementPerson {
@@ -22,6 +23,7 @@ interface ConsolidatedBalanceCardProps {
   people: SettlementPerson[];
   debtsCount: number;
   pixCount: number;
+  viewerId?: string;
 }
 
 type BalanceSide = "debt" | "credit";
@@ -88,24 +90,10 @@ export function fanLayout(params: {
   return placements;
 }
 
-function PersonAvatar({
-  person,
-  className,
-}: {
-  person: SettlementPerson;
-  className?: string;
-}) {
-  if (person.isGuest) {
-    return <GuestAvatar size="xs" className={className} />;
-  }
-  return (
-    <UserAvatar
-      name={person.name}
-      avatarUrl={person.avatarUrl}
-      size="xs"
-      className={className}
-    />
-  );
+function PersonAvatar({ person }: { person: SettlementPerson }) {
+  return person.isGuest
+    ? <GuestAvatar id={person.id} name={person.name} size="xs" />
+    : <UserAvatar id={person.id} name={person.name} avatarUrl={person.avatarUrl} size="xs" />;
 }
 
 function ConsolidatedSide({
@@ -113,11 +101,13 @@ function ConsolidatedSide({
   peopleById,
   totalCents,
   side,
+  labels,
 }: {
   balances: BalanceRow[];
   peopleById: Map<string, SettlementPerson>;
   totalCents: number;
   side: BalanceSide;
+  labels: Map<string, string>;
 }) {
   const resolved = balances.flatMap((balance) => {
     const person = peopleById.get(balance.participantId);
@@ -128,7 +118,7 @@ function ConsolidatedSide({
   const accentClass = isDebt ? "bg-destructive/75" : "bg-success/75";
   const edgeClass = isDebt ? "rounded-l-full" : "rounded-r-full";
   const balanceKind = isDebt ? "Dívida" : "Crédito";
-  const toneClass = isDebt ? "text-destructive" : "text-success";
+  const toneClass = isDebt ? "text-destructive-text" : "text-success-text";
   const gridTemplateColumns = resolved
     .map((entry) => `${Math.abs(entry.balance.netCents)}fr`)
     .join(" ");
@@ -188,14 +178,7 @@ function ConsolidatedSide({
               bottom: row * (AVATAR_DIAMETER + AVATAR_GAP),
             }}
           >
-            <PersonAvatar
-              person={resolved[index].person}
-              className={
-                isDebt
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-success/10 text-success"
-              }
-            />
+            <PersonAvatar person={resolved[index].person} />
           </span>
         ))}
       </div>
@@ -207,7 +190,7 @@ function ConsolidatedSide({
           <div
             key={entry.balance.participantId}
             role="img"
-            aria-label={`${balanceKind} de ${entry.person.name.split(" ")[0]}: ${signedAmountLabel(entry.balance.netCents)}`}
+            aria-label={`${balanceKind} de ${labels.get(entry.person.id)}: ${signedAmountLabel(entry.balance.netCents)}`}
             className={accentClass}
           />
         ))}
@@ -216,9 +199,10 @@ function ConsolidatedSide({
         {resolved.map((entry) => (
           <span
             key={entry.balance.participantId}
-            className={cn("font-mono text-[10px] font-medium tabular-nums whitespace-nowrap", toneClass)}
+            title={entry.person.name}
+            className={cn("min-w-0 truncate text-xs font-medium tabular-nums", toneClass)}
           >
-            {entry.person.name.split(" ")[0]} {formatBRL(Math.abs(entry.balance.netCents)).slice(3)}
+            {labels.get(entry.person.id)} <Money cents={Math.abs(entry.balance.netCents)} size="sm" className="text-xs" />
           </span>
         ))}
       </div>
@@ -231,8 +215,10 @@ export function ConsolidatedBalanceCard({
   people,
   debtsCount,
   pixCount,
+  viewerId,
 }: ConsolidatedBalanceCardProps) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const labels = displayNames(people, { style: "short", viewerId });
   const debtBalances = balances
     .filter((balance) => balance.netCents < 0)
     .sort((a, b) => Math.abs(b.netCents) - Math.abs(a.netCents));
@@ -246,22 +232,23 @@ export function ConsolidatedBalanceCard({
     <section className="rounded-2xl border bg-card px-4 py-3" aria-label="Saldo consolidado">
       <div className="flex items-center justify-between">
         <p className="text-sm font-bold">Saldo consolidado</p>
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {debtsCount} dívidas → {pixCount} Pix
         </span>
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span role="img" aria-label={`Dívida total: ${signedAmountLabel(debtTotal)}`}>
-          <Money signed cents={debtTotal} className="text-lg font-semibold text-destructive" />
+          <Money signed cents={debtTotal} className="text-lg font-semibold text-destructive-text" />
         </span>
         <span role="img" aria-label={`Crédito total: ${signedAmountLabel(creditTotal)}`}>
-          <Money signed cents={creditTotal} className="text-lg font-semibold text-success" />
+          <Money signed cents={creditTotal} className="text-lg font-semibold text-success-text" />
         </span>
       </div>
       <div className="mt-3 flex items-stretch">
         <ConsolidatedSide
           balances={debtBalances}
           peopleById={peopleById}
+          labels={labels}
           totalCents={debtTotal}
           side="debt"
         />
@@ -269,6 +256,7 @@ export function ConsolidatedBalanceCard({
         <ConsolidatedSide
           balances={creditBalances}
           peopleById={peopleById}
+          labels={labels}
           totalCents={creditTotal}
           side="credit"
         />

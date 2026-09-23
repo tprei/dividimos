@@ -301,8 +301,8 @@ describe("RoomBoard", () => {
   it("counts the roster and lists every host item in ordinal order", () => {
     const first = render(<RoomBoard view={participantView([])} {...boardProps} />);
     expect(first.getByText("2 pessoas na sala")).toBeInTheDocument();
-    expect(first.getByLabelText("Bia")).toBeInTheDocument();
-    expect(first.getByLabelText("Caio")).toBeInTheDocument();
+    expect(first.getByRole("listitem", { name: "Bia" })).toBeInTheDocument();
+    expect(first.getByRole("listitem", { name: "Caio" })).toBeInTheDocument();
     first.unmount();
 
     render(

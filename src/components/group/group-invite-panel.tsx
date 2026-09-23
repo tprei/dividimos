@@ -128,6 +128,7 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
           className="mt-3 flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
         >
           <UserAvatar
+            id={lookupResult.id}
             name={lookupResult.name}
             avatarUrl={lookupResult.avatarUrl}
             size="sm"

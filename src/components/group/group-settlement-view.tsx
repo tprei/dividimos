@@ -15,6 +15,7 @@ import { SectionHeading } from "@/components/shared/section-heading";
 import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { displayNames } from "@/lib/people";
 import type { DebtEdge } from "@/lib/simplify";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { selectTransfers } from "@/stores/app-selectors";
@@ -79,6 +80,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
   );
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const labels = displayNames(people, { style: "short", viewerId: meId });
 
   const graphParticipants = useMemo(() => {
     const involved = new Set<string>();
@@ -114,6 +116,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
     <div className="space-y-5">
       <ConsolidatedBalanceCard
         balances={snapshot.balances}
+        viewerId={meId}
         people={people}
         debtsCount={snapshot.pairwiseEdges.length}
         pixCount={transfers.length}
@@ -139,6 +142,8 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
                 transfer={transfer}
                 from={from}
                 to={to}
+                fromLabel={labels.get(from.id) ?? from.name}
+                toLabel={labels.get(to.id) ?? to.name}
                 meId={meId}
                 highlighted={highlighted}
                 onPay={() =>
@@ -185,6 +190,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
         <div className="rounded-2xl border bg-card p-2">
           <DebtGraph
             participants={graphParticipants}
+            viewerId={meId}
             edges={transfers.map(toEdge)}
             rawEdges={snapshot.pairwiseEdges.map(toEdge)}
             replayKey={replayKey}

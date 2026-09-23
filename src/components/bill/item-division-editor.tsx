@@ -389,9 +389,9 @@ export function ItemDivisionEditor({
           const identity = (
             <>
               {participant.isGuest ? (
-                <GuestAvatar size="sm" />
+                <GuestAvatar id={participant.id} name={participant.name} size="sm" />
               ) : (
-                <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="sm" />
+                <UserAvatar id={participant.id} name={participant.name} avatarUrl={participant.avatarUrl} size="sm" />
               )}
               <PersonLabel
                 name={participant.name}

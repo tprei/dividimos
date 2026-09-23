@@ -4,6 +4,8 @@ import { Loader2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -76,6 +78,7 @@ export function RoomItemClaim({
   const selfParticipantId = participants.find(
     (participant) => participant.ordinal === 0,
   )?.id;
+  const labels = displayNames(participants.filter((person) => !person.removed).map((person) => ({ ...person, name: person.displayName })), { style: "short", viewerId: selfParticipantId, selfLabel: "você" });
   const savedTicks = useMemo(
     () =>
       claims.find((claim) => claim.participantId === targetParticipantId)
@@ -210,10 +213,7 @@ export function RoomItemClaim({
     }
   }
 
-  const targetLabel = target?.displayName ?? "pessoa removida";
-  const targetFirstName = targetLabel.trim().split(/\s+/)[0] || targetLabel;
-  const hostTargetLabel =
-    targetParticipantId === selfParticipantId ? "mim" : targetFirstName;
+  const hostTargetLabel = labels.get(targetParticipantId) ?? "pessoa removida";
   const question = canSelectParticipant
     ? multiUnit
       ? "Quantos?"
@@ -285,11 +285,7 @@ export function RoomItemClaim({
                 .filter((participant) => !participant.removed)
                 .map((participant) => {
                   const selected = participant.id === targetParticipantId;
-                  const first =
-                    participant.displayName.trim().split(/\s+/)[0] ||
-                    participant.displayName;
-                  const label =
-                    participant.id === selfParticipantId ? "Você" : first;
+                  const label = participant.id === selfParticipantId ? "Você" : labels.get(participant.id);
                   return (
                     <Button
                       key={participant.id}
@@ -306,12 +302,10 @@ export function RoomItemClaim({
                       disabled={saving}
                       onClick={() => onTargetChange(participant.id)}
                     >
-                      <UserAvatar
-                        name={participant.displayName}
-                        avatarUrl={participant.avatarUrl}
-                        size="xs"
-                      />
-                      <span className="max-w-28 truncate">{label}</span>
+                      {participant.isGuest
+                        ? <GuestAvatar id={participant.id} name={participant.displayName} size="xs" />
+                        : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />}
+                      <span title={participant.displayName} className="max-w-28 truncate">{label}</span>
                     </Button>
                   );
                 })}
@@ -502,14 +496,14 @@ export function RoomItemClaim({
               className="min-h-11 w-full text-sm font-semibold text-destructive-text hover:text-destructive-text"
               aria-label={
                 canSelectParticipant
-                  ? `Remover escolha de ${targetLabel}`
+                  ? `Remover escolha de ${target?.displayName}`
                   : "Remover minha escolha"
               }
               disabled={saving || stale || !targetActive}
               onClick={() => chooseTicks(0)}
             >
               {canSelectParticipant
-                ? `Tirar de ${targetFirstName}`
+                ? targetParticipantId === selfParticipantId ? "Tirar da minha parte" : `Tirar de ${hostTargetLabel}`
                 : "Tirar da minha parte"}
             </Button>
           )}

@@ -100,7 +100,7 @@ export default function ScanInvitePage() {
         {scannedProfile ? (
           <div className="grid gap-4 rounded-2xl border bg-card p-5 text-center">
             <div className="flex flex-col items-center gap-2">
-              <UserAvatar name={scannedProfile.name} avatarUrl={scannedProfile.avatarUrl ?? null} size="lg" isBot={scannedProfile.isBot} />
+              <UserAvatar id={scannedProfile.id} name={scannedProfile.name} avatarUrl={scannedProfile.avatarUrl ?? null} size="lg" isBot={scannedProfile.isBot} />
               <p className="text-base font-semibold">{scannedProfile.name}</p>
               <p className="text-sm text-muted-foreground">@{scannedProfile.handle}</p>
             </div>

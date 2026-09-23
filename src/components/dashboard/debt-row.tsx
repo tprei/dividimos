@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { Chip } from "@/components/ui/chip";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -26,9 +27,10 @@ export function DebtRowButton({ row, onSelect }: DebtRowButtonProps) {
       onClick={(event) => onSelect(row, event.currentTarget)}
     >
       {row.counterpartyKind === "guest" ? (
-        <GuestAvatar size="sm" />
+        <GuestAvatar id={row.counterpartyId} name={row.counterpartyName} size="sm" />
       ) : (
         <UserAvatar
+          id={row.counterpartyId}
           name={row.counterpartyName}
           avatarUrl={row.counterpartyAvatarUrl}
           size="sm"
@@ -36,8 +38,8 @@ export function DebtRowButton({ row, onSelect }: DebtRowButtonProps) {
       )}
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
-          <PersonLabel name={row.counterpartyName} handle={row.counterpartyHandle} nameClassName="text-[15px]" />
-          {row.counterpartyKind === "guest" && <GuestBadge />}
+          <PersonLabel name={row.counterpartyName} nameClassName="text-base" />
+          {row.counterpartyKind === "guest" && <Chip tone="guest">Convidado</Chip>}
         </span>
         <span className="block truncate text-xs text-muted-foreground">{group}</span>
       </span>

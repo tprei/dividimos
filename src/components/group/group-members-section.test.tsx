@@ -146,6 +146,13 @@ describe("GroupMembersSection", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the creator's self identity alongside their role", () => {
+    render(<GroupMembersSection snapshot={snapshot()} meId={creatorId} onDepart={vi.fn()} />);
+    expect(screen.getByText("Carol Criadora")).toBeInTheDocument();
+    expect(screen.getByText("Criador")).toBeInTheDocument();
+    expect(screen.getByText("Você")).toBeInTheDocument();
+  });
+
   it("lets the creator remove a member after confirming", async () => {
     vi.mocked(removeMember).mockResolvedValue({
       groupId,

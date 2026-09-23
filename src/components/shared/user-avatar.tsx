@@ -4,18 +4,21 @@ import { useState } from "react";
 import Image from "next/image";
 import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { avatarToneIndex, initialsOf } from "@/lib/people";
 
 interface UserAvatarProps {
+  id?: string;
   name: string;
   avatarUrl?: string | null;
   size?: "xs" | "sm" | "md" | "lg";
   className?: string;
   priority?: boolean;
   isBot?: boolean;
+  standalone?: boolean;
 }
 
 const sizeClasses = {
-  xs: "h-6 w-6 text-[10px]",
+  xs: "h-6 w-6 text-xs",
   sm: "h-8 w-8 text-xs",
   md: "h-11 w-11 text-sm",
   lg: "h-14 w-14 text-lg",
@@ -24,7 +27,7 @@ const sizeClasses = {
 const sizePx = {
   xs: 24,
   sm: 32,
-  md: 40,
+  md: 44,
   lg: 56,
 };
 
@@ -35,37 +38,27 @@ const badgeClasses: Record<"sm" | "md" | "lg", string> = {
   lg: "size-4.5",
 };
 
-function getInitials(name: string): string {
-  // A parenthesised aside is not part of a person's name, so "Ana (bot)"
-  // initials as "AN" rather than "A(", and punctuation never reaches the
-  // circle.
-  const parts = name
-    .replace(/\([^)]*\)/g, " ")
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((part) => part.length > 0);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return "?";
+export function avatarStyle(id: string) {
+  return {
+    backgroundColor: `var(--avatar-tone-${avatarToneIndex(id)})`,
+    color: "var(--avatar-foreground)",
+  };
 }
 
-export function UserAvatar({ name, avatarUrl, size = "md", className, priority, isBot }: UserAvatarProps) {
+export function UserAvatar({ id, name, avatarUrl, size = "md", className, priority, isBot, standalone = false }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false);
   const sizeClass = sizeClasses[size];
   const px = sizePx[size];
 
   const avatar =
     avatarUrl && !imgError ? (
-      <div className={cn("relative overflow-hidden rounded-full", sizeClass, className)}>
+      <div
+        className={cn("relative shrink-0 overflow-hidden rounded-full", sizeClass, className)}
+        aria-hidden={standalone ? undefined : true}
+      >
         <Image
           src={avatarUrl}
-          alt={name}
-          fill
+          alt={standalone ? name : ""}
           sizes={`${px}px`}
           className="object-cover"
           priority={priority}
@@ -74,13 +67,17 @@ export function UserAvatar({ name, avatarUrl, size = "md", className, priority, 
       </div>
     ) : (
       <div
+        role={standalone ? "img" : undefined}
+        aria-label={standalone ? name : undefined}
+        aria-hidden={standalone ? undefined : true}
+        style={avatarStyle(id ?? name)}
         className={cn(
-          "flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary-text",
+          "flex shrink-0 items-center justify-center rounded-full font-bold",
           sizeClass,
           className,
         )}
       >
-        {getInitials(name)}
+        {initialsOf(name)}
       </div>
     );
 

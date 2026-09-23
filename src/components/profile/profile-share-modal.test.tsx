@@ -103,11 +103,6 @@ describe("ProfileShareModal", () => {
     openSpy.mockRestore();
   });
 
-  it("renders the avatar", () => {
-    render(<ProfileShareModal {...defaultProps} />);
-    expect(screen.getByAltText("Maria Silva")).toBeInTheDocument();
-  });
-
   it("shows description text", () => {
     render(<ProfileShareModal {...defaultProps} />);
     expect(

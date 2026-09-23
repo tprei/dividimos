@@ -19,6 +19,7 @@ interface ExpenseItemsProps {
   itemAssignments: ExpenseItemAssignmentPayload[] | null;
   payers: PayerAttribution[];
   participantName: (participantIndex: number) => string;
+  participantId: (participantIndex: number) => string;
   participantAvatarUrl: (participantIndex: number) => string | null;
   participantIsGuest: (participantIndex: number) => boolean;
   showHeading?: boolean;
@@ -29,6 +30,7 @@ export function ExpenseItems({
   itemAssignments,
   payers,
   participantName,
+  participantId,
   participantAvatarUrl,
   participantIsGuest,
   showHeading = true,
@@ -83,9 +85,10 @@ export function ExpenseItems({
                         className="flex items-center gap-2"
                       >
                         {participantIsGuest(consumer.participantIndex) ? (
-                          <GuestAvatar size="xs" />
+                          <GuestAvatar id={participantId(consumer.participantIndex)} name={name} size="xs" />
                         ) : (
                           <UserAvatar
+                            id={participantId(consumer.participantIndex)}
                             name={name}
                             avatarUrl={participantAvatarUrl(consumer.participantIndex)}
                             size="xs"
@@ -101,7 +104,7 @@ export function ExpenseItems({
                             style={{ width: `${consumer.basisPoints / 100}%` }}
                           />
                         </span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                           {Math.round(consumer.basisPoints / 100)}%
                         </span>
                         <Money

@@ -152,6 +152,7 @@ export function ItemizedWorkspace({
     <>
       <SectionTabs section={section} onChange={onSectionChange} />
       <SectionContent
+        viewerId={participants.me.id}
         section={section}
         account={account}
         items={store.items}

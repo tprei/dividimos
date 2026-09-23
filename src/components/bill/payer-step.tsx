@@ -199,7 +199,7 @@ export function PayerStep({
                 }`}
               >
                 <span className="relative shrink-0">
-                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                  <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                   {isSelected && (
                     <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
                       <Check className="size-3" aria-hidden="true" />
@@ -219,7 +219,7 @@ export function PayerStep({
                   )}
                 </div>
                 {isSelected && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary-text">
                     Pagou tudo
                   </span>
                 )}
@@ -317,7 +317,7 @@ export function PayerStep({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                          <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                           <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                         </div>
                         <div className="text-right">
@@ -412,7 +412,7 @@ export function PayerStep({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                  <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                   <PersonLabel name={user.name} handle={user.handle} className="flex-1" nameClassName="text-sm font-medium" />
                   {showFillRemaining ? (
                     <Button
@@ -521,7 +521,7 @@ export function PayerStep({
                   className="w-full flex items-center justify-between rounded-xl border p-3 hover:border-primary/50 text-left transition-colors"
                 >
                   <span className="flex items-center gap-3">
-                    <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                    <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                     <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                   </span>
                   <span className="text-sm font-bold tabular-nums text-primary-text">

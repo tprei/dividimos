@@ -1,6 +1,6 @@
 "use client";
 
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Chip } from "@/components/ui/chip";
@@ -45,14 +45,14 @@ export function ExpenseParticipantList({
                 key={participant.participantIndex}
                 className="flex min-h-14 items-center gap-3 px-4 py-2"
               >
-                <GuestAvatar size="md" />
+                <GuestAvatar id={participant.guest.id} name={participant.guest.displayName} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="text-[15px] font-semibold wrap-anywhere">
+                      <span title={participant.guest.displayName} className="truncate text-base font-semibold">
                         {participant.guest.displayName}
                       </span>
-                      <GuestBadge />
+                      <Chip tone="guest">Convidado</Chip>
                     </span>
                     <Money
                       cents={participant.paidCents - participant.shareCents}
@@ -97,6 +97,7 @@ export function ExpenseParticipantList({
               className="flex min-h-14 items-center gap-3 px-4 py-2"
             >
               <UserAvatar
+                id={participant.user?.id}
                 name={name}
                 avatarUrl={participant.user?.avatarUrl}
                 size="md"
@@ -104,7 +105,7 @@ export function ExpenseParticipantList({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-[15px] font-semibold">
+                  <span title={name} className="truncate text-base font-semibold">
                     {isMe ? "Você" : name}
                   </span>
                   {invited && (

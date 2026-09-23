@@ -11,6 +11,8 @@ import { RoomShare } from "@/components/assignment-room/room-share";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import { previewClaimCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
@@ -94,6 +96,7 @@ export function RoomBoard({
     [view.room.participants],
   );
   const selfParticipantId = view.room.selfParticipantId;
+  const labels = displayNames(activeParticipants.map((person) => ({ ...person, name: person.displayName })), { style: "short", viewerId: selfParticipantId });
   const participantById = useMemo(
     () => new Map(view.room.participants.map((participant) => [participant.id, participant])),
     [view.room.participants],
@@ -282,11 +285,13 @@ export function RoomBoard({
                   return (
                     <li key={participant.id} aria-label={selectable ? undefined : participant.displayName} className="shrink-0">
                       {selectable ? (
-                        <RoomHostPerson participant={participant} money={roomMoney?.byParticipant[participant.id]} disabled={hostControlsDisabled} removable={view.room.status === "open"} onRemove={onRemoveParticipant} />
+                        <RoomHostPerson participant={participant} label={labels.get(participant.id) ?? participant.displayName} money={roomMoney?.byParticipant[participant.id]} disabled={hostControlsDisabled} removable={view.room.status === "open"} onRemove={onRemoveParticipant} />
                       ) : (
                         <span className="flex min-h-11 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1">
-                          <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
-                          <span className="max-w-24 truncate text-xs font-medium">{participant.displayName.split(" ")[0]}</span>
+                          {participant.isGuest
+                            ? <GuestAvatar id={participant.id} name={participant.displayName} size="sm" />
+                            : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />}
+                          <span title={participant.displayName} className="max-w-24 truncate text-xs font-medium">{labels.get(participant.id)}</span>
                         </span>
                       )}
                     </li>

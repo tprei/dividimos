@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, ChevronRight } from "lucide-react";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -15,6 +15,8 @@ interface TransferRowProps {
   transfer: Transfer;
   from: SettlementPerson;
   to: SettlementPerson;
+  fromLabel: string;
+  toLabel: string;
   meId: string;
   highlighted: boolean;
   onPay: () => void;
@@ -25,6 +27,8 @@ export function TransferRow({
   transfer,
   from,
   to,
+  fromLabel,
+  toLabel,
   meId,
   highlighted,
   onPay,
@@ -45,43 +49,49 @@ export function TransferRow({
   const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(transfer.amountCents)} para ${to.name}`;
   const content = (
     <>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1.5">
-          {from.isGuest ? (
-            <GuestAvatar size="xs" />
-          ) : (
-            <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="xs" />
-          )}
-          <PersonLabel name={from.name} handle={from.handle} nameClassName="min-w-0 text-[15px]" />
-        </span>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-          {to.isGuest ? (
-            <GuestAvatar size="xs" />
-          ) : (
-            <UserAvatar name={to.name} avatarUrl={to.avatarUrl} size="xs" />
-          )}
-          <PersonLabel name={to.name} handle={to.handle} nameClassName="min-w-0 text-[15px]" />
-        </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {(from.isGuest || to.isGuest) && <GuestBadge />}
-          {(from.isPending || to.isPending) && (
-            <Chip tone="warning" className="shrink-0">
-              Convite pendente
-            </Chip>
-          )}
-        </span>
-        <span className="block text-xs text-muted-foreground">{statusLabel}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {from.isGuest ? (
+          <GuestAvatar id={from.id} name={from.name} size="xs" />
+        ) : (
+          <UserAvatar id={from.id} name={from.name} avatarUrl={from.avatarUrl} size="xs" />
+        )}
+        <PersonLabel name={from.name} overrideName={fromLabel} nameClassName="min-w-0 text-sm" />
+        <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+        {to.isGuest ? (
+          <GuestAvatar id={to.id} name={to.name} size="xs" />
+        ) : (
+          <UserAvatar id={to.id} name={to.name} avatarUrl={to.avatarUrl} size="xs" />
+        )}
+        <PersonLabel name={to.name} overrideName={toLabel} nameClassName="min-w-0 text-sm" />
       </span>
+      {(from.isGuest || to.isGuest) && (
+        <Chip tone="guest" className="shrink-0">
+          Convidado
+        </Chip>
+      )}
+      {(from.isPending || to.isPending) && (
+        <Chip tone="warning" className="shrink-0">
+          Convite pendente
+        </Chip>
+      )}
       <Money
         cents={transfer.amountCents}
-        className={cn("mt-1 shrink-0 self-start text-sm font-semibold", iPay && "text-destructive")}
+        className={cn("shrink-0 text-sm font-semibold", iPay && "text-destructive")}
       />
-      {actionable && <ChevronRight className="mt-1 size-4 shrink-0 self-start text-muted-foreground" aria-hidden="true" />}
+      {actionable ? (
+        <span className="inline-flex h-8 shrink-0 items-center rounded-lg px-1.5 text-sm font-semibold text-primary-text">
+          {iPay ? "Pagar" : "Cobrar"}
+        </span>
+      ) : (
+        <span className="shrink-0 text-xs text-muted-foreground">{statusLabel}</span>
+      )}
+      {actionable && (
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      )}
     </>
   );
   const rowClass = cn(
-    "flex min-h-14 w-full items-start gap-3 px-4 py-2 text-left",
+    "flex min-h-11 w-full items-center gap-2 px-3 py-2.5 text-left",
     highlighted && "bg-primary/5",
   );
   if (!actionable) {

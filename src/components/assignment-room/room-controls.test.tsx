@@ -202,10 +202,10 @@ describe("Host controls", () => {
   it("removes through the anchored person confirmation and blocks pending removal", async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    const { rerender } = render(<RoomHostPerson participant={participants[1]} disabled removable onRemove={onRemove} />);
+    const { rerender } = render(<RoomHostPerson participant={participants[1]} label="Caio" disabled removable onRemove={onRemove} />);
     await user.click(screen.getByRole("button", { name: "Caio" }));
     expect(screen.getByRole("button", { name: "Remover da sala" })).toBeDisabled();
-    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable onRemove={onRemove} />);
+    rerender(<RoomHostPerson participant={participants[1]} label="Caio" disabled={false} removable onRemove={onRemove} />);
     await user.click(screen.getByRole("button", { name: "Remover da sala" }));
     expect(onRemove).toHaveBeenCalledWith("person-2");
     expect(screen.queryByRole("button", { name: "Remover da sala" })).not.toBeInTheDocument();
@@ -213,10 +213,10 @@ describe("Host controls", () => {
 
   it("keeps the host non-removable and closed-room people read-only", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<RoomHostPerson participant={participants[0]} disabled={false} removable onRemove={vi.fn()} />);
+    const { rerender } = render(<RoomHostPerson participant={participants[0]} label="Você" disabled={false} removable onRemove={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Bia" }));
     expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
-    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable={false} onRemove={vi.fn()} />);
+    rerender(<RoomHostPerson participant={participants[1]} label="Caio" disabled={false} removable={false} onRemove={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
   });
 

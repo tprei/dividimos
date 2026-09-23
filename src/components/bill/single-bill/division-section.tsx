@@ -234,9 +234,9 @@ export function SingleBillDivision({
             return (
               <div key={person.id} className="flex min-h-14 min-w-0 flex-wrap items-center gap-3 px-4 py-2">
                 {person.isGuest ? (
-                  <GuestAvatar size="sm" />
+                  <GuestAvatar id={person.id} name={person.name} size="sm" />
                 ) : (
-                  <UserAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
+                  <UserAvatar id={person.id} name={person.name} avatarUrl={person.avatarUrl} size="sm" />
                 )}
                 <div className="min-w-0 flex-1">
                   <PersonLabel name={person.name} handle={person.handle} nameClassName="text-sm leading-5" />

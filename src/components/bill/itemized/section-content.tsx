@@ -10,6 +10,7 @@ import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { Expense, ExpenseItem, ExpensePayer, User } from "@/types";
 
 export interface SectionContentProps {
+  viewerId: string;
   section: ItemizedSectionKey;
   items: ExpenseItem[];
   amountTexts: Record<string, string>;
@@ -44,6 +45,7 @@ export interface SectionContentProps {
 }
 
 export function SectionContent({
+  viewerId,
   section,
   items,
   amountTexts,
@@ -130,6 +132,7 @@ export function SectionContent({
   }
   return (
     <ReviewSection
+      viewerId={viewerId}
       expense={expense}
       items={items}
       splits={splits}

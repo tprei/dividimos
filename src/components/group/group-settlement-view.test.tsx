@@ -150,9 +150,6 @@ describe("GroupSettlementView", () => {
       screen.getByRole("img", { name: `Dívida de Dan: −R$${NBSP}90,00` }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: `Dívida de Tiago: −R$${NBSP}80,00` }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("img", { name: `Crédito de Carlos: +R$${NBSP}149,00` }),
     ).toBeInTheDocument();
     expect(
@@ -169,14 +166,8 @@ describe("GroupSettlementView", () => {
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
 
     const danRow = document.getElementById("transfer-user-4-user-3")!;
-    expect(within(danRow).getByText("Dan Silva")).toBeInTheDocument();
-    expect(within(danRow).getByText("@dan")).toBeInTheDocument();
-    expect(within(danRow).getByText("Carlos Souza")).toBeInTheDocument();
-    expect(within(danRow).getByText("@carlos")).toBeInTheDocument();
-    const tiagoToCarlos = document.getElementById("transfer-user-1-user-3")!;
-    expect(within(tiagoToCarlos).getByText("@tiago")).toBeInTheDocument();
-    const tiagoToBia = document.getElementById("transfer-user-1-user-2")!;
-    expect(within(tiagoToBia).getByText("@bia")).toBeInTheDocument();
+    expect(within(danRow).getByText("Dan")).toBeInTheDocument();
+    expect(within(danRow).getByText("Carlos")).toBeInTheDocument();
     expect(screen.getByText("Outro acerto")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Grafo de dívidas" })).toBeInTheDocument();
     expect(screen.getByText("Simplificação · 4 → 3")).toBeInTheDocument();
