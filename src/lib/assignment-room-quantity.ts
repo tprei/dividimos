@@ -21,6 +21,24 @@ const TICKS_PER_UNIT = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
 /** Denominators that read as fractions rather than as an odd ratio. */
 const FAMILIAR_DENOMINATORS = new Set([2, 3, 4, 5, 6, 8, 10]);
 
+export type ClaimOptions =
+  | {
+      kind: "whole";
+      options: Array<{ label: string; ticks: number }>;
+      total: number;
+    }
+  | { kind: "stepper"; maxUnits: number; total: number }
+  | {
+      kind: "fractions";
+      options: Array<{ label: string; ticks: number }>;
+    };
+
+function assertRoomQuantity(value: number, name: string): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`invalid ${name}: ${value}`);
+  }
+}
+
 function greatestCommonDivisor(left: number, right: number): number {
   let a = left;
   let b = right;
@@ -60,4 +78,70 @@ export function formatRoomTicks(ticks: number): string {
     return formatExpenseQuantity(milliunits);
   }
   return `${numerator}/${denominator}`;
+}
+
+/**
+ * Build the finite set of quantities offered by the claim sheet.
+ *
+ * `maxTicks` is the largest absolute claim the selected participant may make:
+ * their saved ticks plus the line's currently unclaimed ticks.
+ */
+export function claimOptionsFor(
+  quantityMilliunits: number,
+  maxTicks: number,
+): ClaimOptions {
+  assertRoomQuantity(quantityMilliunits, "quantity milliunits");
+  assertRoomQuantity(maxTicks, "maximum claim ticks");
+
+  const capacityTicks = quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
+  if (!Number.isSafeInteger(capacityTicks)) {
+    throw new RangeError(`invalid quantity milliunits: ${quantityMilliunits}`);
+  }
+  const availableTicks = Math.min(maxTicks, capacityTicks);
+
+  if (quantityMilliunits >= 2_000) {
+    const total = quantityMilliunits / 1_000;
+    const wholeUnits = Math.floor(availableTicks / TICKS_PER_UNIT);
+    if (wholeUnits > 6) {
+      return { kind: "stepper", maxUnits: wholeUnits, total };
+    }
+
+    const options = Array.from({ length: wholeUnits }, (_, index) => {
+      const units = index + 1;
+      return { label: String(units), ticks: units * TICKS_PER_UNIT };
+    });
+    if (
+      availableTicks > 0 &&
+      !options.some((option) => option.ticks === availableTicks)
+    ) {
+      options.push({
+        label: `O resto · ${formatRoomTicks(availableTicks)}`,
+        ticks: availableTicks,
+      });
+    }
+    return { kind: "whole", options, total };
+  }
+
+  const fractions = [
+    { label: "Inteira", ticks: capacityTicks },
+    { label: "Metade", ticks: capacityTicks / 2 },
+    { label: "⅓", ticks: capacityTicks / 3 },
+    { label: "¼", ticks: capacityTicks / 4 },
+  ].filter(
+    (option) =>
+      Number.isSafeInteger(option.ticks) &&
+      option.ticks > 0 &&
+      option.ticks <= availableTicks,
+  );
+
+  if (
+    availableTicks > 0 &&
+    !fractions.some((option) => option.ticks === availableTicks)
+  ) {
+    fractions.push({
+      label: `O resto · ${formatRoomTicks(availableTicks)}`,
+      ticks: availableTicks,
+    });
+  }
+  return { kind: "fractions", options: fractions };
 }

@@ -48,21 +48,12 @@ async function claimQuantity(
 ): Promise<void> {
   await rowButton(page, list, description).click();
   const dialog = page.getByRole("dialog", { name: description });
-  await dialog.getByRole("button", { name: "Outra quantidade" }).click();
-  await dialog.getByRole("textbox", { name: "Quantidade desejada" }).fill(quantity);
-  await dialog.getByRole("button", { name: "Confirmar quantidade" }).click();
-  await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
-}
-
-async function claimOneThird(
-  page: Page,
-  list: RoomList,
-  description: string,
-): Promise<void> {
-  await rowButton(page, list, description).click();
-  const dialog = page.getByRole("dialog", { name: description });
-  await dialog.getByRole("button", { name: "1/3", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+  const option =
+    quantity === "1"
+      ? dialog.getByRole("button", { name: /^(1|Inteira)$/ })
+      : dialog.getByRole("button", { name: quantity, exact: true });
+  await option.click();
+  await dialog.getByRole("button", { name: /^(Peguei|Dar) / }).click();
   await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
 }
 
@@ -254,15 +245,11 @@ test.describe("Assignment room multi-client acceptance", () => {
             // request leaves the phone, and the draft stays put.
             const remoteDialog = guestBPage.getByRole("dialog", { name: "Cervejas" });
             await rowButton(guestBPage, "Ainda sem dono", "Cervejas").click();
-            await remoteDialog.getByRole("button", { name: "Outra quantidade" }).click();
-            await remoteDialog.getByRole("textbox", { name: "Quantidade desejada" }).fill("2");
-            await expect(remoteDialog.getByRole("alert")).toContainText(
-              "não está mais disponível",
-            );
+            await expect(remoteDialog.getByRole("button", { name: "2", exact: true })).toHaveCount(0);
             await expect(
-              remoteDialog.getByRole("button", { name: "Confirmar quantidade" }),
+              remoteDialog.getByRole("button", { name: "Escolha uma quantidade" }),
             ).toBeDisabled();
-            await remoteDialog.getByRole("button", { name: "Cancelar" }).click();
+            await remoteDialog.getByRole("button", { name: "Fechar diálogo" }).click();
           },
         );
 
@@ -287,19 +274,18 @@ test.describe("Assignment room multi-client acceptance", () => {
           .getByRole("button", { name: "Escolher quantidade de Petisco" })
           .click();
         const petiscoDialog = guestBPage.getByRole("dialog", { name: "Petisco" });
-        await petiscoDialog.getByRole("button", { name: "Outra quantidade" }).click();
-        const preservedInput = petiscoDialog.getByRole("textbox", {
-          name: "Quantidade desejada",
-        });
+        const optionTwo = petiscoDialog.getByRole("button", { name: "2", exact: true });
         // A claim landing elsewhere in the room must not throw away what this
-        // person is typing, and must not submit it either.
-        await preservedInput.fill("2");
+        // person is choosing, and must not submit it either.
+        await optionTwo.click();
+        await expect(optionTwo).toHaveAttribute("aria-pressed", "true");
         await claimQuantity(page, "Itens", "Cervejas", "1");
-        await expect(preservedInput).toBeVisible({ timeout: ROOM_TIMEOUT });
-        await expect(preservedInput).toHaveValue("2");
-        await expect(petiscoDialog.getByText("Escolha uma quantidade")).toBeHidden();
-        await preservedInput.fill("1");
-        await petiscoDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+        await expect(optionTwo).toBeVisible({ timeout: ROOM_TIMEOUT });
+        await expect(optionTwo).toHaveAttribute("aria-pressed", "true");
+        await expect(petiscoDialog.getByRole("button", { name: /^Peguei / })).toBeEnabled();
+        const optionOne = petiscoDialog.getByRole("button", { name: "1", exact: true });
+        await optionOne.click();
+        await petiscoDialog.getByRole("button", { name: /^Peguei / }).click();
         await expect(
           itemCard(guestBPage, "Minha parte", "Petisco").getByText("Você: 1 un."),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
@@ -307,9 +293,11 @@ test.describe("Assignment room multi-client acceptance", () => {
         await itemCard(guestBPage, "Minha parte", "Petisco")
           .getByRole("button", { name: "Escolher quantidade de Petisco" })
           .click();
-        await expect(petiscoDialog.getByText("Sua quantidade: 1 un.")).toBeVisible();
-        await petiscoDialog.getByRole("button", { name: "Outra quantidade" }).click();
-        await preservedInput.fill("2");
+        await expect(petiscoDialog.getByRole("button", { name: "1", exact: true })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await petiscoDialog.getByRole("button", { name: "2", exact: true }).click();
         await guestBPage.keyboard.press("Escape");
         await expect(petiscoDialog).toBeHidden();
         const reopenPetisco = itemCard(guestBPage, "Minha parte", "Petisco").getByRole(
@@ -326,12 +314,12 @@ test.describe("Assignment room multi-client acceptance", () => {
         }
         await reopenPetisco.click();
         await expect(
-          petiscoDialog.getByText("Sua quantidade: 1 un."),
-        ).toBeVisible({ timeout: ROOM_TIMEOUT });
-        await petiscoDialog.getByRole("button", { name: "Cancelar" }).click();
+          petiscoDialog.getByRole("button", { name: "1", exact: true }),
+        ).toHaveAttribute("aria-pressed", "true", { timeout: ROOM_TIMEOUT });
+        await petiscoDialog.getByRole("button", { name: "Fechar diálogo" }).click();
 
         // Caio already holds one of the three, so the host's third leaves one.
-        await claimOneThird(page, "Itens", "Petisco");
+        await claimQuantity(page, "Itens", "Petisco", "1");
         await expect(
           itemCard(page, "Itens", "Petisco").getByText(/1 de 3 un\./),
         ).toBeVisible({ timeout: ROOM_TIMEOUT });
@@ -356,19 +344,14 @@ test.describe("Assignment room multi-client acceptance", () => {
       // may land, and Caio must be told rather than silently overwriting it.
       const finalDialogB = guestBPage.getByRole("dialog", { name: "Última cerveja" });
       await rowButton(guestBPage, "Ainda sem dono", "Última cerveja").click();
-      await finalDialogB.getByRole("button", { name: "Outra quantidade" }).click();
-      await finalDialogB.getByRole("textbox", { name: "Quantidade desejada" }).fill("1");
+      await finalDialogB.getByRole("button", { name: "Inteira", exact: true }).click();
 
       await claimQuantity(guestAPage, "Ainda sem dono", "Última cerveja", "1");
 
-      const confirmB = finalDialogB.getByRole("button", { name: "Confirmar quantidade" });
-      if (await confirmB.isEnabled()) {
-        await confirmB.click();
-      }
-      await expect(finalDialogB.getByRole("alert")).toContainText(
-        "não está mais disponível",
-        { timeout: ROOM_TIMEOUT },
-      );
+      await expect(finalDialogB.getByRole("alert")).toBeVisible({ timeout: ROOM_TIMEOUT });
+      await expect(
+        finalDialogB.getByRole("button", { name: "Escolha uma quantidade" }),
+      ).toBeDisabled();
       const lastBeerId = (
         await adminClient
           .from("assignment_room_items")
@@ -428,7 +411,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await expect(releaseBeer).toBeEnabled({ timeout: ROOM_TIMEOUT });
       await releaseBeer.click();
       await guestBBeerDialog.getByRole("button", { name: /^Remover (minha escolha|escolha de)/ }).click();
-      await guestBBeerDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await guestBBeerDialog.getByRole("button", { name: /^Tirar · libera/ }).click();
       await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
         itemCard(guestBPage, "Ainda sem dono", "Cervejas").getByText(/1 de 3 un\./),

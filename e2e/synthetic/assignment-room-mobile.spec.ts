@@ -299,14 +299,14 @@ test.describe("Assignment room on a phone", () => {
 
       // Register the bill and check the signed-in joiner kept an account share
       // and received an ordinary group invitation.
-      await chooseFraction(page, "Itens", "Toast Bacon Egg", "Inteiro").then((dialog) =>
-        dialog.getByRole("button", { name: "Confirmar quantidade" }).click(),
+      await chooseFraction(page, "Itens", "Toast Bacon Egg", "Inteira").then((dialog) =>
+        dialog.getByRole("button", { name: /^Dar / }).click(),
       );
       // A claim is always self-made, so Rui takes the latte in his own session.
       await rowButton(memberSession.page, "Ainda sem dono", "Caffe Latte S").click();
       const latte = memberSession.page.getByRole("dialog", { name: "Caffe Latte S" });
-      await latte.getByRole("button", { name: "Inteiro" }).click();
-      await latte.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await latte.getByRole("button", { name: "Inteira", exact: true }).click();
+      await latte.getByRole("button", { name: /^Peguei / }).click();
       await expect(latte).toBeHidden({ timeout: ROOM_TIMEOUT });
       // The claim reaches the host only by sync, and closing before it lands
       // would leave the latte unclaimed.
@@ -379,7 +379,7 @@ test.describe("Assignment room on a phone", () => {
     // gives up room for it now, so the body sits evenly between both edges.
     const popup = await dialog.boundingBox();
     const confirm = await dialog
-      .getByRole("button", { name: "Confirmar quantidade" })
+      .getByRole("button", { name: "Escolha uma quantidade" })
       .boundingBox();
     expect(popup).not.toBeNull();
     expect(confirm).not.toBeNull();
@@ -453,7 +453,7 @@ test.describe("Assignment room on a phone", () => {
       .click();
     await rowButton(page, "Itens", "Item longo número 1").click();
     const dialog = page.getByRole("dialog", { name: "Item longo número 1" });
-    await dialog.getByRole("button", { name: "Cancelar" }).click();
+    await dialog.getByRole("button", { name: "Fechar diálogo" }).click();
     await expect(dialog).toBeHidden();
 
     const after = await scroller.evaluate((node) => ({
@@ -490,10 +490,7 @@ test.describe("Assignment room on a phone", () => {
 
       // Choosing a fraction is a draft. Until it is confirmed the other phone
       // still sees the whole item free.
-      const toast = await chooseFraction(page, "Itens", "Toast Bacon Egg", "1/2");
-      await expect(
-        toast.getByText("Depois de confirmar, restam 1/2 un."),
-      ).toBeVisible();
+      const toast = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Metade");
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
           /1 de 1 un\./,
@@ -501,7 +498,7 @@ test.describe("Assignment room on a phone", () => {
       ).toBeVisible();
 
       // Cancelling keeps the room untouched.
-      await toast.getByRole("button", { name: "Cancelar" }).click();
+      await toast.getByRole("button", { name: "Fechar diálogo" }).click();
       await expect(toast).toBeHidden();
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
@@ -509,8 +506,8 @@ test.describe("Assignment room on a phone", () => {
         ),
       ).toBeVisible();
 
-      const confirmed = await chooseFraction(page, "Itens", "Toast Bacon Egg", "1/2");
-      await confirmed.getByRole("button", { name: "Confirmar quantidade" }).click();
+      const confirmed = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Metade");
+      await confirmed.getByRole("button", { name: /^Dar / }).click();
       await expect(confirmed).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       // The reported bug: the other half must stay available, on both phones.
@@ -527,9 +524,9 @@ test.describe("Assignment room on a phone", () => {
         guestPage,
         "Ainda sem dono",
         "Toast Bacon Egg",
-        "1/2",
+        "Metade",
       );
-      await guestHalf.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await guestHalf.getByRole("button", { name: /^Peguei / }).click();
       await expect(guestHalf).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
         row(page, "Itens", "Toast Bacon Egg").getByText("Tudo escolhido"),
@@ -539,7 +536,7 @@ test.describe("Assignment room on a phone", () => {
       await rowButton(page, "Itens", "Toast Bacon Egg").click();
       const release = page.getByRole("dialog", { name: "Toast Bacon Egg" });
       await release.getByRole("button", { name: /Remover escolha de/ }).click();
-      await release.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await release.getByRole("button", { name: /^Tirar · libera/ }).click();
       await expect(release).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
         row(guestPage, "Minha parte", "Toast Bacon Egg").getByText("Você: 1/2 un."),
@@ -571,9 +568,12 @@ test.describe("Assignment room on a phone", () => {
     try {
       await joinAsGuest(guestPage, invitation, "Bia Terço");
 
-      const third = await chooseFraction(page, "Itens", "Caffe Latte S", "1/3");
-      await expect(third.getByText(/Ana Terço: 1\/3 un\./)).toBeVisible();
-      await third.getByRole("button", { name: "Confirmar quantidade" }).click();
+      const third = await chooseFraction(page, "Itens", "Caffe Latte S", "⅓");
+      await expect(third.getByRole("button", { name: "⅓", exact: true })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await third.getByRole("button", { name: /^Dar / }).click();
       await expect(third).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       // A third of one item reads as a third, never as 0,333 or raw ticks.
@@ -584,19 +584,9 @@ test.describe("Assignment room on a phone", () => {
       // The guest asks for more than is left and is told so, keeping the draft.
       await rowButton(guestPage, "Ainda sem dono", "Caffe Latte S").click();
       const guestDialog = guestPage.getByRole("dialog", { name: "Caffe Latte S" });
-      await guestDialog.getByRole("button", { name: "Outra quantidade" }).click();
-      await guestDialog
-        .getByRole("textbox", { name: "Quantidade desejada" })
-        .fill("1");
-      await expect(guestDialog.getByRole("alert")).toContainText(
-        "não está mais disponível",
-      );
-      await expect(
-        guestDialog.getByRole("button", { name: "Confirmar quantidade" }),
-      ).toBeDisabled();
-
-      await guestDialog.getByRole("button", { name: /^Pegar o restante/ }).click();
-      await guestDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
+      await expect(guestDialog.getByRole("button", { name: "Inteira", exact: true })).toHaveCount(0);
+      await guestDialog.getByRole("button", { name: /^O resto/ }).click();
+      await guestDialog.getByRole("button", { name: /^Peguei / }).click();
       await expect(guestDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
         row(page, "Itens", "Caffe Latte S").getByText("Tudo escolhido"),

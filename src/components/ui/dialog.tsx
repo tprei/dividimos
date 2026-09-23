@@ -79,9 +79,11 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  variant = "center",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  variant?: "center" | "sheet"
 }) {
   return (
     <DialogPortal>
@@ -89,17 +91,30 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          // Anchored to the visual viewport rather than the layout viewport:
-          // with the keyboard open the two differ by half the screen.
-          "fixed left-1/2 top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] z-50 flex max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] w-full max-w-[calc(100%-2rem)] min-h-0 -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-xl bg-background p-4 text-sm ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed z-50 flex min-h-0 w-full flex-col gap-4 overflow-y-auto overscroll-contain bg-background text-sm ring-1 ring-foreground/10 outline-none",
+          variant === "center"
+            ? // Anchored to the visual viewport rather than the layout
+              // viewport: with the keyboard open the two differ by half the
+              // screen.
+              "left-1/2 top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl p-4 duration-100 sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+            : "left-0 top-[calc(var(--app-viewport-top)+var(--app-viewport-height))] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px)))] max-w-none -translate-y-full rounded-t-3xl rounded-b-none px-6 pt-5 pb-[calc(1.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] motion-safe:duration-200 motion-safe:data-open:animate-in motion-safe:data-open:slide-in-from-bottom-4 motion-safe:data-closed:animate-out motion-safe:data-closed:slide-out-to-bottom-4 sm:left-1/2 sm:top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] sm:max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] sm:max-w-sm sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4 sm:motion-safe:duration-100 sm:motion-safe:data-open:fade-in-0 sm:motion-safe:data-open:zoom-in-95 sm:motion-safe:data-closed:fade-out-0 sm:motion-safe:data-closed:zoom-out-95",
           // Only the row the close control actually sits on gives up width to
           // it. Padding the whole popup indents every field and button, which
           // reads as a lopsided dialog.
-          showCloseButton && "[&>[data-slot=dialog-header]]:pr-11",
+          showCloseButton &&
+            (variant === "center"
+              ? "[&>[data-slot=dialog-header]]:pr-11"
+              : "sm:[&>[data-slot=dialog-header]]:pr-11"),
           className
         )}
         {...props}
       >
+        {variant === "sheet" && (
+          <div
+            aria-hidden="true"
+            className="mx-auto h-1.5 w-12 shrink-0 rounded-full bg-muted sm:hidden"
+          />
+        )}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
@@ -107,7 +122,10 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-4 right-4 min-h-11 min-w-11 rounded-full bg-background/70 backdrop-blur-sm"
+                className={cn(
+                  "absolute top-4 right-4 min-h-11 min-w-11 rounded-full bg-background/70 backdrop-blur-sm",
+                  variant === "sheet" && "top-0 right-3 sm:top-4 sm:right-4",
+                )}
                 size="icon-sm"
               />
             }
