@@ -196,6 +196,21 @@ This prevents data accumulation across test runs. If a test is interrupted (e.g.
 - Pure algorithms (simplification, Pix encoding) — covered by unit tests
 
 
+## Ambient Tests (production canaries)
+
+`ambient/**` runs against the deployed production app, never a local stack. The vitest probes (`npm run test:ambient`, `vitest.ambient.config.mts`) call production Supabase RPCs as the seeded bot troupe; the Playwright specs (`npm run test:ambient:web`, `playwright.ambient.config.ts`) drive the deployed web app as those bots on a Pixel 7 profile. They run on a 30-minute schedule in `.github/workflows/ambient.yml`; failures open/comment on the `synthetic-prod` issue and post to Telegram. Everything the bots write stays inside the bot accounts and bot groups (`ambient/bots.ts`), and the suite prunes its own history.
+
+Environment (workflow secrets/vars, or local exports): `AMBIENT_SUPABASE_URL`, `AMBIENT_SUPABASE_ANON_KEY`, `AMBIENT_SUPABASE_SERVICE_ROLE_KEY`, `AMBIENT_SUPABASE_JWT_SECRET`, `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID`.
+
+Probes:
+
+- `web.spec.ts` — the phone walk (expense, settlement, chat) recorded for the board.
+- `realtime.spec.ts` — freshness: a second bot already on the group screen sees a new expense without reloading within 10s.
+- `dark-legibility.spec.ts` (experimental) — dark mode: stored theme + system scheme dark on `/app`, groups, one bot group and activity; every visible text node must clear WCAG contrast and every reload must keep `html.dark`.
+- `identity.spec.ts` (experimental) — in the bot group settlement area, no two members render the same visible label and names fit their rows.
+
+Experimental probes skip themselves unless `AMBIENT_EXPERIMENTAL=1`; in CI tick "experimental" on a workflow_dispatch run. Their findings need a person to triage, so they stay off the scheduled board.
+
 ## Credentialed Acceptance Scenarios (Web & Android)
 
 Dividimos integrates with native mobile operating system capabilities (Android via Capacitor) and third-party cloud services (Google OAuth, Google Cloud Vertex / Gemini 2.5 Flash, Firebase Cloud Messaging, and Web Push).
@@ -447,13 +462,14 @@ Tests end-to-end push notification delivery via Firebase Cloud Messaging (FCM) o
   - Notification tap deep-links to the referenced resource.
 ## CI
 
-All three test layers run in GitHub Actions on push to `main` and on pull requests:
+The three push-time test layers run in GitHub Actions on push to `main` and on pull requests; the ambient canaries run on their own schedule:
 
 | Workflow | File | What it runs |
 |----------|------|-------------|
 | CI | `.github/workflows/ci.yml` | Unit tests, type check, lint |
 | Integration | `.github/workflows/integration.yml` | Integration tests against local Supabase |
 | Synthetic | `.github/workflows/synthetic.yml` | Synthetic E2E tests against local Supabase + dev server |
+| Ambient | `.github/workflows/ambient.yml` | Production canaries (bot probes + web smoke), every 30 min or manual dispatch |
 
 ## Environment variables
 
@@ -468,6 +484,8 @@ All test layers need these (set by `./scripts/dev-setup.sh` or `supabase start`)
 | `SUPABASE_DB_URL` | Integration (test-runner Postgres credential for the direct `pg` connections used by `withPg` and by test-data cleanup; not an application environment setting) |
 | `RATE_LIMIT_DISABLED` | Integration (set to `0` in CI; the limiter wrapper's non-production Vitest-only bypass reads this, but a suite-wide `1` would make rate-limit enforcement tests false-green) |
 | `E2E_BASE_URL` | Synthetic (defaults to `http://localhost:3000`) |
+| `AMBIENT_SUPABASE_URL`, `AMBIENT_SUPABASE_ANON_KEY`, `AMBIENT_SUPABASE_SERVICE_ROLE_KEY`, `AMBIENT_SUPABASE_JWT_SECRET`, `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID` | Ambient (production canaries; workflow secrets/vars, never `.env.local`) |
+| `AMBIENT_EXPERIMENTAL` | Ambient web probes (`1` runs the experimental specs; unset on the schedule) |
 | `GEMINI_API_KEY` | Credentialed Acceptance (live Gemini OCR and voice expense parsing) |
 | `FCM_PROJECT_ID` | Credentialed Acceptance (Android native push via Firebase Cloud Messaging) |
 | `FCM_CLIENT_EMAIL` | Credentialed Acceptance (FCM v1 service account email) |
