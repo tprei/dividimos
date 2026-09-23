@@ -21,10 +21,12 @@ interface RoomHostControlsProps {
   totalItemCount: number;
   complete: boolean;
   closed: boolean;
+  disabled?: boolean;
   pendingParticipantIds?: string[];
   closePending?: boolean;
   cancelPending?: boolean;
   onRemove: (participantId: string) => void;
+  onReturnToReview?: () => void;
   onClose: () => void;
   onCancel: () => void;
 }
@@ -35,10 +37,12 @@ export function RoomHostControls({
   totalItemCount,
   complete,
   closed,
+  disabled = false,
   pendingParticipantIds = [],
   closePending = false,
   cancelPending = false,
   onRemove,
+  onReturnToReview,
   onClose,
   onCancel,
 }: RoomHostControlsProps) {
@@ -47,6 +51,7 @@ export function RoomHostControls({
 
   return (
     <section className="space-y-4 rounded-2xl border bg-card p-4" aria-labelledby="room-host-heading">
+
       <div>
         <h2 id="room-host-heading" className="font-heading font-semibold">Controle da sala</h2>
         <p
@@ -78,9 +83,7 @@ export function RoomHostControls({
         <ul className="space-y-2">
           {participants.map((participant) => {
             const pending = pendingParticipantIds.includes(participant.id);
-            // The ordinal-zero host cannot be removed from their own room;
-            // everyone else keeps a correction path even after closing.
-            const removable = participant.ordinal !== 0;
+            const removable = !closed && participant.ordinal !== 0;
             return (
               <li key={participant.id} className="flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2">
                 <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
@@ -96,7 +99,7 @@ export function RoomHostControls({
                     variant="ghost"
                     className="min-h-11 min-w-11"
                     aria-label={`Remover ${participant.displayName}`}
-                    disabled={pending}
+                    disabled={disabled || pending}
                     onClick={() => setRemoveTarget(participant)}
                   >
                     <UserMinus className="size-4" />
@@ -108,12 +111,23 @@ export function RoomHostControls({
         </ul>
       </details>
 
-      {!closed && (
+      {closed ? (
+        <div className="border-t pt-4">
+          <Button
+            type="button"
+            className="min-h-11 w-full"
+            disabled={disabled || !onReturnToReview}
+            onClick={onReturnToReview}
+          >
+            Voltar à revisão
+          </Button>
+        </div>
+      ) : (
         <div className="space-y-2 border-t pt-4">
           <Button
             type="button"
             className="min-h-11 w-full"
-            disabled={!complete || closePending}
+            disabled={!complete || closePending || disabled}
             onClick={onClose}
           >
             {complete ? <CheckCircle2 className="size-4" /> : <Lock className="size-4" />}
@@ -123,7 +137,7 @@ export function RoomHostControls({
             type="button"
             variant="ghost"
             className="min-h-11 w-full text-destructive"
-            disabled={cancelPending}
+            disabled={cancelPending || disabled}
             onClick={() => setCancelOpen(true)}
           >
             <Ban className="size-4" />
@@ -144,7 +158,7 @@ export function RoomHostControls({
             <Button
               type="button"
               variant="destructive"
-              disabled={removeTarget ? pendingParticipantIds.includes(removeTarget.id) : true}
+              disabled={disabled || (removeTarget ? pendingParticipantIds.includes(removeTarget.id) : true)}
               onClick={() => {
                 if (!removeTarget) return;
                 onRemove(removeTarget.id);
@@ -169,7 +183,7 @@ export function RoomHostControls({
             <Button
               type="button"
               variant="destructive"
-              disabled={cancelPending}
+              disabled={disabled || cancelPending}
               onClick={() => {
                 onCancel();
                 setCancelOpen(false);

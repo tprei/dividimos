@@ -237,9 +237,10 @@ describe("RoomHostControls", () => {
     expect(onRemove).toHaveBeenCalledWith("person-2");
   });
 
-  it("keeps closed-room removal enabled and never offers removing the host", async () => {
+  it("keeps participant removal unavailable while the room is closed", async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
+    const onReturnToReview = vi.fn();
     render(
       <RoomHostControls
         participants={participants}
@@ -248,6 +249,7 @@ describe("RoomHostControls", () => {
         complete
         closed
         onRemove={onRemove}
+        onReturnToReview={onReturnToReview}
         onClose={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -255,13 +257,11 @@ describe("RoomHostControls", () => {
 
     await user.click(screen.getByText("Gerenciar pessoas"));
     expect(screen.queryByRole("button", { name: "Remover Bia" })).not.toBeInTheDocument();
-    const removeCaio = screen.getByRole("button", { name: "Remover Caio" });
-    expect(removeCaio).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Remover Caio" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Fechar escolhas" })).not.toBeInTheDocument();
-
-    await user.click(removeCaio);
-    await user.click(screen.getByRole("button", { name: "Remover e liberar itens" }));
-    expect(onRemove).toHaveBeenCalledWith("person-2");
+    await user.click(screen.getByRole("button", { name: "Voltar à revisão" }));
+    expect(onReturnToReview).toHaveBeenCalledOnce();
+    expect(onRemove).not.toHaveBeenCalled();
   });
 
   it("blocks the remove action while that participant's removal is pending", async () => {

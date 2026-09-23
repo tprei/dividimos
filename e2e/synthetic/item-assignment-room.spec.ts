@@ -427,7 +427,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       const releaseBeer = rowButton(guestBPage, "Minha parte", "Cervejas");
       await expect(releaseBeer).toBeEnabled({ timeout: ROOM_TIMEOUT });
       await releaseBeer.click();
-      await guestBBeerDialog.getByRole("button", { name: "Remover minha escolha" }).click();
+      await guestBBeerDialog.getByRole("button", { name: /^Remover (minha escolha|escolha de)/ }).click();
       await guestBBeerDialog.getByRole("button", { name: "Confirmar quantidade" }).click();
       await expect(guestBBeerDialog).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
@@ -465,7 +465,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       // The host reviews what the room produced; correcting somebody else's
       // line is no longer possible, so this only walks back to the review.
       await page.getByRole("button", { name: "Corrigir escolhas" }).click();
-      await page.getByRole("button", { name: "Voltar" }).click();
+      await page.getByRole("button", { name: "Voltar", exact: true }).click();
       await expect(page.getByText("Revise antes de registrar")).toBeVisible();
       const payerSection = page
         .getByRole("heading", { name: "Quem pagou?" })
@@ -562,12 +562,17 @@ test.describe("Assignment room multi-client acceptance", () => {
           expect(error).toBeNull();
         },
         async () => {
-          await expect(page.getByText("Cervejas geladas", { exact: true })).toBeVisible({
-            timeout: ROOM_TIMEOUT,
-          });
-          await expect(guestBPage.getByText("Cervejas geladas", { exact: true })).toBeVisible({
-            timeout: ROOM_TIMEOUT,
-          });
+          for (const surface of [page, guestBPage]) {
+            const ownRow = surface.getByRole("button", { name: /Ana Sala/ });
+            if ((await ownRow.getAttribute("aria-expanded")) === "false") {
+              await ownRow.click();
+            }
+            await expect(
+              surface.getByLabel("Por pessoa").getByText("Cervejas geladas", { exact: true }),
+            ).toBeVisible({
+              timeout: ROOM_TIMEOUT,
+            });
+          }
         },
       );
 

@@ -291,6 +291,11 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
       setCancelPending(false);
     }
   }
+  function handleCreateBill() {
+    const destination = "/app/bill/new";
+    router.push(accountId ? destination : `/auth?next=${encodeURIComponent(destination)}`);
+  }
+
 
   async function handleFinalize(payload: ExpensePayload) {
     if (!view || finalizePending) return;
@@ -335,9 +340,13 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         <section className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-5 text-center">
           <h1 className="font-heading text-xl font-semibold">Convite inválido ou acesso expirado</h1>
           <p role="alert" className="text-sm text-muted-foreground">{pageError}</p>
+          <Button type="button" className="min-h-11 w-full" onClick={handleCreateBill}>
+            Criar outra sala
+          </Button>
           <Button type="button" variant="outline" className="min-h-11 w-full" onClick={() => router.back()}>
             Voltar
           </Button>
+
         </section>
       </main>
     );
@@ -396,6 +405,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         onRemoveParticipant={handleRemoveParticipant}
         onClose={handleClose}
         onCancel={handleCancel}
+        onCreateBill={handleCreateBill}
       />
     </>
   );

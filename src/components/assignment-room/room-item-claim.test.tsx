@@ -48,8 +48,14 @@ const other: AssignmentRoomParticipant = {
 interface HarnessOptions {
   item?: AssignmentRoomItem;
   initialClaims?: AssignmentRoomClaim[];
-  submit?: (participantId: string, ticks: number) => Promise<boolean>;
+  submit?: (
+    participantId: string,
+    ticks: number,
+    expectedItemRevision: number,
+  ) => Promise<boolean>;
   error?: { participantId: string; message: string } | null;
+  canSelectParticipant?: boolean;
+  onTargetChange?: (participantId: string) => void;
 }
 
 /**
@@ -61,6 +67,8 @@ function Harness({
   initialClaims = [],
   submit,
   error = null,
+  canSelectParticipant = false,
+  onTargetChange = () => undefined,
 }: HarnessOptions) {
   const [open, setOpen] = useState(true);
   const [claims, setClaims] = useState(initialClaims);
@@ -83,10 +91,13 @@ function Harness({
         item={item}
         claims={claims}
         availableTicks={capacity - claimed}
-        selfParticipantId={me.id}
+        targetParticipantId={me.id}
+        participants={[me, other]}
         pending={false}
         disabled={false}
         error={error}
+        canSelectParticipant={canSelectParticipant}
+        onTargetChange={onTargetChange}
         onSubmit={
           submit ??
           (async (participantId, ticks) => {
@@ -153,7 +164,7 @@ describe("RoomItemClaim", () => {
     await user.click(
       screen.getByRole("button", { name: "Confirmar quantidade" }),
     );
-    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000);
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000, 1);
   });
 
   it("edits an existing claim as an absolute quantity", async () => {
@@ -173,7 +184,7 @@ describe("RoomItemClaim", () => {
     await user.click(
       screen.getByRole("button", { name: "Confirmar quantidade" }),
     );
-    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000);
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000, 1);
   });
 
   it("releases a claim through the same confirmation", async () => {
@@ -267,14 +278,23 @@ describe("RoomItemClaim", () => {
     const onSubmit = vi.fn(async () => true);
     render(<Harness submit={onSubmit} />);
 
-    // The room used to let a host hand a line to somebody else; every session
-    // now edits its own share only, so there is no target to choose.
-    expect(screen.queryByRole("combobox", { name: "Pra quem?" })).toBeNull();
+    // Participant mode is pinned to the signed-in room member; only hosts
+    // receive the target picker.
+    expect(screen.queryByRole("radiogroup", { name: "Pra quem?" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "1/2" }));
     await user.click(
       screen.getByRole("button", { name: "Confirmar quantidade" }),
     );
-    expect(onSubmit).toHaveBeenCalledWith(me.id, 60_000);
+    expect(onSubmit).toHaveBeenCalledWith(me.id, 60_000, 1);
+  });
+  it("lets the host choose which active participant owns the draft", async () => {
+    const user = userEvent.setup();
+    const onTargetChange = vi.fn();
+    render(<Harness canSelectParticipant onTargetChange={onTargetChange} />);
+
+    await user.click(screen.getByRole("radio", { name: /Bia/ }));
+
+    expect(onTargetChange).toHaveBeenCalledWith(other.id);
   });
 });
