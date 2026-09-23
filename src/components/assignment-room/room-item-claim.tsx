@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Loader2, Minus, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Minus, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -9,19 +9,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { SelectField } from "@/components/ui/select-field";
+import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import {
-  ROOM_TICKS_PER_MILLIUNIT,
-  claimTicksForFraction,
-  claimTicksForQuantity,
-} from "@/lib/assignment-room-money";
-import { formatRoomTicks } from "@/lib/assignment-room-quantity";
-import { parseExpenseQuantity } from "@/lib/expense-quantity";
+  claimOptionsFor,
+  formatRoomTicks,
+} from "@/lib/assignment-room-quantity";
 import { cn } from "@/lib/utils";
 import type {
   AssignmentRoomClaim,
@@ -30,18 +25,6 @@ import type {
 } from "@/types/assignment-room";
 
 const UNIT_TICKS = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
-const QUICK_DENOMINATORS = [2, 3, 4] as const;
-const EXTRA_DENOMINATORS = [5, 6, 8, 10] as const;
-
-type ClaimDraft =
-  | { kind: "empty" }
-  | { kind: "ticks"; ticks: number }
-  | { kind: "quantity"; text: string };
-
-type DraftResolution =
-  | { status: "empty" }
-  | { status: "invalid"; message: string }
-  | { status: "ticks"; ticks: number };
 
 interface RoomItemClaimProps {
   open: boolean;
@@ -57,15 +40,13 @@ interface RoomItemClaimProps {
   pending: boolean;
   disabled: boolean;
   error: { participantId: string; message: string } | null;
+  previewCents: (participantId: string, ticks: number) => number | null;
   onSubmit: (
     participantId: string,
     ticks: number,
     expectedItemRevision: number,
   ) => Promise<boolean>;
 }
-
-const CHIP =
-  "min-h-11 px-2 font-semibold transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground";
 
 export function RoomItemClaim({
   open,
@@ -81,29 +62,41 @@ export function RoomItemClaim({
   pending,
   disabled,
   error,
+  previewCents,
   onSubmit,
 }: RoomItemClaimProps) {
   const capacityTicks = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
-  const target = participants.find((participant) => participant.id === targetParticipantId) ?? null;
+  const multiUnit = item.quantityMilliunits >= 2_000;
+  const target =
+    participants.find(
+      (participant) => participant.id === targetParticipantId,
+    ) ?? null;
   const targetActive = target !== null && !target.removed;
+  const selfParticipantId = participants.find(
+    (participant) => participant.ordinal === 0,
+  )?.id;
   const savedTicks = useMemo(
-    () => claims.find((claim) => claim.participantId === targetParticipantId)?.ticks ?? 0,
+    () =>
+      claims.find((claim) => claim.participantId === targetParticipantId)
+        ?.ticks ?? 0,
     [claims, targetParticipantId],
   );
   const maximumTicks = savedTicks + availableTicks;
-  const [draft, setDraft] = useState<ClaimDraft>({ kind: "empty" });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const claimOptions = useMemo(
+    () => claimOptionsFor(item.quantityMilliunits, maximumTicks),
+    [item.quantityMilliunits, maximumTicks],
+  );
+  const [draftTicks, setDraftTicks] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [draftItemRevision, setDraftItemRevision] = useState<number | null>(null);
+  const [collision, setCollision] = useState<string | null>(null);
+  const [draftItemRevision, setDraftItemRevision] = useState<number | null>(
+    null,
+  );
   const savingRef = useRef(false);
   const wasOpenRef = useRef(false);
   const draftKeyRef = useRef<string | null>(null);
   const draftKey = `${item.id}:${targetParticipantId}`;
-
-  const seedDraft = useCallback((ticks: number): ClaimDraft => {
-    return ticks > 0 ? { kind: "ticks", ticks } : { kind: "empty" };
-  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -111,49 +104,40 @@ export function RoomItemClaim({
       return;
     }
     if (!wasOpenRef.current || draftKeyRef.current !== draftKey) {
-      setDraft(seedDraft(savedTicks));
+      const initialTicks =
+        savedTicks > 0
+          ? savedTicks
+          : claimOptions.kind === "stepper" && claimOptions.maxUnits > 0
+            ? UNIT_TICKS
+            : null;
+      setDraftTicks(initialTicks);
       setDraftItemRevision(item.revision);
-      setAdvancedOpen(false);
       setSaveError(null);
+      setCollision(null);
       draftKeyRef.current = draftKey;
     }
     wasOpenRef.current = true;
-  }, [draftKey, item.revision, item.id, open, savedTicks, seedDraft]);
+  }, [claimOptions, draftKey, item.revision, open, savedTicks]);
 
-  const stale = draftItemRevision !== null && item.revision !== draftItemRevision;
-  const resolution: DraftResolution = useMemo(() => {
-    if (draft.kind === "empty") return { status: "empty" };
-    if (draft.kind === "ticks") {
-      if (draft.ticks < 0 || draft.ticks > maximumTicks) {
-        return {
-          status: "invalid",
-          message: "Essa quantidade não está mais disponível. Escolha outra quantidade.",
-        };
-      }
-      return { status: "ticks", ticks: draft.ticks };
-    }
-    const text = draft.text.trim();
-    if (text.length === 0) return { status: "empty" };
-    if (/^0([,.]0*)?$/.test(text)) return { status: "ticks", ticks: 0 };
-    const parsed = parseExpenseQuantity(text.replace(",", "."));
-    if (!parsed.ok) {
-      return {
-        status: "invalid",
-        message: "Digite uma quantidade válida, com até três casas decimais.",
-      };
-    }
-    const ticks = claimTicksForQuantity(parsed.value);
-    if (!ticks.ok || ticks.value > maximumTicks) {
-      return {
-        status: "invalid",
-        message: "Essa quantidade não está mais disponível. Escolha outra quantidade.",
-      };
-    }
-    return { status: "ticks", ticks: ticks.value };
-  }, [draft, maximumTicks]);
+  useEffect(() => {
+    if (!open || draftTicks === null || draftTicks <= maximumTicks) return;
+    setDraftTicks(null);
+    setCollision(
+      availableTicks > 0
+        ? `Não está mais disponível. Sobrou ${formatRoomTicks(availableTicks)}.`
+        : "Alguém pegou antes de você.",
+    );
+  }, [availableTicks, draftTicks, maximumTicks, open]);
 
-  const draftTicks = resolution.status === "ticks" ? resolution.ticks : null;
+  const stale =
+    draftItemRevision !== null && item.revision !== draftItemRevision;
   const unchanged = draftTicks !== null && draftTicks === savedTicks;
+  const previewTicks =
+    draftTicks === 0 && savedTicks > 0 ? savedTicks : draftTicks;
+  const previewAmount =
+    previewTicks === null
+      ? null
+      : previewCents(targetParticipantId, previewTicks);
   const canSave =
     !disabled &&
     !pending &&
@@ -161,53 +145,53 @@ export function RoomItemClaim({
     !stale &&
     targetActive &&
     draftTicks !== null &&
+    previewAmount !== null &&
     !unchanged;
   const scopedError =
     error?.participantId === targetParticipantId ? error.message : null;
-  const message = stale
-    ? "Esta escolha ficou desatualizada. O item não está mais disponível nesta versão. Atualize antes de salvar."
-    : !targetActive
-      ? "Essa pessoa não está mais na sala."
-      : resolution.status === "invalid"
-        ? resolution.message
-        : scopedError ?? saveError;
+  const message = !targetActive
+    ? "Essa pessoa não está mais na sala."
+    : collision ?? scopedError ?? saveError;
 
   function chooseTicks(ticks: number) {
     if (stale || !targetActive) return;
-    setDraft({ kind: "ticks", ticks });
+    setDraftTicks(ticks);
+    setCollision(null);
     setSaveError(null);
-  }
-
-  function typeQuantity(text: string) {
-    if (stale || !targetActive) return;
-    setDraft({ kind: "quantity", text });
-    setSaveError(null);
-  }
-
-  function fractionTicks(denominator: number): number | null {
-    const result = claimTicksForFraction(item.quantityMilliunits, 1, denominator);
-    return result.ok ? result.value : null;
-  }
-
-  function stepFrom(): number {
-    return draftTicks ?? savedTicks;
   }
 
   function refreshDraft() {
     if (saving) return;
-    setDraft(seedDraft(savedTicks));
+    const refreshedTicks =
+      savedTicks > 0
+        ? savedTicks
+        : claimOptions.kind === "stepper" && claimOptions.maxUnits > 0
+          ? UNIT_TICKS
+          : null;
+    setDraftTicks(refreshedTicks);
     setDraftItemRevision(item.revision);
-    setAdvancedOpen(false);
+    setCollision(null);
     setSaveError(null);
   }
 
   async function confirm() {
-    if (!canSave || draftTicks === null || savingRef.current || draftItemRevision === null) return;
+    if (
+      !canSave ||
+      draftTicks === null ||
+      savingRef.current ||
+      draftItemRevision === null
+    ) {
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await onSubmit(targetParticipantId, draftTicks, draftItemRevision);
+      const saved = await onSubmit(
+        targetParticipantId,
+        draftTicks,
+        draftItemRevision,
+      );
       if (saved) {
         onOpenChange(false);
         return;
@@ -225,9 +209,33 @@ export function RoomItemClaim({
     }
   }
 
-  const remainder = draftTicks === null ? null : maximumTicks - draftTicks;
   const targetLabel = target?.displayName ?? "pessoa removida";
-  const quantityLabel = canSelectParticipant ? `Quantidade de ${targetLabel}` : "Sua quantidade";
+  const targetFirstName = targetLabel.trim().split(/\s+/)[0] || targetLabel;
+  const hostTargetLabel =
+    targetParticipantId === selfParticipantId ? "mim" : targetFirstName;
+  const question = canSelectParticipant
+    ? multiUnit
+      ? "Quantos?"
+      : "Quanto?"
+    : multiUnit
+      ? "Quantos você consumiu?"
+      : "Quanto você consumiu?";
+  const stepperUnits =
+    draftTicks !== null && draftTicks >= UNIT_TICKS
+      ? Math.floor(draftTicks / UNIT_TICKS)
+      : 1;
+  const removing = draftTicks === 0 && savedTicks > 0;
+  const selectedFraction =
+    draftTicks !== null && claimOptions.kind === "fractions"
+      ? claimOptions.options.find((option) => option.ticks === draftTicks)
+      : null;
+  const actionQuantityLabel = selectedFraction
+    ? selectedFraction.label.startsWith("O resto")
+      ? "o resto"
+      : selectedFraction.label.toLocaleLowerCase("pt-BR")
+    : draftTicks === null
+      ? null
+      : formatRoomTicks(draftTicks);
 
   return (
     <Dialog
@@ -238,123 +246,281 @@ export function RoomItemClaim({
         onOpenChange(next);
       }}
     >
-      <DialogContent finalFocus={getReturnFocus} className="gap-5 rounded-3xl">
-        <DialogHeader className="gap-2">
-          <DialogTitle className="pr-6 text-xl">{item.description}</DialogTitle>
-          <DialogDescription className="flex flex-wrap items-baseline justify-between gap-2">
-            <span>{formatRoomTicks(capacityTicks)} un. · {availableTicks > 0 ? `${formatRoomTicks(availableTicks)} livres` : "Tudo escolhido"}</span>
-            <Money cents={item.totalPriceCents} className="text-base font-semibold text-foreground" />
+      <DialogContent
+        finalFocus={getReturnFocus}
+        variant="sheet"
+        className="gap-5 sm:px-6 sm:pt-5 sm:pb-6"
+      >
+        <DialogHeader className="gap-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <DialogTitle className="min-w-0 truncate pr-1 text-lg leading-7 font-semibold tracking-tight">
+              {item.description}
+            </DialogTitle>
+            <Money
+              cents={item.totalPriceCents}
+              className="shrink-0 text-base"
+            />
+          </div>
+          <DialogDescription className="leading-5">
+            {multiUnit ? (
+              <>
+                Restam {formatRoomTicks(availableTicks)} de{" "}
+                {formatRoomTicks(capacityTicks)} ·{" "}
+                <Money cents={item.unitPriceCents} className="font-normal" /> cada
+              </>
+            ) : availableTicks === 0 ? (
+              "Tudo com dono"
+            ) : availableTicks < capacityTicks ? (
+              <>Falta {formatRoomTicks(availableTicks)}</>
+            ) : (
+              "Inteira"
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {canSelectParticipant && (
-          <div>
-            <p className="mb-2 text-sm font-semibold">Pra quem?</p>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Pra quem?">
-              {participants.filter((participant) => !participant.removed).map((participant) => (
-                <Button
-                  key={participant.id}
-                  type="button"
-                  variant="outline"
-                  role="radio"
-                  aria-checked={participant.id === targetParticipantId}
-                  className={cn("min-h-11 gap-1.5 rounded-full px-2", participant.id === targetParticipantId && "border-primary bg-primary/15 text-primary-text")}
-                  disabled={saving}
-                  onClick={() => onTargetChange(participant.id)}
-                >
-                  <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />
-                  <span className="max-w-28 truncate">{participant.displayName}</span>
-                </Button>
-              ))}
+          <section aria-labelledby="claim-target-label">
+            <p id="claim-target-label" className="mb-2 font-semibold">
+              Pra quem?
+            </p>
+            <div
+              className="flex gap-2 overflow-x-auto pb-1"
+              role="radiogroup"
+              aria-label="Pra quem?"
+            >
+              {participants
+                .filter((participant) => !participant.removed)
+                .map((participant) => {
+                  const selected = participant.id === targetParticipantId;
+                  const first =
+                    participant.displayName.trim().split(/\s+/)[0] ||
+                    participant.displayName;
+                  const label =
+                    participant.id === selfParticipantId ? "Você" : first;
+                  return (
+                    <Button
+                      key={participant.id}
+                      type="button"
+                      variant="outline"
+                      role="radio"
+                      aria-label={label}
+                      aria-checked={selected}
+                      className={cn(
+                        "min-h-11 shrink-0 gap-1.5 rounded-full py-1 pr-3 pl-1.5",
+                        selected &&
+                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                      )}
+                      disabled={saving}
+                      onClick={() => onTargetChange(participant.id)}
+                    >
+                      <UserAvatar
+                        name={participant.displayName}
+                        avatarUrl={participant.avatarUrl}
+                        size="xs"
+                      />
+                      <span className="max-w-28 truncate">{label}</span>
+                    </Button>
+                  );
+                })}
             </div>
-          </div>
+          </section>
         )}
 
-        <div>
-          <p className="mb-2 text-sm font-semibold">{quantityLabel}</p>
-          <div className="grid grid-cols-2 gap-2 min-[360px]:grid-cols-4">
-            <Button type="button" variant="outline" aria-pressed={draftTicks === capacityTicks} className={CHIP} disabled={saving || stale || !targetActive || capacityTicks > maximumTicks} onClick={() => chooseTicks(capacityTicks)}>
-              Inteiro
+        <section aria-labelledby="claim-quantity-label">
+          <p
+            id="claim-quantity-label"
+            className="mb-3 text-base font-semibold"
+          >
+            {question}
+          </p>
+
+          {claimOptions.kind === "whole" && (
+            <div className="flex flex-wrap items-center gap-2">
+              {claimOptions.options
+                .filter((option) => !option.label.startsWith("O resto"))
+                .map((option) => {
+                  const selected = draftTicks === option.ticks;
+                  return (
+                    <Button
+                      key={option.ticks}
+                      type="button"
+                      variant="outline"
+                      aria-pressed={selected}
+                      className={cn(
+                        "size-12 rounded-full p-0 text-base font-semibold",
+                        selected &&
+                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                      )}
+                      disabled={saving || stale || !targetActive}
+                      onClick={() => chooseTicks(option.ticks)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              <span className="px-1 text-base text-muted-foreground">
+                de {formatRoomTicks(claimOptions.total * UNIT_TICKS)}
+              </span>
+              {claimOptions.options
+                .filter((option) => option.label.startsWith("O resto"))
+                .map((option) => {
+                  const selected = draftTicks === option.ticks;
+                  return (
+                    <Button
+                      key={option.ticks}
+                      type="button"
+                      variant="outline"
+                      aria-pressed={selected}
+                      className={cn(
+                        "min-h-11 rounded-full px-4 font-semibold",
+                        selected &&
+                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                      )}
+                      disabled={saving || stale || !targetActive}
+                      onClick={() => chooseTicks(option.ticks)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+            </div>
+          )}
+
+          {claimOptions.kind === "stepper" && (
+            <div
+              className="flex items-center gap-3"
+              role="group"
+              aria-label="Quantidade"
+            >
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="outline"
+                className="rounded-full"
+                aria-label="Diminuir uma unidade"
+                disabled={
+                  saving || stale || !targetActive || stepperUnits <= 1
+                }
+                onClick={() => chooseTicks((stepperUnits - 1) * UNIT_TICKS)}
+              >
+                <Minus aria-hidden="true" />
+              </Button>
+              <span className="min-w-10 text-center text-lg font-semibold tabular-nums">
+                {stepperUnits}
+              </span>
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="outline"
+                className="rounded-full"
+                aria-label="Aumentar uma unidade"
+                disabled={
+                  saving ||
+                  stale ||
+                  !targetActive ||
+                  stepperUnits >= claimOptions.maxUnits
+                }
+                onClick={() => chooseTicks((stepperUnits + 1) * UNIT_TICKS)}
+              >
+                <Plus aria-hidden="true" />
+              </Button>
+              <span className="text-base text-muted-foreground">
+                de {formatRoomTicks(claimOptions.total * UNIT_TICKS)}
+              </span>
+            </div>
+          )}
+
+          {claimOptions.kind === "fractions" && (
+            <div className="flex flex-wrap gap-2">
+              {claimOptions.options.map((option) => {
+                const selected = draftTicks === option.ticks;
+                return (
+                  <Button
+                    key={option.ticks}
+                    type="button"
+                    variant="outline"
+                    aria-pressed={selected}
+                    className={cn(
+                      "min-h-11 rounded-full px-4 font-semibold",
+                      selected &&
+                        "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                    )}
+                    disabled={saving || stale || !targetActive}
+                    onClick={() => chooseTicks(option.ticks)}
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {message && (
+          <p role="alert" className="text-sm text-destructive-text">
+            {message}
+          </p>
+        )}
+        {stale && (
+          <p className="flex min-h-11 items-center gap-1 text-sm text-muted-foreground">
+            <span>A sala mudou.</span>
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11 px-2 font-semibold text-primary-text"
+              disabled={saving || !targetActive}
+              onClick={refreshDraft}
+            >
+              Atualizar
             </Button>
-            {QUICK_DENOMINATORS.map((denominator) => {
-              const ticks = fractionTicks(denominator);
-              return (
-                <Button key={denominator} type="button" variant="outline" aria-pressed={ticks !== null && draftTicks === ticks} className={CHIP} disabled={saving || stale || !targetActive || ticks === null || ticks > maximumTicks} onClick={() => ticks !== null && chooseTicks(ticks)}>
-                  1/{denominator}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-
-        {maximumTicks > 0 && maximumTicks !== capacityTicks && (
-          <Button type="button" variant="outline" className="min-h-11 w-full border-success/40 bg-success/10 font-semibold text-success-text hover:bg-success/20" disabled={saving || stale || !targetActive} onClick={() => chooseTicks(maximumTicks)}>
-            Pegar o restante ({formatRoomTicks(maximumTicks)} un.)
-          </Button>
+          </p>
         )}
 
-        {!advancedOpen ? (
-          <Button type="button" variant="ghost" className="min-h-11 w-full text-primary-text" disabled={saving || stale || !targetActive} onClick={() => setAdvancedOpen(true)}>
-            Outra quantidade
+        <div className="space-y-1">
+          <Button
+            type="button"
+            className="min-h-12 w-full rounded-lg text-base font-bold"
+            disabled={!canSave}
+            onClick={confirm}
+          >
+            {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
+            {saving ? (
+              "Salvando..."
+            ) : removing && previewAmount !== null ? (
+              <>
+                Tirar · libera <Money cents={previewAmount} />
+              </>
+            ) : actionQuantityLabel !== null && previewAmount !== null ? (
+              <>
+                {canSelectParticipant
+                  ? `Dar ${actionQuantityLabel} pra ${hostTargetLabel} · `
+                  : `Peguei ${actionQuantityLabel} · `}
+                <Money cents={previewAmount} />
+              </>
+            ) : (
+              "Escolha uma quantidade"
+            )}
           </Button>
-        ) : (
-          <div className="space-y-3 rounded-xl bg-muted/60 p-3">
-            <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2">
-              <Button type="button" size="icon" variant="outline" className="min-h-11 min-w-11 text-primary-text" aria-label="Diminuir uma unidade" disabled={saving || stale || !targetActive || stepFrom() <= 0} onClick={() => chooseTicks(Math.max(0, stepFrom() - UNIT_TICKS))}>
-                <Minus className="size-4" />
-              </Button>
-              <Input value={draft.kind === "quantity" ? draft.text : draftTicks === null ? "" : formatRoomTicks(draftTicks)} inputMode="decimal" aria-label="Quantidade desejada" placeholder="Ex.: 1,5" className="min-h-11 bg-background text-center font-semibold" disabled={saving || stale || !targetActive} onChange={(event) => typeQuantity(event.target.value)} />
-              <Button type="button" size="icon" variant="outline" className="min-h-11 min-w-11 text-primary-text" aria-label="Aumentar uma unidade" disabled={saving || stale || !targetActive || stepFrom() >= maximumTicks} onClick={() => chooseTicks(Math.min(maximumTicks, stepFrom() + UNIT_TICKS))}>
-                <Plus className="size-4" />
-              </Button>
-            </div>
-            <SelectField label="Escolher fração" value="" placeholder="Escolher fração" disabled={saving || stale || !targetActive} options={EXTRA_DENOMINATORS.map((denominator) => {
-              const ticks = fractionTicks(denominator);
-              return { value: String(denominator), label: `1/${denominator}`, disabled: ticks === null || ticks > maximumTicks };
-            })} onChange={(value) => {
-              const ticks = fractionTicks(Number(value));
-              if (ticks !== null) chooseTicks(ticks);
-            }} />
-          </div>
-        )}
 
-        {savedTicks > 0 && (
-          <Button type="button" variant="ghost" className="min-h-11 w-full text-destructive-text" disabled={saving || stale || !targetActive} onClick={() => chooseTicks(0)}>
-            <Trash2 className="size-4" />
-            {canSelectParticipant ? `Remover escolha de ${targetLabel}` : "Remover minha escolha"}
-          </Button>
-        )}
-
-        <div className="border-t border-dashed pt-3 text-sm">
-          {draftTicks === null ? (
-            <p className="text-muted-foreground">Escolha uma quantidade para continuar.</p>
-          ) : (
-            <>
-              <p className="flex items-center gap-1.5 font-semibold text-primary-text">
-                <Check className="size-4" aria-hidden="true" />
-                {canSelectParticipant ? `${targetLabel}: ` : "Sua quantidade: "}{formatRoomTicks(draftTicks)} un.
-              </p>
-              {remainder !== null && <p className="mt-0.5 text-muted-foreground">Depois de confirmar, restam {formatRoomTicks(remainder)} un.</p>}
-            </>
+          {savedTicks > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11 w-full text-sm font-semibold text-destructive-text hover:text-destructive-text"
+              aria-label={
+                canSelectParticipant
+                  ? `Remover escolha de ${targetLabel}`
+                  : "Remover minha escolha"
+              }
+              disabled={saving || stale || !targetActive}
+              onClick={() => chooseTicks(0)}
+            >
+              {canSelectParticipant
+                ? `Tirar de ${targetFirstName}`
+                : "Tirar da minha parte"}
+            </Button>
           )}
         </div>
-
-        {message && <p role="alert" className="text-sm text-destructive-text">{message}</p>}
-        {stale && (
-          <Button type="button" variant="outline" className="min-h-11 w-full" disabled={saving || !targetActive} onClick={refreshDraft}>
-            Atualizar escolha
-          </Button>
-        )}
-
-        <DialogFooter className="flex-col sm:flex-col sm:justify-stretch">
-          <Button type="button" className="min-h-12 w-full text-base font-semibold" disabled={!canSave} onClick={confirm}>
-            {saving ? <Loader2 className="size-4" /> : null}
-            {saving ? "Salvando..." : canSelectParticipant ? "Confirmar quantidade" : "Confirmar quantidade"}
-          </Button>
-          <Button type="button" variant="ghost" className="min-h-11 w-full" disabled={saving} onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

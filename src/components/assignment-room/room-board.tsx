@@ -12,6 +12,7 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
+import { previewClaimCents } from "@/lib/assignment-room-projection";
 import { cn } from "@/lib/utils";
 import type {
   AssignmentRoomActivity,
@@ -444,6 +445,15 @@ export function RoomBoard({
                 pending={pendingItemIds.includes(selectedItem.item.id)}
                 disabled={!roomEditable}
                 error={claimError && claimError.itemId === selectedItem.item.id ? { participantId: claimError.participantId, message: claimError.message } : null}
+                previewCents={(participantId, ticks) => {
+                  const preview = previewClaimCents(
+                    view.room,
+                    selectedItem.item.id,
+                    participantId,
+                    ticks,
+                  );
+                  return preview.ok ? preview.value : null;
+                }}
                 onSubmit={(participantId, ticks, expectedItemRevision) =>
                   expectedItemRevision === undefined
                     ? onClaim(selectedItem.item.id, participantId, ticks)

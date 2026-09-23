@@ -20,12 +20,13 @@ const singleItem: AssignmentRoomItem = {
   totalPriceCents: 690,
 };
 
-const tripleItem: AssignmentRoomItem = {
+/** More than six units, so the sheet offers the stepper instead of buttons. */
+const stepperItem: AssignmentRoomItem = {
   ...singleItem,
   description: "Cervejas",
-  quantityMilliunits: 3_000,
+  quantityMilliunits: 8_000,
   unitPriceCents: 1_000,
-  totalPriceCents: 3_000,
+  totalPriceCents: 8_000,
 };
 
 const me: AssignmentRoomParticipant = {
@@ -98,6 +99,9 @@ function Harness({
         error={error}
         canSelectParticipant={canSelectParticipant}
         onTargetChange={onTargetChange}
+        previewCents={(_participantId, ticks) =>
+          Math.round((item.totalPriceCents * ticks) / capacity)
+        }
         onSubmit={
           submit ??
           (async (participantId, ticks) => {
@@ -121,33 +125,28 @@ describe("RoomItemClaim", () => {
   it("changes nothing until the quantity is confirmed", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn(async () => true);
-    render(<Harness submit={onSubmit} />);
+    render(<Harness item={stepperItem} submit={onSubmit} />);
 
-    await user.click(screen.getByRole("button", { name: "1/2" }));
-    await user.click(screen.getByRole("button", { name: "Outra quantidade" }));
     await user.click(
       screen.getByRole("button", { name: "Aumentar uma unidade" }),
     );
     expect(onSubmit).not.toHaveBeenCalled();
 
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 240_000, 1);
   });
 
   it("leaves the other half available after taking half of one item", async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
-    await user.click(screen.getByRole("button", { name: "1/2" }));
+    await user.click(screen.getByRole("button", { name: "Metade" }));
     expect(
-      screen.getByText("Depois de confirmar, restam 1/2 un."),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Metade" }),
+    ).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     await waitFor(() =>
       expect(screen.getByText("room: person-a=60000")).toBeInTheDocument(),
     );
@@ -157,14 +156,14 @@ describe("RoomItemClaim", () => {
   it("submits an exact third rather than a rounded decimal", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn(async () => true);
-    render(<Harness item={tripleItem} submit={onSubmit} />);
+    render(<Harness submit={onSubmit} />);
 
-    await user.click(screen.getByRole("button", { name: "1/3" }));
-    expect(screen.getByText("Sua quantidade: 1 un.")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
-    expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000, 1);
+    await user.click(screen.getByRole("button", { name: "⅓" }));
+    expect(
+      screen.getByRole("button", { name: "⅓" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 40_000, 1);
   });
 
   it("edits an existing claim as an absolute quantity", async () => {
@@ -179,11 +178,11 @@ describe("RoomItemClaim", () => {
       />,
     );
 
-    expect(screen.getByText("Sua quantidade: 1/2 un.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Inteiro" }));
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    expect(
+      screen.getByRole("button", { name: "Metade" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "Inteira" }));
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     expect(onSubmit).toHaveBeenCalledWith("person-a", 120_000, 1);
   });
 
@@ -200,10 +199,7 @@ describe("RoomItemClaim", () => {
     await user.click(
       screen.getByRole("button", { name: "Remover minha escolha" }),
     );
-    expect(screen.getByText("Sua quantidade: 0 un.")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Tirar · libera/ }));
     await waitFor(() =>
       expect(screen.getByText("room: vazio")).toBeInTheDocument(),
     );
@@ -215,9 +211,8 @@ describe("RoomItemClaim", () => {
     const onSubmit = vi.fn(() => deferred.promise);
     render(<Harness submit={onSubmit} />);
 
-    await user.click(screen.getByRole("button", { name: "1/2" }));
-    const confirm = screen.getByRole("button", { name: "Confirmar quantidade" });
-    await user.click(confirm);
+    await user.click(screen.getByRole("button", { name: "Metade" }));
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Salvando..." })).toBeDisabled(),
     );
@@ -226,7 +221,7 @@ describe("RoomItemClaim", () => {
     deferred.resolve(true);
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: "Confirmar quantidade" }),
+        screen.queryByRole("button", { name: "Salvando..." }),
       ).not.toBeInTheDocument(),
     );
   });
@@ -240,37 +235,59 @@ describe("RoomItemClaim", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "1/3" }));
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    await user.click(screen.getByRole("button", { name: "⅓" }));
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("Alguém pegou antes."),
     );
-    expect(screen.getByText("Sua quantidade: 1/3 un.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "⅓" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("refuses a draft the room can no longer fit without changing it", async () => {
-    const user = userEvent.setup();
+  it("never offers a claim the room can no longer fit", () => {
+    const onSubmit = vi.fn(async () => true);
     render(
       <Harness
         initialClaims={[
           { itemId: singleItem.id, participantId: other.id, ticks: 90_000 },
         ]}
+        submit={onSubmit}
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Outra quantidade" }));
-    const input = screen.getByRole("textbox", { name: "Quantidade desejada" });
-    await user.clear(input);
-    await user.type(input, "1");
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "não está mais disponível",
-    );
-    expect(input).toHaveValue("1");
+    // Only a quarter is left, so larger portions are not offered at all and
+    // nothing can be sent before choosing one.
+    expect(screen.queryByRole("button", { name: "Inteira" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Metade" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "⅓" })).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
+      screen.getByRole("button", { name: "Escolha uma quantidade" }),
     ).toBeDisabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("blocks a stale draft until the room is refreshed", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    const { rerender } = render(<Harness submit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "Metade" }));
+    rerender(<Harness item={{ ...singleItem, revision: 2 }} submit={onSubmit} />);
+
+    expect(screen.getByText("A sala mudou.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Peguei / })).toBeDisabled();
+    // A stale sheet ignores new picks instead of silently moving the draft.
+    await user.click(screen.getByRole("button", { name: "Inteira" }));
+    expect(
+      screen.getByRole("button", { name: "Metade" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Atualizar" }));
+    expect(screen.queryByText("A sala mudou.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Metade" }));
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 60_000, 2);
   });
 
   it("claims for the person using it, with nobody else to pick", async () => {
@@ -282,12 +299,11 @@ describe("RoomItemClaim", () => {
     // receive the target picker.
     expect(screen.queryByRole("radiogroup", { name: "Pra quem?" })).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "1/2" }));
-    await user.click(
-      screen.getByRole("button", { name: "Confirmar quantidade" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Metade" }));
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
     expect(onSubmit).toHaveBeenCalledWith(me.id, 60_000, 1);
   });
+
   it("lets the host choose which active participant owns the draft", async () => {
     const user = userEvent.setup();
     const onTargetChange = vi.fn();
