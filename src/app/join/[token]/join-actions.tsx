@@ -4,7 +4,8 @@ import { Loader2, LogIn, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { joinViaLink } from "@/lib/sync/mutations-group";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 
 interface JoinActionsProps {
   token: string;
@@ -36,32 +37,13 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
     setJoining(true);
     setError(null);
 
-    const supabase = createClient();
-    const { data, error: rpcError } = await supabase.rpc(
-      "join_via_link",
-      { p_token: token },
-    );
-
-    if (rpcError) {
-      const msg = rpcError.message;
-      if (msg.includes("invalid_link") || msg.includes("invalid_token")) {
-        setError("Convite inválido ou não encontrado.");
-      } else if (msg.includes("link_inactive")) {
-        setError("Este convite foi desativado.");
-      } else if (msg.includes("link_expired")) {
-        setError("Este convite expirou.");
-      } else if (msg.includes("link_exhausted")) {
-        setError("Este convite atingiu o limite de usos.");
-      } else {
-        setError("Erro ao entrar no grupo. Tente novamente.");
-      }
+    try {
+      const ack = await joinViaLink(token);
+      router.push(`/app/groups/${ack.groupId}`);
+    } catch (error) {
+      setError(ledgerErrorMessage(error));
       setJoining(false);
-      return;
     }
-
-    const result = data as { groupId?: string; group_id?: string } | null;
-    const groupId = result?.groupId ?? result?.group_id;
-    router.push(`/app/groups/${groupId}`);
   };
 
   return (

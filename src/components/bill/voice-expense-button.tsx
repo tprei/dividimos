@@ -5,6 +5,7 @@ import { Loader2, Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { haptics } from "@/hooks/use-haptics";
+import { parseVoiceExpenseCommand } from "@/lib/sync/voice";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 
 interface VoiceExpenseButtonProps {
@@ -34,18 +35,7 @@ export function VoiceExpenseButton({
     async (text: string) => {
       setParsing(true);
       try {
-        const res = await fetch("/api/voice/parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.trim(), members }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => null);
-          throw new Error(data?.error || "Erro ao processar comando de voz");
-        }
-
-        const result: VoiceExpenseResult = await res.json();
+        const result = await parseVoiceExpenseCommand({ text: text.trim(), members });
         onResult(result);
       } catch (err) {
         onError(err instanceof Error ? err.message : "Erro ao processar comando de voz");
