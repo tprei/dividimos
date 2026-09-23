@@ -112,24 +112,21 @@ function ControlledRoomReview({
 }
 
 describe("RoomReview", () => {
-  it("previews exact shares and fees but requires an explicit eligible payer", async () => {
+  it("preselects the eligible host and previews exact fee-inclusive shares", async () => {
     const user = userEvent.setup();
     const onFinalize = vi.fn();
     render(<ControlledRoomReview onFinalize={onFinalize} />);
 
-    expect(screen.getByText("Taxa de serviço").parentElement).toHaveTextContent(/R\$\s*10,00/);
-    expect(screen.getByText("Taxa fixa").parentElement).toHaveTextContent(/R\$\s*0,02/);
     const payerSection = screen.getByRole("region", { name: /Quem pagou/ });
     expect(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Bia$/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Escolha pelo menos uma pessoa");
+    expect(within(payerSection).getByRole("button", { name: /Ana/ })).toHaveTextContent(/R\$\s*110,02/);
+    expect(screen.getByRole("button", { name: /^Registrar conta/ })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Bia/ }));
-    expect(screen.getByText(/Sem consumo, com a parte da taxa fixa/)).toBeInTheDocument();
-
-    await user.click(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ }));
-    await user.click(screen.getByRole("button", { name: "Registrar conta" }));
+    expect(screen.getByRole("button", { name: /Bia/ })).toHaveTextContent(/R\$\s*0,01/);
+    await user.click(screen.getByRole("button", { name: /^Registrar conta/ }));
 
     expect(onFinalize).toHaveBeenCalledOnce();
   });
@@ -144,32 +141,29 @@ describe("RoomReview", () => {
       />,
     );
 
-    const payerSection = screen.getByRole("region", { name: /Quem pagou/ });
-    await user.click(within(payerSection as HTMLElement).getByRole("button", { name: /Ana/ }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Registrar conta/ }));
     expect(screen.getByRole("alert")).toHaveTextContent("A sala mudou");
-    expect(screen.getByRole("button", { name: "Registrar conta" })).toBeDisabled();
     expect(onFinalize).not.toHaveBeenCalled();
   });
 
-  it("explains account invitations and the correction path before confirming", () => {
-    render(<ControlledRoomReview onFinalize={vi.fn()} />);
-
-    expect(
-      screen.getByText(
-        "Ao registrar, quem entrou com uma conta recebe um convite para o grupo. Quem já participa continua no grupo; convidados continuam sem precisar de conta.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Se precisar, volte para corrigir escolhas ou remover pessoas antes de registrar.",
-      ),
-    ).toBeInTheDocument();
+  it("does not restore the default host payment after the host clears it", async () => {
+    const user = userEvent.setup();
+    const onFinalize = vi.fn();
+    render(<ControlledRoomReview onFinalize={onFinalize} />);
+    await user.click(screen.getByRole("button", { name: "Mais de uma pessoa pagou" }));
+    await user.type(screen.getByRole("textbox", { name: "Valor pago por Ana" }), "50");
+    await user.clear(screen.getByRole("textbox", { name: "Valor pago por Ana" }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Registrar conta/ }));
+    expect(onFinalize).not.toHaveBeenCalled();
   });
+
 
 });
 
 describe("RoomBreakdown", () => {
-  it("keeps an expanded person on current-bill updates and focuses the heading when removed", async () => {
+  it("keeps an expanded person on current-bill updates and restores focus when removed", async () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <RoomBreakdown bill={currentBill()} selfParticipantIndex={null} />,
@@ -213,8 +207,20 @@ describe("RoomBreakdown", () => {
       />,
     );
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Conta registrada" })).toHaveFocus(),
+      expect(screen.getByRole("region", { name: "Por pessoa" })).toHaveFocus(),
     );
+  });
+
+  it("opens the viewer's item amounts by default and allows collapsing them", async () => {
+    const user = userEvent.setup();
+    render(<RoomBreakdown bill={currentBill()} selfParticipantIndex={1} />);
+    const self = screen.getByRole("button", { name: /Bia/ });
+    expect(self).toHaveAttribute("aria-expanded", "true");
+    expect(within(self.closest("li") as HTMLElement).getByText("Prato feito").parentElement).toHaveTextContent(/R\$\s*30,00/);
+    expect(screen.getByRole("region", { name: "Sua parte" })).toHaveTextContent(/R\$\s*33,01/);
+    await user.click(self);
+    expect(self).toHaveAttribute("aria-expanded", "false");
+    expect(within(self.closest("li") as HTMLElement).getByText("Prato feito")).not.toBeVisible();
   });
 
   it("exposes the completion action without embedding room credentials", async () => {

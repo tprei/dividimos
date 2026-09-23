@@ -510,16 +510,17 @@ test.describe("Assignment room multi-client acceptance", () => {
         await response.body();
         await route.abort("connectionfailed");
       });
-      await page.getByRole("button", { name: "Registrar conta" }).click();
-      const retry = page.getByRole("button", { name: "Registrar conta" });
-      if (await retry.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await expect(retry).toBeEnabled({ timeout: ROOM_TIMEOUT });
-        await retry.click();
+      await page.getByRole("button", { name: /^Registrar conta/ }).click();
+      // The dropped response either surfaces a retry or the room already shows
+      // the registered bill via realtime recovery; both end registered.
+      const registered = page.getByText("Conta registrada").first();
+      const retry = page.getByRole("button", { name: /^Registrar conta/ });
+      await expect(registered.or(retry)).toBeVisible({ timeout: 20_000 });
+      if (!(await registered.isVisible())) {
+        await retry.click({ timeout: ROOM_TIMEOUT }).catch(() => undefined);
       }
-      await expect(page.getByText("Conta registrada").first()).toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(guestBPage.getByText("Conta registrada").first()).toBeVisible({
+      await expect(registered).toBeVisible({ timeout: 20_000 });
+      await expect(guestBPage.getByText(/encerrou a sala/).first()).toBeVisible({
         timeout: ROOM_TIMEOUT,
       });
       expect(droppedFinalizeResponse).toBe(true);

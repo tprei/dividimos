@@ -533,25 +533,16 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
             : completion?.action.kind === "sign_in"
               ? "Entrar com Google para vincular minha parte"
               : undefined;
-    const actionDescription =
-      completion?.action.kind === "accept_invitation"
-        ? "Ao aceitar, você entra no grupo e vê a conta."
-        : completion?.action.kind === "claim_guest"
-          ? "Isso vincula sua parte e entra você no grupo."
-          : completion?.action.kind === "sign_in"
-            ? "Depois do login, você escolhe explicitamente se quer vincular sua parte."
-            : undefined;
+    const hostFirstName = view.room.participants.find((participant) => participant.ordinal === 0)?.displayName.trim().split(/\s+/)[0];
     return (
-      <main className="mx-auto min-h-full w-full max-w-2xl space-y-4 px-4 py-6">
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col">
         {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{pageError}</p>}
         {completionPending && <p role="status" className="text-sm text-muted-foreground">Atualizando sua parte...</p>}
         <RoomBreakdown
           bill={bill}
           selfParticipantIndex={completion?.selfParticipantIndex ?? null}
-          heading="Conta registrada"
-          statusLabel="Sala encerrada"
+          heading={view.role === "host" ? "Conta registrada" : hostFirstName ? `${hostFirstName} encerrou a sala` : "Sala encerrada"}
           actionLabel={actionLabel}
-          actionDescription={actionDescription}
           actionDisabled={completionActionPending}
           onAction={completion ? handleCompletionAction : undefined}
         />
@@ -561,7 +552,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
 
   if (view.role === "host" && view.room.status === "closed" && !editingClosed) {
     return (
-      <main className="mx-auto min-h-full w-full max-w-2xl space-y-4 px-4 py-6">
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col">
         {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{pageError}</p>}
         <RoomReview
           view={view}
