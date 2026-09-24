@@ -19,6 +19,7 @@ import { haptics } from "@/hooks/use-haptics";
 import { parseClaimQrCode } from "@/lib/claim-qr";
 import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
+import { BRAND } from "@/lib/brand";
 
 type AuthMode = "choose" | "scan";
 
@@ -113,7 +114,7 @@ function AuthPageContent() {
           transition={{ duration: 0.4, delay: 0.15 }}
           className="mt-4 text-center text-muted-foreground"
         >
-          Racha a conta com a galera via Pix
+          {BRAND.tagline}
         </motion.p>
 
         <motion.div

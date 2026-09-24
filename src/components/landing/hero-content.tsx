@@ -46,8 +46,8 @@ export function HeroContent() {
           animate="visible"
           className="mt-6 text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl"
         >
-          Racha a conta{" "}
-          <span className="text-primary">sem drama</span>
+          Quem divide,{" "}
+          <span className="text-primary">multiplica</span>
         </motion.h1>
 
         <motion.p
