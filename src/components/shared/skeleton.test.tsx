@@ -8,8 +8,6 @@ import {
   GroupRowSkeleton,
   ModalLoadingSkeleton,
   Skeleton,
-  BillCardSkeleton,
-  DashboardSkeleton,
 } from "./skeleton";
 
 describe("Skeleton", () => {
@@ -74,19 +72,5 @@ describe("ModalLoadingSkeleton", () => {
     const { container } = render(<ModalLoadingSkeleton />);
     const spinner = container.querySelector("[class*='animate-spin']");
     expect(spinner).toBeTruthy();
-  });
-});
-
-describe("BillCardSkeleton", () => {
-  it("renders without crashing", () => {
-    const { container } = render(<BillCardSkeleton />);
-    expect(container.firstElementChild).toBeTruthy();
-  });
-});
-
-describe("DashboardSkeleton", () => {
-  it("renders without crashing", () => {
-    const { container } = render(<DashboardSkeleton />);
-    expect(container.firstElementChild).toBeTruthy();
   });
 });

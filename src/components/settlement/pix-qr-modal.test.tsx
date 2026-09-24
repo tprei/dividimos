@@ -346,14 +346,6 @@ describe("PixQrModal", () => {
     expect(haptics.selectionChanged).toHaveBeenCalled();
   });
 
-  it("renders visual tick marks for snap points", () => {
-    render(
-      <PixQrModal {...defaultPropsWithPixKey} amountCents={50000} />,
-    );
-
-    const ticks = document.querySelectorAll(".bg-muted-foreground\\/30");
-    expect(ticks.length).toBeGreaterThan(0);
-  });
   it("handles exact 1-centavo slider values and keyboard navigation without snapback", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
 

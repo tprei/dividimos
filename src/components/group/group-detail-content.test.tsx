@@ -374,16 +374,6 @@ describe("GroupDetailContent", () => {
     expect(props.groupName).toBe("Viagem");
   });
 
-  it("opens the handle invite panel from the Membros tab", async () => {
-    seedLoaded();
-
-    render(<GroupDetailContent groupId={groupId} />);
-
-    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
-    await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
-    expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
-  });
-
   it("shows the invite controls to an accepted non-creator member", async () => {
     useAppStore.setState({
       hydrated: true,

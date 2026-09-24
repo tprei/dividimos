@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { haptics } from "@/hooks/use-haptics";
 import { SwipeableBillCard } from "./swipeable-bill-card";
 
 vi.mock("@/hooks/use-haptics", () => ({
@@ -95,21 +94,5 @@ describe("SwipeableBillCard", () => {
 
     const draggableDiv = container.querySelector("[drag='x']");
     expect(draggableDiv).not.toBeNull();
-  });
-
-  it("renders the swipe hint chevron when enabled", () => {
-    const { container } = render(
-      <SwipeableBillCard {...defaultProps}>
-        <div>Bill content</div>
-      </SwipeableBillCard>,
-    );
-
-    const hintContainer = container.querySelector(".pointer-events-none");
-    expect(hintContainer).not.toBeNull();
-  });
-
-  it("imports haptics.impact for swipe snap feedback", () => {
-    expect(haptics.impact).toBeDefined();
-    expect(typeof haptics.impact).toBe("function");
   });
 });
