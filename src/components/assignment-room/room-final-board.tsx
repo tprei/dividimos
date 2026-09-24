@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { haptics } from "@/hooks/use-haptics";
 import { cn } from "@/lib/utils";
 import type { AssignmentBillBreakdown } from "@/types/assignment-room";
 
@@ -43,12 +45,14 @@ export function RoomFinalBoard({ bill, selfParticipantIndex = null }: RoomFinalB
                 type="button"
                 aria-expanded={expanded}
                 aria-controls={detailsId}
-                onClick={() => setExpandedIndex(expanded ? null : index)}
+                onClick={() => { haptics.selectionChanged(); setExpandedIndex(expanded ? null : index); }}
                 className="flex min-h-18 w-full items-center gap-3 px-4 py-3 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
-                <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
+                {participant.isGuest
+                  ? <GuestAvatar id={String(index)} name={participant.displayName} size="sm" />
+                  : <UserAvatar id={String(index)} name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-medium wrap-anywhere">{participant.displayName}</span>
+                  <span title={participant.displayName} className="block truncate text-base font-semibold">{isSelf ? "Você" : participant.displayName}</span>
                   <span className="block text-xs text-muted-foreground">{assignments.length} {assignments.length === 1 ? "item" : "itens"}</span>
                 </span>
                 {isSelf && <span className="sr-only">Sua parte</span>}

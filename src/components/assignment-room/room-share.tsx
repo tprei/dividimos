@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RoomActivity } from "@/components/assignment-room/room-activity";
 import { Button } from "@/components/ui/button";
 import { useClientOnly } from "@/hooks/use-client-only";
+import { haptics } from "@/hooks/use-haptics";
 import { copyText } from "@/lib/platform/clipboard";
 import { isShareSupported, shareLink } from "@/lib/platform/share";
 import { qrToCanvas } from "@/lib/qr";
@@ -91,9 +92,11 @@ export function RoomShare({
   async function handleCopy() {
     if (!url) return;
     if (await copyText(url)) {
+      haptics.success();
       setCopiedUrl(url);
       setCopyFailedUrl(null);
     } else {
+      haptics.error();
       setCopiedUrl(null);
       setCopyFailedUrl(url);
     }
@@ -103,6 +106,7 @@ export function RoomShare({
     if (!url || !canShare) return;
     const outcome = await shareLink({ title: "Dividimos", url });
     if (outcome === "shared") {
+      haptics.success();
       setSharedUrl(url);
       setShareFailedUrl(null);
     } else if (outcome === "unsupported") {
@@ -119,7 +123,7 @@ export function RoomShare({
         <QrCode className="size-4" aria-hidden="true" />
         <span className="sr-only sm:not-sr-only">Convidar</span>
       </DialogTrigger>
-      <DialogContent variant="sheet">
+      <DialogContent showCloseButton={!url}>
         <DialogHeader className="gap-1">
           <DialogTitle>Sala de itens</DialogTitle>
           <DialogDescription>Cada pessoa marca o que consumiu</DialogDescription>
@@ -127,7 +131,7 @@ export function RoomShare({
 
         {url && (
           <div className="space-y-3">
-            <div className="flex min-h-64 items-center justify-center rounded-2xl border bg-card p-4">
+            <div className="flex min-h-64 items-center justify-center rounded-2xl border bg-paper p-4 text-primary-foreground">
               <canvas
                 key={url}
                 ref={setCanvas}
@@ -139,15 +143,14 @@ export function RoomShare({
                 className="max-w-full rounded-lg"
               />
               {rotating && (
-                <p role="status" className="text-sm text-muted-foreground">Gerando convite...</p>
+                <p role="status" className="text-sm">Gerando convite...</p>
               )}
               {qrFailed && !rotating && (
-                <p role="status" className="text-center text-sm text-muted-foreground">
+                <p role="status" className="text-center text-sm">
                   Não foi possível gerar o QR. Você ainda pode copiar o link.
                 </p>
               )}
             </div>
-            <p className="text-center text-xs text-muted-foreground">Aponte a câmera do celular</p>
           </div>
         )}
 
@@ -158,19 +161,19 @@ export function RoomShare({
         )}
 
         {errorMessage && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             {errorMessage}
           </p>
         )}
 
         {shareFailed && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             Não foi possível compartilhar.
           </p>
         )}
 
         {copyFailed && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             Não foi possível copiar. Tente novamente.
           </p>
         )}

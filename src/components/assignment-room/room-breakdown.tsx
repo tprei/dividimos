@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import { RoomFinalBoard } from "@/components/assignment-room/room-final-board";
 import { Money } from "@/components/shared/money";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { Button } from "@/components/ui/button";
 import type { AssignmentBillBreakdown } from "@/types/assignment-room";
 
@@ -41,19 +42,13 @@ export function RoomBreakdown({
   const selfItemCount = bill.itemAssignments?.filter((assignment) => assignment.participantIndex === selfIndex).length ?? 0;
 
   return (
-    <section className="flex min-h-full flex-1 flex-col" aria-labelledby="room-breakdown-heading">
-      <div className="flex-1 space-y-6 px-4 py-6">
-        <header className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{bill.title}</p>
-            <h2 id="room-breakdown-heading" className="mt-2 font-heading text-2xl font-bold tracking-tight">
-              {heading}
-            </h2>
-          </div>
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-success/15 text-success-text">
-            <Check aria-hidden className="size-6" />
-          </span>
-        </header>
+    <section className="flex min-h-full flex-1 flex-col" aria-label={heading}>
+      <ScreenHeader title={heading} subtitle={bill.title} leading={
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success/15 text-success-text">
+          <Check aria-hidden className="size-5" />
+        </span>
+      } />
+      <div className="flex-1 space-y-6 px-4 py-3">
 
         {selfIndex !== null && (
           <section aria-label="Sua parte" className="gradient-primary rounded-2xl p-5 text-primary-foreground">

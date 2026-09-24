@@ -11,6 +11,7 @@ import {
   type RoomPayerDraft,
 } from "@/components/assignment-room/room-review";
 import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
 import { buildAssignmentExpense } from "@/lib/assignment-room-money";
 import { buildAssignmentRoomUrl, readAssignmentRoomFragment } from "@/lib/assignment-room-qr";
 import { allocateEvenly } from "@/lib/expense-money";
@@ -366,7 +367,9 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         participantId,
         expectedRevision: view.room.revision,
       });
+      haptics.success();
     } catch (error) {
+      haptics.error();
       setPageError(ledgerErrorMessage(error));
     } finally {
       setPendingParticipantIds((current) => current.filter((id) => id !== participantId));
@@ -379,8 +382,10 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     setPageError(null);
     try {
       await closeAssignmentRoom({ roomId, expectedRevision: view.room.revision });
+      haptics.success();
       setEditingClosed(false);
     } catch (error) {
+      haptics.error();
       setPageError(ledgerErrorMessage(error));
     } finally {
       setClosePending(false);
@@ -393,7 +398,9 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     setPageError(null);
     try {
       await cancelAssignmentRoom({ roomId, expectedRevision: view.room.revision });
+      haptics.success();
     } catch (error) {
+      haptics.error();
       setPageError(ledgerErrorMessage(error));
     } finally {
       setCancelPending(false);
@@ -446,8 +453,10 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         expectedRevision: view.room.revision,
         payload: built.value,
       });
+      haptics.success();
       setPayers([]);
     } catch (error) {
+      haptics.error();
       setPageError(ledgerErrorMessage(error));
     } finally {
       setFinalizePending(false);
@@ -539,8 +548,8 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
               : undefined;
     const hostFirstName = view.room.participants.find((participant) => participant.ordinal === 0)?.displayName.trim().split(/\s+/)[0];
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col">
-        {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{pageError}</p>}
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col md:max-w-2xl">
+        {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive-text">{pageError}</p>}
         {completionPending && <p role="status" className="text-sm text-muted-foreground">Atualizando sua parte...</p>}
         <RoomBreakdown
           bill={bill}
@@ -556,8 +565,8 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
 
   if (view.role === "host" && view.room.status === "closed" && !editingClosed) {
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col">
-        {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{pageError}</p>}
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col md:max-w-2xl">
+        {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive-text">{pageError}</p>}
         <RoomReview
           view={view}
           pending={finalizePending}
@@ -582,7 +591,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
 
   return (
     <>
-      {pageError && <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive">{pageError}</p>}
+      {pageError && <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive-text">{pageError}</p>}
       <RoomBoard
         view={view}
         connected={entry?.connected ?? false}

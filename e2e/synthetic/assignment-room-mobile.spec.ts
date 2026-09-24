@@ -294,13 +294,13 @@ test.describe("Assignment room on a phone", () => {
       await joinAsGuest(guestPage, invitation, "Bia Convidada");
 
       const roster = page.getByRole("region", { name: "Na sala" });
-      await expect(roster.getByText("toque pra gerenciar")).toBeVisible({
+      await expect(roster.getByRole("button", { name: host.name })).toBeVisible({
         timeout: ROOM_TIMEOUT,
       });
-      await expect(roster.getByLabel(member.name)).toBeVisible({
+      await expect(roster.getByRole("button", { name: member.name, exact: true })).toBeVisible({
         timeout: ROOM_TIMEOUT,
       });
-      await expect(roster.getByLabel("Bia Convidada")).toBeVisible({
+      await expect(roster.getByRole("button", { name: "Bia Convidada", exact: true })).toBeVisible({
         timeout: ROOM_TIMEOUT,
       });
 
@@ -346,7 +346,7 @@ test.describe("Assignment room on a phone", () => {
 
       await page.getByRole("button", { name: /^Encerrar sala/ }).click();
       await expect(
-        page.getByRole("heading", { name: "Tudo escolhido. Vamos fechar?" }),
+        page.getByRole("heading", { name: "Revisão" }),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       const payerSection = page.getByRole("region", { name: /Quem pagou/ });
       await payerSection.getByRole("button").filter({ hasText: host.name }).click();
@@ -487,7 +487,7 @@ test.describe("Assignment room on a phone", () => {
     await item.getByRole("button", { name: "Item longo número 1", exact: true }).click();
     await item.getByRole("button", { name: "Atribuir a alguém" }).click();
     const dialog = page.getByRole("dialog", { name: "Item longo número 1" });
-    await dialog.getByRole("button", { name: "Fechar diálogo" }).click();
+    await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
 
     const after = await scroller.evaluate((node) => ({
@@ -532,7 +532,8 @@ test.describe("Assignment room on a phone", () => {
       ).toBeVisible();
 
       // Cancelling keeps the room untouched.
-      await toast.getByRole("button", { name: "Fechar diálogo" }).click();
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.keyboard.press("Escape");
       await expect(toast).toBeHidden();
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
