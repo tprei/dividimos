@@ -43,7 +43,7 @@ export function TransferRow({
   const iReceive =
     transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
   const actionable = iPay || iReceive;
-  let statusLabel = "Outro acerto";
+  let statusLabel = "Outro pagamento";
   if (iPay) statusLabel = "Pagar";
   else if (iReceive) statusLabel = "Cobrar";
   else if (

@@ -160,7 +160,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       <div className="mx-auto max-w-lg px-4 py-6">
         <ScreenHeader
           back
-          title="Despesa"
+          title="Conta"
           onBack={() => router.push("/app")}
         />
         <EmptyState
@@ -179,7 +179,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   if (!detail && read.status === "error") {
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
-        <ScreenHeader back title="Despesa" />
+        <ScreenHeader back title="Conta" />
         <SyncErrorState
           message={ledgerErrorMessage(new LedgerError(read.code))}
           onRetry={load}

@@ -550,7 +550,7 @@ export default function DemoPage() {
         >
           <h2 className="text-xl font-bold">Bora rachar com a galera?</h2>
           <p className="mt-2 text-sm text-gradient-foreground/80">
-            Entra aí e comece a rachar as contas sem drama.
+            Entre aí e comece a rachar as contas sem drama.
           </p>
           <Link href="/auth">
             <Button

@@ -61,13 +61,13 @@ test.describe("Voice expense", () => {
     await page.goto("/app/bill/new");
     await page.waitForLoadState("networkidle");
 
-    await page.getByRole("button", { name: /Falar despesa/ }).click();
+    await page.getByRole("button", { name: /Falar conta/ }).click();
 
-    const micButton = page.getByRole("button", { name: "Gravar despesa" });
+    const micButton = page.getByRole("button", { name: "Gravar conta" });
     await expect(micButton).toHaveCount(1);
     await micButton.click();
 
-    const modal = page.getByText("Confirmar despesa");
+    const modal = page.getByText("Confirmar conta");
     await expect(modal).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Uber", { exact: true })).toBeVisible();
     await expect(page.getByText("R$ 25,00")).toBeVisible();

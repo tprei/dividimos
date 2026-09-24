@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "./room-host-controls";
 import { RoomJoin } from "./room-join";
 import { RoomShare } from "./room-share";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
 
@@ -62,7 +63,7 @@ describe("RoomJoin", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Digite um nome");
+    expect(screen.getByRole("alert")).toHaveTextContent("O nome precisa ter de 1 a 80 caracteres.");
 
     await user.type(screen.getByLabelText("Seu nome"), "  Bia  ");
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
@@ -116,13 +117,13 @@ describe("RoomJoin", () => {
 
     rerender(
       <RoomJoin
-        identity={{ status: "error", message: "Deu ruim aqui. Tente de novo em instantes." }}
+        identity={{ status: "error", message: ledgerErrorMessage(new Error()) }}
         onRetryIdentity={onRetryIdentity}
         pending={false}
         onJoin={vi.fn()}
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Deu ruim aqui");
+    expect(screen.getByRole("alert")).toHaveTextContent(ledgerErrorMessage(new Error()));
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(onRetryIdentity).toHaveBeenCalledOnce();
   });

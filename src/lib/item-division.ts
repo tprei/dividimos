@@ -286,13 +286,13 @@ export function recomputeDivisionShares(value: ItemDivisionValue, cents: number)
 
 export function divisionInvalidInputText(mode: ItemDivisionMode): string {
   return mode === "percent"
-    ? "Informe percentuais de 0 a 100 com até duas casas decimais."
-    : "Informe valores em reais com até duas casas decimais.";
+    ? "Percentuais vão de 0 a 100, com até duas casas decimais."
+    : "Valores em reais, com até duas casas decimais.";
 }
 
 export function divisionStatusText(division: DivisionComputation, mode: ItemDivisionMode): string {
   if (division.ok) return "Totais conferem com o valor do item.";
-  if (division.reason === "empty") return "Selecione quem divide este item.";
+  if (division.reason === "empty") return "Ninguém divide este item ainda.";
   if (division.reason === "invalid_input") return divisionInvalidInputText(mode);
   if (mode === "percent") {
     const text = percentText(Math.abs(division.remainder));

@@ -135,7 +135,7 @@ export function VoiceExpenseModal({
       onChangeCapture={() => setDirty(true)}
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Confirmar despesa</h2>
+        <h2 className="text-base font-semibold">Confirmar conta</h2>
         <Button variant="ghost" size="sm" onClick={requestBack}>Voltar</Button>
       </div>
 
@@ -150,7 +150,7 @@ export function VoiceExpenseModal({
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  aria-label="Nome da despesa"
+                  aria-label="Nome da conta"
                   autoFocus
                   className="flex-1"
                 />

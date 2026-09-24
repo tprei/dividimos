@@ -108,7 +108,7 @@ export function useGroupResolution({
       const needsGroup = others.length > 0 || hasGuests;
       if (groupSelection === "create" || (groupSelection === null && needsGroup)) {
         if (!createGroupEnabled) {
-          toast.error('Escolha um grupo existente ou deixe "Criar grupo" marcado.');
+          toast.error("Sem grupo escolhido e sem grupo novo marcado.");
           return { kind: "invalid" };
         }
         // Nothing is created here. The group is born with the bill in one

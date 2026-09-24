@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { JoinActions } from "./join-actions";
 import { joinViaLink } from "@/lib/sync/mutations-group";
-import { LedgerError } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 
 const pushMock = vi.fn();
 
@@ -95,7 +95,7 @@ describe("JoinActions", () => {
     await user.click(screen.getByText("Entrar no grupo"));
 
     expect(
-      screen.getByText("Deu ruim aqui. Tente de novo em instantes."),
+      screen.getByText(ledgerErrorMessage(new Error("boom"))),
     ).toBeInTheDocument();
   });
 });

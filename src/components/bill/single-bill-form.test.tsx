@@ -95,7 +95,7 @@ describe("SingleBillForm journey", () => {
   it("holds each step until it is complete and says why", () => {
     useBillStore.getState().updateExpense({ title: " " });
     renderForm();
-    expect(screen.getByRole("status")).toHaveTextContent("Dê um nome pra conta.");
+    expect(screen.getByRole("status")).toHaveTextContent("Falta o nome da conta.");
     expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "Pizza" } });

@@ -74,7 +74,7 @@ function resolveQuickSplitActors(
     return { kind: "error", message: "Não consegui identificar quem pagou." };
   }
   if (result.shares.length !== 2) {
-    return { kind: "error", message: "Não consegui resolver as partes da despesa." };
+    return { kind: "error", message: "Não consegui resolver as partes da conta." };
   }
   const seen = new Set<string>();
   for (const share of result.shares) {

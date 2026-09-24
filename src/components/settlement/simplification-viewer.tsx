@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, MoveHorizontal } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useRef, useState } from "react";
 import { DebtGraph } from "./debt-graph";
 import { haptics } from "@/hooks/use-haptics";
@@ -338,11 +338,6 @@ export function SimplificationViewer({
             )}
           </motion.div>
         </AnimatePresence>
-      </div>
-
-      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-        <MoveHorizontal className="h-4 w-4" />
-        <span>Deslize para navegar</span>
       </div>
     </div>
   );

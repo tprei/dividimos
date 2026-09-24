@@ -42,7 +42,7 @@ export function BillTypeSelector({
       ? [{ icon: Camera, title: "Escanear nota", onClick: onScanReceipt }]
       : []),
     ...(onVoiceExpense
-      ? [{ icon: Mic, title: "Falar despesa", onClick: onVoiceExpense }]
+      ? [{ icon: Mic, title: "Falar conta", onClick: onVoiceExpense }]
       : []),
   ];
   return (

@@ -228,13 +228,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
           onClick={handleSparkleToggle}
           disabled={disabled}
           data-testid="sparkle-toggle"
-          title={isAiMode ? "Modo IA ativo — pressione Esc para sair" : "Ativar IA para registrar despesa"}
+          title={isAiMode ? "Modo IA ativo — pressione Esc para sair" : "Ativar IA para registrar conta"}
           className={cn(
             isAiMode || hasDraft || isParsing
               ? "bg-primary/15 text-primary-text hover:bg-primary/20 hover:text-primary-text"
               : "text-muted-foreground",
           )}
-          aria-label={isAiMode ? "Desativar IA" : "Ativar IA para despesas"}
+          aria-label={isAiMode ? "Desativar IA" : "Ativar IA para contas"}
           aria-pressed={isAiMode}
         >
           <Sparkles />

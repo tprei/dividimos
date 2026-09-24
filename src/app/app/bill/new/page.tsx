@@ -616,7 +616,7 @@ function NewBillPageContent() {
   ) : null;
   const conflictBlockedReason =
     conflict.status !== "none"
-      ? "Carregue a versão mais recente pra salvar."
+      ? "Tem uma versão mais recente desta conta."
       : null;
 
   const { submitting, submit } = useWizardSubmit({
@@ -785,8 +785,8 @@ function NewBillPageContent() {
           onOpenChange={setScanParticipantsOpen}
           description={
             reviewingScan
-              ? "Adicione quem vai participar da divisão manual."
-              : "Escolha quem divide esta conta."
+              ? "Quem entra na divisão manual."
+              : "Quem divide esta conta."
           }
           participants={{
             me,
