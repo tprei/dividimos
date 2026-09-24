@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { equalDivision, type ItemDivisionValue } from "@/lib/item-division";
 import type { ExpenseSplit } from "@/stores/bill-store";
@@ -28,8 +28,10 @@ function splitsFor(division: ItemDivisionValue | null, itemId: string): ExpenseS
 
 function renderSplitSection(props: Partial<ComponentProps<typeof SplitSection>> = {}) {
   const onSaveDivision = vi.fn();
+  const onUnassign = vi.fn();
   const view = render(
     <SplitSection
+      viewerId="u1"
       items={[]}
       participants={[]}
       guests={[]}
@@ -40,12 +42,13 @@ function renderSplitSection(props: Partial<ComponentProps<typeof SplitSection>> 
       expandedId={null}
       onToggleItem={vi.fn()}
       onSaveDivision={onSaveDivision}
+      onUnassign={onUnassign}
       onCloseDivision={vi.fn()}
       onAssignSelected={vi.fn()}
       {...props}
     />,
   );
-  return { onSaveDivision, ...view };
+  return { onSaveDivision, onUnassign, ...view };
 }
 
 describe("SplitSection", () => {
@@ -97,6 +100,7 @@ describe("SplitSection", () => {
 
     rerender(
       <SplitSection
+        viewerId="u1"
         items={items}
         participants={participants}
         guests={[]}
@@ -107,6 +111,7 @@ describe("SplitSection", () => {
         expandedId={null}
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
+        onUnassign={vi.fn()}
         onCloseDivision={vi.fn()}
         onAssignSelected={vi.fn()}
       />,
@@ -116,6 +121,7 @@ describe("SplitSection", () => {
 
     rerender(
       <SplitSection
+        viewerId="u1"
         items={items}
         participants={participants}
         guests={[]}
@@ -129,6 +135,7 @@ describe("SplitSection", () => {
         expandedId={null}
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
+        onUnassign={vi.fn()}
         onCloseDivision={vi.fn()}
         onAssignSelected={vi.fn()}
       />,
@@ -145,6 +152,7 @@ describe("SplitSection", () => {
 
     rerender(
       <SplitSection
+        viewerId="u1"
         items={[]}
         participants={[user("u1", "Ana")]}
         guests={[]}
@@ -155,11 +163,56 @@ describe("SplitSection", () => {
         expandedId={null}
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
+        onUnassign={vi.fn()}
         onCloseDivision={vi.fn()}
         onAssignSelected={vi.fn()}
       />,
     );
 
     expect(screen.getByRole("button", { name: "Dividir tudo igualmente" })).toBeDisabled();
+  });
+
+  it("keeps an item split equally as people are toggled in and out", () => {
+    const items = [item("a", "Pizza", 1000)];
+    const participants = [user("u1", "Ana"), user("u2", "Bruno")];
+    const { onSaveDivision } = renderSplitSection({
+      items,
+      participants,
+      splits: splitsFor(equalDivision(["u1"], 1000), "a"),
+    });
+
+    const consumers = screen.getByRole("group", { name: "Quem consumiu Pizza" });
+    expect(within(consumers).getByRole("button", { name: "Você" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(consumers).getByRole("button", { name: "Bruno" }));
+
+    expect(onSaveDivision).toHaveBeenCalledWith("a", equalDivision(["u1", "u2"], 1000));
+  });
+
+  it("leaves an item pending when its last person is taken off", () => {
+    const items = [item("a", "Pizza", 1000)];
+    const participants = [user("u1", "Ana"), user("u2", "Bruno")];
+    const { onSaveDivision, onUnassign } = renderSplitSection({
+      items,
+      participants,
+      splits: splitsFor(equalDivision(["u1"], 1000), "a"),
+    });
+
+    fireEvent.click(within(screen.getByRole("group", { name: "Quem consumiu Pizza" })).getByRole("button", { name: "Você" }));
+
+    expect(onUnassign).toHaveBeenCalledWith("a", "u1");
+    expect(onSaveDivision).not.toHaveBeenCalled();
+  });
+
+  it("shows a percentage split as shares instead of equal toggles", () => {
+    const items = [item("a", "Pizza", 1000)];
+    const participants = [user("u1", "Ana"), user("u2", "Bruno")];
+    const splits: ExpenseSplit[] = [
+      { id: "s1", itemId: "a", userId: "u1", splitType: "percentage", value: 60, computedAmountCents: 600 },
+      { id: "s2", itemId: "a", userId: "u2", splitType: "percentage", value: 40, computedAmountCents: 400 },
+    ];
+    renderSplitSection({ items, participants, splits });
+
+    expect(screen.queryByRole("group", { name: "Quem consumiu Pizza" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Você 60%.*Bruno 40%/)).toBeInTheDocument();
   });
 });

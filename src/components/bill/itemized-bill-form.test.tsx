@@ -97,7 +97,7 @@ describe("ItemizedBillForm Participantes section", () => {
     act(() => useBillStore.getState().addParticipant(userBob));
     expect(continuar).toBeEnabled();
     fireEvent.click(continuar);
-    expect(screen.getByRole("button", { name: "Adicionar item" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Descrição (ex: Picanha 400g)")).toHaveFocus();
     expect(screen.getByRole("status")).toHaveTextContent("Adicione pelo menos um item.");
   });
 
@@ -203,8 +203,9 @@ describe("ItemizedBillForm batch assignment", () => {
     fireEvent.click(screen.getByLabelText("Selecionar todos"));
     expect(screen.getByText("50 de 50 selecionados")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Alice/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Bob/ }));
+    const batch = screen.getByRole("group", { name: "Dividir itens selecionados entre" });
+    fireEvent.click(within(batch).getByRole("button", { name: "Você" }));
+    fireEvent.click(within(batch).getByRole("button", { name: "Bob" }));
     fireEvent.click(screen.getByRole("button", { name: "Dividir 50 itens igualmente" }));
 
     // Every item is now fully assigned, so nothing blocks the next step.
@@ -233,10 +234,11 @@ describe("ItemizedBillForm batch assignment", () => {
     renderForm("split");
     fireEvent.click(screen.getByLabelText("Selecionar Picanha"));
 
-    const alice = screen.getByRole("button", { name: /^Alice/ });
-    expect(alice).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(alice);
-    expect(screen.getByRole("button", { name: /^Alice/ })).toHaveAttribute("aria-pressed", "true");
+    const batch = screen.getByRole("group", { name: "Dividir itens selecionados entre" });
+    const viewer = within(batch).getByRole("button", { name: "Você" });
+    expect(viewer).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(viewer);
+    expect(within(batch).getByRole("button", { name: "Você" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("writes the whole batch in a single store update", () => {

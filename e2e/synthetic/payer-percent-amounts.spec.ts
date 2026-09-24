@@ -20,7 +20,6 @@ test.describe("Itemized payer split balances percentages as you type", () => {
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
     await page.getByRole("textbox", { name: "Taxa de serviço (%)" }).fill("0");
-    await page.getByRole("button", { name: "Adicionar item" }).click();
     await page.getByPlaceholder("Descrição (ex: Picanha 400g)").fill("Rodízio");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("100,00");
     await page.getByRole("button", { name: "Adicionar", exact: true }).click();

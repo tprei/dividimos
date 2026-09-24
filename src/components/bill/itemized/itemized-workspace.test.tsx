@@ -14,6 +14,7 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
     updateItem: vi.fn(),
     removeItem: vi.fn(),
     addItem: vi.fn(),
+    unassignItem: vi.fn(),
   };
   render(
     <ItemizedWorkspace

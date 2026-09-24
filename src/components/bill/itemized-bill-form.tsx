@@ -85,6 +85,7 @@ export function ItemizedBillForm({
       removeItem: state.removeItem,
       addItem: state.addItem,
       setItemDivision: state.setItemDivision,
+      unassignItem: state.unassignItem,
       assignItemsEqually: state.assignItemsEqually,
       setPayerFull: state.setPayerFull,
       splitPaymentEqually: state.splitPaymentEqually,
