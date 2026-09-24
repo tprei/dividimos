@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
+import { haptics } from "@/hooks/use-haptics";
 import { newestActivityAt } from "@/lib/activity-badge";
 import { formatRelativeDate } from "@/lib/datetime";
 import { describeEvent } from "@/lib/ledger/event-copy";
@@ -34,6 +35,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [settlementAnchor, setSettlementAnchor] = useState<HTMLElement | null>(null);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
@@ -75,9 +77,11 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     try {
       await voidSettlement(event.groupId, event.settlementId);
       toast.success("Pagamento desfeito");
+      haptics.success();
       setConfirmOpen(false);
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
+      haptics.error();
     } finally {
       setIsUndoing(false);
     }
@@ -94,7 +98,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm leading-snug">{sentence}</p>
-        <div className="mt-1 flex items-center justify-between gap-2">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {groupLabel}
@@ -108,10 +112,11 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                className="min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  setSettlementAnchor(e.currentTarget);
                   setDetailOpen(true);
                 }}
                 data-testid="activity-view-settlement"
@@ -123,10 +128,11 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                className="min-h-11 px-2 text-xs text-muted-foreground hover:text-destructive-text"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  setSettlementAnchor(e.currentTarget);
                   if (preferences.confirmVoidSettlement) setConfirmOpen(true);
                   else void handleConfirmUndo();
                 }}
@@ -156,12 +162,20 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         groupId={event.groupId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        anchor={settlementAnchor}
+        busy={isUndoing}
+        onUndo={canUndo ? () => {
+          setDetailOpen(false);
+          if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+          else void handleConfirmUndo();
+        } : undefined}
       />
     ) : null;
 
   const dialog = canUndo ? (
     <VoidSettlementDialog
       open={confirmOpen && canUndo}
+      anchor={settlementAnchor}
       amountCents={amountCents}
       payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
       recipientName={toUserId ? nameOf(toUserId) : "Alguém"}

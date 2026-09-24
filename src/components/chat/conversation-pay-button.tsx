@@ -68,6 +68,8 @@ export function ConversationPayButton({
           open
           onClose={() => setShowPix(false)}
           recipientName={counterpartyName}
+          counterpartyId={counterpartyId}
+          counterpartyAvatarUrl={rows[0]?.counterpartyAvatarUrl}
           amountCents={absAmount}
           recipientUserId={recipientUserId}
           groupId={groupId}

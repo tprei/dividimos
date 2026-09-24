@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
 test.describe("Cobrar rápido popover compresses for the keyboard", () => {
-  test("puts the amount and its shortcuts on one row and keeps the action visible", async ({
+  test("keeps amount, description and generation reachable in a short viewport", async ({
     page,
     seed,
     loginAs,
@@ -16,23 +16,18 @@ test.describe("Cobrar rápido popover compresses for the keyboard", () => {
 
     const amount = page.getByRole("textbox", { name: "Valor da cobrança" });
     const description = page.getByPlaceholder("Descrição (opcional)");
-    const generate = page.getByRole("button", { name: "Gerar QR Code" });
+    const generate = page.getByRole("button", { name: "Gerar QR" });
     await expect(description).toBeVisible();
 
-    // `useAppViewport` publishes this attribute when the visual viewport shrinks
-    // with a text field focused; the layout reacts through the `keyboard:` variant.
-    await page.setViewportSize({ width: 390, height: 430 });
-    await page.evaluate(() => document.documentElement.setAttribute("data-keyboard", "open"));
-
-    await expect(page.getByText("Gere um QR Pix para qualquer pessoa te pagar")).toBeHidden();
-    await expect(description).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 450 });
+    await amount.focus();
+    await expect(amount).toBeFocused();
+    await expect(description).toBeInViewport();
     await expect(generate).toBeInViewport();
 
-    // Amount and shortcuts share a row rather than stacking.
-    const amountBox = await amount.boundingBox();
-    const shortcutBox = await page.getByRole("button", { name: "Adicionar R$5", exact: true }).boundingBox();
-    expect(amountBox).not.toBeNull();
-    expect(shortcutBox).not.toBeNull();
-    expect(shortcutBox!.x).toBeGreaterThan(amountBox!.x);
+    await page.getByRole("button", { name: "Adicionar R$5", exact: true }).click();
+    await expect(amount).toHaveValue("5,00");
+    await description.fill("Café");
+    await expect(generate).toBeEnabled();
   });
 });

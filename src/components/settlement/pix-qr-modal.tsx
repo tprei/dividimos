@@ -3,15 +3,13 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
-  Circle,
-  Contrast,
   Copy,
+  Info,
   KeyRound,
   Loader2,
   Pencil,
   QrCode,
   RefreshCw,
-  Shield,
   WifiOff,
 } from "lucide-react";
 import Link from "next/link";
@@ -22,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
@@ -40,6 +37,9 @@ import { generatePixCode, PixRequestError } from "@/lib/sync/pix";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/platform/clipboard";
 import { qrToCanvas } from "@/lib/qr";
+import { Money } from "@/components/shared/money";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { popIn } from "@/lib/animations";
 
 type PixQrModalSource =
   | { pixKey: string; recipientUserId?: never; groupId?: never }
@@ -83,6 +83,8 @@ interface PixQrModalBaseProps {
   open: boolean;
   onClose: () => void;
   recipientName: string;
+  counterpartyId?: string;
+  counterpartyAvatarUrl?: string | null;
   amountCents: number;
   mode?: "pay" | "collect";
   onMarkPaid: (amountCents: number, operationId: string) => Promise<void>;
@@ -95,6 +97,8 @@ export function PixQrModal({
   open,
   onClose,
   recipientName,
+  counterpartyId,
+  counterpartyAvatarUrl,
   amountCents,
   pixKey,
   recipientUserId,
@@ -202,6 +206,13 @@ export function PixQrModal({
     };
   }, []);
 
+  useEffect(() => {
+    if (!open || showSuccess || paymentCents === amountCents) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, showSuccess, paymentCents, amountCents]);
+
   const qrAmountCents = isValidAmount ? paymentCents : amountCents;
 
 
@@ -290,7 +301,7 @@ export function PixQrModal({
       haptics.success();
       setCopied(true);
       setCopyFailed(false);
-      toast.success("Código Pix copiado!");
+      toast.success("Código copiado");
       setTimeout(() => setCopied(false), 2000);
     } else {
       toast.error(
@@ -332,11 +343,18 @@ export function PixQrModal({
     }
   };
 
+  let settleNotice = "Registrar não move dinheiro, só marca o pagamento no app.";
+  if (copiaECola && mode === "pay") {
+    settleNotice = "Pague no app do seu banco e retorne aqui para confirmar.";
+  } else if (copiaECola) {
+    settleNotice = "Quando o Pix cair na sua conta, confirme aqui.";
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
-        if (!isOpen) onClose();
+        if (!isOpen && (paymentCents === amountCents || window.confirm("Descartar este pagamento?"))) onClose();
       }}
       dismissable={!isSettling && !showSuccess}
       modal
@@ -344,55 +362,30 @@ export function PixQrModal({
       <DialogContent
         showCloseButton={!isSettling && !showSuccess}
         initialFocus={false}
-        className="sm:max-w-md rounded-3xl bg-card p-0 overflow-hidden max-sm:h-full compact:h-auto"
+        className="sm:max-w-md bg-card p-0 overflow-hidden"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
             <motion.div
               key="success"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              variants={popIn} initial="hidden" animate="visible" exit="exit"
               className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 py-4"
             >
-              <DialogTitle className="sr-only">Pagamento registrado</DialogTitle>
               <ConfettiBurst />
 
               <AnimatedCheckmark size={72} className="text-success" />
 
-              <motion.h2
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="mt-5 text-xl font-bold text-foreground"
-              >
-                Pagamento registrado!
-              </motion.h2>
+              <DialogTitle className="mt-5 text-xl">Pagamento registrado</DialogTitle>
+              <Money cents={settledAmountCents} size="lg" tone="positive" className="mt-2" />
 
-              <motion.p
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 }}
-                className="mt-2 text-2xl font-bold tabular-nums text-success"
-              >
-                {formatBRL(settledAmountCents)}
-              </motion.p>
-
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.7 }}
+              <p
                 className="mt-1 text-sm text-muted-foreground"
               >
                 {mode === "collect" ? "de" : "para"}{" "}
                 <span className="font-medium text-foreground">{recipientName}</span>
-              </motion.p>
+              </p>
 
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1 }}
+              <div
                 className="mt-6"
               >
                 <Button
@@ -403,7 +396,7 @@ export function PixQrModal({
                 >
                   Fechar
                 </Button>
-              </motion.div>
+              </div>
             </motion.div>
           ) : (
             <motion.div
@@ -412,25 +405,26 @@ export function PixQrModal({
               exit={{ opacity: 0 }}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-3 compact:pt-2 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
-                <div className="compact:flex compact:items-start compact:gap-3 compact:pr-9">
-                <div className="min-w-0 text-center compact:flex-1">
-                  <DialogTitle className="flex items-center justify-center gap-2 text-lg font-bold compact:text-base">
-                    <QrCode className="size-5 text-primary-text" aria-hidden="true" />
-                    {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
+              <div className="flex-1 overflow-y-auto min-h-0 px-4 pt-4 pb-3 overscroll-contain" data-testid="pix-qr-body">
+                <div className="flex items-center gap-3 pr-12">
+                  <UserAvatar id={counterpartyId} name={recipientName} avatarUrl={counterpartyAvatarUrl} size="md" />
+                  <DialogTitle className="min-w-0 truncate text-lg" title={recipientName}>
+                    {mode === "collect" ? "Cobrar" : "Pagar"} {recipientName}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm text-muted-foreground compact:hidden">
-                    {mode === "collect" ? "de" : "para"}{" "}
-                    <span className="font-medium text-foreground">{recipientName}</span>
-                  </DialogDescription>
+                </div>
+                <div className={cn(showsQr && "compact:flex compact:items-center compact:gap-3")}>
+                <div className="min-w-0 text-center compact:flex-1">
 
                   <div className="mt-3">
                     {editingAmount ? (
                       <label
-                        className="flex items-center justify-center gap-1 text-3xl compact:text-2xl font-bold tabular-nums text-primary-text"
+                        className={cn("flex items-center justify-center gap-1 text-3xl compact:text-2xl font-bold tabular-nums", mode === "pay" ? "text-destructive-text" : "text-success-text")}
                         onBlur={commitAmount}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === "Escape") commitAmount();
+                          if (event.key === "Enter" || event.key === "Escape") {
+                            event.stopPropagation();
+                            commitAmount();
+                          }
                         }}
                       >
                         <span className="sr-only">Editar valor</span>
@@ -441,7 +435,7 @@ export function PixQrModal({
                           maxCents={amountCents}
                           onChangeCents={setPaymentCents}
                           aria-label="Editar valor"
-                          className="h-12 w-40 text-3xl font-bold text-primary-text compact:h-10 compact:w-28 compact:text-2xl"
+                          className="h-12 w-40 text-3xl font-bold text-inherit compact:h-11 compact:w-28 compact:text-2xl"
                         />
                       </label>
                     ) : (
@@ -450,15 +444,12 @@ export function PixQrModal({
                         onClick={() => setEditingAmount(true)}
                         disabled={isSettling}
                         aria-label={`Editar valor, ${formatBRL(paymentCents)}`}
-                        className="inline-flex items-center gap-2 rounded-lg px-2 text-3xl font-bold tabular-nums text-primary-text transition-colors hover:bg-primary/10"
+                        className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                       >
-                        {formatBRL(paymentCents)}
+                        <Money cents={paymentCents} size="hero" tone={mode === "pay" ? "negative" : "positive"} className="compact:text-3xl" />
                         <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
                       </button>
                     )}
-                    {/* Slider and its two shortcuts share one row: the
-                        shortcuts set the same value the slider does, and a
-                        separate row for them cost more height than they earn. */}
                     <div className="mt-3 flex items-center gap-2">
                       <input
                         type="range"
@@ -475,68 +466,52 @@ export function PixQrModal({
                       />
                       <button
                         type="button"
-                        onClick={() => setPaymentCents(amountCents)}
+                        onClick={() => { setPaymentCents(amountCents); haptics.selectionChanged(); }}
                         disabled={isSettling}
                         aria-pressed={paymentCents === amountCents}
                         aria-label="Tudo"
                         title="Tudo"
-                        className={`relative flex size-11 shrink-0 items-center justify-center rounded-full transition-all compact:size-9 compact:after:absolute compact:after:-inset-1 compact:after:content-[''] ${
+                        className={`flex min-h-11 shrink-0 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors ${
                           paymentCents === amountCents
                             ? "text-primary-text"
                             : "text-muted-foreground hover:text-primary-text"
                         } disabled:opacity-50`}
                       >
-                        <Circle className="size-4" fill="currentColor" aria-hidden="true" />
+                        Tudo
                       </button>
                       {halfAvailable && (
                         <button
                           type="button"
-                          onClick={() => setPaymentCents(halfCents)}
+                          onClick={() => { setPaymentCents(halfCents); haptics.selectionChanged(); }}
                           disabled={isSettling}
                           aria-pressed={paymentCents === halfCents}
                           aria-label="Metade"
                           title="Metade"
-                          className={`relative flex size-11 shrink-0 items-center justify-center rounded-full transition-all compact:size-9 compact:after:absolute compact:after:-inset-1 compact:after:content-[''] ${
+                          className={`flex min-h-11 shrink-0 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors ${
                             paymentCents === halfCents
                               ? "text-primary-text"
                               : "text-muted-foreground hover:text-primary-text"
                           } disabled:opacity-50`}
                         >
-                          <Contrast className="size-4" aria-hidden="true" />
+                          Metade
                         </button>
                       )}
                     </div>
-                    {snapPoints.length > 0 && amountCents > sliderMin && (
-                      <div className="relative mr-[100px] ml-[11px] h-2 compact:hidden">
-                        {snapPoints.map((v) => (
-                          <div
-                            key={v}
-                            className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
-                            style={{
-                              left: `${((v - sliderMin) / (amountCents - sliderMin)) * 100}%`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
 
                     {!isFullPayment && isValidAmount && (
-                      <p className="mt-1 text-xs text-muted-foreground compact:hidden">
-                        Resta depois do Pix: {formatBRL(amountCents - paymentCents)}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Restam <Money cents={amountCents - paymentCents} size="sm" />
                       </p>
                     )}
                   </div>
 
                   {copiaECola && mode === "pay" && (
                     <div className="mt-5 text-left compact:mt-2">
-                      <p className="text-sm text-muted-foreground compact:hidden">
-                        Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
-                      </p>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="mt-3 min-h-11 gap-2 rounded-full px-4 compact:mt-0 compact:h-9 compact:min-h-9 compact:w-full compact:px-2 compact:text-xs"
+                        className="gap-2 compact:w-full"
                         aria-expanded={showPayQr}
                         aria-controls="pix-qr-region"
                         onClick={() => setShowPayQr((v) => !v)}
@@ -547,60 +522,40 @@ export function PixQrModal({
                     </div>
                   )}
                 </div>
-              {/* The column only claims width when it has something in it;
-                  pay mode leaves it empty until the disclosure is opened. */}
               <div
                 id="pix-qr-region"
                 className={cn(showsQr && "compact:w-[112px] compact:shrink-0")}
               >
                 {showsQr ? (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm compact:mt-0 compact:p-2"
+                    variants={popIn} initial="hidden" animate="visible"
+                    className="mt-3 flex justify-center rounded-2xl border border-border bg-paper p-3 compact:p-2"
                   >
-                    <canvas ref={paintQr} className="compact:size-[104px]" />
+                    <canvas ref={paintQr} role="img" aria-label={`QR Pix de ${formatBRL(paymentCents)}`} className="compact:size-[104px]" />
                   </motion.div>
                 ) : !copiaECola ? (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="mt-6 compact:mt-0 flex min-h-[240px] compact:min-h-[134px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
+                    variants={popIn} initial="hidden" animate="visible"
+                    className="mt-3 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-center"
                   >
                     {payload.status === "idle" || payload.status === "loading" ? (
-                      <div className="flex h-[240px] w-[240px] items-center justify-center">
+                      <div role="status" aria-label="Gerando código Pix" className="flex h-24 w-full items-center justify-center">
                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                       </div>
                     ) : payload.status === "missing-key-recipient" ? (
                       <>
-                        <KeyRound className="h-8 w-8 text-muted-foreground/50" />
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">
-                            Chave Pix não cadastrada
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {recipientName.split(" ")[0]} ainda não cadastrou uma chave Pix no Dividimos.
-                          </p>
-                        </div>
+                        <KeyRound className="size-6 text-muted-foreground" aria-hidden="true" />
+                        <p className="text-sm text-muted-foreground">
+                          {recipientName} ainda não cadastrou uma chave Pix
+                        </p>
                       </>
                     ) : payload.status === "missing-key-owner" ? (
                       <>
-                        <KeyRound className="h-8 w-8 text-muted-foreground/50" />
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">
-                            Cadastre sua chave Pix
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Cadastre sua chave Pix no seu perfil pra receber pagamentos.
-                          </p>
-                        </div>
-                        <Link href="/app/profile">
-                          <Button variant="outline" size="lg" className="gap-2 rounded-lg">
-                            Configurar chave Pix no perfil
-                          </Button>
-                        </Link>
+                        <KeyRound className="size-6 text-muted-foreground" aria-hidden="true" />
+                        <p className="text-sm text-muted-foreground">Você ainda não cadastrou uma chave Pix</p>
+                        <Button nativeButton={false} render={<Link href="/app/profile" />} variant="outline" className="min-h-11">
+                          Cadastrar chave Pix
+                        </Button>
                       </>
                     ) : payload.status === "error" ? (
                       <>
@@ -641,38 +596,23 @@ export function PixQrModal({
               </div>
                 </div>
 
-              {!copiaECola && (
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground compact:hidden">
-                  <Shield className="h-3 w-3" />
-                  <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
-                </div>
-              )}
-
-                {mode === "collect" && (
-                  <p className="mt-5 text-sm text-muted-foreground compact:hidden">
-                    Registrar não move dinheiro, só marca que ele te pagou por fora.
-                  </p>
-                )}
               </div>
 
-              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)] compact:p-3 compact:pt-2 compact:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
-                <div className="space-y-2.5 compact:flex compact:gap-2 compact:space-y-0 compact:[&>button]:flex-1">
-                  <Button
+              <div className="shrink-0 border-t border-border px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] compact:px-3 compact:pt-2">
+                <p className="mb-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                  {settleNotice}
+                </p>
+                <div className="space-y-2 compact:flex compact:gap-2 compact:space-y-0 compact:[&>button]:flex-1">
+                  {copiaECola && <Button
                     onClick={handleCopy}
                     variant="outline"
-                    className="w-full gap-2 min-h-11"
-                    size="lg"
+                    className="w-full gap-2"
                     disabled={!copiaECola || isSettling}
                   >
                     {copied ? (
                       <>
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                        >
-                          <Check className="h-4 w-4 text-success" />
-                        </motion.span>
+                        <Check className="h-4 w-4 text-success-text" />
                         Copiado!
                       </>
                     ) : (
@@ -681,7 +621,7 @@ export function PixQrModal({
                         Copiar código Pix
                       </>
                     )}
-                  </Button>
+                  </Button>}
                   {copyFailed && copiaECola && (
                     <p className="break-all rounded-lg border border-border bg-muted/60 p-2.5 font-mono text-xs select-all">
                       {copiaECola}
@@ -689,8 +629,8 @@ export function PixQrModal({
                   )}
                   <Button
                     onClick={handlePayment}
-                    className="w-full gap-2 min-h-11"
-                    size="lg"
+                    variant={copiaECola ? "default" : "outline"}
+                    className="w-full gap-2"
                     disabled={!isValidAmount || isSettling}
                   >
                     {isSettling ? (
@@ -701,15 +641,7 @@ export function PixQrModal({
                     ) : (
                       <>
                         <Check className="h-4 w-4" />
-                        {mode === "collect"
-                          ? isFullPayment
-                            ? "Já recebi"
-                            : `Recebi ${formatBRL(paymentCents)}`
-                          : payload.status === "missing-key-recipient"
-                            ? "Registrar pagamento feito por fora"
-                            : isFullPayment
-                              ? "Já paguei"
-                              : `Paguei ${formatBRL(paymentCents)}`}
+                        {!copiaECola ? "Registrar pagamento" : mode === "collect" ? "Já recebi" : "Já paguei"}
                       </>
                     )}
                   </Button>

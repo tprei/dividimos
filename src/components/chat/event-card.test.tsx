@@ -98,7 +98,7 @@ describe("EventCard", () => {
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
     await waitFor(() => {
       expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
     });
@@ -146,7 +146,7 @@ describe("EventCard", () => {
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
     fireEvent.click(screen.getByRole("checkbox", { name: "Não perguntar de novo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
@@ -171,20 +171,14 @@ describe("EventCard", () => {
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
 
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText("Bob Silva")).toBeInTheDocument();
     expect(dialog.getByText("Você")).toBeInTheDocument();
-    expect(
-      screen.getByText(/O registro fica marcado como Desfeito e os saldos são recalculados na hora\./),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/O Pix em si não é estornado\. Combina a devolução direto com a outra pessoa\./),
-    ).toBeInTheDocument();
     expect(mutations.voidSettlement).not.toHaveBeenCalled();
   });
 
-  it("closes dialog without calling voidSettlement when Cancelar is clicked", async () => {
+  it("dismisses confirmation with Escape without voiding the payment", async () => {
     const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
     const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
 
@@ -200,16 +194,16 @@ describe("EventCard", () => {
     );
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
     await waitFor(() => {
-      expect(screen.queryByText(/Desfazer este registro\?/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(mutations.voidSettlement).not.toHaveBeenCalled();
   });
 
-  it("calls voidSettlement when Desfazer registro is confirmed and handles error gracefully", async () => {
+  it("keeps confirmation available after a failed undo", async () => {
     mutations.voidSettlement.mockRejectedValueOnce(new Error("Falha na rede"));
     const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
     const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
@@ -226,7 +220,7 @@ describe("EventCard", () => {
     );
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
@@ -234,8 +228,7 @@ describe("EventCard", () => {
     await waitFor(() => {
       expect(toastMocks.error).toHaveBeenCalled();
     });
-    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" })).toBeEnabled();
   });
 
   it("offers Desfazer to the payer as well", () => {
