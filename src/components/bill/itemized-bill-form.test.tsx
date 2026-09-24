@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runBackHandlers, __resetBackHandlerStackForTests } from "@/lib/capacitor/back-handler";
 import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import type { Me } from "@/types/ledger";
@@ -32,6 +33,7 @@ function prepareStore(title = "", withBob = true) {
 
 function renderForm(initialSection?: ItemizedSectionKey) {
   const onSubmit = vi.fn().mockResolvedValue(true);
+  const onBack = vi.fn();
   render(
     <ItemizedBillForm
       me={me}
@@ -49,11 +51,11 @@ function renderForm(initialSection?: ItemizedSectionKey) {
       onRemoveGuest={vi.fn()}
       onPickContacts={vi.fn().mockResolvedValue(undefined)}
       onSubmit={onSubmit}
-      onBack={vi.fn()}
+      onBack={onBack}
       {...(initialSection ? { initialSection } : {})}
     />,
   );
-  return { onSubmit };
+  return { onSubmit, onBack };
 }
 
 function prepareAssignedBill() {
@@ -70,6 +72,7 @@ function chooseMode(group: string, label: string) {
 }
 
 beforeEach(() => {
+  __resetBackHandlerStackForTests();
   useBillStore.getState().reset();
   useBillStore.setState({ currentUser: null });
 });
@@ -77,7 +80,6 @@ beforeEach(() => {
 describe("ItemizedBillForm Participantes section", () => {
   it("opens with the bill name, date, group, and people inline", () => {
     renderForm();
-    expect(screen.getByRole("tab", { name: "Participantes" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Nome da conta")).toHaveValue("");
     expect(screen.getByRole("button", { name: /Data/ })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
@@ -95,7 +97,24 @@ describe("ItemizedBillForm Participantes section", () => {
     act(() => useBillStore.getState().addParticipant(userBob));
     expect(continuar).toBeEnabled();
     fireEvent.click(continuar);
-    expect(screen.getByRole("tab", { name: "Itens" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Adicionar item" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Adicione pelo menos um item.");
+  });
+
+  it("steps back on hardware back before leaving the wizard", () => {
+    prepareStore("Churrasco", true);
+    const { onBack } = renderForm("items");
+
+    act(() => {
+      runBackHandlers();
+    });
+    expect(screen.getByLabelText("Nome da conta")).toBeInTheDocument();
+    expect(onBack).not.toHaveBeenCalled();
+
+    act(() => {
+      runBackHandlers();
+    });
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
   it("keeps the division editor open after its first autosave", () => {
@@ -285,7 +304,7 @@ describe("ItemizedBillForm payers", () => {
         [userAlice.id, 11000],
       ]),
     );
-    const save = screen.getByRole("button", { name: "Criar conta" });
+    const save = screen.getByRole("button", { name: "Salvar conta" });
     expect(save).toBeEnabled();
     fireEvent.click(save);
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
@@ -324,7 +343,7 @@ describe("ItemizedBillForm payers", () => {
     renderForm("payment");
 
     fireEvent.click(within(screen.getByRole("list", { name: "Quem pagou" })).getByRole("button", { name: "Você" }));
-    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salvar conta" })).toBeDisabled();
     expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain("Escolha quem pagou.");
   });
 });

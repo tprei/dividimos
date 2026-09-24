@@ -6,7 +6,7 @@ import type { ExpensePayer } from "@/types";
 function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
   const onFooter = vi.fn();
   const store = {
-    items: [],
+    items: [{ id: "i1", expenseId: "e1", description: "Pizza", quantity: 1000, unitPriceCents: grandTotal, totalPriceCents: grandTotal, createdAt: "2026-09-17" }],
     participants: [],
     guests: [],
     splits: [],
@@ -68,7 +68,7 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
           notificationPreferences: {},
         },
         participants: [],
-        guests: [],
+        guests: [{ id: "g1", name: "Gil" }, { id: "g2", name: "Gui" }],
         selectedGroupId: null,
         groups: [],
         createGroup: { enabled: false, name: "" },
@@ -88,7 +88,7 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
       onSaveDivision={vi.fn()}
       onCloseDivision={vi.fn()}
       onAssignSelected={vi.fn()}
-      onFooter={onFooter}
+      onSubmit={onFooter}
       isEditing={false}
       submitting={false}
     />,
@@ -105,27 +105,27 @@ describe("ItemizedWorkspace payment gate", () => {
     renderPaymentGate([], 10_000);
 
     expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain("Escolha quem pagou.");
-    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salvar conta" })).toBeDisabled();
   });
 
   it("names the shortfall when paid below the grand total", () => {
     renderPaymentGate([payer("a", 5000), payer("b", 4500)], 10_000);
 
     expect(screen.getByText(/Faltam R\$\s*5,00 para bater com o total\./)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salvar conta" })).toBeDisabled();
   });
 
   it("names the excess when paid above the grand total", () => {
     renderPaymentGate([payer("a", 10_500)], 10_000);
 
     expect(screen.getByText(/Excede R\$\s*5,00 do total\./)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salvar conta" })).toBeDisabled();
   });
 
   it("saves when paid matches the total", () => {
     const { onFooter } = renderPaymentGate([payer("a", 5000), payer("b", 5000)], 10_000);
 
-    const button = screen.getByRole("button", { name: "Criar conta" });
+    const button = screen.getByRole("button", { name: "Salvar conta" });
     expect(button).toBeEnabled();
     fireEvent.click(button);
     expect(onFooter).toHaveBeenCalledTimes(1);

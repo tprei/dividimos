@@ -1,14 +1,19 @@
 "use client";
 
+import { useRef } from "react";
 import type { PaymentSectionProps } from "@/components/bill/itemized/payment-section";
 import { SectionContent, type SectionContentProps } from "@/components/bill/itemized/section-content";
-import { SectionFooter } from "@/components/bill/itemized/section-footer";
-import { SectionTabs } from "@/components/bill/itemized/section-tabs";
 import type { DetailsStepProps } from "@/components/bill/wizard/details-step";
 import type { ParticipantsStepProps } from "@/components/bill/wizard/participants-step";
+import { WizardFooter } from "@/components/bill/wizard/wizard-footer";
+import { WizardSteps } from "@/components/bill/wizard/wizard-steps";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
+import { ScrollHint } from "@/components/shared/scroll-hint";
 import { formatBRL } from "@/lib/currency";
 import type { ExpenseState } from "@/stores/bill-store";
+
+export const ITEMIZED_SECTIONS: readonly ItemizedSectionKey[] = ["account", "items", "split", "payment"];
+const STEP_LABELS = ["Participantes", "Itens", "Quem consumiu", "Quem pagou"] as const;
 
 export interface ItemizedWorkspaceProps {
   store: Pick<
@@ -35,7 +40,7 @@ export interface ItemizedWorkspaceProps {
   onSaveDivision: SectionContentProps["onSaveDivision"];
   onCloseDivision: SectionContentProps["onCloseDivision"];
   onAssignSelected: SectionContentProps["onAssignSelected"];
-  onFooter: () => void;
+  onSubmit: () => void;
   isEditing: boolean;
   submitting: boolean;
   conflictBlocked?: boolean;
@@ -63,45 +68,46 @@ export function ItemizedWorkspace({
   onSaveDivision,
   onCloseDivision,
   onAssignSelected,
-  onFooter,
+  onSubmit,
   isEditing,
   submitting,
   conflictBlocked,
 }: ItemizedWorkspaceProps) {
   const participantCount = participants.participants.length + participants.guests.length;
-
-  // The submit contract is exact: every item fully assigned and the payments
-  // summing to the grand total. Letting someone walk to the end and fail at
-  // "Criar conta" hides which step was wrong, so each section states its own
-  // blocker where it can be fixed.
-  const blocked = ((): string | null => {
-    if (conflictBlocked) {
-      return "Carregue a versão mais recente pra salvar.";
-    }
-    if (section === "account") {
-      if (!details.title.trim()) return "Dê um nome pra conta.";
-      if (participantCount < 2) return "Adicione quem divide com você.";
-      return null;
-    }
-    if (section === "items" && store.items.length === 0) {
-      return "Adicione pelo menos um item.";
-    }
-    if (section === "split" && partial) {
-      return remainingCents > 0
+  const current = ITEMIZED_SECTIONS.indexOf(section);
+  const footerRef = useRef<HTMLDivElement | null>(null);
+  const paidDiff = grandTotal - store.payers.reduce((sum, payer) => sum + payer.amountCents, 0);
+  const stepBlockers = [
+    !details.title.trim()
+      ? "Dê um nome pra conta."
+      : participantCount < 2
+        ? "Adicione quem divide com você."
+        : null,
+    store.items.length === 0
+      ? "Adicione pelo menos um item."
+      : invalidAmountIds.length > 0
+        ? "Confira o valor dos itens."
+        : null,
+    partial
+      ? remainingCents > 0
         ? `Faltam ${formatBRL(remainingCents)} para dividir entre os itens.`
-        : "Há itens com divisão incompleta.";
-    }
-    if (section === "payment") {
-      if (payment.included.length === 0) return "Escolha quem pagou.";
-      const diff = grandTotal - store.payers.reduce((sum, payer) => sum + payer.amountCents, 0);
-      if (diff > 0) return `Faltam ${formatBRL(diff)} para bater com o total.`;
-      if (diff < 0) return `Excede ${formatBRL(-diff)} do total.`;
-    }
-    return null;
-  })();
+        : "Há itens com divisão incompleta."
+      : null,
+    payment.included.length === 0
+      ? "Escolha quem pagou."
+      : paidDiff > 0
+        ? `Faltam ${formatBRL(paidDiff)} para bater com o total.`
+        : paidDiff < 0
+          ? `Excede ${formatBRL(-paidDiff)} do total.`
+          : null,
+  ];
+  const blocked = conflictBlocked
+    ? "Carregue a versão mais recente pra salvar."
+    : (stepBlockers.slice(0, current + 1).find((reason) => reason !== null) ?? null);
+  const lastStep = current === ITEMIZED_SECTIONS.length - 1;
   return (
     <>
-      <SectionTabs section={section} onChange={onSectionChange} />
+      <WizardSteps steps={STEP_LABELS} current={current} />
       <SectionContent
         section={section}
         details={{ ...details, participants }}
@@ -127,12 +133,17 @@ export function ItemizedWorkspace({
         onCloseDivision={onCloseDivision}
         onAssignSelected={onAssignSelected}
       />
-      <SectionFooter
-        label={section === "payment" ? (isEditing ? "Salvar" : "Criar conta") : "Continuar"}
-        disabled={blocked !== null || submitting}
-        reason={blocked}
-        onClick={onFooter}
-      />
+      <div ref={footerRef} className="mt-auto">
+        <WizardFooter
+          onBack={current > 0 ? () => onSectionChange(ITEMIZED_SECTIONS[current - 1]) : null}
+          onContinue={() => (lastStep ? onSubmit() : onSectionChange(ITEMIZED_SECTIONS[current + 1]))}
+          continueLabel={lastStep ? (isEditing ? "Salvar alterações" : "Salvar conta") : "Continuar"}
+          disabled={blocked !== null}
+          reason={blocked}
+          loading={submitting}
+        />
+      </div>
+      <ScrollHint targetRef={footerRef} />
     </>
   );
 }

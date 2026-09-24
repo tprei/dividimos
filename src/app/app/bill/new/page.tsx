@@ -636,22 +636,6 @@ function NewBillPageContent() {
     }));
   }, [me, submit, createGroupEnabled, createGroupName, defaultGroupName]);
 
-  const goBack = () => {
-    if (isDmMode && modes.dm) {
-      router.push(`/app/conversations/${modes.dm.userId}`);
-      return;
-    }
-    const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
-    if (isEditing && activeEditId) {
-      router.push(`/app/bill/${activeEditId}`);
-      return;
-    }
-    setStep("type");
-    setBillType(null);
-    setCreateGroupEnabled(true);
-    setCreateGroupName("");
-  };
-
   const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
   const closeHref = isDmMode && modes.dm ? `/app/conversations/${modes.dm.userId}` : isEditing && activeEditId ? `/app/bill/${activeEditId}` : "/app";
   const requestClose = () => {
@@ -699,6 +683,7 @@ function NewBillPageContent() {
     return (
       <>
         <ItemizedBillForm
+        key={`${store.expense?.id}:${editBaseVersionNo}`}
         me={me}
         groups={groupSnapshots}
         selectedGroupId={selectedGroupId}
@@ -714,13 +699,14 @@ function NewBillPageContent() {
         onRemoveGuest={(id) => useBillStore.getState().removeGuest(id)}
         onPickContacts={handlePickContacts}
         onSubmit={submitItemized}
-        onBack={goBack}
+        onBack={requestClose}
         isEditing={isEditing}
         submitting={submitting}
         initialSection={itemizedSectionFor(step)}
         conflictPanel={conflictPanel}
         conflictBlocked={conflictBlockedReason !== null}
       />
+        {leaveDialog}
       </>
     );
   }
