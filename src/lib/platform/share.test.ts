@@ -48,6 +48,16 @@ describe("shareLink", () => {
     await expect(shareLink({ url: "https://dividimos.test/g/1" })).resolves.toBe("dismissed");
   });
 
+  it("treats a second tap while the share sheet is open as dismissed", async () => {
+    stubShare(
+      vi.fn(async () => {
+        throw new DOMException("already sharing", "InvalidStateError");
+      }),
+    );
+
+    await expect(shareLink({ url: "https://dividimos.test/g/1" })).resolves.toBe("dismissed");
+  });
+
   it("reports unsupported when there is no share API", async () => {
     stubShare(undefined);
 

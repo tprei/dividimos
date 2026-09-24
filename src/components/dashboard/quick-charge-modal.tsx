@@ -22,12 +22,14 @@ import { getAuthGeneration } from "@/lib/sync/client";
 import { LedgerError } from "@/lib/sync/errors";
 import { generateSelfPixCode } from "@/lib/sync/pix";
 import { copyText } from "@/lib/platform/clipboard";
-import { qrToCanvas } from "@/lib/qr";
+import { QrCanvas } from "@/components/shared/qr-canvas";
 import type { VendorCharge } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { Money } from "@/components/shared/money";
 import { shareLink } from "@/lib/platform/share";
 import { popIn } from "@/lib/animations";
+
+const CHARGE_QR_OPTIONS = { width: 200, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
 
 interface ChargeOperation {
   generation: number;
@@ -259,27 +261,6 @@ export function QuickChargeModal({
     requestCancellation,
   ]);
 
-  // A callback ref, not an effect: the canvas only mounts when the QR phase
-  // renders, and an effect keyed on the payload would have already run by then
-  // and left an empty box.
-  const paintQr = useCallback(
-    (node: HTMLCanvasElement | null) => {
-      if (!node || !copiaECola) return;
-      // The library pins the drawn size inline, which would outrank the
-      // class that shrinks the code when the popover has little height.
-      const unpinSize = () => {
-        node.style.removeProperty("width");
-        node.style.removeProperty("height");
-      };
-      void qrToCanvas(node, copiaECola, {
-        width: 200,
-        margin: 2,
-        color: { dark: "#1a1d2e", light: "#ffffff" },
-      }).then(unpinSize, unpinSize);
-    },
-    [copiaECola],
-  );
-
   const handleCopy = async () => {
     if (!copiaECola) return;
     if (await copyText(copiaECola)) {
@@ -471,7 +452,14 @@ export function QuickChargeModal({
                       </Button>
                     </div>
                   ) : (
-                    <canvas ref={paintQr} role="img" aria-label={`QR Pix de ${formatBRL(amountCents)}`} className="compact:size-[112px]" />
+                    copiaECola && (
+                      <QrCanvas
+                        value={copiaECola}
+                        label={`QR Pix de ${formatBRL(amountCents)}`}
+                        options={CHARGE_QR_OPTIONS}
+                        className="compact:size-[112px]"
+                      />
+                    )
                   )}
                 </div>
                 </div>

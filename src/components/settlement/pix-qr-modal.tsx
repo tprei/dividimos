@@ -36,10 +36,12 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { generatePixCode, PixRequestError } from "@/lib/sync/pix";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/platform/clipboard";
-import { qrToCanvas } from "@/lib/qr";
+import { QrCanvas } from "@/components/shared/qr-canvas";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { popIn } from "@/lib/animations";
+
+const PIX_QR_OPTIONS = { width: 240, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
 
 type PixQrModalSource =
   | { pixKey: string; recipientUserId?: never; groupId?: never }
@@ -275,25 +277,6 @@ export function PixQrModal({
       : "";
 
   const showsQr = Boolean(copiaECola) && (showPayQr || mode === "collect");
-
-  const paintQr = useCallback(
-    (node: HTMLCanvasElement | null) => {
-      if (!node || !copiaECola) return;
-      // The library pins the drawn size with inline styles, which would
-      // outrank the class that shrinks the code on a short screen. The
-      // bitmap stays 240px; only its display size follows the layout.
-      const unpinSize = () => {
-        node.style.removeProperty("width");
-        node.style.removeProperty("height");
-      };
-      void qrToCanvas(node, copiaECola, {
-        width: 240,
-        margin: 2,
-        color: { dark: "#1a1d2e", light: "#ffffff" },
-      }).then(unpinSize, unpinSize);
-    },
-    [copiaECola],
-  );
 
   const handleCopy = async () => {
     if (!copiaECola) return;
@@ -531,7 +514,12 @@ export function PixQrModal({
                     variants={popIn} initial="hidden" animate="visible"
                     className="mt-3 flex justify-center rounded-2xl border border-border bg-paper p-3 compact:p-2"
                   >
-                    <canvas ref={paintQr} role="img" aria-label={`QR Pix de ${formatBRL(paymentCents)}`} className="compact:size-[104px]" />
+                    <QrCanvas
+                      value={copiaECola}
+                      label={`QR Pix de ${formatBRL(qrAmountCents)}`}
+                      options={PIX_QR_OPTIONS}
+                      className="compact:size-[104px]"
+                    />
                   </motion.div>
                 ) : !copiaECola ? (
                   <motion.div

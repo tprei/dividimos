@@ -8,12 +8,17 @@ import {
   THEME_STORAGE_KEY,
 } from "./theme";
 
-const { configureStatusBarMock } = vi.hoisted(() => ({
+const { configureStatusBarMock, platform } = vi.hoisted(() => ({
   configureStatusBarMock: vi.fn(),
+  platform: { native: true },
 }));
 
 vi.mock("@/lib/capacitor/status-bar", () => ({
   configureStatusBar: configureStatusBarMock,
+}));
+
+vi.mock("@/lib/capacitor", () => ({
+  isNativePlatform: () => platform.native,
 }));
 
 const originalMatchMedia = window.matchMedia.bind(window);
@@ -36,6 +41,7 @@ function appendThemeColorMeta(): HTMLMetaElement {
 
 beforeEach(() => {
   configureStatusBarMock.mockResolvedValue(undefined);
+  platform.native = true;
 });
 
 afterEach(() => {
@@ -137,5 +143,15 @@ describe("applyTheme", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(meta.getAttribute("content")).toBe(THEME_COLORS.light);
     await vi.waitFor(() => expect(configureStatusBarMock).toHaveBeenCalledWith("light"));
+  });
+
+  it("leaves the native status bar alone on the web", async () => {
+    platform.native = false;
+
+    applyTheme("dark");
+    await Promise.resolve();
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(configureStatusBarMock).not.toHaveBeenCalled();
   });
 });

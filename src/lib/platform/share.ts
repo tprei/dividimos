@@ -22,7 +22,12 @@ export async function shareLink(input: {
     await navigator.share(input);
     return "shared";
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
+    // InvalidStateError means a share sheet is already open from an earlier
+    // tap; falling back to copy would consume the gesture a second time.
+    if (
+      error instanceof DOMException &&
+      (error.name === "AbortError" || error.name === "InvalidStateError")
+    ) {
       return "dismissed";
     }
     return "unsupported";

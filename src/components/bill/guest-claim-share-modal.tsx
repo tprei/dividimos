@@ -36,7 +36,7 @@ export function GuestClaimShareModal({
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canShare = useClientOnly(isShareSupported);
-  useBackHandler(open, onClose);
+  useBackHandler(open && token !== null, onClose);
 
   // The credential lives only in the fragment; buildClaimUrl never puts it in
   // a path, query, or header. With no transient token there is nothing to show.
@@ -97,7 +97,7 @@ export function GuestClaimShareModal({
             }
           }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl"
+          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:rounded-3xl sm:pb-6"
         >
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
 
