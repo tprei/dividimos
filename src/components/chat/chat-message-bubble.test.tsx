@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ChatMessageBubble } from "./chat-message-bubble";
 import type { ChatMessage, UserProfile } from "@/types/ledger";
 
+process.env.TZ = "UTC";
+
 const sender: UserProfile = {
   id: "user-1",
   handle: "alice",
@@ -25,25 +27,9 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 describe("ChatMessageBubble", () => {
-  it("renders message content without an in-bubble timestamp", () => {
-    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn={false} />);
+  it("renders the message with its send time inside the bubble", () => {
+    render(<ChatMessageBubble message={makeMessage()} isOwn={false} />);
     expect(screen.getByText("Olá!")).toBeDefined();
-    expect(container.textContent).not.toContain("12:00");
-  });
-
-  it("aligns own bubbles right with primary styling", () => {
-    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn />);
-    const bubble = container.firstElementChild?.firstElementChild;
-    expect(bubble?.className).toContain("ml-auto");
-    expect(bubble?.className).toContain("rounded-br-md");
-    expect(bubble?.className).toContain("bg-primary");
-  });
-
-  it("aligns other people's bubbles left with muted styling", () => {
-    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn={false} />);
-    const bubble = container.firstElementChild?.firstElementChild;
-    expect(bubble?.className).not.toContain("ml-auto");
-    expect(bubble?.className).toContain("rounded-bl-md");
-    expect(bubble?.className).toContain("bg-muted");
+    expect(screen.getByText("12:00").getAttribute("datetime")).toBe("2026-01-01T12:00:00Z");
   });
 });

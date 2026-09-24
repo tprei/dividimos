@@ -75,7 +75,7 @@ describe("ConversationPayButton", () => {
         rows={[makeDebtRow("owes", 5000)]}
       />,
     );
-    expect(screen.getByText(/Pagar R\$\s*50,00/)).toBeDefined();
+    expect(screen.getByRole("button", { name: /Pagar R\$\s*50,00/ })).toBeDefined();
   });
 
   it("renders Cobrar button when counterparty owes user", () => {
@@ -88,7 +88,7 @@ describe("ConversationPayButton", () => {
         rows={[makeDebtRow("owed", 3000)]}
       />,
     );
-    expect(screen.getByText(/Cobrar R\$\s*30,00/)).toBeDefined();
+    expect(screen.getByRole("button", { name: /Cobrar R\$\s*30,00/ })).toBeDefined();
   });
 
   it("opens the pay modal and records the settlement as payer", async () => {

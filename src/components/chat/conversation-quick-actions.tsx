@@ -1,4 +1,5 @@
-import { DollarSign, Receipt } from "lucide-react";
+import { HandCoins, ReceiptText } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface ConversationQuickActionsProps {
   /** Receives the pressed control so the charge form anchors to it. */
@@ -11,23 +12,23 @@ export function ConversationQuickActions({
   onSplit,
 }: ConversationQuickActionsProps) {
   return (
-    <div className="flex gap-2 px-4 pb-2">
-      <button
-        type="button"
+    <>
+      <IconButton
+        aria-label="Nova cobrança"
+        title="Nova cobrança"
+        className="text-muted-foreground"
         onClick={(event) => onCharge(event.currentTarget)}
-        className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
       >
-        <DollarSign className="h-3.5 w-3.5" />
-        Nova cobrança
-      </button>
-      <button
-        type="button"
+        <HandCoins className="size-5" />
+      </IconButton>
+      <IconButton
+        aria-label="Dividir conta"
+        title="Dividir conta"
+        className="text-muted-foreground"
         onClick={onSplit}
-        className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
       >
-        <Receipt className="h-3.5 w-3.5" />
-        Dividir conta
-      </button>
-    </div>
+        <ReceiptText className="size-5" />
+      </IconButton>
+    </>
   );
 }

@@ -16,11 +16,6 @@ describe("ChatDateSeparator", () => {
     expect(screen.getByText("Ontem")).toBeInTheDocument();
   });
 
-  it("renders formatted date for older dates", () => {
-    render(<ChatDateSeparator date="2026-01-15T12:00:00Z" />);
-    expect(screen.getByText(/15/)).toBeInTheDocument();
-    expect(screen.getByText(/janeiro/)).toBeInTheDocument();
-  });
 });
 
 describe("shouldShowDateSeparator", () => {

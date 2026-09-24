@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConversationsListContent } from "./conversations-list-content";
+import { ConversationsListContent, swipeTarget } from "./conversations-list-content";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
@@ -374,5 +374,25 @@ describe("ConversationsListContent", () => {
 
     expect(screen.getByText("Carol Souza")).toBeDefined();
     expect(screen.queryByText("Nenhuma conversa encontrada")).toBeNull();
+  });
+});
+
+describe("swipeTarget", () => {
+  const still = { x: 0, y: 0 };
+
+  it("moves to the neighbouring filter in the swipe direction", () => {
+    expect(swipeTarget("all", { offset: { x: -80, y: 4 }, velocity: still })).toBe("owes");
+    expect(swipeTarget("owed", { offset: { x: 80, y: 4 }, velocity: still })).toBe("owes");
+  });
+
+  it("accepts a short fast flick", () => {
+    expect(swipeTarget("owes", { offset: { x: -24, y: 0 }, velocity: { x: -900, y: 0 } })).toBe("owed");
+  });
+
+  it("ignores vertical scrolls, short drags and swipes past either end", () => {
+    expect(swipeTarget("all", { offset: { x: -80, y: 120 }, velocity: still })).toBeNull();
+    expect(swipeTarget("all", { offset: { x: -30, y: 0 }, velocity: still })).toBeNull();
+    expect(swipeTarget("all", { offset: { x: 80, y: 0 }, velocity: still })).toBeNull();
+    expect(swipeTarget("none", { offset: { x: -80, y: 0 }, velocity: still })).toBeNull();
   });
 });
