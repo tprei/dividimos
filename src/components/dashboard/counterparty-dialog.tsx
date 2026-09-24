@@ -223,9 +223,6 @@ export function CounterpartyDialog({
       {inviteTarget && (
         <GuestInviteDialog
           open
-          // The row button that opened the menu stays mounted in the list;
-          // the invite surface must keep pointing at it after the menu closes.
-          anchor={anchor}
           onOpenChange={(isOpen) => {
             if (!isOpen) setInviteTarget(null);
           }}

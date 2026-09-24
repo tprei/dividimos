@@ -15,11 +15,15 @@ export function AvatarStack({
   max = 3,
   size = "xs",
   surface = "card",
+  label,
+  className,
 }: {
   people: AvatarStackPerson[];
   max?: number;
   size?: "xs" | "sm";
   surface?: "card" | "background" | "muted";
+  label?: string;
+  className?: string;
 }) {
   const shown = people.slice(0, max);
   const hidden = people.length - shown.length;
@@ -31,8 +35,8 @@ export function AvatarStack({
   });
   return (
     <div
-      className="flex -space-x-1"
-      aria-label={hidden > 0 ? `${shownNames}, e mais ${hidden}` : shownNames}
+      className={cn("flex -space-x-1", className)}
+      aria-label={label ?? (hidden > 0 ? `${shownNames}, e mais ${hidden}` : shownNames)}
     >
       {shown.map((person) =>
         person.isGuest ? (

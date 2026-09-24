@@ -37,15 +37,15 @@ export function ExpenseHistory({
   const ordered = [...versions].sort((a, b) => b.versionNo - a.versionNo);
 
   return (
-    <section className={showHeading ? "mt-5" : undefined}>
-      {showHeading && <h2 className="mb-2 text-sm font-semibold">Histórico</h2>}
-      <ol className="space-y-2">
+    <section className={showHeading ? "mt-6" : undefined}>
+      {showHeading && <h2 className="mb-3 text-lg font-semibold">Histórico</h2>}
+      <ol className="ml-4 border-l border-border">
         {ordered.map((v) => {
           const author = nameOf(v.authorId);
           return (
             <li
               key={v.versionNo}
-              className="rounded-xl border bg-card px-4 py-3"
+              className="relative pb-4 pl-6 last:pb-0"
             >
               <div className="flex items-center gap-3">
                 <UserAvatar
@@ -54,8 +54,8 @@ export function ExpenseHistory({
                   avatarUrl={avatarUrlOf(v.authorId)}
                   size="sm"
                 />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{author}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Versão {v.versionNo}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatTimestamp(v.createdAt)}
                   </p>

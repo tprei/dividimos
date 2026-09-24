@@ -26,7 +26,7 @@ test.describe("Guest invite can be scanned", () => {
 
     // The claim URL is drawn, never printed: the app's own reader at /auth
     // decodes this exact payload.
-    await expect(page.getByText("Escaneie pelo app para entrar na conta")).toBeVisible();
+    await expect(page.getByRole("img", { name: "QR code do convite de Jj" })).toBeVisible();
     await expect(page.locator("canvas")).toBeVisible();
     await expect(page.getByRole("button", { name: "Copiar link" })).toBeVisible();
   });
