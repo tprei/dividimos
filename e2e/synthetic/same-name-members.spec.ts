@@ -15,15 +15,16 @@ test("same-name members remain distinct across balances and graph", async ({ pag
   await page.goto(`/app/groups/${group.id}`);
   await page.getByRole("radio", { name: "Saldos", exact: true }).check();
 
-  const card = page.getByRole("region", { name: "Saldo consolidado" });
+  const card = page.getByRole("region", { name: "Saldos", exact: true });
   await expect(card.getByText(/^João S\./)).toBeVisible();
   await expect(card.getByText(/^João A\./)).toBeVisible();
   await expect(card.getByText(/^Você /)).toBeVisible();
+  await page.getByText("Como os pagamentos se simplificam").click();
   const graph = page.getByRole("group", { name: "Grafo de dívidas" });
   await expect(graph.getByText("João S.", { exact: true })).toBeVisible();
   await expect(graph.getByText("João A.", { exact: true })).toBeVisible();
   await expect(graph.getByText("Você", { exact: true })).toBeVisible();
-  const transfers = page.getByRole("region", { name: "Transferências", exact: true });
+  const transfers = page.getByRole("region", { name: "Quem paga quem", exact: true });
   await expect(transfers.getByText("João S.", { exact: true })).toBeVisible();
   await expect(transfers.getByText("João A.", { exact: true })).toBeVisible();
   await expect(card.getByText("João", { exact: true })).toHaveCount(0);

@@ -46,9 +46,9 @@ test.describe("Expense Lifecycle", () => {
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
 
     await bobPage.getByRole("radio", { name: "Saldos" }).click();
-    const payRow = bobPage.getByRole("button", { name: /Você paga/i });
+    const payRow = bobPage.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ });
     await expect(payRow).toBeVisible({ timeout: 10000 });
-    await expect(payRow).toContainText("R$ 50,00");
+    await expect(payRow).toHaveAccessibleName(/R\$\s*50,00/);
 
     // Bob records the payment
     const bobClient = await seed.authenticateAs(bob.id);
@@ -72,8 +72,8 @@ test.describe("Expense Lifecycle", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Nenhuma dívida pendente no grupo")).toBeVisible();
+    await expect(page.getByRole("status")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("region", { name: "Quem paga quem" })).toHaveCount(0);
 
     await bobContext.close();
   });

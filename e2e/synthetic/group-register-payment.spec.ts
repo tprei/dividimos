@@ -48,7 +48,7 @@ test.describe("Group register payment", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
     await page.getByRole("radio", { name: "Saldos" }).click();
-    await expect(page.getByRole("button", { name: /Você paga/i })).toContainText("R$ 20,00");
+    await expect(page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ })).toHaveAccessibleName(/R\$\s*20,00/);
   });
 
   test("settles with the counterparty picked from the list, not the default one", async ({

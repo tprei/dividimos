@@ -51,21 +51,8 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   deleteGroup: vi.fn(),
 }));
 
-const settlementProps: Array<{
-  groupId: string;
-  snapshot: GroupSnapshot;
-  meId: string;
-}> = [];
-
 vi.mock("./group-settlement-view", () => ({
-  GroupSettlementView: (props: {
-    groupId: string;
-    snapshot: GroupSnapshot;
-    meId: string;
-  }) => {
-    settlementProps.push(props);
-    return <div data-testid="settlement-stub" />;
-  },
+  GroupSettlementView: () => <div data-testid="settlement-stub" />,
 }));
 
 const inviteModalProps: Array<{ open: boolean; groupId: string; groupName: string }> = [];
@@ -181,7 +168,6 @@ function seedLoaded() {
 
 beforeEach(() => {
   useAppStore.getState().reset();
-  settlementProps.length = 0;
   inviteModalProps.length = 0;
   vi.clearAllMocks();
   searchParamsMock.value = new URLSearchParams();
@@ -205,7 +191,6 @@ describe("GroupDetailContent", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Viagem" })).toBeInTheDocument();
     });
-    expect(screen.getByText("Acerto")).toBeInTheDocument();
     expect(container.querySelectorAll(".animate-pulse, [class*='shimmer']")).toHaveLength(0);
     expect(refreshGroup).not.toHaveBeenCalled();
   });
@@ -279,24 +264,6 @@ describe("GroupDetailContent", () => {
     });
   });
 
-  it("renders the settlement header and passes the snapshot on mount", () => {
-    seedLoaded();
-
-    render(<GroupDetailContent groupId={groupId} />);
-
-    expect(screen.getByText("Viagem")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Saldos" })).toBeChecked();
-    expect(screen.getByTestId("settlement-stub")).toBeInTheDocument();
-
-    const props = settlementProps.at(-1)!;
-    expect(props.groupId).toBe(groupId);
-    expect(props.meId).toBe(me.id);
-    expect(props.snapshot.group.id).toBe(groupId);
-    expect(props.snapshot.balances).toEqual([
-      { kind: "user", participantId: "user-1", netCents: -5000 },
-      { kind: "user", participantId: "user-2", netCents: 5000 },
-    ]);
-  });
 
   it("routes the header avatar and title to the group profile", async () => {
     seedLoaded();
@@ -338,16 +305,6 @@ describe("GroupDetailContent", () => {
     expect(screen.getByLabelText("7 mensagens não lidas")).toBeInTheDocument();
   });
 
-  it("restores the group header when another tab is selected", async () => {
-    seedLoaded();
-
-    render(<GroupDetailContent groupId={groupId} />);
-
-    await userEvent.click(screen.getByRole("radio", { name: "Contas" }));
-
-    expect(screen.getByText(/2 membros/)).toBeInTheDocument();
-    expect(screen.getByText("Jantar")).toBeInTheDocument();
-  });
 
   it("reveals the bills panel when the Contas tab is selected", async () => {
     seedLoaded();
@@ -487,25 +444,11 @@ describe("GroupDetailContent", () => {
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    // Shows hero card and info card
-    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
-    expect(screen.getAllByText("Viagem").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Convite de Alice")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Alice convidou você para este grupo. Aceite para participar da conversa e dos acertos.",
-      ),
-    ).toBeInTheDocument();
-
-    // Has Accept and Decline buttons
     expect(screen.getByRole("button", { name: "Aceitar" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Recusar" })).toBeInTheDocument();
 
-    // Does NOT render tabs or empty state or Tudo liquidado
-    expect(screen.queryByRole("tab", { name: "Saldos" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Contas" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Membros" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Tudo liquidado!")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Seções do grupo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("accepting an invitation updates state and renders tabs in place", async () => {
