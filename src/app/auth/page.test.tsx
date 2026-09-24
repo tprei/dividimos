@@ -145,3 +145,22 @@ describe("auth invitation scanner", () => {
     expect(mockPush).toHaveBeenCalledWith(`/room/${roomId}#${token}`);
   });
 });
+describe("auth card layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams.delete("error");
+    searchParams.delete("next");
+  });
+
+  it("renders restored sign-in card layout, copy and privacy notice", () => {
+    render(<AuthPage />);
+
+    expect(screen.getByText("Racha a conta com a galera via Pix")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
+    expect(screen.getByText("Como quer entrar?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Entrar com Google/i })).toBeInTheDocument();
+    expect(screen.getByText("ou")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ler um convite" })).toBeInTheDocument();
+    expect(screen.getByText(/Em conformidade com a LGPD/)).toBeInTheDocument();
+  });
+});

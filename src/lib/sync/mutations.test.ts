@@ -1486,6 +1486,19 @@ describe("mutations", () => {
       expect(globalThis.fetch).toHaveBeenCalledWith("/api/users/lookup?handle=%20%20Amigo%20%20");
     });
 
+    it("cancels a pending lookup without returning an available handle", async () => {
+      globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const pending = Promise.withResolvers<Response>();
+        init?.signal?.addEventListener("abort", () => pending.reject(new DOMException("Aborted", "AbortError")), { once: true });
+        return pending.promise;
+      });
+      const controller = new AbortController();
+      const result = lookupUserByHandle("amigo", controller.signal);
+      const rejected = expect(result).rejects.toMatchObject({ code: "network" });
+      controller.abort();
+      await rejected;
+    });
+
     it("maps the route's 404 to null, keeping not-found distinct from failure", async () => {
       stubRoute(routeResponse(404, { error: "Usuário não encontrado" }));
 

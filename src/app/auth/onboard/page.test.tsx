@@ -1,9 +1,15 @@
 import React from "react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OnboardForm from "./onboard-form";
 import type { Me } from "@/types/ledger";
+import { lookupUserByHandle } from "@/lib/sync/mutations-group";
+
+vi.mock("@/lib/sync/mutations-group", () => ({ lookupUserByHandle: vi.fn() }));
+const lookup = vi.mocked(lookupUserByHandle);
+beforeEach(() => { lookup.mockReset().mockResolvedValue(null); });
+afterEach(() => { vi.useRealTimers(); });
 
 const me: Me = {
   id: "user-a",
@@ -26,17 +32,63 @@ async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Chave Pix" });
 }
 
+describe("handle availability", () => {
+  it("debounces checks, cancels replaced requests and ignores stale availability", async () => {
+    vi.useFakeTimers();
+    const first = Promise.withResolvers<null>();
+    lookup.mockReturnValueOnce(first.promise);
+    lookup.mockResolvedValueOnce({ ...me, id: "other", handle: "ocupado" });
+    render(<OnboardForm me={me} action={action} />);
+    const field = screen.getByLabelText("Handle");
+    fireEvent.change(field, { target: { value: "novo_nome" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(499); });
+    expect(lookup).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    const signal = lookup.mock.calls[0][1];
+    fireEvent.change(field, { target: { value: "ocupado" } });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { first.resolve(null); });
+    expect(screen.getByRole("status")).toHaveTextContent("Verificando");
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(screen.getByRole("status")).toHaveTextContent("Já está em uso");
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    fireEvent.change(field, { target: { value: "outro_nome" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeEnabled();
+  });
+
+  it("does not call a failed lookup available or leave pending work on unmount", async () => {
+    vi.useFakeTimers();
+    lookup.mockRejectedValueOnce(new Error("offline"));
+    const { unmount } = render(<OnboardForm me={me} action={action} />);
+    fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "novo_nome" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(screen.getByRole("status")).toHaveTextContent("Não conseguimos verificar agora.");
+    fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "outra_pessoa" } });
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("OnboardForm Pix skip", () => {
-  it("keeps an edited name when returning from the handle step", async () => {
+  it("renders Nome and Handle together on the profile step", () => {
+    render(<OnboardForm me={me} action={action} />);
+    expect(screen.getByLabelText("Nome")).toHaveValue("Ana Costa");
+    expect(screen.getByLabelText("Handle")).toHaveValue("ana_costa");
+  });
+
+  it("renders contract copy and Pular por agora on the Pix step", async () => {
     const user = userEvent.setup();
     render(<OnboardForm me={me} action={action} />);
-    await user.click(screen.getByRole("button", { name: /Alterar nome/ }));
-    await user.clear(screen.getByLabelText("Nome"));
-    await user.type(screen.getByLabelText("Nome"), "Ana Souza");
-    await user.click(screen.getByRole("button", { name: "Continuar" }));
-    expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Alterar nome/ }));
-    expect(screen.getByLabelText("Nome")).toHaveValue("Ana Souza");
+
+    await advanceToPixStep(user);
+
+    expect(
+      screen.getByText("Pode cadastrar agora ou depois, no seu perfil."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
   });
 
   beforeEach(() => {

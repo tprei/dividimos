@@ -2,7 +2,7 @@
 
 import { ArrowRight, Clipboard, Mail, Shield } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { readClipboardText } from "@/lib/platform/clipboard";
@@ -10,15 +10,16 @@ import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
-import { popIn } from "@/lib/animations";
 import { haptics } from "@/hooks/use-haptics";
+import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 
 type OnboardingFormProps = {
   me: Me;
   action: (formData: FormData) => Promise<OnboardingActionResult>;
 };
 
-type OnboardStep = "name" | "profile" | "pix";
+type OnboardStep = "profile" | "pix";
+type HandleAvailability = "available" | "taken" | "failed";
 
 const HANDLE_REGEX = /^[a-z0-9_]{3,30}$/;
 
@@ -71,7 +72,7 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
 ];
 
 function OnboardPageContent({ me, action }: OnboardingFormProps) {
-  const [step, setStep] = useState<OnboardStep>(me.name.trim() ? "profile" : "name");
+  const [step, setStep] = useState<OnboardStep>("profile");
   const [name, setName] = useState(me.name);
   const [handle, setHandle] = useState(me.handle);
   const [handleTouched, setHandleTouched] = useState(false);
@@ -81,11 +82,34 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   const [customPixInput, setCustomPixInput] = useState("");
   const [pixError, setPixError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const timerRef = useRef<number | NodeJS.Timeout | undefined>(undefined);
+  const [handleCheck, setHandleCheck] = useState<{ handle: string; status: HandleAvailability } | null>(null);
+  const availability = handle === me.handle ? "available" : handleCheck?.handle === handle ? handleCheck.status : "checking";
+
+  useEffect(() => {
+    if (step !== "profile" || !isValidHandle(handle) || handle === me.handle) return;
+    const controller = new AbortController();
+    timerRef.current = setTimeout(async () => {
+      try {
+        const profile = await lookupUserByHandle(handle, controller.signal);
+        if (!controller.signal.aborted) {
+          setHandleCheck({ handle, status: profile && profile.id !== me.id ? "taken" : "available" });
+        }
+      } catch {
+        if (!controller.signal.aborted) setHandleCheck({ handle, status: "failed" });
+      }
+    }, 500);
+    return () => {
+      clearTimeout(timerRef.current);
+      controller.abort();
+    };
+  }, [handle, me.handle, me.id, step]);
 
   const handleNameChange = (value: string) => {
     setName(value);
     if (!handleTouched) {
       setHandle(nameToHandle(value));
+      setHandleCheck(null);
     }
   };
 
@@ -94,6 +118,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
     setHandle(cleaned);
     setHandleTouched(true);
     setHandleError("");
+    setHandleCheck(null);
   };
 
   const selectPixKeyType = (type: PixKeyType) => {
@@ -146,17 +171,13 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
 
   const handleContinue = () => {
     if (!name.trim()) return;
-    if (step === "name") {
-      haptics.selectionChanged();
-      setStep("profile");
-      return;
-    }
     if (!isValidHandle(handle)) {
       setHandleError(
         "Handle deve ter entre 3 e 30 caracteres, apenas letras minúsculas, números e sublinhados.",
       );
       return;
     }
+    if (availability === "checking" || availability === "taken") return;
     haptics.selectionChanged();
     setStep("pix");
   };
@@ -209,47 +230,54 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   const showEmailSuggestion =
     Boolean(userEmail) && pixKeyType === "email" && customPixInput !== userEmail;
 
-  const steps: OnboardStep[] = ["name", "profile", "pix"];
+  const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
+    <div className="flex h-dvh flex-col overflow-y-auto bg-background">
       <div className="gradient-mesh absolute inset-0 -z-10" />
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-6">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-6 py-12">
         <motion.div
-          variants={popIn} initial="hidden" animate="visible"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
         >
-          <Logo size="md" />
+          <Logo size="md" animated />
         </motion.div>
 
-        <div className="mt-6 flex-1">
+        <div className="mt-12 flex-1">
           <AnimatePresence mode="wait">
-            {(step === "profile" || step === "name") && (
+            {step === "profile" && (
               <motion.div
-                key={step}
-                variants={popIn} initial="hidden" animate="visible" exit="exit"
+                key="profile"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
               >
-                <h1 className="text-2xl font-bold">{step === "name" ? "Como você se chama?" : "Seu perfil"}</h1>
-                <p className="mt-2 text-muted-foreground">{step === "name" ? "Seu nome nas contas com amigos." : "Um @handle só seu."}</p>
-                {step === "profile" && (
-                  <Button variant="ghost" className="mt-2 max-w-full justify-start gap-2 px-0" onClick={() => setStep("name")}>
-                    <span className="truncate">{name}</span><span className="shrink-0 text-primary-text">Alterar nome</span>
-                  </Button>
-                )}
+                <h1 className="text-2xl font-bold">Seu perfil</h1>
+                <p className="mt-2 text-muted-foreground">
+                  Como a galera vai te encontrar.
+                </p>
 
                 <div className="mt-8 space-y-4">
-                  {step === "name" && (
-                    <div>
-                      <label htmlFor="onboard-name" className="mb-2 block text-sm font-semibold">Nome</label>
-                      <Input id="onboard-name" placeholder="Seu nome completo" value={name} onChange={(e) => handleNameChange(e.target.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && handleContinue()} />
-                    </div>
-                  )}
+                  <div>
+                    <label htmlFor="onboard-name" className="mb-2 block text-sm font-medium">
+                      Nome
+                     </label>
+                    <Input
+                      id="onboard-name"
+                      placeholder="Seu nome completo"
+                      value={name}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && handleContinue()}
+                    />
+                  </div>
 
-                  {step === "profile" && (
                   <div>
                     <label htmlFor="onboard-handle" className="mb-2 block text-sm font-medium">
-                      Seu @handle
+                      Handle
                     </label>
                     <div className="flex items-center">
                       <div aria-hidden="true" className="flex h-11 items-center rounded-l-xl border border-r-0 border-input bg-muted px-3 text-base text-muted-foreground">
@@ -270,28 +298,27 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     {handleError && (
                       <p role="alert" className="mt-2 text-sm text-destructive-text">{handleError}</p>
                     )}
-                    {handle && !handleError && (
-                      <p
-                        className={`mt-2 text-xs ${
-                          isValidHandle(handle)
-                            ? "text-success-text"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {isValidHandle(handle)
-                          ? "Formato válido"
-                          : "3-30 caracteres, letras minúsculas, números e sublinhados"}
+                    {handle && !handleError && !(isValidHandle(handle) && availability === "available") && (
+                      <p role="status" className={`mt-2 text-sm ${availability === "taken" ? "text-destructive-text" : "text-muted-foreground"}`}>
+                        {!isValidHandle(handle) ? "3–30 caracteres: letras, números e sublinhados."
+                          : availability === "taken" ? "Já está em uso"
+                          : availability === "failed" ? "Não conseguimos verificar agora."
+                          : "Verificando…"}
+                      </p>
+                    )}
+                    {handle && !handleError && isValidHandle(handle) && availability === "available" && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {`A galera vai te adicionar como @${handle}`}
                       </p>
                     )}
                   </div>
-                  )}
                 </div>
 
                 <Button
                   className="mt-6 w-full gap-2"
                   size="lg"
                   onClick={handleContinue}
-                  disabled={!name.trim() || (step === "profile" && !handle)}
+                  disabled={!name.trim() || !handle || (isValidHandle(handle) && (availability === "checking" || availability === "taken"))}
                 >
                   Continuar
                   <ArrowRight className="h-4 w-4" />
@@ -302,11 +329,17 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
             {step === "pix" && (
               <motion.div
                 key="pix"
-                variants={popIn} initial="hidden" animate="visible" exit="exit"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
               >
                 <h1 className="text-2xl font-bold">Chave Pix</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Pra receber sua parte. Pode deixar pra depois.
+                  Coloque sua chave Pix pra receber dos amigos.
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pode cadastrar agora ou depois, no seu perfil.
                 </p>
 
                 {showEmailSuggestion && userEmail && (
@@ -375,9 +408,14 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3">
                     <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <p className="text-xs text-muted-foreground">
-                      Sua chave fica protegida e só aparece pra quem vai te pagar.
+                      Sua chave Pix é criptografada (AES-256-GCM). Ela só é usada para gerar o
+                      código de pagamento para quem te deve em um grupo.
                     </p>
                   </div>
+                  <p className="text-center text-[10px] text-muted-foreground">
+                    Em conformidade com a LGPD (Lei 13.709/2018). Você pode
+                    excluir seus dados a qualquer momento.
+                  </p>
                 </div>
 
                 <div className="mt-6 flex gap-3">
@@ -414,11 +452,17 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
 
         <div className="mt-8 flex justify-center gap-2">
           {steps.map((s, i) => (
-            <div
+            <motion.div
               key={s}
-              aria-label={`Etapa ${i + 1} de ${steps.length}`}
-              aria-current={i === currentIndex ? "step" : undefined}
-              className={`h-2 rounded-full ${i === currentIndex ? "w-6 bg-primary" : "w-2 bg-border"}`}
+              animate={{
+                width: i === currentIndex ? 24 : 8,
+                backgroundColor:
+                  i === currentIndex
+                    ? "oklch(0.78 0.16 75)"
+                    : "oklch(0.91 0.005 250)",
+              }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="h-2 rounded-full"
             />
           ))}
         </div>
