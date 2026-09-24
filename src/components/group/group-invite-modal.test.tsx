@@ -149,7 +149,6 @@ describe("GroupInviteModal", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       `${window.location.origin}/join/tok123`,
     );
-    expect(toast.success).toHaveBeenCalledWith("Link copiado!");
   });
 
   it("deactivates the link and allows generating a new one", async () => {

@@ -1,7 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Check, Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
+import { Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -12,6 +11,8 @@ import { Chip } from "@/components/ui/chip";
 import { displayNames } from "@/lib/people";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
+import { haptics } from "@/hooks/use-haptics";
 import {
   Dialog,
   DialogContent,
@@ -35,13 +36,16 @@ interface GroupMembersSectionProps {
   snapshot: GroupSnapshot;
   meId: string;
   onDepart: () => void;
+  settingsOnly?: boolean;
 }
 
-export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSectionProps) {
+export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = false }: GroupMembersSectionProps) {
   const router = useRouter();
   const [confirmRemove, setConfirmRemove] = useState<{
     userId: string;
     name: string;
+    anchor: HTMLButtonElement;
+    pending: boolean;
   } | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -72,9 +76,11 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
     setRemoving(true);
     try {
       await removeMember(snapshot.group.id, confirmRemove.userId);
-      toast.success("Membro removido do grupo.");
+      haptics.success();
+      toast.success(confirmRemove.pending ? "Convite cancelado" : "Membro removido");
       setConfirmRemove(null);
     } catch (e) {
+      haptics.error();
       toast.error(ledgerErrorMessage(e));
     } finally {
       setRemoving(false);
@@ -85,10 +91,12 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
     setLeaving(true);
     try {
       await leaveGroup(snapshot.group.id);
+      haptics.success();
       toast.success("Você saiu do grupo.");
       onDepart();
       router.replace("/app/groups");
     } catch (e) {
+      haptics.error();
       toast.error(ledgerErrorMessage(e));
       setConfirmLeave(false);
     } finally {
@@ -102,6 +110,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
     expenseId: string;
   }) => {
     setIssuingGuestId(guest.id);
+    haptics.tap();
     try {
       const { token } = await createGuestClaimToken(guest.id);
       const expense = snapshot.recentExpenses.find((e) => e.id === guest.expenseId);
@@ -114,6 +123,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
       });
       setShareGeneration((g) => g + 1);
     } catch (error) {
+      haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
       setIssuingGuestId(null);
@@ -124,10 +134,12 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
     setDeleting(true);
     try {
       await deleteGroup(snapshot.group.id);
+      haptics.success();
       toast.success("Grupo excluído.");
       onDepart();
       router.replace("/app/groups");
     } catch (e) {
+      haptics.error();
       toast.error(ledgerErrorMessage(e));
       setConfirmDelete(false);
     } finally {
@@ -138,11 +150,10 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
   return (
     <section>
       <div className="space-y-2">
-        {snapshot.members.map((member) => (
-          <motion.div
+        {!settingsOnly && snapshot.members.map((member) => (
+          <div
             key={member.userId}
-            layout
-            className="flex items-center gap-3 rounded-xl border bg-card p-3"
+            className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3"
           >
             <UserAvatar
               id={member.userId}
@@ -153,7 +164,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
             />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <PersonLabel name={member.user.name} overrideName={labels.get(member.userId)} nameClassName="text-sm" />
+                <PersonLabel name={member.user.name} overrideName={labels.get(member.userId)} nameClassName="text-base" />
                 {member.userId === creatorId && (
                   <Chip tone="primary" icon={<Crown />}>Criador</Chip>
                 )}
@@ -166,39 +177,32 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
                   @{member.user.handle}
                 </p>
                 {member.status === "invited" && (
-                  <span className="flex items-center gap-0.5 text-xs text-warning-foreground">
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3" />
                     Pendente
-                  </span>
-                )}
-                {member.status === "accepted" && member.userId !== creatorId && (
-                  <span className="flex items-center gap-0.5 text-xs text-success">
-                    <Check className="h-3 w-3" />
                   </span>
                 )}
               </div>
             </div>
             {isCreator && member.userId !== meId && (
-              <button
-                onClick={() =>
-                  setConfirmRemove({ userId: member.userId, name: member.user.name })
-                }
-                aria-label={`Remover ${member.user.name}`}
-                className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(event) => {
+                  haptics.tap();
+                  setConfirmRemove({ userId: member.userId, name: member.user.name, anchor: event.currentTarget, pending: member.status === "invited" });
+                }}
+                aria-label={member.status === "invited" ? `Cancelar convite de ${member.user.name}` : `Remover ${member.user.name}`}
+                className="shrink-0 text-muted-foreground hover:text-destructive-text"
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
+                <Trash2 className="size-4" />
+              </Button>
             )}
-          </motion.div>
+          </div>
         ))}
 
-        {snapshot.members.some((m) => m.status === "invited") && (
-          <p className="text-xs text-muted-foreground mt-2">
-            Pendente: a pessoa foi convidada, mas ainda não aceitou. Enquanto o convite está pendente, ela não participa da conversa.
-          </p>
-        )}
 
-        {snapshot.guests.length > 0 && (
+        {!settingsOnly && snapshot.guests.length > 0 && (
           <div className="pt-2">
             <div className="space-y-2">
               {snapshot.guests.map((guest) => (
@@ -227,64 +231,43 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.
-            </p>
           </div>
         )}
 
-        {isCreator ? (
-          <button
+        {settingsOnly && (isCreator ? (
+          <Button
+            variant="outline"
             onClick={() => setConfirmDelete(true)}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+            className="w-full gap-2 border-destructive/30 text-destructive-text hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4" />
             Excluir grupo
-          </button>
+          </Button>
         ) : (
           isAcceptedMember && (
-            <button
+            <Button
+              variant="outline"
               onClick={() => setConfirmLeave(true)}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+              className="w-full gap-2 border-destructive/30 text-destructive-text hover:bg-destructive/10"
             >
               <LogOut className="h-4 w-4" />
               Sair do grupo
-            </button>
+            </Button>
           )
-        )}
+        ))}
       </div>
 
-      <Dialog
-        open={confirmRemove !== null}
-        onOpenChange={(open) => {
-          if (!open) setConfirmRemove(null);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Remover membro</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja remover <strong>{confirmRemove?.name}</strong> do grupo?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmRemove(null)}
-              disabled={removing}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRemoveMember}
-              disabled={removing}
-            >
-              {removing ? "Removendo…" : "Remover"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Popover open={confirmRemove !== null} onOpenChange={(open) => { if (!open) setConfirmRemove(null); }}>
+        <PopoverContent anchor={confirmRemove?.anchor} align="end">
+          <PopoverTitle>{confirmRemove?.pending ? "Cancelar convite?" : "Remover membro?"}</PopoverTitle>
+          <PopoverDescription>
+            {confirmRemove?.pending ? `Cancelar o convite de ${confirmRemove.name}?` : `${confirmRemove?.name} perderá o acesso ao grupo.`}
+          </PopoverDescription>
+          <Button variant="destructive" onClick={handleRemoveMember} disabled={removing}>
+            {removing ? "Removendo…" : confirmRemove?.pending ? "Cancelar convite" : "Remover"}
+          </Button>
+        </PopoverContent>
+      </Popover>
 
       <Dialog
         open={confirmLeave}

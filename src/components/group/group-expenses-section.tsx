@@ -1,8 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Loader2, Mic, Plus, Receipt } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import type { GroupMember } from "@/types/ledger";
@@ -13,7 +11,9 @@ import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/v
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-auth";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
+import { ListRow } from "@/components/ui/list-row";
+import { haptics } from "@/hooks/use-haptics";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { loadMoreExpenses } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -60,7 +60,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
     })),
   );
 
-  const { voiceMembers, modalMembers, activeExpenses } = useMemo(() => {
+  const { voiceMembers, modalMembers } = useMemo(() => {
     const acceptedMembers = members.filter((m) => m.status === "accepted");
     return {
       voiceMembers: acceptedMembers.map((m) => ({
@@ -73,9 +73,17 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
         name: m.user.name,
         avatarUrl: m.user.avatarUrl ?? undefined,
       })),
-      activeExpenses: expenses.filter((e) => e.status !== "deleted"),
     };
-  }, [members, expenses]);
+  }, [members]);
+
+  const today = new Date().toLocaleDateString("en-CA");
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = yesterdayDate.toLocaleDateString("en-CA");
+  const days = Map.groupBy(
+    [...expenses].sort((a, b) => b.occurredOn.localeCompare(a.occurredOn)),
+    (expense) => expense.occurredOn.slice(0, 10),
+  );
 
   const handleLoadMore = async () => {
     if (loadingMore) return;
@@ -181,7 +189,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
           <Button
             variant="outline"
             className="flex-1 gap-2"
-            onClick={() => router.push(`/app/bill/new?groupId=${groupId}`)}
+            onClick={() => { haptics.tap(); router.push(`/app/bill/new?groupId=${groupId}`); }}
           >
             <Plus className="h-4 w-4" />
             Nova conta
@@ -189,7 +197,9 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
           <Button
             variant="outline"
             className="gap-2"
-            onClick={() => setShowVoiceInput(!showVoiceInput)}
+            aria-label="Adicionar conta por voz"
+            aria-expanded={showVoiceInput}
+            onClick={() => { haptics.selectionChanged(); setShowVoiceInput(!showVoiceInput); }}
           >
             <Mic className="h-4 w-4" />
           </Button>
@@ -228,45 +238,42 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
           </div>
         )}
 
-        {activeExpenses.length === 0 ? (
+        {expenses.length === 0 ? (
           <EmptyState
             icon={Receipt}
             title="Nenhuma conta ainda"
-            description="Adiciona uma conta pra dividir com o grupo. Pode ser um jantar, mercado, ou qualquer gasto compartilhado."
-            actionLabel="Nova conta"
-            onAction={() => router.push(`/app/bill/new?groupId=${groupId}`)}
+            description="Os gastos compartilhados ficam aqui."
           />
         ) : (
-          activeExpenses.map((expense) => (
-            <Link key={expense.id} href={`/app/bill/${expense.id}`}>
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-3 rounded-xl border bg-card p-4 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-                  <Receipt className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{expense.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(expense.occurredOn).toLocaleDateString("pt-BR")}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className="font-semibold text-sm tabular-nums">
-                    {formatBRL(expense.totalCents)}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    Sua parte {formatBRL(expense.myShareCents)}
-                  </span>
-                </div>
-              </motion.div>
-            </Link>
+          [...days].map(([day, entries]) => (
+            <section key={day} aria-label={day} className="space-y-2 pt-3">
+              <h3 className="px-1 text-sm font-semibold text-muted-foreground">
+                {day === today ? "Hoje" : day === yesterday ? "Ontem" : new Date(`${day}T12:00:00`).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}
+              </h3>
+              <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+                {entries.map((expense) => (
+                  <ListRow
+                    key={expense.id}
+                    href={`/app/bill/${expense.id}`}
+                    title={expense.title}
+                    subtitle={expense.status === "deleted" ? "Conta excluída" : expense.myPaidCents > 0 ? "Você pagou" : undefined}
+                    className={expense.status === "deleted" ? "text-muted-foreground" : undefined}
+                    trailing={
+                      <span className="flex flex-col items-end gap-1">
+                        <Money cents={expense.totalCents} className="text-base" />
+                        {expense.myShareCents > 0 && expense.status !== "deleted" && (
+                          <span className="text-xs text-muted-foreground">sua parte <Money cents={expense.myShareCents} className="text-xs" /></span>
+                        )}
+                      </span>
+                    }
+                  />
+                ))}
+              </div>
+            </section>
           ))
         )}
 
-        {!complete && activeExpenses.length > 0 && (
+        {!complete && expenses.length > 0 && (
           <Button
             variant="outline"
             className="w-full gap-2"

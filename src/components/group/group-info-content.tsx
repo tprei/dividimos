@@ -1,21 +1,25 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, Image as ImageIcon, MessageSquare, UserPlus, UsersRound } from "lucide-react";
+import { ArrowLeft, MessageSquare, UserPlus, UsersRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupAvatarEditor } from "@/components/group/group-avatar-editor";
+import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { GroupMembersSection } from "@/components/group/group-members-section";
 import { GroupSpendingSection } from "@/components/group/group-spending-section";
 import { EmptyState } from "@/components/shared/empty-state";
 import { GroupAvatar } from "@/components/shared/group-avatar";
+import { AvatarStack } from "@/components/shared/avatar-stack";
+import { haptics } from "@/hooks/use-haptics";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
@@ -34,6 +38,8 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
   const [loadError, setLoadError] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorAnchor, setEditorAnchor] = useState<HTMLElement | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const reducedMotion = useReducedMotion();
 
   const load = useCallback(() => {
@@ -103,41 +109,43 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
   });
 
   const actions = (
-    <div className="mt-5 grid grid-cols-3 gap-2">
+    <>
+    <div className="mt-6 grid grid-cols-2 gap-3">
       {isAcceptedMember && (
         <Link
           href={`/app/groups/${groupId}/chat`}
-          className={buttonVariants({ variant: "outline", className: "flex-col gap-1" })}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 border-border bg-card text-foreground")}
         >
           <MessageSquare className="size-4" aria-hidden="true" />
           Conversa
         </Link>
       )}
       <Button
-        variant="outline"
-        className="min-h-11 flex-col gap-1 text-xs"
-        onClick={() => router.push(`/app/groups/${groupId}?tab=membros`)}
+        variant="secondary"
+        className="gap-2 text-foreground"
+        onClick={() => { haptics.tap(); setInviteOpen(true); }}
+        disabled={!isAcceptedMember}
       >
         <UserPlus className="size-4" aria-hidden="true" />
         Convidar
       </Button>
-      {canEditAvatar && (
-        <Button
-          variant="outline"
-          className="min-h-11 flex-col gap-1 text-xs"
-          onClick={() => setEditorOpen(true)}
-        >
-          <ImageIcon className="size-4" aria-hidden="true" />
-          Imagem
-        </Button>
-      )}
     </div>
+    <GroupInviteModal groupId={groupId} groupName={group.name} open={inviteOpen} onClose={() => setInviteOpen(false)} />
+    </>
   );
 
   const sections = (
-    <div className="mt-5 space-y-4">
+    <div className="mt-6 space-y-6">
+      <Link href={`/app/groups/${groupId}?tab=membros`} className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 font-semibold transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring">
+        <AvatarStack people={[
+          ...members.map((member) => ({ id: member.userId, name: member.user.name, avatarUrl: member.user.avatarUrl })),
+          ...snapshot.guests.map((guest) => ({ id: guest.id, name: guest.displayName, avatarUrl: null, isGuest: true })),
+        ]} />
+        <span>{members.length + snapshot.guests.length} pessoas</span>
+      </Link>
       <GroupSpendingSection spending={overview?.spending} meId={meId ?? ""} />
       <GroupMembersSection
+        settingsOnly
         snapshot={snapshot}
         meId={meId ?? ""}
         onDepart={() => router.replace("/app/groups")}
@@ -149,9 +157,6 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
     const photoSrc = `/api/groups/${encodeURIComponent(groupId)}/avatar?photoId=${encodeURIComponent(photoId)}`;
     return (
       <div className="mx-auto max-w-lg pb-6">
-        {/* Expanded, the photo is the header: it runs edge to edge, the back
-            control floats on top of it, and the group's identity sits over the
-            bottom of the image instead of below it. */}
         <motion.section layout={!reducedMotion} className="relative aspect-square w-full overflow-hidden">
           <Image
             src={photoSrc}
@@ -167,7 +172,7 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
             variant="ghost"
             size="icon-lg"
             aria-label="Voltar"
-            className="absolute top-3 left-3 size-11 rounded-full bg-black/35 text-white backdrop-blur-sm hover:bg-black/50 hover:text-white"
+            className="absolute top-3 left-3 z-10 size-11 rounded-full bg-black/35 text-white backdrop-blur-sm hover:bg-black/50 hover:text-white"
             onClick={() => router.push(`/app/groups/${groupId}`)}
           >
             <ArrowLeft className="size-5" />
@@ -191,42 +196,40 @@ export function GroupInfoContent({ groupId }: { groupId: string }) {
           {actions}
           {sections}
         </div>
-        <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} />
+        <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} anchor={editorAnchor} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <ScreenHeader back title={group.name} onBack={() => router.push(`/app/groups/${groupId}`)} />
+    <div className="mx-auto max-w-lg px-4 py-6 md:max-w-2xl">
+      <ScreenHeader back title="Grupo" onBack={() => router.push(`/app/groups/${groupId}`)} />
 
       <div className="flex flex-col items-center gap-3">
-        {photoId !== null ? (
-          <motion.button
-            type="button"
-            layout={!reducedMotion}
-            aria-label="Ampliar imagem do grupo"
-            aria-expanded={false}
-            onClick={() => setExpanded(true)}
-            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <GroupAvatar name={group.name} avatar={overview?.avatar} groupId={groupId} size="lg" />
-          </motion.button>
-        ) : (
+        <Button
+          variant="ghost"
+          className="size-auto rounded-full p-1"
+          disabled={!canEditAvatar}
+          aria-label="Foto do grupo"
+          onClick={(event) => { haptics.tap(); setEditorAnchor(event.currentTarget); setEditorOpen(true); }}
+        >
           <GroupAvatar name={group.name} avatar={overview?.avatar} groupId={groupId} size="lg" />
+        </Button>
+        {photoId !== null && (
+          <Button variant="ghost" onClick={() => setExpanded(true)} aria-label="Ampliar imagem do grupo" aria-expanded={false}>Ver foto</Button>
         )}
       </div>
 
       <div className="mt-4 text-center">
         <h2 className="text-2xl font-bold tracking-tight">{group.name}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {accepted.length} {accepted.length === 1 ? "membro" : "membros"} · desde {since}
+          Criado em {since}
         </p>
       </div>
 
       {actions}
       {sections}
-      <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} />
+      <GroupAvatarEditor groupId={groupId} open={editorOpen} onOpenChange={setEditorOpen} anchor={editorAnchor} />
     </div>
   );
 }
