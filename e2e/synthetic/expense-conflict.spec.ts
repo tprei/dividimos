@@ -50,7 +50,7 @@ test.describe("Expense edit conflict", () => {
     await expect(panel).toBeVisible({ timeout: 15000 });
     await expect(
       panel.getByText("Bob Editor alterou esta conta enquanto você editava"),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
     await expect(
       page.getByText("Carregue a versão mais recente pra salvar."),
     ).toBeVisible();

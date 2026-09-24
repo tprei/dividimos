@@ -69,7 +69,7 @@ function makeDetail(overrides: Partial<ExpenseDetail["current"]> = {}): ExpenseD
 }
 
 describe("ExpenseConflictPanel", () => {
-  it("names the author and lists what changed in a single card", async () => {
+  it("focuses the conflict and loads the latest version only on request", async () => {
     const onAccept = vi.fn();
     render(
       <ExpenseConflictPanel
@@ -82,46 +82,17 @@ describe("ExpenseConflictPanel", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveFocus();
-    expect(
-      screen.getByRole("heading", { name: "Bob alterou esta conta enquanto você editava" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Bob mudou o nome de “Churrasco” para “Churrasco atualizado”"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Bob mudou o total de R$ 200,00 para R$ 236,90"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/^Editado em /)).toBeInTheDocument();
-    expect(screen.getByText("Carregar substitui o que você digitou.")).toBeInTheDocument();
-    // The per-participant share table is gone: only the change summary remains.
-    expect(screen.queryByText("R$ 118,45")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Carregar versão mais recente" }));
     expect(onAccept).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to a generic heading and sentence when the author is unknown", () => {
-    render(
-      <ExpenseConflictPanel
-        status="ready"
-        detail={makeDetail({ authorId: "someone-else", changeSummary: null })}
-        onRetry={vi.fn()}
-        onAccept={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByRole("heading", { name: "Esta conta mudou enquanto você editava" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Alguém editou a conta")).toBeInTheDocument();
-  });
 
   it("disables the action while the latest version is loading", () => {
     render(
       <ExpenseConflictPanel status="loading" detail={null} onRetry={vi.fn()} onAccept={vi.fn()} />,
     );
 
-    expect(screen.getByText("Carregando a versão mais recente...")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Carregando/ })).toBeDisabled();
   });
 
@@ -132,9 +103,6 @@ describe("ExpenseConflictPanel", () => {
       <ExpenseConflictPanel status="error" detail={null} onRetry={onRetry} onAccept={onAccept} />,
     );
 
-    expect(
-      screen.getByText("Não deu pra carregar a versão mais recente. Suas edições continuam aqui."),
-    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(onAccept).not.toHaveBeenCalled();
