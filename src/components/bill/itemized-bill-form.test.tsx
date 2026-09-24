@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import type { Me } from "@/types/ledger";
@@ -32,7 +31,8 @@ function prepareStore(title = "", withBob = true) {
 }
 
 function renderForm(initialSection?: ItemizedSectionKey) {
-  return render(
+  const onSubmit = vi.fn().mockResolvedValue(true);
+  render(
     <ItemizedBillForm
       me={me}
       groups={[]}
@@ -48,11 +48,25 @@ function renderForm(initialSection?: ItemizedSectionKey) {
       onAddGuest={vi.fn()}
       onRemoveGuest={vi.fn()}
       onPickContacts={vi.fn().mockResolvedValue(undefined)}
-      onSubmit={vi.fn().mockResolvedValue(true)}
+      onSubmit={onSubmit}
       onBack={vi.fn()}
       {...(initialSection ? { initialSection } : {})}
     />,
   );
+  return { onSubmit };
+}
+
+function prepareAssignedBill() {
+  prepareStore("Churrasco", true);
+  act(() => {
+    const store = useBillStore.getState();
+    store.addItem({ description: "Picanha", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
+    store.splitItemEqually(useBillStore.getState().items[0].id, [userAlice.id, userBob.id]);
+  });
+}
+
+function chooseMode(group: string, label: string) {
+  fireEvent.click(within(screen.getByRole("radiogroup", { name: `Como dividir: ${group}` })).getByLabelText(label));
 }
 
 beforeEach(() => {
@@ -60,43 +74,28 @@ beforeEach(() => {
   useBillStore.setState({ currentUser: null });
 });
 
-describe("ItemizedBillForm Conta section", () => {
-  it("opens on Conta with title, date, group, and participants entry points", () => {
+describe("ItemizedBillForm Participantes section", () => {
+  it("opens with the bill name, date, group, and people inline", () => {
     renderForm();
-    expect(screen.getByRole("tab", { name: "Conta" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("textbox", { name: "Nome" })).toHaveValue("");
-    const [year, month, day] = todayIsoDate().split("-");
-    expect(screen.getByRole("button", { name: "Data" })).toHaveTextContent(`${day}/${month}/${year}`);
+    expect(screen.getByRole("tab", { name: "Participantes" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Nome da conta")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Data/ })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Participantes/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Por @handle" })).toBeInTheDocument();
   });
 
-  it("blocks Continuar until Conta has a title and two people", () => {
+  it("blocks Continuar until the bill has a name and two people", () => {
     prepareStore("", false);
     renderForm();
     const continuar = screen.getByRole("button", { name: "Continuar" });
     expect(continuar).toBeDisabled();
-    fireEvent.change(screen.getByRole("textbox", { name: "Nome" }), { target: { value: "Churrasco" } });
+    fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "Churrasco" } });
     expect(continuar).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Adicione quem divide com você.");
     act(() => useBillStore.getState().addParticipant(userBob));
     expect(continuar).toBeEnabled();
     fireEvent.click(continuar);
     expect(screen.getByRole("tab", { name: "Itens" })).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("keeps the scan handoff on Quem consumiu without the participants disclosure", () => {
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
-    renderForm("split");
-    expect(screen.getByRole("tab", { name: "Quem consumiu" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: /Participantes/ })).not.toBeInTheDocument();
-  });
-
-  it("renders the expanded division editor flush after its row", () => {
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
-    const { container } = renderForm("split");
-    fireEvent.click(screen.getByRole("button", { name: /Pizza/ }));
-    expect(screen.getByText("Pessoas")).toBeInTheDocument();
-    expect(container.querySelector(".px-4.pb-4.pt-1")).toBeNull();
   });
 
   it("keeps the division editor open after its first autosave", () => {
@@ -123,16 +122,6 @@ describe("ItemizedBillForm Conta section", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("returns to Conta and focuses the name field from the review title issue", async () => {
-    prepareStore("", true);
-    renderForm("review");
-    const pendencias = screen.getByLabelText("Pendências");
-    const issue = within(pendencias).getByText("Informe o nome da conta").closest("div")!;
-    fireEvent.click(within(issue).getByRole("button", { name: "Resolver" }));
-    expect(screen.getByRole("tab", { name: "Conta" })).toHaveAttribute("aria-selected", "true");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Nome" })).toHaveFocus());
   });
 });
 
@@ -283,5 +272,59 @@ describe("ItemizedBillForm batch assignment", () => {
     // The per-item editor is still the way to divide a short receipt.
     fireEvent.click(screen.getByRole("button", { name: /Item 1/ }));
     expect(screen.getByText("Pessoas")).toBeInTheDocument();
+  });
+});
+
+describe("ItemizedBillForm payers", () => {
+  it("defaults to the viewer paying the grand total, service fee included", async () => {
+    prepareAssignedBill();
+    const { onSubmit } = renderForm("payment");
+
+    await waitFor(() =>
+      expect(useBillStore.getState().payers.map((payer) => [payer.userId, payer.amountCents])).toEqual([
+        [userAlice.id, 11000],
+      ]),
+    );
+    const save = screen.getByRole("button", { name: "Criar conta" });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  });
+
+  it("completes the other payer's percentage and stores exact centavos", async () => {
+    prepareAssignedBill();
+    renderForm("payment");
+
+    fireEvent.click(within(screen.getByRole("list", { name: "Quem pagou" })).getByRole("button", { name: /Bob/ }));
+    chooseMode("Quem pagou", "%");
+    fireEvent.change(screen.getByRole("textbox", { name: "Percentual que Alice Silva pagou" }), {
+      target: { value: "30" },
+    });
+
+    expect(screen.getByRole("textbox", { name: "Percentual que Bob Santos pagou" })).toHaveValue("70");
+    await waitFor(() =>
+      expect(useBillStore.getState().payers.map((payer) => [payer.userId, payer.amountCents])).toEqual([
+        [userAlice.id, 3300],
+        [userBob.id, 7700],
+      ]),
+    );
+  });
+
+  it("shows who owes whom with each share of the service fee", async () => {
+    prepareAssignedBill();
+    renderForm("payment");
+
+    const summary = screen.getByRole("region", { name: "Como fica" });
+    await waitFor(() => expect(summary).toHaveTextContent(/recebe\s*R\$\s*55,00/));
+    expect(summary).toHaveTextContent(/deve\s*R\$\s*55,00/);
+  });
+
+  it("will not save while nobody is marked as having paid", () => {
+    prepareAssignedBill();
+    renderForm("payment");
+
+    fireEvent.click(within(screen.getByRole("list", { name: "Quem pagou" })).getByRole("button", { name: "Você" }));
+    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+    expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain("Escolha quem pagou.");
   });
 });

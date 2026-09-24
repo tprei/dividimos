@@ -79,8 +79,7 @@ function conflictPanelStatus(
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
-  if (step === "payer") return "payment";
-  if (step === "summary") return "review";
+  if (step === "payer" || step === "summary") return "payment";
   return "account";
 }
 
