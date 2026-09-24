@@ -26,19 +26,7 @@ const toastMocks = vi.hoisted(() => ({
 vi.mock("react-hot-toast", () => ({ default: toastMocks }));
 
 vi.mock("next/link", () => ({
-  default: ({
-    children,
-    href,
-    className,
-  }: {
-    children: React.ReactNode;
-    href: string;
-    className?: string;
-  }) => (
-    <a href={href} className={className}>
-      {children}
-    </a>
-  ),
+  default: (props: React.ComponentProps<"a">) => <a {...props} />,
 }));
 
 
@@ -310,15 +298,29 @@ describe("ActivityContent", () => {
   it("links expense rows to /app/bill/<expenseId>", () => {
     render(<ActivityContent />);
 
-    const expense1Link = screen
-      .getByText(/Alice adicionou Almoço.*50,00/)
-      .closest("a");
+    const expense1Link = screen.getByRole("link", { name: /Alice adicionou Almoço/ });
     expect(expense1Link).toHaveAttribute("href", "/app/bill/exp-123");
 
-    const expense2Link = screen
-      .getByText(/Bob adicionou Café.*20,00/)
-      .closest("a");
+    const expense2Link = screen.getByRole("link", { name: /Bob adicionou Café/ });
     expect(expense2Link).toHaveAttribute("href", "/app/bill/exp-456");
+  });
+
+  it("groups events across calendar boundaries and links non-expense activity to its group", () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    useAppStore.setState((state) => ({
+      activity: {
+        ...state.activity,
+        items: [
+          { ...recordedSettlementEvent, kind: "member_joined", settlementId: null, payload: {}, createdAt: today.toISOString() },
+          { ...expenseCreatedEvent, createdAt: yesterday.toISOString() },
+        ],
+      },
+    }));
+    render(<ActivityContent />);
+    expect(within(screen.getByRole("region", { name: "Hoje" })).getByRole("link")).toHaveAttribute("href", "/app/groups/group-dm");
+    expect(within(screen.getByRole("region", { name: "Ontem" })).getByRole("link")).toHaveAttribute("href", "/app/bill/exp-123");
   });
 
   it("loads activity on mount and records the view once the read succeeded", () => {
