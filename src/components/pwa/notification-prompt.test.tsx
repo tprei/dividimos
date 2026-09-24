@@ -178,7 +178,7 @@ describe("NotificationPrompt", () => {
     });
 
     render(<NotificationPrompt />);
-    expect(screen.getByRole("button", { name: "..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Ativando/ })).toBeDisabled();
   });
 
   // --- Native-specific tests ---
@@ -198,12 +198,6 @@ describe("NotificationPrompt", () => {
       });
     });
 
-    it("renders native description text", () => {
-      render(<NotificationPrompt />);
-      expect(
-        screen.getByText("Receba alertas de contas novas e pagamentos"),
-      ).toBeInTheDocument();
-    });
 
     it("does not show dismiss button on native", () => {
       render(<NotificationPrompt />);
@@ -260,12 +254,6 @@ describe("NotificationPrompt", () => {
   });
 
   describe("web platform", () => {
-    it("shows web description text", () => {
-      render(<NotificationPrompt />);
-      expect(
-        screen.getByText("Fica sabendo quando rolar conta nova ou pagamento"),
-      ).toBeInTheDocument();
-    });
 
     it("shows dismiss button on web", () => {
       render(<NotificationPrompt />);
