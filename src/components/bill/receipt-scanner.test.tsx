@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PhotoOutcome } from "@/lib/capacitor/camera";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 
 const mockGetPlatform = vi.fn(() => "web");
 
@@ -369,6 +370,23 @@ describe("ReceiptScanner", () => {
       }
       expect(onBack).toHaveBeenCalledOnce();
     });
+    it("stops all tracks and leaves the scanner on hardware Back", async () => {
+      const { stream, stops } = createFakeStream(2);
+      stubMediaDevices(vi.fn<GetUserMedia>(() => Promise.resolve(stream)));
+      const onBack = vi.fn();
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={onBack} />);
+      await flushMicrotasks();
+
+      expect(runBackHandlers()).toBe(true);
+      await flushMicrotasks();
+
+      for (const stop of stops) {
+        expect(stop).toHaveBeenCalledOnce();
+      }
+      expect(onBack).toHaveBeenCalledOnce();
+    });
+
 
     it("hands off to the gallery picker inside the same user gesture", async () => {
       const { stream, stops } = createFakeStream();

@@ -1,9 +1,10 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ProfileShareModal } from "./profile-share-modal";
 
-vi.mock("qrcode", () => ({
-  default: { toCanvas: vi.fn() },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("react-hot-toast", () => ({
@@ -59,6 +60,12 @@ describe("ProfileShareModal", () => {
     fireEvent.click(closeButton);
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
+  it("closes on hardware Back instead of navigating away", () => {
+    render(<ProfileShareModal {...defaultProps} />);
+    expect(runBackHandlers()).toBe(true);
+    expect(defaultProps.onClose).toHaveBeenCalled();
+  });
+
 
   it("renders the WhatsApp button", () => {
     render(<ProfileShareModal {...defaultProps} />);

@@ -5,6 +5,7 @@ import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { useClientOnly } from "@/hooks/use-client-only";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buildWhatsAppLink } from "@/lib/contacts";
@@ -29,6 +30,7 @@ export function ProfileShareModal({
 }: ProfileShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canShare = useClientOnly(isShareSupported);
+  useBackHandler(open, onClose);
 
   const profileUrl =
     typeof window !== "undefined"

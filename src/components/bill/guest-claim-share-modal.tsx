@@ -6,6 +6,7 @@ import { Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { useClientOnly } from "@/hooks/use-client-only";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { Button } from "@/components/ui/button";
 import { buildClaimUrl } from "@/lib/claim-qr";
 import { formatBRL } from "@/lib/currency";
@@ -35,6 +36,7 @@ export function GuestClaimShareModal({
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canShare = useClientOnly(isShareSupported);
+  useBackHandler(open, onClose);
 
   // The credential lives only in the fragment; buildClaimUrl never puts it in
   // a path, query, or header. With no transient token there is nothing to show.
