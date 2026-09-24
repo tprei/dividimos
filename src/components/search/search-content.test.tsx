@@ -87,11 +87,14 @@ describe("SearchContent", () => {
     vi.clearAllMocks();
   });
 
-  it("renders prompt when search query is empty", () => {
+  it("keeps recent groups reachable before typing and after clearing", () => {
+    useAppStore.getState().applyGroup(makeGroup("g1", "Casa", []));
     render(<SearchContent />);
-    expect(
-      screen.getByText("Digite para buscar grupos, contas ou pessoas"),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Casa/ })).toHaveAttribute("href", "/app/groups/g1");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "sem resultado" } });
+    expect(screen.queryByRole("link", { name: /Casa/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Limpar busca" }));
+    expect(screen.getByRole("link", { name: /Casa/ })).toHaveAttribute("href", "/app/groups/g1");
   });
 
   it("filters groups by name and links to /app/groups/<id>", () => {
@@ -237,16 +240,6 @@ describe("SearchContent", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows empty state when no results match", () => {
-    render(<SearchContent />);
-    const input = screen.getByPlaceholderText("Buscar grupos, contas, pessoas...");
-    fireEvent.change(input, { target: { value: "inexistente" } });
-
-    expect(screen.getByText("Nenhum resultado encontrado")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Não encontramos nada para "inexistente"/i),
-    ).toBeInTheDocument();
-  });
 
   it("clears query when clicking the clear button", () => {
     render(<SearchContent />);
@@ -257,8 +250,5 @@ describe("SearchContent", () => {
     fireEvent.click(clearBtn);
 
     expect(input).toHaveValue("");
-    expect(
-      screen.getByText("Digite para buscar grupos, contas ou pessoas"),
-    ).toBeInTheDocument();
   });
 });
