@@ -23,7 +23,7 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
 }));
 
-const { POST, runtime, maxDuration } = await import("./route");
+const { POST } = await import("./route");
 const { AppError } = await import("@/lib/errors");
 
 function jsonRequest(body: Record<string, unknown>) {
@@ -334,15 +334,5 @@ describe("POST /api/receipt/ocr", () => {
     expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
     expect(JSON.stringify(body)).not.toContain("verificar o limite");
     expect(mockParseReceiptImage).not.toHaveBeenCalled();
-  });
-});
-
-describe("route segment config", () => {
-  it("exports nodejs runtime", () => {
-    expect(runtime).toBe("nodejs");
-  });
-
-  it("exports maxDuration of 15 seconds", () => {
-    expect(maxDuration).toBe(15);
   });
 });

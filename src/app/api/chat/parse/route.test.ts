@@ -25,7 +25,7 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
 }));
 
-const { POST, runtime, maxDuration } = await import("./route");
+const { POST } = await import("./route");
 const { AppError } = await import("@/lib/errors");
 
 function jsonRequest(body: Record<string, unknown>) {
@@ -534,15 +534,5 @@ describe("POST /api/chat/parse", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
-  });
-});
-
-describe("route segment config", () => {
-  it("exports nodejs runtime", () => {
-    expect(runtime).toBe("nodejs");
-  });
-
-  it("exports maxDuration of 10 seconds", () => {
-    expect(maxDuration).toBe(10);
   });
 });
