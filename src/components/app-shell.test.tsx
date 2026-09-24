@@ -191,16 +191,25 @@ describe("AppShell hydration & auth lifecycle", () => {
     );
   });
 
-  it("calls runBootstrap, startRealtime, attachVisibilityRefresh, attachAuthListener on mount", () => {
-    render(<AppShell><div>content</div></AppShell>);
+  it("starts the bootstrap and visibility refresh only once the store has hydrated", () => {
+    const rehydrate = vi
+      .spyOn(useAppStore.persist, "rehydrate")
+      .mockReturnValue(new Promise<void>(() => {}));
 
-    expect(mockRunBootstrap).toHaveBeenCalled();
-    expect(mockStartRealtime).toHaveBeenCalled();
-    expect(mockAttachVisibilityRefresh).toHaveBeenCalled();
-    expect(mockAttachAuthListener).toHaveBeenCalled();
+    render(<AppShell><div>content</div></AppShell>);
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+    expect(mockAttachVisibilityRefresh).not.toHaveBeenCalled();
+
+    act(() => {
+      useAppStore.setState({ hydrated: true });
+    });
+    expect(mockRunBootstrap).toHaveBeenCalledTimes(1);
+    expect(mockAttachVisibilityRefresh).toHaveBeenCalledTimes(1);
+    rehydrate.mockRestore();
   });
 
   it("cleans up sync subscriptions on unmount", () => {
+    useAppStore.setState({ hydrated: true });
     const unsubRealtime = vi.fn();
     const unsubVisibility = vi.fn();
     const unsubAuth = vi.fn();

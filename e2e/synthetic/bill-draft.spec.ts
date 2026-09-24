@@ -66,4 +66,35 @@ test.describe("Bill draft", () => {
     await expect(page.getByText("Continuar de onde você parou?")).toBeHidden({ timeout: 10000 });
     await expect(page.getByText("Que tipo de conta?")).toBeVisible();
   });
+
+  test("resumes a draft after a hard reload / PWA cold start", async ({
+    page,
+    seed,
+    loginAs,
+  }) => {
+    const alice = await seed.createUser({ name: "Alice Reload Draft" });
+    await loginAs(alice);
+
+    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.getByRole("button", { name: /Valor único/ }).click();
+
+    const titleInput = page.getByLabel("Nome");
+    await expect(titleInput).toBeVisible();
+    await titleInput.fill("Aluguel da praia");
+    await page.getByLabel("Valor total").fill("360,50");
+
+    await page.reload();
+
+    await page.goto("/app/bill/new");
+
+    const banner = page.getByText("Continuar de onde você parou?");
+    await expect(banner).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("«Aluguel da praia»")).toBeVisible();
+    await expect(page.getByText("R$ 360,50")).toBeVisible();
+
+    await page.getByRole("button", { name: "Continuar" }).click();
+
+    await expect(page.getByLabel("Nome")).toHaveValue("Aluguel da praia");
+    await expect(page.getByLabel("Valor total")).toHaveValue("360,50");
+  });
 });

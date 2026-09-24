@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { attachAuthListener, signOut } from "./auth";
-import { rpc } from "./client";
+import { getAuthGeneration, rpc } from "./client";
 import { runBootstrap } from "./bootstrap";
 
 vi.mock("./client", async () => {
@@ -200,6 +200,28 @@ describe("bootstrap account epoch", () => {
     expect(useAppStore.getState().me?.id).toBe("user-b");
     detach();
   });
+
+  it("keeps the pending bootstrap when SIGNED_IN arrives before store hydration completes", async () => {
+    useAppStore.setState({ hydrated: false, me: null });
+    const initialGen = getAuthGeneration();
+
+    const detach = attachAuthListener(() => {}, () => {});
+
+    const first = Promise.withResolvers<Bootstrap>();
+    vi.mocked(rpc).mockReturnValueOnce(first.promise as never);
+    const pending = runBootstrap();
+
+    emit("SIGNED_IN", "user-a");
+
+    useAppStore.setState({ hydrated: true, me: me("user-a") });
+
+    first.resolve(bootstrapFor("user-a"));
+    await pending;
+
+    expect(getAuthGeneration()).toBe(initialGen);
+    expect(useAppStore.getState().me?.id).toBe("user-a");
+    detach();
+  });
 });
 
 describe("assignment room credential isolation", () => {
@@ -292,6 +314,84 @@ describe("bill draft account isolation", () => {
 
     emit("SIGNED_IN", "user-a");
     expect(useBillStore.getState().expense?.title).toBe("Churrasco");
+    detach();
+  });
+
+  it("keeps the draft when SIGNED_IN for the same user arrives before store hydration completes", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    const { setDraftOwner } = await import("@/lib/bill-draft-isolation");
+    useBillStore.getState().reset();
+    window.localStorage.clear();
+
+    useBillStore.getState().setCurrentUser({
+      id: "user-a",
+      email: "a@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+    useBillStore.getState().createExpense("Churrasco", "itemized");
+    setDraftOwner("user-a");
+
+    useAppStore.setState({ hydrated: false, me: null });
+
+    const detach = attachAuthListener(() => {}, () => {});
+    emit("SIGNED_IN", "user-a");
+
+    useAppStore.setState({ hydrated: true, me: me("user-a") });
+
+    await vi.waitFor(() => {
+      expect(useBillStore.getState().expense?.title).toBe("Churrasco");
+    });
+    expect(window.localStorage.getItem(useBillStore.persist.getOptions().name!)).not.toBeNull();
+    detach();
+  });
+
+  it("returns to Supabase at once instead of holding its auth lock until hydration", () => {
+    useAppStore.setState({ hydrated: false, me: null });
+    const detach = attachAuthListener(() => {}, () => {});
+
+    const returned: unknown = handlers[0]("SIGNED_IN", { user: { id: "user-a" } });
+
+    expect(returned).toBeUndefined();
+    detach();
+  });
+
+  it("replays a sign-out that raced ahead of hydration after the sign-in it followed", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    const { setDraftOwner } = await import("@/lib/bill-draft-isolation");
+    useBillStore.getState().reset();
+    window.localStorage.clear();
+    useBillStore.getState().setCurrentUser({
+      id: "user-a",
+      email: "a@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+    useBillStore.getState().createExpense("Churrasco", "itemized");
+    setDraftOwner("user-a");
+    useAppStore.setState({ hydrated: false, me: null });
+    const onSignedOut = vi.fn();
+    const detach = attachAuthListener(onSignedOut, () => {});
+
+    emit("SIGNED_IN", "user-a");
+    emit("SIGNED_OUT", null);
+    expect(onSignedOut).not.toHaveBeenCalled();
+
+    useAppStore.setState({ hydrated: true, me: me("user-a") });
+
+    await vi.waitFor(() => expect(onSignedOut).toHaveBeenCalledOnce());
+    expect(useAppStore.getState().me).toBeNull();
+    expect(useBillStore.getState().expense).toBeNull();
+    expect(window.localStorage.getItem(`${useBillStore.persist.getOptions().name}:user-a`)).not.toBeNull();
+    expect(rpc).not.toHaveBeenCalled();
     detach();
   });
 });

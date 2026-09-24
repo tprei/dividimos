@@ -276,30 +276,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .finally(() => setRetrying(false));
   }, [router]);
 
-  useEffect(() => {
-    const reportBootstrapError = (err: unknown) => {
+  const reportBootstrapError = useCallback(
+    (err: unknown) => {
       if (err instanceof LedgerError && err.code === "unauthenticated") {
         router.replace("/auth");
         return;
       }
       toast.error(ledgerErrorMessage(err));
-    };
+    },
+    [router],
+  );
 
+  useEffect(() => {
     void useAppStore.persist.rehydrate();
-    runBootstrap().catch(reportBootstrapError);
 
     const stopRealtime = startRealtime();
-    const stopVisibility = attachVisibilityRefresh(reportBootstrapError);
     const stopAuth = attachAuthListener(() => {
       router.replace("/auth");
     }, reportBootstrapError);
 
     return () => {
       stopRealtime();
-      stopVisibility();
       stopAuth();
     };
-  }, [router]);
+  }, [router, reportBootstrapError]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    runBootstrap().catch(reportBootstrapError);
+    return attachVisibilityRefresh(reportBootstrapError);
+  }, [hydrated, reportBootstrapError]);
 
   useEffect(() => {
     // Only an explicitly decoded, committed profile may route to onboarding: a

@@ -153,14 +153,13 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     setFragmentReady(true);
   }, [roomId]);
 
-  useEffect(
-    () =>
-      attachAuthListener(
-        () => setPageError("Sua sessão mudou. Abra o convite novamente para continuar."),
-        (error) => setPageError(ledgerErrorMessage(error)),
-      ),
-    [],
-  );
+  useEffect(() => {
+    void useAppStore.persist.rehydrate();
+    return attachAuthListener(
+      () => setPageError("Sua sessão mudou. Abra o convite novamente para continuar."),
+      (error) => setPageError(ledgerErrorMessage(error)),
+    );
+  }, []);
 
   useEffect(() => {
     if (!fragmentReady) return;
