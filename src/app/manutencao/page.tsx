@@ -1,4 +1,4 @@
-import { WrenchIcon } from "lucide-react";
+import { Logo } from "@/components/shared/logo";
 
 /**
  * Server-rendered, data-free landing page for the proxy's compatibility
@@ -28,9 +28,9 @@ export default async function MaintenancePage({
   const message = (reason && MESSAGES[reason]) || DEFAULT_MESSAGE;
 
   return (
-    <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center">
-      <WrenchIcon className="h-8 w-8 text-muted-foreground" />
-      <p className="max-w-xs text-sm text-muted-foreground">{message}</p>
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-8 text-center">
+      <Logo size="md" />
+      <p role="status" className="max-w-sm text-base text-muted-foreground">{message}</p>
     </div>
   );
 }

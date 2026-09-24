@@ -1,6 +1,7 @@
 "use client";
 
 import { Component, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -64,7 +65,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
  */
 export function ErrorFallback({
   title = "Algo deu errado",
-  message = "Ocorreu um erro inesperado. Tente novamente.",
+  message = "Não conseguimos carregar esta parte do app.",
   onReset,
 }: {
   title?: string;
@@ -72,25 +73,14 @@ export function ErrorFallback({
   onReset?: () => void;
 }) {
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-lg border border-destructive/20 bg-destructive/5 p-6">
-      <div className="text-center">
-        <div className="mb-2 text-2xl font-semibold text-destructive">{title}</div>
-        <div className="text-sm text-destructive/80">{message}</div>
+    <div role="alert" className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-border bg-card p-6">
+      <div className="max-w-sm text-center">
+        <h2 className="text-xl font-bold text-foreground">{title}</h2>
+        <p className="mt-2 text-base text-muted-foreground">{message}</p>
         {onReset && (
-          <button
-            onClick={onReset}
-            className="mt-4 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90"
-            type="button"
-            aria-label="Tentar novamente"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onReset();
-              }
-            }}
-          >
+          <Button onClick={onReset} className="mt-6">
             Tentar novamente
-          </button>
+          </Button>
         )}
       </div>
     </div>

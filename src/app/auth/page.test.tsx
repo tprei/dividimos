@@ -43,6 +43,17 @@ describe("sign-in destination", () => {
     searchParams.set("next", "/join/abc123");
   });
 
+  it("keeps a failed Google sign-in inline and allows retry", async () => {
+    mockGoogleSignIn.mockResolvedValueOnce(false);
+    render(<AuthPage />);
+    fireEvent.click(screen.getByRole("button", { name: /google/i }));
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.getByRole("button", { name: /google/i })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /google/i }));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/auth/continue?next=%2Fjoin%2Fabc123"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("routes a sign-in through the onboarding decision, keeping the destination", async () => {
     render(<AuthPage />);
 

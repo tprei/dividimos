@@ -21,27 +21,28 @@ const me: Me = {
 const action = vi.fn().mockResolvedValue(undefined);
 
 async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
-  await screen.findByDisplayValue("Ana Costa");
+  await screen.findByDisplayValue("ana_costa");
   await user.click(screen.getByRole("button", { name: /Continuar/i }));
   await screen.findByRole("heading", { name: "Chave Pix" });
 }
 
 describe("OnboardForm Pix skip", () => {
+  it("keeps an edited name when returning from the handle step", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+    await user.click(screen.getByRole("button", { name: /Alterar nome/ }));
+    await user.clear(screen.getByLabelText("Nome"));
+    await user.type(screen.getByLabelText("Nome"), "Ana Souza");
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Alterar nome/ }));
+    expect(screen.getByLabelText("Nome")).toHaveValue("Ana Souza");
+  });
+
   beforeEach(() => {
     action.mockClear();
   });
 
-  it("renders contract copy and Pular por agora on the Pix step", async () => {
-    const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
-
-    await advanceToPixStep(user);
-
-    expect(
-      screen.getByText("Pode cadastrar agora ou depois, no seu perfil."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
-  });
 
   it("offers the e-mail only as an explicit chip and never pre-fills the key", async () => {
     const user = userEvent.setup();

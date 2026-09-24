@@ -10,13 +10,15 @@ import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
+import { popIn } from "@/lib/animations";
+import { haptics } from "@/hooks/use-haptics";
 
 type OnboardingFormProps = {
   me: Me;
   action: (formData: FormData) => Promise<OnboardingActionResult>;
 };
 
-type OnboardStep = "profile" | "pix";
+type OnboardStep = "name" | "profile" | "pix";
 
 const HANDLE_REGEX = /^[a-z0-9_]{3,30}$/;
 
@@ -69,7 +71,7 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
 ];
 
 function OnboardPageContent({ me, action }: OnboardingFormProps) {
-  const [step, setStep] = useState<OnboardStep>("profile");
+  const [step, setStep] = useState<OnboardStep>(me.name.trim() ? "profile" : "name");
   const [name, setName] = useState(me.name);
   const [handle, setHandle] = useState(me.handle);
   const [handleTouched, setHandleTouched] = useState(false);
@@ -95,6 +97,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   };
 
   const selectPixKeyType = (type: PixKeyType) => {
+    haptics.selectionChanged();
     setPixKeyType(type);
     setCustomPixInput("");
     setPixError("");
@@ -143,12 +146,18 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
 
   const handleContinue = () => {
     if (!name.trim()) return;
+    if (step === "name") {
+      haptics.selectionChanged();
+      setStep("profile");
+      return;
+    }
     if (!isValidHandle(handle)) {
       setHandleError(
         "Handle deve ter entre 3 e 30 caracteres, apenas letras minúsculas, números e sublinhados.",
       );
       return;
     }
+    haptics.selectionChanged();
     setStep("pix");
   };
 
@@ -200,57 +209,50 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   const showEmailSuggestion =
     Boolean(userEmail) && pixKeyType === "email" && customPixInput !== userEmail;
 
-  const steps: OnboardStep[] = ["profile", "pix"];
+  const steps: OnboardStep[] = ["name", "profile", "pix"];
   const currentIndex = steps.indexOf(step);
 
   return (
-    <div className="flex h-dvh flex-col overflow-y-auto bg-background">
+    <div className="flex min-h-dvh flex-col bg-background pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
       <div className="gradient-mesh absolute inset-0 -z-10" />
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-6 py-12">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-6">
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
+          variants={popIn} initial="hidden" animate="visible"
         >
-          <Logo size="md" animated />
+          <Logo size="md" />
         </motion.div>
 
-        <div className="mt-12 flex-1">
+        <div className="mt-6 flex-1">
           <AnimatePresence mode="wait">
-            {step === "profile" && (
+            {(step === "profile" || step === "name") && (
               <motion.div
-                key="profile"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
+                key={step}
+                variants={popIn} initial="hidden" animate="visible" exit="exit"
               >
-                <h1 className="text-2xl font-bold">Seu perfil</h1>
-                <p className="mt-2 text-muted-foreground">
-                  Como a galera vai te encontrar.
-                </p>
+                <h1 className="text-2xl font-bold">{step === "name" ? "Como você se chama?" : "Seu perfil"}</h1>
+                <p className="mt-2 text-muted-foreground">{step === "name" ? "Seu nome nas contas com amigos." : "Um @handle só seu."}</p>
+                {step === "profile" && (
+                  <Button variant="ghost" className="mt-2 max-w-full justify-start gap-2 px-0" onClick={() => setStep("name")}>
+                    <span className="truncate">{name}</span><span className="shrink-0 text-primary-text">Alterar nome</span>
+                  </Button>
+                )}
 
                 <div className="mt-8 space-y-4">
-                  <div>
-                    <label htmlFor="onboard-name" className="mb-2 block text-sm font-medium">
-                      Nome
-                    </label>
-                    <Input
-                      id="onboard-name"
-                      placeholder="Seu nome completo"
-                      value={name}
-                      onChange={(e) => handleNameChange(e.target.value)}
-                      autoFocus
-                      onKeyDown={(e) => e.key === "Enter" && handleContinue()}
-                    />
-                  </div>
+                  {step === "name" && (
+                    <div>
+                      <label htmlFor="onboard-name" className="mb-2 block text-sm font-semibold">Nome</label>
+                      <Input id="onboard-name" placeholder="Seu nome completo" value={name} onChange={(e) => handleNameChange(e.target.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && handleContinue()} />
+                    </div>
+                  )}
 
+                  {step === "profile" && (
                   <div>
                     <label htmlFor="onboard-handle" className="mb-2 block text-sm font-medium">
-                      Handle
+                      Seu @handle
                     </label>
                     <div className="flex items-center">
-                      <div className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">
+                      <div aria-hidden="true" className="flex h-11 items-center rounded-l-xl border border-r-0 border-input bg-muted px-3 text-base text-muted-foreground">
                         @
                       </div>
                       <Input
@@ -266,31 +268,30 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                       />
                     </div>
                     {handleError && (
-                      <p className="mt-2 text-xs text-destructive">
-                        {handleError}
-                      </p>
+                      <p role="alert" className="mt-2 text-sm text-destructive-text">{handleError}</p>
                     )}
                     {handle && !handleError && (
                       <p
                         className={`mt-2 text-xs ${
                           isValidHandle(handle)
-                            ? "text-success"
+                            ? "text-success-text"
                             : "text-muted-foreground"
                         }`}
                       >
                         {isValidHandle(handle)
-                          ? `A galera vai te adicionar como @${handle}`
+                          ? "Formato válido"
                           : "3-30 caracteres, letras minúsculas, números e sublinhados"}
                       </p>
                     )}
                   </div>
+                  )}
                 </div>
 
                 <Button
                   className="mt-6 w-full gap-2"
                   size="lg"
                   onClick={handleContinue}
-                  disabled={!name.trim() || !handle}
+                  disabled={!name.trim() || (step === "profile" && !handle)}
                 >
                   Continuar
                   <ArrowRight className="h-4 w-4" />
@@ -301,17 +302,11 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
             {step === "pix" && (
               <motion.div
                 key="pix"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
+                variants={popIn} initial="hidden" animate="visible" exit="exit"
               >
                 <h1 className="text-2xl font-bold">Chave Pix</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Coloca sua chave Pix pra receber dos amigos.
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Pode cadastrar agora ou depois, no seu perfil.
+                  Pra receber sua parte. Pode deixar pra depois.
                 </p>
 
                 {showEmailSuggestion && userEmail && (
@@ -332,7 +327,8 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     <button
                       key={opt.type}
                       onClick={() => selectPixKeyType(opt.type)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      aria-pressed={pixKeyType === opt.type}
+                      className={`min-h-11 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                         pixKeyType === opt.type
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -346,6 +342,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                 <div className="mt-4">
                   <div className="flex gap-2">
                     <Input
+                      aria-label="Chave Pix"
                       type={pixKeyType === "email" ? "email" : "text"}
                       placeholder={getInputPlaceholder()}
                       value={customPixInput}
@@ -370,7 +367,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     </Button>
                   </div>
                   {pixError && (
-                    <p className="mt-2 text-xs text-destructive">{pixError}</p>
+                    <p role="alert" className="mt-2 text-sm text-destructive-text">{pixError}</p>
                   )}
                 </div>
 
@@ -378,14 +375,9 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3">
                     <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <p className="text-xs text-muted-foreground">
-                      Sua chave Pix é criptografada (AES-256-GCM). Ela só é usada para gerar o
-                      código de pagamento para quem te deve em um grupo.
+                      Sua chave fica protegida e só aparece pra quem vai te pagar.
                     </p>
                   </div>
-                  <p className="text-center text-[10px] text-muted-foreground">
-                    Em conformidade com a LGPD (Lei 13.709/2018). Você pode
-                    excluir seus dados a qualquer momento.
-                  </p>
                 </div>
 
                 <div className="mt-6 flex gap-3">
@@ -422,17 +414,11 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
 
         <div className="mt-8 flex justify-center gap-2">
           {steps.map((s, i) => (
-            <motion.div
+            <div
               key={s}
-              animate={{
-                width: i === currentIndex ? 24 : 8,
-                backgroundColor:
-                  i === currentIndex
-                    ? "oklch(0.78 0.16 75)"
-                    : "oklch(0.91 0.005 250)",
-              }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="h-2 rounded-full"
+              aria-label={`Etapa ${i + 1} de ${steps.length}`}
+              aria-current={i === currentIndex ? "step" : undefined}
+              className={`h-2 rounded-full ${i === currentIndex ? "w-6 bg-primary" : "w-2 bg-border"}`}
             />
           ))}
         </div>

@@ -29,18 +29,6 @@ const defaultProps = {
 };
 
 describe("JoinActions", () => {
-  it("shows login button when not authenticated", () => {
-    render(
-      <JoinActions
-        {...defaultProps}
-        isAuthenticated={false}
-      />,
-    );
-
-    expect(
-      screen.getByText("Criar conta e entrar no grupo"),
-    ).toBeInTheDocument();
-  });
 
   it("redirects to auth with next param when login button clicked", async () => {
     const user = userEvent.setup();
@@ -51,15 +39,10 @@ describe("JoinActions", () => {
       />,
     );
 
-    await user.click(screen.getByText("Criar conta e entrar no grupo"));
+    await user.click(screen.getByRole("button", { name: "Entrar no grupo" }));
     expect(pushMock).toHaveBeenCalledWith("/auth?next=%2Fjoin%2Fabc-123");
   });
 
-  it("shows join button when authenticated", () => {
-    render(<JoinActions {...defaultProps} />);
-
-    expect(screen.getByText("Entrar no grupo")).toBeInTheDocument();
-  });
 
   it("joins through the sync mutation and redirects to the joined group", async () => {
     const user = userEvent.setup();
@@ -71,12 +54,14 @@ describe("JoinActions", () => {
     expect(pushMock).toHaveBeenCalledWith("/app/groups/group-1");
   });
 
-  it("redirects to the group when already a member", async () => {
+  it("offers the existing group when the invitation belongs to a current member", async () => {
     joinMock.mockResolvedValue({ groupId: "group-1", ledgerVersion: 5, eventId: null });
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
+    expect(screen.getByRole("status")).toHaveTextContent("Você já faz parte deste grupo.");
+    await user.click(screen.getByRole("button", { name: "Abrir grupo" }));
     expect(pushMock).toHaveBeenCalledWith("/app/groups/group-1");
   });
 

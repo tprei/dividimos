@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { resolveAuthProfile } from "@/lib/auth";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 type ContinueSearchParams = Promise<{ next?: string | string[] }>;
 
@@ -19,7 +20,7 @@ function retryPage(destination: string) {
         <p className="text-sm text-muted-foreground">
           Tente novamente para continuar.
         </p>
-        <a className="text-sm font-medium text-primary-text underline" href={retryUrl}>
+        <a className={buttonVariants()} href={retryUrl}>
           Tentar novamente
         </a>
       </section>

@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#FEA101" />
   <title>Dividimos — Sem conexão</title>
   <style>
@@ -16,22 +16,17 @@
       justify-content: center;
       background: #F9F9FB;
       color: #1a1d2e;
-      padding: 1.5rem;
+      padding: max(1.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
       text-align: center;
     }
-    .icon {
-      width: 64px;
-      height: 64px;
-      margin-bottom: 1.5rem;
-      opacity: 0.6;
-    }
+    .brand { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
     h1 {
       font-size: 1.25rem;
       font-weight: 600;
       margin-bottom: 0.5rem;
     }
     p {
-      font-size: 0.95rem;
+      font-size: 1rem;
       color: #64748b;
       max-width: 320px;
       line-height: 1.5;
@@ -39,32 +34,30 @@
     }
     button {
       background: #FEA101;
-      color: #fff;
-      border: none;
-      border-radius: 0.5rem;
+      color: #1a1d2e;
+      border: 1px solid transparent;
+      border-radius: 0.75rem;
       padding: 0.75rem 1.5rem;
-      font-size: 0.95rem;
-      font-weight: 500;
+      font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
     }
     button:hover { background: #E08E00; }
     button:active { background: #C07800; }
+    button:focus-visible { outline: 3px solid #1a1d2e; outline-offset: 4px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #111827; color: #f1f5f9; }
+      p { color: #b8c4d4; }
+      button:focus-visible { outline-color: #f1f5f9; }
+    }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
   </style>
 </head>
 <body>
-  <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="1" y1="1" x2="23" y2="23" />
-    <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
-    <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
-    <path d="M10.71 5.05A16 16 0 0 1 22.56 9" />
-    <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
-    <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-    <line x1="12" y1="20" x2="12.01" y2="20" />
-  </svg>
-  <h1>Opa, sem internet</h1>
-  <p>Parece que a conexão caiu. Tenta de novo daqui a pouco.</p>
-  <button onclick="location.reload()">Tentar de novo</button>
+  <div class="brand">Dividimos</div>
+  <h1>Sem conexão</h1>
+  <p>Suas contas continuam aqui quando a internet voltar.</p>
+  <button onclick="location.reload()">Tentar novamente</button>
 </body>
 </html>
