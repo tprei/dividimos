@@ -23,6 +23,7 @@ import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { firstNameOf } from "@/lib/people";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { haptics } from "@/hooks/use-haptics";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { getAuthGeneration } from "@/lib/sync/client";
@@ -367,6 +368,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         }
         await createDmExpense(chargeKey.current, header, payload);
         setChargeStatus("confirmed");
+        haptics.success();
         chargeKey.current = crypto.randomUUID();
         chargeResetTimer.current = window.setTimeout(() => {
           setChargeSheetOpen(false);
@@ -408,6 +410,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         }
         await createDmExpense(splitKey.current, header, payload);
         setSplitStatus("confirmed");
+        haptics.success();
         splitKey.current = crypto.randomUUID();
         splitResetTimer.current = window.setTimeout(() => {
           setSplitSheetOpen(false);
@@ -485,8 +488,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   if (activeResolveError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{activeResolveError}</p>
-        <button onClick={handleRetryResolve} className="text-sm text-primary underline">
+        <p className="text-sm text-destructive-text">{activeResolveError}</p>
+        <button onClick={handleRetryResolve} className="min-h-11 text-sm text-primary-text underline">
           Tentar novamente
         </button>
       </div>
@@ -549,7 +552,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
       />
       {isCounterpartyPending ? (
-        <div className="border-y border-border bg-muted/40 px-4 py-2">
+        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
           <p className="text-center text-xs text-muted-foreground">
             Aguardando @{counterparty.handle} aceitar o convite
           </p>
@@ -586,6 +589,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           messages={conversation?.messages ?? []}
           events={conversation?.events ?? []}
           settlements={dm.settlements}
+          expenses={dm.recentExpenses}
           nameOf={nameOf}
           showSenderNames={false}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}

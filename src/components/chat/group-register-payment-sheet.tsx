@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
@@ -77,7 +77,10 @@ export function GroupRegisterPaymentSheet({
 
   const [allowOverpay, setAllowOverpay] = useState(false);
 
-  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  const { showPending, guardedDismiss } = usePendingOperation(status, () => {
+    if (amountCents > 0 && !window.confirm("Descartar este pagamento?")) return;
+    onDismiss();
+  });
   const { keyboardOpen } = useAppViewport();
 
   const capCents = counterparty
@@ -122,16 +125,6 @@ export function GroupRegisterPaymentSheet({
       >
         <div className="flex items-center justify-between gap-2">
           <PopoverTitle>Registrar pagamento</PopoverTitle>
-          <button
-            type="button"
-            onClick={guardedDismiss}
-            disabled={status === "confirming"}
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Fechar"
-            data-testid="group-payment-dismiss"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         <div
@@ -247,7 +240,7 @@ export function GroupRegisterPaymentSheet({
             disabled={isConfirming}
             className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
               payerIsSelf
-                ? "border-primary bg-primary/10 text-primary"
+                ? "border-primary bg-primary/10 text-primary-text"
                 : "border-border bg-background text-muted-foreground hover:border-primary/30"
             }`}
             data-testid="group-payment-payer-self"
@@ -261,7 +254,7 @@ export function GroupRegisterPaymentSheet({
               disabled={isConfirming}
               className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                 !payerIsSelf
-                  ? "border-primary bg-primary/10 text-primary"
+                  ? "border-primary bg-primary/10 text-primary-text"
                   : "border-border bg-background text-muted-foreground hover:border-primary/30"
               }`}
               data-testid="group-payment-payer-other"
@@ -275,7 +268,7 @@ export function GroupRegisterPaymentSheet({
 
         {status === "error" && errorMessage && (
           <div
-            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-text"
             data-testid="group-payment-error"
           >
             {errorMessage}

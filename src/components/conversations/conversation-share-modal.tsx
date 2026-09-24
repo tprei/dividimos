@@ -12,11 +12,11 @@ import {
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverTitle,
-} from "@/components/ui/popover";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useClientOnly } from "@/hooks/use-client-only";
 import {
@@ -26,13 +26,13 @@ import {
 } from "@/lib/contacts";
 import { copyText } from "@/lib/platform/clipboard";
 import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
+import { haptics } from "@/hooks/use-haptics";
 
 interface ConversationShareModalProps {
   open: boolean;
   onClose: () => void;
   handle: string;
-  /** Control the surface is anchored to (the header share button). */
-  anchor: HTMLElement | null;
 }
 
 interface SelectedContact {
@@ -45,7 +45,6 @@ export function ConversationShareModal({
   open,
   onClose,
   handle,
-  anchor,
 }: ConversationShareModalProps) {
   const canShare = useClientOnly(isShareSupported);
   const hasContactPicker = useClientOnly(isContactPickerSupported);
@@ -77,7 +76,7 @@ export function ConversationShareModal({
   }, [canShare, inviteMessage, appUrl]);
 
   const handleCopy = useCallback(async () => {
-    if (await copyText(`${inviteMessage}\n${appUrl}`)) toast.success("Mensagem copiada!");
+    if (await copyText(`${inviteMessage}\n${appUrl}`)) { haptics.success(); toast.success("Mensagem copiada"); }
     else toast.error("Não deu pra copiar");
   }, [inviteMessage, appUrl]);
 
@@ -137,33 +136,20 @@ export function ConversationShareModal({
   const unsentCount = contacts.filter((c) => !c.sent).length;
 
   return (
-    <Popover
+    <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) onClose();
       }}
     >
-      <PopoverContent anchor={anchor} side="bottom" align="end">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <PopoverTitle className="truncate">Compartilhar convite</PopoverTitle>
-            <PopoverDescription className="truncate">
-              Seu usuário é <span className="font-semibold text-foreground">@{handle}</span>
-            </PopoverDescription>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
+      <DialogContent>
+        <DialogTitle>Compartilhar convite</DialogTitle>
+        <DialogDescription>@{handle}</DialogDescription>
+        <div className="mx-auto rounded-2xl bg-paper p-3">
+          <canvas aria-label={`QR code do perfil de @${handle}`} role="img" ref={(canvas) => {
+            if (canvas) void qrToCanvas(canvas, appUrl, { width: 200, margin: 2 }).catch(() => toast.error("Não deu pra gerar o QR code"));
+          }} />
         </div>
-
-        <p className="text-xs text-muted-foreground">
-          Compartilhe seu @ para que outros possam te encontrar
-        </p>
 
         {contacts.length > 0 && (
           <div className="max-h-48 space-y-2 overflow-y-auto">
@@ -186,7 +172,7 @@ export function ConversationShareModal({
                   )}
                 </div>
                 {contact.sent ? (
-                  <span className="flex items-center gap-1 text-xs text-success">
+                  <span className="flex items-center gap-1 text-xs text-success-text">
                     <Check className="h-3.5 w-3.5" />
                     Enviado
                   </span>
@@ -195,14 +181,15 @@ export function ConversationShareModal({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      className="size-11 p-0 text-muted-foreground hover:text-destructive-text"
+                      aria-label={`Remover ${contact.name || contact.phone}`}
                       onClick={() => handleRemoveContact(contact.phone)}
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       size="sm"
-                      className="h-7 gap-1 bg-[#25D366] hover:bg-[#1da851] text-white"
+                      className="min-h-11 gap-1"
                       onClick={() => handleSendToContact(contact.phone)}
                     >
                       <Send className="h-3 w-3" />
@@ -217,7 +204,7 @@ export function ConversationShareModal({
 
         {unsentCount > 1 && (
           <Button
-            className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+            className="w-full gap-2"
             onClick={() => {
               const unsent = contacts.filter((c) => !c.sent);
               for (const c of unsent) {
@@ -249,7 +236,7 @@ export function ConversationShareModal({
           )}
 
           <Button
-            className="h-10 w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+            className="min-h-11 w-full gap-2"
             onClick={handleWhatsAppDirect}
           >
             <MessageCircle className="h-4 w-4" />
@@ -280,7 +267,7 @@ export function ConversationShareModal({
         <p className="text-center text-xs text-muted-foreground">
           Seus contatos não são enviados para nossos servidores
         </p>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }

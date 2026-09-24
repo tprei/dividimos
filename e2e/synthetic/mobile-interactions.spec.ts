@@ -49,8 +49,14 @@ test.describe("Mobile interactions", () => {
     await amount.fill("30,00");
     await expect(page.getByTestId("group-payment-confirm")).toBeVisible();
 
-    // Dismissing over the thread must not activate anything underneath.
+    // Dismissing over the thread must not activate anything underneath, and a
+    // typed amount is only dropped after the discard confirmation.
+    const discard = page.waitForEvent("dialog").then((dialog) => {
+      expect(dialog.message()).toBe("Descartar este pagamento?");
+      return dialog.accept();
+    });
     await page.locator('[data-slot="popover-backdrop"]').click({ position: { x: 5, y: 5 } });
+    await discard;
     await expect(form).toBeHidden();
 
     const { data } = await adminClient

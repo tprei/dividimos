@@ -17,6 +17,7 @@ import {
 import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { IconButton } from "@/components/ui/icon-button";
+import { haptics } from "@/hooks/use-haptics";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
@@ -116,7 +117,8 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
         paymentKey.current = crypto.randomUUID();
         setPaymentOpen(false);
         setPaymentStatus("idle");
-        toast.success("Pagamento registrado. O comprovante já está na conversa.");
+        haptics.success();
+        toast.success("Pagamento registrado");
       } catch (error) {
         setPaymentStatus("error");
         setPaymentError(ledgerErrorMessage(error));
@@ -240,6 +242,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           messages={conversation?.messages ?? []}
           events={conversation?.events ?? []}
           settlements={snapshot.settlements}
+          expenses={snapshot.recentExpenses}
           nameOf={nameOf}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}

@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { haptics } from "@/hooks/use-haptics";
+import { popIn } from "@/lib/animations";
 
 type InputMode = "normal" | "ai";
 
@@ -43,6 +44,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const handleSparkleToggle = useCallback(() => {
     if (isConfirming) return;
+    if (hasDraft && !window.confirm("Descartar esta conta?")) return;
     if (hasDraft || isParsing) {
       reset();
       setText("");
@@ -110,12 +112,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
         handleSubmit();
       }
       if (e.key === "Escape" && isAiMode && !isConfirming) {
+        if (hasDraft && !window.confirm("Descartar esta conta?")) return;
         setMode("normal");
         reset();
         setText("");
       }
     },
-    [handleSubmit, isAiMode, isConfirming, reset],
+    [handleSubmit, isAiMode, isConfirming, hasDraft, reset],
   );
 
   const handleConfirm = useCallback(
@@ -129,6 +132,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
         return;
       }
       setConfirmStatus("confirmed");
+      haptics.success();
       reset();
       setText("");
       setMode("normal");
@@ -153,9 +157,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {isParsing && (
           <motion.div
             key="parsing"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             className="rounded-2xl border bg-card p-4"
             data-testid="parsing-skeleton"
           >
@@ -174,13 +176,17 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {hasDraft && !isParsing && (
           <motion.div
             key="draft"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            className="max-h-[calc(var(--app-viewport-height,100dvh)*0.35)] overflow-y-auto overscroll-contain rounded-2xl"
           >
             <ChatDraftCard
               result={result}
               onConfirm={handleConfirm}
+              onDiscard={() => {
+                if (!window.confirm("Descartar esta conta?")) return;
+                reset();
+                setMode("normal");
+              }}
               onEdit={handleEdit}
               status={confirmStatus}
               errorMessage={confirmError}
@@ -191,10 +197,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {error && !isParsing && !hasDraft && (
           <motion.div
             key="error"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive-text"
             data-testid="parse-error"
           >
             {error}
@@ -204,14 +208,12 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {sendError !== null && (
           <motion.div
             key="send-error"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             role="alert"
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive-text"
             data-testid="send-error"
           >
-            {sendError} Sua mensagem continua aqui. Toque em enviar para tentar de novo.
+            {sendError}
           </motion.div>
         )}
       </AnimatePresence>

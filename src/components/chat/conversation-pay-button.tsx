@@ -55,7 +55,7 @@ export function ConversationPayButton({
       <Button
         variant="outline"
         size="sm"
-        className="h-7 gap-1 px-2.5 text-xs"
+        className="h-6 gap-1 rounded-[0.375rem] px-2 text-xs"
         aria-label={`${mode === "pay" ? "Pagar" : "Cobrar"} ${formatBRL(absAmount)}`}
         onClick={() => setShowPix(true)}
       >

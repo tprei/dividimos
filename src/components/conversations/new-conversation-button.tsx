@@ -17,15 +17,17 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { getOrCreateDm, lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { useAppStore } from "@/stores/app-store";
 import type { UserProfile } from "@/types/ledger";
+import { ConversationShareModal } from "./conversation-share-modal";
 
 type HandleSearchResult = UserProfile | "not_found" | null;
 
-export function NewConversationButton({ inline = false }: { inline?: boolean }) {
+export function NewConversationButton({ inline = false, label }: { inline?: boolean; label?: string }) {
   const router = useRouter();
   const me = useMe();
   const groupOrder = useAppStore((s) => s.groupOrder);
   const groups = useAppStore((s) => s.groups);
   const [open, setOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [handleInput, setHandleInput] = useState("");
   const [searchResult, setSearchResult] = useState<HandleSearchResult>(null);
   const [searching, setSearching] = useState(false);
@@ -121,13 +123,14 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
       {inline ? (
         <Button
           type="button"
-          variant="ghost"
-          size="icon-lg"
-          className="size-11"
+          variant={label ? "default" : "ghost"}
+          size={label ? "default" : "icon-lg"}
+          className={label ? "gap-2" : "size-11"}
           onClick={() => setOpen(true)}
-          aria-label="Nova conversa"
+          aria-label={label ?? "Nova conversa"}
         >
           <MessageSquarePlus className="h-5 w-5" />
+          {label}
         </Button>
       ) : (
         <button
@@ -252,12 +255,13 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
           </div>
 
           <div className="mt-4 shrink-0">
-            <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
-              Cancelar
+            <Button variant="outline" className="w-full" onClick={() => { setOpen(false); setShareOpen(true); }}>
+              Compartilhar meu perfil
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+      {me && <ConversationShareModal open={shareOpen} onClose={() => setShareOpen(false)} handle={me.handle} />}
     </>
   );
 }
