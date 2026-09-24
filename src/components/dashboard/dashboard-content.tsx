@@ -1,42 +1,49 @@
 "use client";
 
-import { ChevronRight, Plus, QrCode, Receipt, ScanLine, Search, Zap } from "lucide-react";
+import { QrCode, Receipt, ScanLine, Search, Users, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
-import { selectHomeMode } from "@/components/dashboard/home-selectors";
+import {
+  selectHomeMode,
+  selectHomeRecentBills,
+} from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
 import { useScreenHeaderActions } from "@/components/shared/screen-header-actions";
-import { ScreenHeader } from "@/components/shared/screen-header";
+import { IconButton } from "@/components/ui/icon-button";
+import { ListRow } from "@/components/ui/list-row";
+import { SectionCard } from "@/components/ui/section-card";
+import { displayNames } from "@/lib/people";
+import { staggerContainer, staggerItem } from "@/lib/animations";
+import { haptics } from "@/hooks/use-haptics";
 import { SectionHeading } from "@/components/shared/section-heading";
 import {
   DashboardSkeleton,
   ModalLoadingSkeleton,
 } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { formatBRL } from "@/lib/currency";
+import { Button } from "@/components/ui/button";
 import { selectDebtRows, type DebtRow } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
-import { selectHomeRecentBills } from "@/stores/app-selectors";
 
 const PixQrModal = dynamic(
   () =>
     import("@/components/settlement/pix-qr-modal").then((m) => ({
       default: m.PixQrModal,
     })),
-  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> }
 );
 
 const QuickChargeModal = dynamic(
@@ -44,8 +51,11 @@ const QuickChargeModal = dynamic(
     import("@/components/dashboard/quick-charge-modal").then((m) => ({
       default: m.QuickChargeModal,
     })),
-  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> }
 );
+
+const quickActionClass =
+  "h-auto min-h-14 flex-col gap-1 rounded-[0.75rem] px-2 py-2 text-xs whitespace-nowrap md:min-h-10 md:flex-row md:justify-start md:gap-2 md:px-3 md:text-sm";
 
 export function DashboardContent() {
   const me = useMe();
@@ -60,7 +70,9 @@ export function DashboardContent() {
    * Session-scoped on purpose: the RPC's 24h cooldown is the real authority,
    * this only stops the button from looking idle after it fired.
    */
-  const [nudgeStates, setNudgeStates] = useState<Record<string, "sending" | "sent">>({});
+  const [nudgeStates, setNudgeStates] = useState<
+    Record<string, "sending" | "sent">
+  >({});
 
   const selectDebt = (row: DebtRow, anchor: HTMLButtonElement) => {
     setDebtAnchor(anchor);
@@ -71,7 +83,8 @@ export function DashboardContent() {
     mode: "pay" | "collect";
   } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
-  const [quickChargeAnchor, setQuickChargeAnchor] = useState<HTMLElement | null>(null);
+  const [quickChargeAnchor, setQuickChargeAnchor] =
+    useState<HTMLElement | null>(null);
   const [missingKeyOpen, setMissingKeyOpen] = useState(false);
 
   const owes = rows.filter((row) => row.direction === "owes");
@@ -79,6 +92,18 @@ export function DashboardContent() {
   const owesTotal = owes.reduce((sum, row) => sum + row.amountCents, 0);
   const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
   const net = owedTotal - owesTotal;
+  const names = useMemo(
+    () =>
+      displayNames(
+        rows.map((row) => ({
+          id: row.counterpartyId,
+          name: row.counterpartyName,
+          handle: row.counterpartyHandle,
+        })),
+        { style: "full" }
+      ),
+    [rows]
+  );
 
   const headerActions = useScreenHeaderActions();
   if (!hydrated || !me) {
@@ -88,7 +113,6 @@ export function DashboardContent() {
       </div>
     );
   }
-
 
   const handleMarkPaid = async (amountCents: number, operationId: string) => {
     if (!me || !pixTarget) throw new LedgerError("unauthenticated");
@@ -168,12 +192,16 @@ export function DashboardContent() {
             </button>
           </span>
         ),
-        { duration: 8000 },
+        { duration: 8000 }
       );
     } catch (error) {
       // A cooldown means today's reminder already went out, so the button
       // must stay spent rather than invite a second pointless attempt.
-      settle(error instanceof LedgerError && error.code === "nudge_cooldown" ? "sent" : null);
+      settle(
+        error instanceof LedgerError && error.code === "nudge_cooldown"
+          ? "sent"
+          : null
+      );
       toast.error(ledgerErrorMessage(error));
     }
   };
@@ -189,6 +217,7 @@ export function DashboardContent() {
   };
 
   const openQuickCharge = (event: React.MouseEvent<HTMLButtonElement>) => {
+    haptics.tap();
     setQuickChargeAnchor(event.currentTarget);
     setSelectedDebt(null);
     if (!me.pixKeyHint) {
@@ -201,160 +230,163 @@ export function DashboardContent() {
   const firstName = me.name.split(" ")[0] ?? me.name;
 
   return (
-    <div className="mx-auto max-w-lg pb-8">
-      <div className="flex items-center justify-between px-4 pt-4">
+    <div className="mx-auto max-w-2xl space-y-6 px-4 pb-8 compact:space-y-3">
+      <header className="flex items-center justify-between pt-4 compact:pt-2">
         <Logo size="sm" />
-        <div className="-mr-2 flex items-center gap-1.5">
-          <InstallPrompt />
-          <Link
-            href="/app/search"
+        <div className="flex items-center gap-1">
+          <IconButton
+            nativeButton={false}
+            role="link"
+            render={<Link href="/app/search" />}
             aria-label="Buscar"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "icon-lg" }),
-              "min-h-11 min-w-11 rounded-full",
-            )}
           >
             <Search className="size-5" aria-hidden="true" />
-          </Link>
+          </IconButton>
           {headerActions}
         </div>
+      </header>
+      <div className="flex items-center gap-3">
+        <Link
+          href="/app/profile"
+          aria-label="Seu perfil"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring"
+        >
+          <UserAvatar
+            id={me.id}
+            name={me.name}
+            avatarUrl={me.avatarUrl}
+            size="sm"
+            priority
+            isBot={me.isBot}
+          />
+        </Link>
+        <h1 className="min-w-0 break-words text-lg font-semibold">
+          Oi, {firstName}
+        </h1>
       </div>
-      <ScreenHeader
-        title={`Oi, ${firstName}`}
-        leading={
-          <Link
-            href="/app/profile"
-            aria-label="Seu perfil"
-            className="shrink-0 rounded-full ring-2 ring-primary/25 transition-shadow hover:ring-primary/50"
-          >
-            <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="md" priority isBot={me.isBot} />
-          </Link>
-        }
-      />
-
-      <div
-        className="gradient-mesh mx-4 mt-2 flex items-start gap-4 rounded-3xl border border-primary/15 p-4"
+      <section
+        aria-label="Seu saldo"
+        className="space-y-3 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-3 md:space-y-0"
       >
-        <div className="min-w-0 flex-1 overflow-hidden" data-tour="balance-card">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            Saldo geral
+        <SectionCard className="gradient-mesh p-5" data-tour="balance-card">
+          <p className="text-sm font-semibold text-muted-foreground">
+            {net > 0
+              ? "A receber no total"
+              : net < 0
+              ? "Você deve no total"
+              : "Tudo acertado"}
           </p>
           <Money
             cents={net}
-            signed
-            className="block text-[28px] leading-tight"
-            label={`Saldo geral ${formatBRL(net)}`}
+            size="hero"
+            tone="auto"
+            className="mt-2 block leading-tight"
           />
           {homeMode !== "first-use" && (
-            <div className="mt-4 flex gap-8">
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3">
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                  A pagar
-                </p>
+                <p className="text-xs text-muted-foreground">A pagar</p>
                 <Money
                   cents={owesTotal}
-                  className={owesTotal > 0 ? "text-destructive" : "text-muted-foreground"}
+                  size="sm"
+                  tone={owesTotal > 0 ? "negative" : "neutral"}
                 />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                  A receber
-                </p>
-                <Money cents={owedTotal} className="text-success" />
+                <p className="text-xs text-muted-foreground">A receber</p>
+                <Money
+                  cents={owedTotal}
+                  size="sm"
+                  tone={owedTotal > 0 ? "positive" : "neutral"}
+                />
               </div>
             </div>
           )}
+        </SectionCard>
+        <div
+          className="grid grid-cols-3 gap-2 md:grid-cols-1 md:content-start"
+          data-tour="quick-actions"
+        >
+          <Button
+            variant="secondary"
+            className={quickActionClass}
+            onClick={openQuickCharge}
+          >
+            <Zap className="size-4 text-primary" aria-hidden="true" />
+            Cobrar rápido
+          </Button>
+          <Button
+            nativeButton={false}
+            role="link"
+            render={<Link href="/app/bill/new?scan=true" />}
+            variant="secondary"
+            onClick={() => haptics.tap()}
+            className={quickActionClass}
+          >
+            <ScanLine className="size-4 text-primary" aria-hidden="true" />
+            Escanear nota
+          </Button>
+          <Button
+            nativeButton={false}
+            role="link"
+            render={<Link href="/app/scan-invite" />}
+            variant="secondary"
+            onClick={() => haptics.tap()}
+            className={quickActionClass}
+          >
+            <QrCode className="size-4 text-primary" aria-hidden="true" />
+            Entrar em sala
+          </Button>
         </div>
-        <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
-            <Link
-              href="/app/scan-invite"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-11 justify-start px-3 text-xs",
-                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
-              )}
-            >
-              <QrCode className="size-4 shrink-0 text-primary" aria-hidden="true" />
-              Entrar por QR code
-            </Link>
-            <Link
-              href="/app/bill/new?scan=true"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-11 justify-start px-3 text-xs",
-                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
-              )}
-            >
-              <ScanLine className="size-4 shrink-0 text-primary" aria-hidden="true" />
-              Escanear nota
-            </Link>
-            <Link
-              href="/app/bill/new"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-11 justify-start px-3 text-xs",
-                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
-              )}
-            >
-              <Plus className="size-4 shrink-0 text-primary" aria-hidden="true" />
-              Nova conta
-            </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-h-11 justify-start px-3 text-xs border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10"
-              onClick={openQuickCharge}
-            >
-              <Zap className="size-4 shrink-0" aria-hidden="true" />
-              Cobrar rápido
-            </Button>
-          </div>
-      </div>
+      </section>
+      <InstallPrompt variant="card" />
+      <NotificationPrompt />
 
-      <div className="space-y-6 px-4 pt-7" data-tour="debt-lists">
+      <div className="space-y-6 empty:hidden" data-tour="debt-lists">
         {homeMode === "first-use" ? (
-          <div className="rounded-2xl border bg-card p-5 text-center">
-            <h2 className="text-base font-semibold">Comece por aqui</h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              Crie uma conta pra rachar ou entre num grupo pelo convite.
-            </p>
-            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-              <Link
-                href="/app/bill/new"
-                className={cn(buttonVariants({ variant: "default" }), "min-h-11 rounded-lg gap-2 font-medium")}
-              >
-                <Plus className="size-4" />
-                Nova conta
-              </Link>
-            </div>
-          </div>
-        ) : homeMode === "settled" ? (
-          <div className="rounded-2xl border bg-card p-5">
-            <p className="text-sm font-medium text-foreground">Tudo em dia por aqui</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Nenhuma pendência no momento.</p>
-          </div>
-        ) : (
+          <SectionCard className="space-y-3 p-5 text-center">
+            <Users
+              className="mx-auto size-6 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <h2 className="text-base font-semibold">
+              As contas começam em grupo
+            </h2>
+            <Button
+              nativeButton={false}
+              role="link"
+              render={<Link href="/app/groups" />}
+            >
+              Criar ou entrar num grupo
+            </Button>
+          </SectionCard>
+        ) : homeMode === "settled" ? null : (
           <>
             {owes.length > 0 && (
               <section>
                 <SectionHeading
                   title="A pagar"
-                  trailing={
-                    <Money
-                      cents={owesTotal}
-                      className={owesTotal > 0 ? "text-destructive" : "text-muted-foreground"}
-                    />
-                  }
+                  trailing={<Money cents={owesTotal} tone="negative" />}
                 />
-                <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-                  {owes.map((row) => (
-                    <DebtRowButton
+                <motion.div
+                  variants={staggerContainer}
+                  initial="hidden"
+                  animate="visible"
+                  className="divide-y divide-border overflow-hidden rounded-2xl border bg-card"
+                >
+                  {owes.map((row, index) => (
+                    <motion.div
                       key={`${row.groupId}-${row.counterpartyId}`}
-                      row={row}
-                      onSelect={selectDebt}
-                    />
+                      variants={index < 6 ? staggerItem : undefined}
+                    >
+                      <DebtRowButton
+                        row={row}
+                        displayName={names.get(row.counterpartyId)}
+                        onSelect={selectDebt}
+                      />
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </section>
             )}
 
@@ -362,17 +394,29 @@ export function DashboardContent() {
               <section>
                 <SectionHeading
                   title="A receber"
-                  trailing={<Money cents={owedTotal} className="text-success" />}
+                  trailing={<Money cents={owedTotal} tone="positive" />}
                 />
-                <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-                  {owed.map((row) => (
-                    <DebtRowButton
+                <motion.div
+                  variants={staggerContainer}
+                  initial="hidden"
+                  animate="visible"
+                  className="divide-y divide-border overflow-hidden rounded-2xl border bg-card"
+                >
+                  {owed.map((row, index) => (
+                    <motion.div
                       key={`${row.groupId}-${row.counterpartyId}`}
-                      row={row}
-                      onSelect={selectDebt}
-                    />
+                      variants={
+                        index + owes.length < 6 ? staggerItem : undefined
+                      }
+                    >
+                      <DebtRowButton
+                        row={row}
+                        displayName={names.get(row.counterpartyId)}
+                        onSelect={selectDebt}
+                      />
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </section>
             )}
           </>
@@ -380,49 +424,44 @@ export function DashboardContent() {
       </div>
 
       {recentBills.length > 0 && (
-        <section className="px-4 pt-7">
+        <section>
           <SectionHeading
             title="Contas recentes"
             trailing={
               <Link
                 href="/app/bills"
-                className="-my-2 -mr-1 inline-flex min-h-9 items-center rounded-md px-1 py-2 text-xs font-semibold text-primary hover:underline"
+                className="-my-2 inline-flex min-h-11 items-center rounded-md px-2 text-sm font-semibold text-primary-text hover:underline focus-visible:ring-3 focus-visible:ring-ring"
               >
                 Ver todas
               </Link>
             }
           />
-          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+          <SectionCard>
             {recentBills.map((bill) => (
-              <Link
+              <ListRow
                 key={bill.id}
                 href={`/app/bill/${bill.id}`}
-                className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                    <Receipt className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{bill.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[bill.occurredOn, bill.groupName].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Money cents={bill.totalCents} className="text-sm font-medium" />
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </div>
-              </Link>
+                title={bill.title}
+                subtitle={[bill.groupName, bill.occurredOn]
+                  .filter(Boolean)
+                  .join(" · ")}
+                leading={
+                  <Receipt
+                    className="size-5 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                }
+                trailing={<Money cents={bill.totalCents} size="sm" />}
+              />
             ))}
-          </div>
+          </SectionCard>
         </section>
       )}
 
       {selectedDebt && (
         <CounterpartyDialog
           row={selectedDebt}
+          displayName={names.get(selectedDebt.counterpartyId)}
           meId={me.id}
           open
           onClose={() => setSelectedDebt(null)}
@@ -430,7 +469,9 @@ export function DashboardContent() {
           onPay={openPay}
           onCollect={openCollect}
           nudgeState={
-            nudgeStates[`${selectedDebt.groupId}:${selectedDebt.counterpartyId}`] ?? "idle"
+            nudgeStates[
+              `${selectedDebt.groupId}:${selectedDebt.counterpartyId}`
+            ] ?? "idle"
           }
           onNudge={(row) => {
             void handleNudge(row.groupId, row.counterpartyId);
@@ -466,13 +507,6 @@ export function DashboardContent() {
             >
               Cadastrar agora
             </Link>
-            <Button
-              variant="ghost"
-              className="min-h-11 w-full rounded-lg"
-              onClick={() => setMissingKeyOpen(false)}
-            >
-              Agora não
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

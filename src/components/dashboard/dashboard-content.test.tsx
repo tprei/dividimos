@@ -50,6 +50,9 @@ vi.mock("@/components/dashboard/quick-charge-modal", () => ({
 vi.mock("@/components/pwa/install-prompt", () => ({
   InstallPrompt: () => null,
 }));
+vi.mock("@/components/pwa/notification-prompt", () => ({
+  NotificationPrompt: () => null,
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -163,38 +166,31 @@ describe("DashboardContent", () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
     render(<DashboardContent />);
 
-    expect(screen.getByText("Comece por aqui")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Entrar por QR code/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Entrar em sala" })).toHaveAttribute(
       "href",
       "/app/scan-invite",
     );
-    expect(
-      screen.getAllByRole("link", { name: /Nova conta/ }).some(
-        (link) => link.getAttribute("href") === "/app/bill/new",
-      ),
-    ).toBe(true);
+    expect(screen.getByRole("link", { name: "Criar ou entrar num grupo" })).toHaveAttribute("href", "/app/groups");
     expect(screen.getByText("Escanear nota")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeInTheDocument();
-    expect(screen.queryByText("Ler convite")).not.toBeInTheDocument();
   });
 
   it("keeps QR room entry available with populated groups", () => {
     seedStore([snapshot({ balances: [] })]);
     render(<DashboardContent />);
 
-    expect(screen.getByRole("link", { name: /Entrar por QR code/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Entrar em sala" })).toHaveAttribute(
       "href",
       "/app/scan-invite",
     );
   });
 
-  it("renders settled affirmative state when user has groups but zero debt", () => {
+  it("has no payment actions when all balances are settled", () => {
     seedStore([snapshot({ balances: [] })]);
     render(<DashboardContent />);
-
-    expect(screen.getByText("Tudo em dia por aqui")).toBeInTheDocument();
-    expect(screen.getByText("Nenhuma pendência no momento.")).toBeInTheDocument();
-    expect(document.querySelector("[data-tour='debt-lists']")?.contains(screen.getByText("Tudo em dia por aqui"))).toBe(true);
+    expect(screen.queryByRole("heading", { name: "A pagar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "A receber" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /você deve|te deve/ })).not.toBeInTheDocument();
   });
 
   it("renders debt lists when debts exist", () => {
@@ -211,8 +207,6 @@ describe("DashboardContent", () => {
 
     expect(screen.getByRole("heading", { name: "A pagar" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "A receber" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Comece por aqui")).not.toBeInTheDocument();
-    expect(screen.queryByText("Tudo em dia por aqui")).not.toBeInTheDocument();
 
     unmount();
 
@@ -246,10 +240,7 @@ describe("DashboardContent", () => {
     seedStore([
       snapshot({
         group: { id: "g1", name: "Praia" },
-        balances: [
-          { kind: "user", participantId: me.id, netCents: -5000 },
-          { kind: "user", participantId: carol.id, netCents: 5000 },
-        ],
+        balances: [],
       }),
     ]);
     useAppStore.setState({
@@ -264,6 +255,7 @@ describe("DashboardContent", () => {
     });
     render(<DashboardContent />);
 
+    expect(screen.getByText("Tudo acertado")).toBeInTheDocument();
     expect(screen.getByText("Contas recentes")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ver todas" })).toHaveAttribute("href", "/app/bills");
     expect(screen.getByText("Churrasco")).toBeInTheDocument();
@@ -312,7 +304,6 @@ describe("DashboardContent", () => {
 
     expect(screen.getByText("Oi, Alice")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Seu perfil" })).toHaveAttribute("href", "/app/profile");
-    expect(screen.getByText("Saldo geral")).toBeInTheDocument();
     expect(screen.getByText(/20,00/)).toBeInTheDocument();
     expect(screen.getAllByText(/50,00/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/30,00/).length).toBeGreaterThan(0);
@@ -468,7 +459,7 @@ describe("DashboardContent", () => {
 
     expect(screen.getByText("Pra receber, você precisa de uma chave Pix.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Cadastrar agora" })).toHaveAttribute("href", "/app/profile");
-    fireEvent.click(screen.getByRole("button", { name: "Agora não" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fechar diálogo" }));
     expect(screen.queryByText("Pra receber, você precisa de uma chave Pix.")).not.toBeInTheDocument();
   });
 
