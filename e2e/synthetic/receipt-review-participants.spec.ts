@@ -69,5 +69,7 @@ test.describe("Receipt review participants", () => {
 
     await proceed.click();
     await expect(managePeople).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Itens" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Nome do item Pão de queijo" })).toHaveValue("Pão de queijo");
   });
 });

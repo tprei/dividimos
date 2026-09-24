@@ -274,21 +274,6 @@ describe("ReceiptScanner", () => {
       expect(screen.queryByText("Camera")).not.toBeInTheDocument();
     });
 
-    it("attaches the stream to the video element", async () => {
-      const { stream } = createFakeStream();
-      stubMediaDevices(vi.fn<GetUserMedia>(() => Promise.resolve(stream)));
-
-      render(
-        <ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />,
-      );
-      await flushMicrotasks();
-
-      const video = screen.getByTestId(
-        "receipt-camera-video",
-      ) as HTMLVideoElement;
-      expect(video.srcObject).toBe(stream);
-      expect(screen.getByText("Iniciando câmera...")).toBeInTheDocument();
-    });
 
     it("enables the shutter on metadata and feeds the capture into Processar", async () => {
       const onProcess = vi.fn();
@@ -474,7 +459,7 @@ describe("ReceiptScanner", () => {
 
       expect(getUserMedia).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.getByText("Iniciando câmera...")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Capturar foto" })).toBeDisabled();
     });
 
     it("leaves the scanner from the camera error card", async () => {

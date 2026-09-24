@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { RotateCcw, ScanLine, X } from "lucide-react";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
+import { popIn } from "@/lib/animations";
 import {
   isNativeCameraAvailable,
   pickNativeGalleryPhoto,
@@ -55,6 +57,7 @@ export function ReceiptScanner({
   }, []);
 
   const showFile = useCallback((next: File) => {
+    haptics.success();
     setFile(next);
     setCaptureError(null);
     // A photo exists now, so the live camera has nothing left to do; leaving
@@ -104,6 +107,7 @@ export function ReceiptScanner({
         onBack();
         return;
       }
+      haptics.error();
       setCaptureError(
         outcome.kind === "permission_denied"
           ? "Permita o acesso à câmera nas configurações do aparelho."
@@ -194,7 +198,7 @@ export function ReceiptScanner({
   return (
     <div className="space-y-4">
       {captureError !== null && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-destructive-text">
           {captureError}
         </p>
       )}
@@ -211,10 +215,7 @@ export function ReceiptScanner({
         {cameraOpen ? (
           <motion.div
             key="camera"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.2 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
           >
             <ReceiptCameraView
               onCapture={handleCameraCapture}
@@ -225,10 +226,7 @@ export function ReceiptScanner({
         ) : preview ? (
           <motion.div
             key="preview"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             className="space-y-3"
           >
             <div className="relative overflow-hidden rounded-2xl border bg-muted">
@@ -241,7 +239,7 @@ export function ReceiptScanner({
                 type="button"
                 onClick={clearPreview}
                 disabled={processing}
-                className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70 disabled:opacity-50"
+                className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full bg-background text-foreground shadow disabled:opacity-50"
                 aria-label="Remover foto"
               >
                 <X className="h-4 w-4" />
@@ -264,7 +262,7 @@ export function ReceiptScanner({
                 disabled={processing}
               >
                 {processing ? (
-                  <ScanLine className="h-4 w-4 animate-pulse" />
+                  <ScanLine className="h-4 w-4 motion-safe:animate-pulse" />
                 ) : (
                   <ScanLine className="h-4 w-4" />
                 )}
@@ -275,10 +273,7 @@ export function ReceiptScanner({
         ) : nativeCamera ? null : (
           <motion.div
             key="fallback"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.2 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             className="flex flex-col gap-2"
           >
             <Button
