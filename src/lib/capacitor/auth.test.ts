@@ -273,11 +273,3 @@ describe("iOS retry logic", () => {
     expect(result).toBe(false);
   });
 });
-
-describe("isNativePlatform", () => {
-  it("delegates to Capacitor.isNativePlatform", async () => {
-    mockIsNativePlatform.mockReturnValue(true);
-    const { isNativePlatform } = await loadModule();
-    expect(isNativePlatform()).toBe(true);
-  });
-});

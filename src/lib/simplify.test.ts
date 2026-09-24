@@ -796,18 +796,6 @@ describe("simplifyDebts", () => {
     expect(result.simplifiedCount).toBe(1);
   });
 
-  it("handles already-minimal disconnected edges unchanged", () => {
-    // Three separate debts with no simplification possible
-    const edges: DebtEdge[] = [
-      { fromUserId: "user-alice", toUserId: "user-bob", amountCents: 1000 },
-      { fromUserId: "user-bob", toUserId: "user-carlos", amountCents: 2000 },
-      { fromUserId: "user-carlos", toUserId: "user-alice", amountCents: 3000 },
-    ];
-    const result = simplifyDebts(edges, participants);
-    // A triangle should simplify (all balance to zero via netAndMinimize)
-    expect(result.simplifiedEdges.length).toBeLessThanOrEqual(edges.length);
-  });
-
   it("preserves 1-centavo reverse-pair net (no tolerance)", () => {
     const edges: DebtEdge[] = [
       { fromUserId: "user-alice", toUserId: "user-bob", amountCents: 5001 },

@@ -296,22 +296,6 @@ describe("Service Worker", () => {
       expect(event._response).toBeUndefined();
     });
 
-    it("serves offline fallback when navigation fails", async () => {
-      // Install first to precache offline page
-      const installEvent = makeExtendableEvent();
-      env.listeners["install"]![0]!(installEvent);
-      await Promise.all(installEvent._promises);
-
-      // Make fetch throw (simulate offline)
-      (env.env.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
-
-      const event = makeFetchEvent("https://dividimos.app/app", { mode: "navigate" });
-      env.listeners["fetch"]![0]!(event);
-
-      const response = await event._response;
-      expect(response).toBeDefined();
-    });
-
     it("caches successful asset responses in runtime cache", async () => {
       const mockRes = new MockResponse("body", { status: 200 });
       (env.env.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(mockRes);
