@@ -24,7 +24,7 @@ test.describe("Expense edit conflict", () => {
     await page.goto(`/app/bill/new?edit=${expense.id}`);
     await page.waitForLoadState("networkidle");
 
-    const titleInput = page.getByLabel("Nome");
+    const titleInput = page.getByLabel("Nome da conta");
     await expect(titleInput).toHaveValue("Jantar Conflituoso", { timeout: 15000 });
 
     const detail = await seed.getExpense(alice.id, expense.id);
@@ -43,8 +43,9 @@ test.describe("Expense edit conflict", () => {
     });
     expect(error).toBeNull();
 
-    await page.getByRole("button", { name: "Continuar" }).click();
-    await page.getByRole("button", { name: "Salvar" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Salvar alterações" }).click();
 
     const panel = page.getByRole("alert").filter({ hasText: "enquanto você editava" });
     await expect(panel).toBeVisible({ timeout: 15000 });
@@ -60,7 +61,6 @@ test.describe("Expense edit conflict", () => {
       page.getByText("Carregue a versão mais recente pra salvar."),
     ).toBeHidden({ timeout: 15000 });
 
-    await page.getByRole("tab", { name: "Conta" }).click();
     await expect(titleInput).toHaveValue("Jantar Replanejado", { timeout: 10000 });
   });
 });

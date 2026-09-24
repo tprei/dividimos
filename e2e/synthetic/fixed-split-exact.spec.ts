@@ -23,36 +23,30 @@ test.describe("Fixed-amount exact inputs", () => {
     );
     await page.waitForLoadState("networkidle");
 
-    // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: /Participantes/ }).click();
-    await expect(page.getByText("Bob Fixed").first()).toBeVisible({
-      timeout: 5000,
-    });
-    await expect(page.getByText("Carol Fixed").first()).toBeVisible();
-    await page.getByRole("button", { name: "Concluir" }).click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    // Group members are auto-added to the participants step.
+    await expect(page.getByText("Bob Fixed")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Carol Fixed")).toBeVisible();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("radio", { name: "Fixo" }).click();
+    await page.getByRole("radio", { name: "Valores" }).check();
 
-    const aliceInput = page.getByRole("textbox", { name: "Valor de Alice Fixed" });
-    const bobInput = page.getByRole("textbox", { name: "Valor de Bob Fixed" });
-    const carolInput = page.getByRole("textbox", { name: "Valor de Carol Fixed" });
+    const aliceInput = page.getByRole("textbox", { name: "Valor que Alice Fixed consumiu" });
+    const bobInput = page.getByRole("textbox", { name: "Valor que Bob Fixed consumiu" });
+    const carolInput = page.getByRole("textbox", { name: "Valor que Carol Fixed consumiu" });
 
-    // Carol's untouched input keeps the even 50,00 fallback, so two 25,00
-    // fills leave the split short of R$ 150,00.
+    // Typing one amount spreads the rest over the people not typed yet, so
+    // the split always closes on R$ 150,00.
     await aliceInput.fill("25,00");
-    await bobInput.fill("25,00");
-    await expect(page.getByText(/falta R\$\s*50,00/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Criar conta" })).toBeDisabled();
-
-    await aliceInput.fill("50,00");
+    await expect(bobInput).toHaveValue("62,50");
+    await expect(carolInput).toHaveValue("62,50");
     await bobInput.fill("50,00");
-    await carolInput.fill("50,00");
-    await expect(page.getByText(/falta R\$\s*50,00/)).toHaveCount(0);
+    await expect(carolInput).toHaveValue("75,00");
+    await aliceInput.fill("50,00");
+    await expect(carolInput).toHaveValue("50,00");
 
-    await page.getByRole("button", { name: /Alice/ }).click();
-    await expect(page.getByRole("button", { name: "Criar conta" })).toBeEnabled();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Salvar conta" })).toBeEnabled();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, {
       timeout: 15000,
     });

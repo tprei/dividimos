@@ -75,7 +75,11 @@ test.describe("Voice expense", () => {
 
     await page.getByRole("button", { name: "Confirmar" }).click();
 
-    await expect(page.getByLabel("Nome")).toHaveValue("Uber", { timeout: 10000 });
+    await expect(page.getByLabel("Nome da conta")).toHaveValue("Uber", { timeout: 10000 });
+    await page.getByRole("button", { name: "Adicionar convidado" }).click();
+    await page.getByPlaceholder("Nome do convidado").fill("Carla");
+    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByLabel("Valor total")).toHaveValue("25,00");
   });
 });

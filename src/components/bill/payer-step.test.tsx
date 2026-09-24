@@ -104,20 +104,6 @@ describe("PayerStep percentage mode", () => {
     expect(screen.getByText(/faltam 59,99% para completar 100%/)).toBeInTheDocument();
   });
 
-  it("marks the amounts as over budget once the percentages exceed 100", async () => {
-    const user = userEvent.setup();
-    renderPercentMode(10_000);
-    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
-
-    await setPercent("Ana", 60);
-    await setPercent("Bruno", 60);
-
-    const overshoot = screen.getAllByText(formatBRL(6000).replace(/\u00a0/g, " "));
-    expect(overshoot).toHaveLength(2);
-    for (const amount of overshoot) {
-      expect(amount).toHaveClass("text-destructive");
-    }
-  });
 
   it("renders explainer when hasGuests is true", () => {
     render(

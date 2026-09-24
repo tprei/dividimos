@@ -12,12 +12,16 @@ test.describe("Bill draft", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
-    const titleInput = page.getByLabel("Nome");
+    const titleInput = page.getByLabel("Nome da conta");
     await expect(titleInput).toBeVisible();
     await titleInput.fill("Aluguel da praia");
+    await page.getByRole("button", { name: "Adicionar convidado" }).click();
+    await page.getByPlaceholder("Nome do convidado").fill("Bia");
+    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByLabel("Valor total").fill("360,50");
 
-    await page.getByRole("button", { name: /^(Voltar|Fechar)$/ }).click();
+    await page.getByRole("button", { name: "Fechar" }).click();
     await page.getByRole("button", { name: "Sair e guardar" }).click();
     await expect(page).toHaveURL(/\/app$/);
     await page.goto("/app/groups");
@@ -31,7 +35,8 @@ test.describe("Bill draft", () => {
 
     await page.getByRole("button", { name: "Continuar" }).click();
 
-    await expect(page.getByLabel("Nome")).toHaveValue("Aluguel da praia");
+    await expect(page.getByLabel("Nome da conta")).toHaveValue("Aluguel da praia");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByLabel("Valor total")).toHaveValue("360,50");
   });
 
@@ -42,10 +47,9 @@ test.describe("Bill draft", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
-    await page.getByLabel("Nome").fill("Cinema sábado");
-    await page.getByLabel("Valor total").fill("84,00");
+    await page.getByLabel("Nome da conta").fill("Cinema sábado");
 
-    await page.getByRole("button", { name: /^(Voltar|Fechar)$/ }).click();
+    await page.getByRole("button", { name: "Fechar" }).click();
     await page.getByRole("button", { name: "Sair e guardar" }).click();
     await expect(page).toHaveURL(/\/app$/);
     await page.goto("/app/bill/new");
@@ -77,9 +81,13 @@ test.describe("Bill draft", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
-    const titleInput = page.getByLabel("Nome");
+    const titleInput = page.getByLabel("Nome da conta");
     await expect(titleInput).toBeVisible();
     await titleInput.fill("Aluguel da praia");
+    await page.getByRole("button", { name: "Adicionar convidado" }).click();
+    await page.getByPlaceholder("Nome do convidado").fill("Bia");
+    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByLabel("Valor total").fill("360,50");
 
     await page.reload();
@@ -92,7 +100,8 @@ test.describe("Bill draft", () => {
 
     await page.getByRole("button", { name: "Continuar" }).click();
 
-    await expect(page.getByLabel("Nome")).toHaveValue("Aluguel da praia");
+    await expect(page.getByLabel("Nome da conta")).toHaveValue("Aluguel da praia");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByLabel("Valor total")).toHaveValue("360,50");
   });
 });

@@ -1,26 +1,20 @@
-import { centsText, percentText, type ItemDivisionMode } from "@/lib/item-division";
+import type { SplitDraftSeed } from "@/components/bill/split/use-split-draft";
 import type { AmountSplit } from "@/stores/bill-store";
 
-export function initialMode(billSplits: AmountSplit[]): ItemDivisionMode {
+/** Reopens the consumption split the store holds, or everyone equally. */
+export function consumptionSeed(billSplits: AmountSplit[], peopleIds: readonly string[]): SplitDraftSeed {
   const splitType = billSplits[0]?.splitType;
-  if (splitType === "percentage") return "percent";
-  return splitType === "fixed" ? "fixed" : "equal";
-}
-
-export function initialPercentTexts(billSplits: AmountSplit[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const split of billSplits) {
-    if (split.splitType === "percentage") {
-      values[split.userId] = percentText(Math.round(split.value * 100));
-    }
+  if (!splitType) return { mode: "equal", included: peopleIds };
+  const included = billSplits.map((split) => split.userId);
+  if (splitType === "percentage") {
+    const basisPointsById: Record<string, number> = {};
+    for (const split of billSplits) basisPointsById[split.userId] = Math.round(split.value * 100);
+    return { mode: "percent", included, basisPointsById };
   }
-  return values;
-}
-
-export function initialFixedTexts(billSplits: AmountSplit[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const split of billSplits) {
-    if (split.splitType === "fixed") values[split.userId] = centsText(split.computedAmountCents);
+  if (splitType === "fixed") {
+    const centsById: Record<string, number> = {};
+    for (const split of billSplits) centsById[split.userId] = split.computedAmountCents;
+    return { mode: "fixed", included, centsById };
   }
-  return values;
+  return { mode: "equal", included };
 }

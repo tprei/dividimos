@@ -25,6 +25,6 @@ test.describe("Public profile", () => {
     await page.goto(`/u/${bob.handle}`);
     await page.getByRole("button", { name: "Dividir uma conta com Bob Target" }).click();
     await page.waitForURL(/\/app\/bill\/new\?dm=/, { timeout: 15000 });
-    await expect(page.getByLabel("Nome")).toHaveValue("Cobrança - Bob", { timeout: 10000 });
+    await expect(page.getByLabel("Nome da conta")).toHaveValue("Cobrança - Bob", { timeout: 10000 });
   });
 });
