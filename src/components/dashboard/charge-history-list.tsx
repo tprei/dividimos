@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
+import { EmptyState } from "@/components/shared/empty-state";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { loadVendorCharges } from "@/lib/sync/refresh";
 import { retryPendingVendorChargeCancellations } from "@/lib/sync/mutations-group";
@@ -94,7 +95,7 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
   const receivedCount = summary.receivedCount ?? 0;
   const chargeCount = summary.total ?? charges.length;
   const isInitialLoad =
-    charges.length === 0 && (read.status === "idle" || read.status === "loading");
+    charges.length === 0 && summary.total === null && !summary.complete && (read.status === "idle" || read.status === "loading");
   return (
     <div className={embedded ? "mt-5" : "mx-auto max-w-lg px-4 py-6"}>
       {!embedded && (
@@ -115,10 +116,8 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
           animate={{ opacity: 1, y: 0 }}
           className="mt-4 rounded-2xl bg-success/10 p-4"
         >
-          <p className="text-sm text-success/70">Recebido hoje</p>
-          <p className="text-2xl font-bold tabular-nums text-success">
-            {formatBRL(total)}
-          </p>
+          <p className="text-sm text-success-text">Recebido hoje</p>
+          <Money cents={total} size="lg" tone="positive" />
         </motion.div>
       )}
 
@@ -130,21 +129,7 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
           onRetry={load}
         />
       ) : charges.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-12 flex flex-col items-center text-center"
-        >
-          <div className="rounded-2xl bg-muted/50 p-4">
-            <Zap className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <p className="mt-4 text-sm font-semibold text-foreground">
-            Nenhuma cobrança ainda
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Use o &quot;Cobrar rápido&quot; na tela inicial para gerar QR codes.
-          </p>
-        </motion.div>
+        <EmptyState icon={Zap} title="Nenhuma cobrança ainda" description="Seus recebimentos por Pix ficam aqui." actionLabel="Ir para início" onAction={() => { window.location.href = "/app"; }} />
       ) : (
         <>
           <p className="mt-4 text-sm text-muted-foreground">
@@ -157,10 +142,10 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
             animate="visible"
             className="mt-3 space-y-2"
           >
-            {charges.map((charge) => (
+            {charges.map((charge, index) => (
               <motion.div
                 key={charge.id}
-                variants={staggerItem}
+                variants={index < 6 ? staggerItem : undefined}
                 className="flex items-center gap-3 rounded-xl border bg-card p-3"
               >
                 <div
@@ -177,9 +162,7 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold tabular-nums">
-                    {formatBRL(charge.amountCents)}
-                  </p>
+                  <Money cents={charge.amountCents} size="sm" />
                   {charge.description && (
                     <p className="text-xs text-muted-foreground truncate">
                       {charge.description}
@@ -188,15 +171,15 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
                 </div>
                 <div className="text-right">
                   <span
-                    className={`text-[11px] font-medium ${
+                    className={`text-xs font-semibold ${
                       charge.status === "received"
-                        ? "text-success"
+                        ? "text-success-text"
                         : "text-muted-foreground"
                     }`}
                   >
                     {charge.status === "received" ? "Recebido" : "Pendente"}
                   </span>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {formatRelativeTime(charge.createdAt)}
                   </p>
                 </div>

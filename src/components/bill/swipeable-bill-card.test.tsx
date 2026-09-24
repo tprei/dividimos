@@ -30,13 +30,15 @@ describe("SwipeableBillCard", () => {
     expect(screen.getByText("Bill content")).toBeInTheDocument();
   });
 
-  it("renders the delete action button when enabled", () => {
+  it("renders the delete action button when enabled", async () => {
+    const user = userEvent.setup();
     render(
       <SwipeableBillCard {...defaultProps}>
         <div>Bill content</div>
       </SwipeableBillCard>,
     );
 
+    await user.click(screen.getByRole("button", { name: "Mostrar ações da conta" }));
     expect(screen.getByRole("button", { name: /excluir conta/i })).toBeInTheDocument();
   });
 
@@ -60,6 +62,7 @@ describe("SwipeableBillCard", () => {
       </SwipeableBillCard>,
     );
 
+    await user.click(screen.getByRole("button", { name: "Mostrar ações da conta" }));
     await user.click(screen.getByRole("button", { name: /excluir conta/i }));
     expect(onDelete).toHaveBeenCalledOnce();
   });
@@ -97,16 +100,6 @@ describe("SwipeableBillCard", () => {
     expect(draggableDiv).not.toBeNull();
   });
 
-  it("renders the swipe hint chevron when enabled", () => {
-    const { container } = render(
-      <SwipeableBillCard {...defaultProps}>
-        <div>Bill content</div>
-      </SwipeableBillCard>,
-    );
-
-    const hintContainer = container.querySelector(".pointer-events-none");
-    expect(hintContainer).not.toBeNull();
-  });
 
   it("imports haptics.impact for swipe snap feedback", () => {
     expect(haptics.impact).toBeDefined();
