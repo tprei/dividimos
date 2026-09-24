@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { initialsOf } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import type { GroupAvatar as GroupAvatarData } from "@/types/ledger";
@@ -35,6 +35,9 @@ function PhotoAvatar({
   size: GroupAvatarSize;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const handleImageError = useCallback(() => {
+    setImageFailed(true);
+  }, []);
 
   if (imageFailed) return <GroupInitials name={name} size={size} />;
 
@@ -47,7 +50,7 @@ function PhotoAvatar({
         unoptimized
         sizes={`${sizePixels[size]}px`}
         className="object-cover"
-        onError={() => setImageFailed(true)}
+        onError={handleImageError}
       />
     </div>
   );
