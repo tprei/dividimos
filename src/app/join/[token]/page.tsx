@@ -1,10 +1,11 @@
-import { ArrowLeft, Users } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { JoinActions } from "./join-actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
 import { INVALID_INVITE_MESSAGE, parseInvitePreview } from "./invite-preview";
+import { initialsOf } from "@/lib/people";
 
 export default async function JoinPage({
   params,
@@ -30,57 +31,32 @@ export default async function JoinPage({
 
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/"
-          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="font-semibold">Entrar no grupo</h1>
-      </div>
-
-      {isInvalid ? (
-        <div role="alert" className="mt-6 rounded-2xl border bg-card p-5 text-center">
-          <p className="text-base font-semibold">{INVALID_INVITE_MESSAGE}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Peça um novo link a quem convidou você.
-          </p>
-          <Link
-            href={isAuthenticated ? "/app" : "/auth"}
-            className={cn(buttonVariants({ variant: "default" }), "mt-5 min-h-11 w-full rounded-lg")}
-          >
-            {isAuthenticated ? "Ir para o início" : "Entrar no Dividimos"}
-          </Link>
-        </div>
-      ) : (
-        <>
-          <div className="mt-6 rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
-            <p className="text-sm text-gradient-foreground/80">Convite para o grupo</p>
-            <p className="mt-2 text-3xl font-bold">{preview.groupName}</p>
-            <div className="mt-3 flex gap-4 text-sm text-gradient-foreground/80">
-              <span className="flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                Convite de {preview.creatorName ?? "Alguém"}
-              </span>
+      <Link href="/" aria-label="Voltar ao início" className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "mb-6")}>
+        <ArrowLeft className="size-5" />
+      </Link>
+      <section className="rounded-2xl border border-border bg-card p-6">
+        {isInvalid ? (
+          <div role="alert" className="text-center">
+            <h1 className="text-2xl font-bold">{INVALID_INVITE_MESSAGE}</h1>
+            <p className="mt-2 text-base text-muted-foreground">Peça um novo link a quem convidou você.</p>
+            <Link href={isAuthenticated ? "/app" : "/auth"} className={cn(buttonVariants(), "mt-6 w-full")}>
+              {isAuthenticated ? "Ir para o início" : "Entrar no Dividimos"}
+            </Link>
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-col items-center text-center">
+            <div aria-hidden="true" className="flex size-14 items-center justify-center rounded-2xl border border-primary/25 bg-primary/15 text-2xl font-bold text-primary-text">{initialsOf(preview.groupName ?? "")}</div>
+            <p className="mt-4 text-sm text-muted-foreground">Convite para o grupo</p>
+            <h1 className="mt-2 max-w-full break-words text-2xl font-bold">{preview.groupName}</h1>
+            <p className="mt-2 max-w-full break-words text-base text-muted-foreground">
+              Convite de {preview.creatorName ?? "um amigo"}
+            </p>
+            <div className="mt-6 w-full">
+              <JoinActions token={token} isAuthenticated={isAuthenticated} />
             </div>
           </div>
-
-          <div className="mt-5 rounded-2xl border bg-card p-5">
-            <div className="rounded-xl bg-muted/50 p-3">
-              <p className="text-sm">
-                Ao entrar, você poderá ver e criar despesas neste grupo.
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Todos os membros podem dividir contas entre si.
-              </p>
-            </div>
-          </div>
-          <div className="mt-5">
-            <JoinActions token={token} isAuthenticated={isAuthenticated} />
-          </div>
-        </>
-      )}
+        )}
+      </section>
     </div>
   );
 }

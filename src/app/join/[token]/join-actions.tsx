@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { joinViaLink } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { haptics } from "@/hooks/use-haptics";
 
 interface JoinActionsProps {
   token: string;
@@ -16,6 +17,7 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
   const router = useRouter();
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingGroupId, setExistingGroupId] = useState<string | null>(null);
 
   if (!isAuthenticated) {
     return (
@@ -28,7 +30,7 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
         }}
       >
         <LogIn className="h-4 w-4" />
-        Criar conta e entrar no grupo
+        Entrar no grupo
       </Button>
     );
   }
@@ -39,8 +41,15 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
 
     try {
       const ack = await joinViaLink(token);
+      haptics.success();
+      if (ack.eventId === null) {
+        setExistingGroupId(ack.groupId);
+        setJoining(false);
+        return;
+      }
       router.push(`/app/groups/${ack.groupId}`);
     } catch (error) {
+      haptics.error();
       setError(ledgerErrorMessage(error));
       setJoining(false);
     }
@@ -48,10 +57,11 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
 
   return (
     <div className="space-y-3">
+      {existingGroupId && <p role="status" className="text-sm text-muted-foreground">Você já faz parte deste grupo.</p>}
       <Button
         className="w-full gap-2"
         size="lg"
-        onClick={handleJoin}
+        onClick={existingGroupId ? () => router.push(`/app/groups/${existingGroupId}`) : handleJoin}
         disabled={joining}
       >
         {joining ? (
@@ -59,10 +69,10 @@ export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
         ) : (
           <UserPlus className="h-4 w-4" />
         )}
-        Entrar no grupo
+        {existingGroupId ? "Abrir grupo" : joining ? "Entrando…" : "Entrar no grupo"}
       </Button>
       {error && (
-        <p role="alert" className="text-center text-xs text-destructive">{error}</p>
+        <p role="alert" className="text-center text-sm text-destructive-text">{error}</p>
       )}
     </div>
   );

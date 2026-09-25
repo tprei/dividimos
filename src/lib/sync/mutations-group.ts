@@ -348,10 +348,11 @@ export async function updateProfile(input: {
   }
 }
 
-export async function lookupUserByHandle(handle: string): Promise<UserProfile | null> {
+export async function lookupUserByHandle(handle: string, signal?: AbortSignal): Promise<UserProfile | null> {
   let response: Response;
   try {
-    response = await fetch(`/api/users/lookup?handle=${encodeURIComponent(handle)}`);
+    const url = `/api/users/lookup?handle=${encodeURIComponent(handle)}`;
+    response = signal ? await fetch(url, { signal }) : await fetch(url);
   } catch (error) {
     throw new LedgerError("network", { cause: error });
   }

@@ -2,7 +2,7 @@
 
 import { ArrowRight, Clipboard, Mail, Shield } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { readClipboardText } from "@/lib/platform/clipboard";
@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
+import { haptics } from "@/hooks/use-haptics";
+import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 
 type OnboardingFormProps = {
   me: Me;
@@ -17,6 +19,7 @@ type OnboardingFormProps = {
 };
 
 type OnboardStep = "profile" | "pix";
+type HandleAvailability = "available" | "taken" | "failed";
 
 const HANDLE_REGEX = /^[a-z0-9_]{3,30}$/;
 
@@ -79,11 +82,34 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   const [customPixInput, setCustomPixInput] = useState("");
   const [pixError, setPixError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const timerRef = useRef<number | NodeJS.Timeout | undefined>(undefined);
+  const [handleCheck, setHandleCheck] = useState<{ handle: string; status: HandleAvailability } | null>(null);
+  const availability = handle === me.handle ? "available" : handleCheck?.handle === handle ? handleCheck.status : "checking";
+
+  useEffect(() => {
+    if (step !== "profile" || !isValidHandle(handle) || handle === me.handle) return;
+    const controller = new AbortController();
+    timerRef.current = setTimeout(async () => {
+      try {
+        const profile = await lookupUserByHandle(handle, controller.signal);
+        if (!controller.signal.aborted) {
+          setHandleCheck({ handle, status: profile && profile.id !== me.id ? "taken" : "available" });
+        }
+      } catch {
+        if (!controller.signal.aborted) setHandleCheck({ handle, status: "failed" });
+      }
+    }, 500);
+    return () => {
+      clearTimeout(timerRef.current);
+      controller.abort();
+    };
+  }, [handle, me.handle, me.id, step]);
 
   const handleNameChange = (value: string) => {
     setName(value);
     if (!handleTouched) {
       setHandle(nameToHandle(value));
+      setHandleCheck(null);
     }
   };
 
@@ -92,9 +118,11 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
     setHandle(cleaned);
     setHandleTouched(true);
     setHandleError("");
+    setHandleCheck(null);
   };
 
   const selectPixKeyType = (type: PixKeyType) => {
+    haptics.selectionChanged();
     setPixKeyType(type);
     setCustomPixInput("");
     setPixError("");
@@ -149,6 +177,8 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
       );
       return;
     }
+    if (availability === "checking" || availability === "taken") return;
+    haptics.selectionChanged();
     setStep("pix");
   };
 
@@ -234,7 +264,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   <div>
                     <label htmlFor="onboard-name" className="mb-2 block text-sm font-medium">
                       Nome
-                    </label>
+                     </label>
                     <Input
                       id="onboard-name"
                       placeholder="Seu nome completo"
@@ -250,7 +280,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                       Handle
                     </label>
                     <div className="flex items-center">
-                      <div className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">
+                      <div aria-hidden="true" className="flex h-11 items-center rounded-l-xl border border-r-0 border-input bg-muted px-3 text-base text-muted-foreground">
                         @
                       </div>
                       <Input
@@ -266,21 +296,19 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                       />
                     </div>
                     {handleError && (
-                      <p className="mt-2 text-xs text-destructive">
-                        {handleError}
+                      <p role="alert" className="mt-2 text-sm text-destructive-text">{handleError}</p>
+                    )}
+                    {handle && !handleError && !(isValidHandle(handle) && availability === "available") && (
+                      <p role="status" className={`mt-2 text-sm ${availability === "taken" ? "text-destructive-text" : "text-muted-foreground"}`}>
+                        {!isValidHandle(handle) ? "3–30 caracteres: letras, números e sublinhados."
+                          : availability === "taken" ? "Já está em uso"
+                          : availability === "failed" ? "Não conseguimos verificar agora."
+                          : "Verificando…"}
                       </p>
                     )}
-                    {handle && !handleError && (
-                      <p
-                        className={`mt-2 text-xs ${
-                          isValidHandle(handle)
-                            ? "text-success"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {isValidHandle(handle)
-                          ? `A galera vai te adicionar como @${handle}`
-                          : "3-30 caracteres, letras minúsculas, números e sublinhados"}
+                    {handle && !handleError && isValidHandle(handle) && availability === "available" && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {`A galera vai te adicionar como @${handle}`}
                       </p>
                     )}
                   </div>
@@ -290,7 +318,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   className="mt-6 w-full gap-2"
                   size="lg"
                   onClick={handleContinue}
-                  disabled={!name.trim() || !handle}
+                  disabled={!name.trim() || !handle || (isValidHandle(handle) && (availability === "checking" || availability === "taken"))}
                 >
                   Continuar
                   <ArrowRight className="h-4 w-4" />
@@ -308,7 +336,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
               >
                 <h1 className="text-2xl font-bold">Chave Pix</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Coloca sua chave Pix pra receber dos amigos.
+                  Coloque sua chave Pix pra receber dos amigos.
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   Pode cadastrar agora ou depois, no seu perfil.
@@ -332,7 +360,8 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     <button
                       key={opt.type}
                       onClick={() => selectPixKeyType(opt.type)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      aria-pressed={pixKeyType === opt.type}
+                      className={`min-h-11 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
                         pixKeyType === opt.type
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -346,6 +375,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                 <div className="mt-4">
                   <div className="flex gap-2">
                     <Input
+                      aria-label="Chave Pix"
                       type={pixKeyType === "email" ? "email" : "text"}
                       placeholder={getInputPlaceholder()}
                       value={customPixInput}
@@ -370,7 +400,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     </Button>
                   </div>
                   {pixError && (
-                    <p className="mt-2 text-xs text-destructive">{pixError}</p>
+                    <p role="alert" className="mt-2 text-sm text-destructive-text">{pixError}</p>
                   )}
                 </div>
 
