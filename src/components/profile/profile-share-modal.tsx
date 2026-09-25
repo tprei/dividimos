@@ -1,16 +1,20 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
-import QRCode from "qrcode";
+import { Copy, ExternalLink, MessageCircle } from "lucide-react";
+import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buildWhatsAppLink } from "@/lib/contacts";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { haptics } from "@/hooks/use-haptics";
 
 interface ProfileShareModalProps {
+  id: string;
   open: boolean;
   onClose: () => void;
   handle: string;
@@ -19,55 +23,49 @@ interface ProfileShareModalProps {
 }
 
 export function ProfileShareModal({
+  id,
   open,
   onClose,
   handle,
   name,
   avatarUrl,
 }: ProfileShareModalProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const [qrFailed, setQrFailed] = useState(false);
+  const canShare = useClientOnly(isShareSupported);
 
   const profileUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/u/${handle}`
       : "";
 
-  useEffect(() => {
-    if (!open || !profileUrl || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, profileUrl, {
+  const paintQr = useCallback((canvas: HTMLCanvasElement | null) => {
+    if (!canvas || !profileUrl) return;
+    void qrToCanvas(canvas, profileUrl, {
       width: 200,
       margin: 2,
       color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
-  }, [open, profileUrl]);
+    }).then(() => setQrFailed(false), () => setQrFailed(true));
+  }, [profileUrl]);
 
   const shareMessage = `Me adicione no Dividimos! Meu perfil: @${handle}`;
 
   const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Dividimos",
-          text: shareMessage,
-          url: profileUrl,
-        });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${shareMessage}\n${profileUrl}`);
-      toast.success("Link copiado!");
+    if (!canShare) {
+      if (await copyText(`${shareMessage}\n${profileUrl}`)) toast.success("Link copiado!");
+      else toast.error("Não deu pra copiar");
+      return;
     }
-  }, [shareMessage, profileUrl]);
+    const outcome = await shareLink({
+      title: "Dividimos",
+      text: shareMessage,
+      url: profileUrl,
+    });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
+  }, [canShare, shareMessage, profileUrl]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(profileUrl);
-    toast.success("Link copiado!");
+    if (await copyText(profileUrl)) { toast.success("Link copiado"); haptics.success(); }
+    else { toast.error("Não deu pra copiar"); haptics.error(); }
   }, [profileUrl]);
 
   const handleWhatsApp = useCallback(() => {
@@ -78,89 +76,28 @@ export function ProfileShareModal({
   if (!open) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          drag="y"
-          dragConstraints={{ top: 0 }}
-          dragElastic={0.2}
-          onDragEnd={(_, info) => {
-            if (info.offset.y > 100 || info.velocity.y > 500) {
-              onClose();
-            }
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl overflow-y-auto max-h-[90vh]"
-        >
-          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
-
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Meu perfil</h3>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
-            >
-              <X className="h-4 w-4" />
-            </button>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="[@media(max-height:500px)_and_(min-width:600px)]:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Compartilhar perfil</DialogTitle>
+          <DialogDescription>@{handle}</DialogDescription>
+        </DialogHeader>
+        <div className="grid min-h-0 gap-4 overflow-y-auto [@media(max-height:500px)_and_(min-width:600px)]:grid-cols-[224px_minmax(0,1fr)]">
+          <div className="flex min-w-0 items-center gap-3 [@media(max-height:500px)_and_(min-width:600px)]:col-start-2">
+            <UserAvatar id={id} name={name} avatarUrl={avatarUrl} size="lg" />
+            <p title={name} className="min-w-0 truncate text-lg font-bold">{name}</p>
           </div>
-
-          <div className="flex flex-col items-center gap-3">
-            <UserAvatar name={name} avatarUrl={avatarUrl} size="lg" />
-            <div className="text-center">
-              <p className="font-medium">{name}</p>
-              <p className="text-sm text-muted-foreground">@{handle}</p>
-            </div>
+          <div className="flex justify-center rounded-2xl bg-paper p-3 [@media(max-height:500px)_and_(min-width:600px)]:col-start-1 [@media(max-height:500px)_and_(min-width:600px)]:row-span-2 [@media(max-height:500px)_and_(min-width:600px)]:row-start-1">
+            <canvas ref={paintQr} role="img" aria-label={`QR code do perfil de ${name}`} />
           </div>
-
-          <div className="mt-4 flex justify-center rounded-2xl bg-white p-4">
-            <canvas ref={canvasRef} />
+          {qrFailed && <p role="alert" className="text-sm text-destructive-text">O QR code não carregou. O link continua disponível.</p>}
+          <div className="grid gap-2 [@media(max-height:500px)_and_(min-width:600px)]:col-start-2">
+            <Button onClick={handleCopy}><Copy className="size-4" />Copiar link</Button>
+            {canShare && <Button variant="outline" onClick={handleShare}><ExternalLink className="size-4" />Compartilhar</Button>}
+            <Button variant="outline" onClick={handleWhatsApp}><MessageCircle className="size-4" />Enviar pelo WhatsApp</Button>
           </div>
-
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Escaneie o QR code ou compartilhe o link do seu perfil
-          </p>
-
-          <div className="mt-4 space-y-2">
-            <Button
-              className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
-              onClick={handleWhatsApp}
-            >
-              <MessageCircle className="h-4 w-4" />
-              Enviar pelo WhatsApp
-            </Button>
-
-            {canShare && (
-              <Button
-                className="w-full gap-2"
-                variant="outline"
-                onClick={handleShare}
-              >
-                <ExternalLink className="h-4 w-4" />
-                Compartilhar
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={handleCopy}
-            >
-              <Copy className="h-4 w-4" />
-              Copiar link
-            </Button>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

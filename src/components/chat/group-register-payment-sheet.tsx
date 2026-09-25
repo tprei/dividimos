@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { SelectField } from "@/components/ui/select-field";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { displayNames } from "@/lib/people";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import {
   PendingOperationNotice,
@@ -57,6 +58,9 @@ export function GroupRegisterPaymentSheet({
   errorMessage,
   anchor,
 }: GroupRegisterPaymentSheetProps) {
+  const people = [{ id: currentUserHandle, name: currentUserHandle }, ...counterparties];
+  const labels = displayNames(people, { style: "full", viewerId: currentUserHandle });
+  const shortLabels = displayNames(people, { style: "short", viewerId: currentUserHandle });
   const [amountCents, setAmountCents] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(
     counterparties[0]?.id ?? null,
@@ -73,7 +77,10 @@ export function GroupRegisterPaymentSheet({
 
   const [allowOverpay, setAllowOverpay] = useState(false);
 
-  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  const { showPending, guardedDismiss } = usePendingOperation(status, () => {
+    if (amountCents > 0 && !window.confirm("Descartar este pagamento?")) return;
+    onDismiss();
+  });
   const { keyboardOpen } = useAppViewport();
 
   const capCents = counterparty
@@ -118,16 +125,6 @@ export function GroupRegisterPaymentSheet({
       >
         <div className="flex items-center justify-between gap-2">
           <PopoverTitle>Registrar pagamento</PopoverTitle>
-          <button
-            type="button"
-            onClick={guardedDismiss}
-            disabled={status === "confirming"}
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Fechar"
-            data-testid="group-payment-dismiss"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         <div
@@ -143,7 +140,7 @@ export function GroupRegisterPaymentSheet({
             disabled={isConfirming}
             options={counterparties.map((member) => ({
               value: member.id,
-              label: `${member.name} (@${member.handle})`,
+              label: labels.get(member.id) ?? member.name,
             }))}
           />
           <div className="text-center">
@@ -192,7 +189,7 @@ export function GroupRegisterPaymentSheet({
         )}
         {capped && capCents === 0 && (
           <p className="mt-2 text-xs text-muted-foreground" data-testid="group-payment-settled">
-            Vocês estão quitados nesse grupo.
+            Vocês estão em dia nesse grupo.
           </p>
         )}
         {capped ? (
@@ -243,12 +240,12 @@ export function GroupRegisterPaymentSheet({
             disabled={isConfirming}
             className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
               payerIsSelf
-                ? "border-primary bg-primary/10 text-primary"
+                ? "border-primary bg-primary/10 text-primary-text"
                 : "border-border bg-background text-muted-foreground hover:border-primary/30"
             }`}
             data-testid="group-payment-payer-self"
           >
-            <PersonLabel name="Eu" handle={currentUserHandle} nameClassName="text-sm" />
+            <PersonLabel name={labels.get(currentUserHandle) ?? "Você"} nameClassName="text-sm" />
           </button>
           {counterparty && (
             <button
@@ -257,12 +254,12 @@ export function GroupRegisterPaymentSheet({
               disabled={isConfirming}
               className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                 !payerIsSelf
-                  ? "border-primary bg-primary/10 text-primary"
+                  ? "border-primary bg-primary/10 text-primary-text"
                   : "border-border bg-background text-muted-foreground hover:border-primary/30"
               }`}
               data-testid="group-payment-payer-other"
             >
-              <PersonLabel name={counterparty.name} handle={counterparty.handle} nameClassName="text-sm" />
+              <PersonLabel name={counterparty.name} overrideName={shortLabels.get(counterparty.id)} nameClassName="text-sm" />
             </button>
           )}
             </div>
@@ -271,7 +268,7 @@ export function GroupRegisterPaymentSheet({
 
         {status === "error" && errorMessage && (
           <div
-            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-text"
             data-testid="group-payment-error"
           >
             {errorMessage}

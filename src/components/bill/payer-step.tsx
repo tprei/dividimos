@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
-import { startTransition, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { PersonLabel } from "@/components/shared/person-label";
@@ -10,6 +10,8 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
+import { Money } from "@/components/shared/money";
+import { tapScale } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import {
   allocateByBasisPoints,
@@ -50,6 +52,7 @@ interface PayerStepProps {
   onSetPayerAmount: (userId: string, amountCents: number) => void;
   onRemovePayerEntry: (userId: string) => void;
   hasGuests?: boolean;
+  onValidityChange?: (valid: boolean) => void;
 }
 
 
@@ -62,12 +65,13 @@ export function PayerStep({
   onSetPayerAmount,
   onRemovePayerEntry,
   hasGuests,
+  onValidityChange,
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
   const [choosingSinglePayer, setChoosingSinglePayer] = useState(false);
   const [localAmounts, setLocalAmounts] = useState<Map<string, number>>(() => {
-    if (payers.length > 1) {
+    if (payers.length > 0) {
       const m = new Map<string, number>();
       for (const p of payers) {
         if (p.amountCents > 0) {
@@ -79,6 +83,9 @@ export function PayerStep({
     return new Map();
   });
   const [localPercentages, setLocalPercentages] = useState<Map<string, string>>(new Map());
+  const [invalidIds, setInvalidIds] = useState<string[]>([]);
+  const inputsValid = !multiMode || paymentInputMode !== "fixed" || !invalidIds.some((id) => participants.some((person) => person.id === id));
+  useEffect(() => { onValidityChange?.(inputsValid); }, [inputsValid, onValidityChange]);
 
   const payerMap = new Map(payers.map((p) => [p.userId, p.amountCents]));
   const totalPaid = payers.reduce((sum, p) => sum + p.amountCents, 0);
@@ -168,17 +175,6 @@ export function PayerStep({
       {hasGuests && (
         <p className="text-xs text-muted-foreground">{GUEST_PAYER_NOTICE}</p>
       )}
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Quem pagou a conta?
-        </p>
-        <div className="mt-2 rounded-xl bg-primary/5 px-4 py-3">
-          <p className="text-xs text-muted-foreground">Total da conta</p>
-          <p className="text-xl font-bold tabular-nums text-primary-text">
-            {formatBRL(grandTotal)}
-          </p>
-        </div>
-      </div>
 
       {!multiMode ? (
         <div className="space-y-2">
@@ -187,7 +183,8 @@ export function PayerStep({
             return (
               <motion.button
                 key={user.id}
-                whileTap={{ scale: 0.98 }}
+                aria-pressed={isSelected}
+                whileTap={{ scale: tapScale.card }}
                 onClick={() => {
                   haptics.selectionChanged();
                   onSetPayerFull(user.id);
@@ -199,30 +196,25 @@ export function PayerStep({
                 }`}
               >
                 <span className="relative shrink-0">
-                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                  <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
                   {isSelected && (
                     <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
                       <Check className="size-3" aria-hidden="true" />
                     </span>
                   )}
                 </span>
-                <div className="flex-1">
-                  <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
+                <div className="min-w-0 flex-1">
+                  <PersonLabel name={user.name} nameClassName="text-sm font-semibold" />
                   {isSelected && (
                     <motion.p
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-xs text-primary-text"
                     >
-                      Pagou tudo — {formatBRL(grandTotal)}
+                      <Money cents={grandTotal} />
                     </motion.p>
                   )}
                 </div>
-                {isSelected && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">
-                    Pagou tudo
-                  </span>
-                )}
               </motion.button>
             );
           })}
@@ -231,7 +223,7 @@ export function PayerStep({
             variant="outline"
             size="sm"
             className="w-full gap-2 border-dashed"
-            onClick={() => setMultiMode(true)}
+            onClick={() => { haptics.selectionChanged(); setMultiMode(true); }}
           >
             <Split className="h-4 w-4" />
             Mais de uma pessoa pagou
@@ -264,7 +256,7 @@ export function PayerStep({
                   haptics.selectionChanged();
                   changePaymentInputMode(m.key);
                 }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${
+                className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-colors ${
                   paymentInputMode === m.key
                     ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -300,7 +292,7 @@ export function PayerStep({
               remainingBasisPoints === 0
                 ? "text-muted-foreground"
                 : remainingBasisPoints < 0
-                  ? "text-destructive"
+                  ? "text-destructive-text"
                   : "text-warning-foreground";
             return (
               <div className="space-y-3">
@@ -315,17 +307,17 @@ export function PayerStep({
                         basisPoints > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
-                          <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                          <PersonLabel name={user.name} nameClassName="text-sm font-semibold" />
                         </div>
                         <div className="text-right">
                           <span className="text-sm font-bold tabular-nums text-primary-text">
                             {percentLabel(basisPoints)}%
                           </span>
                           <span className={cn("ml-2 text-xs tabular-nums", amountTone)}>
-                            {formatBRL(amounts[index])}
+                            <Money cents={amounts[index]} />
                           </span>
                         </div>
                       </div>
@@ -347,7 +339,7 @@ export function PayerStep({
                           onClick={() => {
                             setPercentage(user.id, percentText(remainingBasisPoints));
                           }}
-                          className="mt-1.5 text-xs font-medium text-primary-text"
+                          className="mt-1.5 min-h-11 text-sm font-semibold text-primary-text"
                         >
                           Preencher restante ({percentLabel(remainingBasisPoints)}%)
                         </button>
@@ -375,9 +367,9 @@ export function PayerStep({
                     className={cn(
                       "rounded-lg px-3 py-2 text-xs",
                       remainingBasisPoints === 0
-                        ? "bg-success/10 text-success"
+                        ? "bg-success/10 text-success-text"
                         : remainingBasisPoints < 0
-                          ? "bg-destructive/10 text-destructive"
+                          ? "bg-destructive/10 text-destructive-text"
                           : "bg-warning/10 text-warning-foreground",
                     )}
                   >
@@ -394,8 +386,8 @@ export function PayerStep({
           })()}
 
           {paymentInputMode === "fixed" && <div className="space-y-3">{participants.map((user) => {
-            const userCents = localAmounts.get(user.id) || 0;
             const storeAmount = payerMap.get(user.id) || 0;
+            const userCents = localAmounts.get(user.id) ?? storeAmount;
             const hasValue = userCents > 0 || storeAmount > 0;
             const othersFilled = participants.some(
               (p) => p.id !== user.id && (payerMap.get(p.id) || 0) > 0,
@@ -411,14 +403,14 @@ export function PayerStep({
                   hasValue ? "border-primary/30 bg-primary/5" : "bg-card"
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
-                  <PersonLabel name={user.name} handle={user.handle} className="flex-1" nameClassName="text-sm font-medium" />
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
+                  <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                  <PersonLabel name={user.name} className="min-w-0 flex-1" nameClassName="text-sm font-semibold" />
                   {showFillRemaining ? (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 text-xs gap-1 text-primary-text border-primary/30"
+                      className="min-h-11 text-xs gap-1 text-primary-text border-primary/30"
                       onClick={() => handleFillRemaining(user.id)}
                     >
                       Restante ({formatBRL(remaining)})
@@ -427,11 +419,15 @@ export function PayerStep({
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-muted-foreground">R$</span>
                       <CurrencyInput
-                        valueCents={userCents}
+                        valueCents={localAmounts.get(user.id) ?? storeAmount}
                         onChangeCents={(cents) => handleLocalChange(user.id, cents)}
                         aria-label={`Valor pago por ${user.name}`}
+                        onValidityChange={(valid) => setInvalidIds((ids) => {
+                          if (valid === !ids.includes(user.id)) return ids;
+                          return valid ? ids.filter((id) => id !== user.id) : [...ids, user.id];
+                        })}
                         maxCents={grandTotal}
-                        className="h-8 w-24 text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                        className="h-11 w-24 text-right text-base tabular-nums rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       />
                     </div>
                   )}
@@ -492,14 +488,14 @@ export function PayerStep({
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
                     remaining > 0
                       ? "bg-warning/10 text-warning-foreground"
-                      : "bg-destructive/10 text-destructive"
+                      : "bg-destructive/10 text-destructive-text"
                   }`}
                 >
                   <span>
                     {remaining > 0 ? "Falta atribuir" : "Excedente"}
                   </span>
                   <span className="font-semibold tabular-nums">
-                    {formatBRL(Math.abs(remaining))}
+                    <Money cents={Math.abs(remaining)} />
                   </span>
                 </motion.div>
               )}
@@ -521,11 +517,11 @@ export function PayerStep({
                   className="w-full flex items-center justify-between rounded-xl border p-3 hover:border-primary/50 text-left transition-colors"
                 >
                   <span className="flex items-center gap-3">
-                    <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
-                    <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
+                    <UserAvatar id={user.id} name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                    <PersonLabel name={user.name} nameClassName="text-sm font-semibold" />
                   </span>
                   <span className="text-sm font-bold tabular-nums text-primary-text">
-                    {formatBRL(grandTotal)}
+                    <Money cents={grandTotal} />
                   </span>
                 </button>
               ))}

@@ -1,5 +1,4 @@
 import type { BalanceRow, Transfer } from "@/types/ledger";
-import type { DebtEdge } from "../simplify";
 
 function byIdAsc(a: { participantId: string }, b: { participantId: string }): number {
   if (a.participantId < b.participantId) return -1;
@@ -51,28 +50,4 @@ export function transfersInvolving(
     owes: transfers.filter((transfer) => transfer.fromId === userId),
     owed: transfers.filter((transfer) => transfer.toId === userId),
   };
-}
-
-/**
- * Reduce a raw debt graph to the minimal set of transfers by pairing the
- * largest net debtor with the largest net creditor. Drives the wizard/demo
- * preview; the stored group balances arrive already minimized from the
- * database, written by the group_transfers SQL helper.
- */
-export function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
-  const nets = new Map<string, number>();
-  for (const edge of edges) {
-    nets.set(edge.fromUserId, (nets.get(edge.fromUserId) ?? 0) - edge.amountCents);
-    nets.set(edge.toUserId, (nets.get(edge.toUserId) ?? 0) + edge.amountCents);
-  }
-  const balances: BalanceRow[] = Array.from(nets, ([participantId, netCents]) => ({
-    kind: "user",
-    participantId,
-    netCents,
-  }));
-  return transfersFromBalances(balances).map((transfer) => ({
-    fromUserId: transfer.fromId,
-    toUserId: transfer.toId,
-    amountCents: transfer.amountCents,
-  }));
 }

@@ -2,12 +2,13 @@
 
 import { motion } from "framer-motion";
 import { Minus, Plus, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { haptics } from "@/hooks/use-haptics";
+import { popIn } from "@/lib/animations";
 import {
   computeExpenseLineTotalCents,
   formatExpenseQuantity,
@@ -29,6 +30,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState(1000);
   const [priceCents, setPriceCents] = useState(0);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const decrement = useCallback(() => {
     setQuantity((q) => {
@@ -63,90 +65,75 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
     setDescription("");
     setQuantity(1000);
     setPriceCents(0);
+    nameRef.current?.focus();
   };
-
 
   return (
     <motion.form
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.3 }}
+      variants={popIn}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       onSubmit={handleSubmit}
-      className="overflow-hidden rounded-2xl border bg-card p-4"
+      className="space-y-2 rounded-[0.75rem] border bg-card p-2.5"
     >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">Adicionar item</span>
-        <button
+      <div className="flex items-center gap-1">
+        <Input
+          ref={nameRef}
+          placeholder="Descrição (ex: Picanha 400g)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          autoFocus
+          className="min-w-0 flex-1"
+        />
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Fechar inclusão de item"
+          className="shrink-0 text-muted-foreground"
           onClick={onCancel}
-          className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted"
         >
-          <X className="h-4 w-4" />
-        </button>
+          <X aria-hidden="true" />
+        </Button>
       </div>
-
-      <div className="mt-3 space-y-3">
-        <div className="flex items-center gap-0 rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-          <Input
-            placeholder="Descrição (ex: Picanha 400g)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            autoFocus
-            className="flex-1 border-0 focus-visible:border-0 focus-visible:ring-0"
+      <div className="flex items-center gap-2">
+        <div className="flex h-11 shrink-0 items-center rounded-[0.75rem] border border-input">
+          <button
+            type="button"
+            onClick={decrement}
+            disabled={quantity <= 1000}
+            aria-label="Diminuir quantidade"
+            className="flex h-full w-9 items-center justify-center rounded-l-[0.75rem] text-muted-foreground hover:bg-muted disabled:opacity-30"
+          >
+            <Minus className="size-3.5" aria-hidden="true" />
+          </button>
+          <span className="min-w-7 text-center text-sm font-semibold tabular-nums">
+            {formatExpenseQuantity(quantity as ExpenseQuantity)}x
+          </span>
+          <button
+            type="button"
+            onClick={increment}
+            aria-label="Aumentar quantidade"
+            className="flex h-full w-9 items-center justify-center rounded-r-[0.75rem] text-muted-foreground hover:bg-muted"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+        <label className="flex h-11 min-w-0 flex-1 items-center gap-1 rounded-[0.75rem] border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+          <span aria-hidden="true" className="text-base leading-6 text-muted-foreground md:text-sm">R$</span>
+          <CurrencyInput
+            valueCents={priceCents}
+            onChangeCents={setPriceCents}
+            aria-label="Preço unitário"
+            className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 focus-visible:ring-0"
           />
-          <div className="flex shrink-0 items-center gap-0.5 pr-1">
-            <button
-              type="button"
-              onClick={decrement}
-              disabled={quantity <= 1000}
-              aria-label="Diminuir quantidade"
-              className="relative flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:bg-muted disabled:opacity-30"
-            >
-              <Minus className="h-3 w-3" />
-            </button>
-            <span className="min-w-[1.5rem] text-center text-xs font-medium tabular-nums">
-              {formatExpenseQuantity(quantity as ExpenseQuantity)}x
-            </span>
-            <button
-              type="button"
-              onClick={increment}
-              aria-label="Aumentar quantidade"
-              className="relative flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:bg-muted"
-            >
-              <Plus className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Preço unitário (R$)
-            </label>
-            <div className="flex items-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-              <span className="pl-2.5 text-sm text-muted-foreground">R$</span>
-              <CurrencyInput
-                valueCents={priceCents}
-                onChangeCents={setPriceCents}
-                aria-label="Preço unitário"
-                className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm text-left"
-              />
-            </div>
-            <div className="mt-1.5">
-              <AmountQuickAdd
-                increments={[1, 2, 5, 10, 20]}
-                valueCents={priceCents}
-                onChangeCents={setPriceCents}
-              />
-            </div>
-          </div>
-        </div>
+        </label>
+        <Button type="submit" className="h-11 shrink-0" disabled={!description.trim() || priceCents <= 0}>
+          Adicionar
+        </Button>
       </div>
-
-      <Button type="submit" className="mt-4 w-full gap-2" disabled={!description.trim() || priceCents <= 0}>
-        <Plus className="h-4 w-4" />
-        Adicionar
-      </Button>
+      <AmountQuickAdd increments={[1, 2, 5, 10, 20]} valueCents={priceCents} onChangeCents={setPriceCents} />
     </motion.form>
   );
 }

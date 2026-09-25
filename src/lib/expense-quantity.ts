@@ -22,7 +22,7 @@ import {
 export const MAX_EXPENSE_QUANTITY_MILLIUNITS = 999_999_999 as const;
 
 /** Quantity precision: three fractional digits (thousandths). */
-export const EXPENSE_QUANTITY_DECIMAL_PLACES = 3 as const;
+const EXPENSE_QUANTITY_DECIMAL_PLACES = 3 as const;
 const MILLIUNITS_PER_UNIT = BigInt(1000);
 const HALF_UP_BIAS = BigInt(500);
 

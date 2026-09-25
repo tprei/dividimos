@@ -44,7 +44,7 @@ describe("ItemDivisionEditor", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Selecione quem divide este item.")).toBeInTheDocument();
+    expect(screen.getByText("Ninguém divide este item ainda.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Todos" }));
     fireEvent.click(screen.getByRole("button", { name: "Concluir divisão de Picanha" }));
@@ -216,7 +216,7 @@ describe("ItemDivisionEditor", () => {
     fireEvent.change(anaInput, { target: { value: "150" } });
     expect(anaInput.value).toBe("150");
     expect(
-      screen.getByText("Informe percentuais de 0 a 100 com até duas casas decimais."),
+      screen.getByText("Percentuais vão de 0 a 100, com até duas casas decimais."),
     ).toBeInTheDocument();
   });
 

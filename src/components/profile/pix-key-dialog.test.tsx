@@ -53,7 +53,7 @@ describe("PixKeyDialog", () => {
   it("seeds the type from me and starts with an empty key", () => {
     setup({ pixKeyType: "cpf" });
 
-    expect(screen.getByRole("radio", { name: "CPF" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "CPF" })).toBeChecked();
     expect(screen.getByLabelText("Chave")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
   });

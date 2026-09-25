@@ -89,7 +89,7 @@ function requireEnv(name: string): string {
 // ---------------------------------------------------------------------------
 
 export const test = base.extend<SyntheticFixtures>({
-  adminClient: async ({}, use) => {
+  adminClient: async ({}, provide) => {
     const supabaseUrl = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -97,16 +97,16 @@ export const test = base.extend<SyntheticFixtures>({
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    await use(client);
+    await provide(client);
   },
 
-  seed: async ({ adminClient }, use) => {
+  seed: async ({ adminClient }, provide) => {
     const helper = new SeedHelper(adminClient);
-    await use(helper);
+    await provide(helper);
     await helper.cleanup();
   },
 
-  loginAs: async ({ page, context }, use) => {
+  loginAs: async ({ page, context }, provide) => {
     const login = async (
       user: SeededUser,
       options: LoginAsOptions = {},
@@ -121,7 +121,7 @@ export const test = base.extend<SyntheticFixtures>({
       }
     };
 
-    await use(login);
+    await provide(login);
   },
 
   // A second actor needs its own context, but `browser.newContext()` drops the
@@ -142,7 +142,7 @@ export const test = base.extend<SyntheticFixtures>({
       colorScheme,
       baseURL,
     },
-    use,
+    provide,
   ) => {
     const opened: BrowserContext[] = [];
 
@@ -166,7 +166,7 @@ export const test = base.extend<SyntheticFixtures>({
       return { context, page };
     };
 
-    await use(openSession);
+    await provide(openSession);
 
     for (const context of opened) {
       await context.close();

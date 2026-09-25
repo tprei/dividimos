@@ -11,7 +11,10 @@ import { RoomShare } from "@/components/assignment-room/room-share";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import { previewClaimCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
 import { cn } from "@/lib/utils";
@@ -94,6 +97,7 @@ export function RoomBoard({
     [view.room.participants],
   );
   const selfParticipantId = view.room.selfParticipantId;
+  const labels = displayNames(activeParticipants.map((person) => ({ ...person, name: person.displayName })), { style: "short", viewerId: selfParticipantId });
   const participantById = useMemo(
     () => new Map(view.room.participants.map((participant) => [participant.id, participant])),
     [view.room.participants],
@@ -157,6 +161,7 @@ export function RoomBoard({
   const pickerParticipants = view.room.participants.filter((participant) => !participant.removed);
 
   function openItemEditor(itemId: string, trigger: HTMLButtonElement, participantId?: string) {
+    haptics.selectionChanged();
     openTriggerRef.current = trigger;
     setSelectedItemId(itemId);
     setTargetParticipantId(participantId ?? selfParticipantId);
@@ -164,6 +169,7 @@ export function RoomBoard({
   }
 
   function toggleDetails(itemId: string) {
+    haptics.selectionChanged();
     setExpandedItemIds((current) => {
       const next = new Set(current);
       if (next.has(itemId)) next.delete(itemId);
@@ -188,10 +194,10 @@ export function RoomBoard({
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg [&>header_h1]:whitespace-normal">
+    <div className="flex min-h-full flex-col bg-background [&>header]:mx-auto [&>header]:w-full [&>header]:max-w-lg md:[&>header]:max-w-2xl [&>header_h1]:whitespace-normal">
       <ScreenHeader
         title={view.role === "host" ? view.room.title : "O que você consumiu?"}
-        eyebrow={view.role === "host" ? `SALA ${view.room.status === "open" ? "ABERTA" : "FECHADA"} · ${activeParticipants.length} NA SALA` : `${view.room.title} · ${activeParticipants.length} na sala`}
+        subtitle={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "fechada"} · ${activeParticipants.length} na sala` : `${view.room.title} · ${activeParticipants.length} na sala`}
         back={view.role === "host"}
         onBack={onBack}
         action={
@@ -215,7 +221,7 @@ export function RoomBoard({
           ) : undefined
         }
       />
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-5 px-4 pt-1 pb-8">
+      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 px-4 pt-1 pb-8 md:max-w-2xl">
         {!connected && !accessRemoved && view.room.status !== "cancelled" && (
           <p role="status" className="rounded-xl border bg-muted px-4 py-3 text-sm">
             {view.role === "host" ? "Reconectando..." : "Reconectando…"}
@@ -256,37 +262,40 @@ export function RoomBoard({
 
         {!accessRemoved && view.room.status !== "cancelled" && view.room.status !== "finalized" && (
           <>
+            <p role="status" className="sticky top-0 z-10 -mx-4 border-b bg-background/95 px-4 py-1.5 text-xs font-semibold tabular-nums backdrop-blur">
+              {fullyAssignedCount} de {itemRows.length} itens
+              <span className="ml-2 font-normal text-muted-foreground">{roomComplete ? "Tudo com dono" : "com dono"}</span>
+            </p>
             {view.role === "host" && (roomMoney ? (
-              <section className="rounded-2xl border bg-card p-4" aria-label="Progresso da divisão">
+              <section className="rounded-2xl border bg-card p-3" aria-label="Progresso da divisão">
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-sm font-medium"><Money cents={roomMoney.claimedItemsCents} /> de <Money cents={roomMoney.itemsSubtotalCents} /> com dono</p>
                   <span className="shrink-0 text-xs text-muted-foreground">{new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 }).format(roomMoney.itemsSubtotalCents > 0 ? roomMoney.claimedItemsCents / roomMoney.itemsSubtotalCents : 0)}</span>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Valor com dono" aria-valuemin={0} aria-valuemax={roomMoney.itemsSubtotalCents} aria-valuenow={roomMoney.claimedItemsCents}>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Valor com dono" aria-valuemin={0} aria-valuemax={roomMoney.itemsSubtotalCents} aria-valuenow={roomMoney.claimedItemsCents}>
                   <div className="h-full rounded-full bg-primary motion-safe:transition-[width] motion-safe:duration-300" style={{ width: new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 2 }).format(roomMoney.itemsSubtotalCents > 0 ? roomMoney.claimedItemsCents / roomMoney.itemsSubtotalCents : 0) }} />
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">{roomMoney.unownedLineCount > 0 ? <>{roomMoney.unownedLineCount} itens sem dono · <Money cents={roomMoney.unclaimedItemsCents} /></> : "Tudo com dono"}</p>
               </section>
-            ) : <p role="alert" className="text-sm text-destructive">Não foi possível calcular a divisão.</p>)}
+            ) : <p role="alert" className="text-sm text-destructive-text">Não foi possível calcular a divisão.</p>)}
 
             <section className={view.role === "host" ? "space-y-2" : "sr-only"} aria-labelledby="room-roster-heading">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 id="room-roster-heading" className="text-sm font-semibold">Na sala</h2>
-                <p className="text-xs text-muted-foreground">
-                  {view.role === "host" ? "toque pra gerenciar" : activeParticipants.length === 1 ? "1 pessoa na sala" : `${activeParticipants.length} pessoas na sala`}
-                </p>
+                {view.role !== "host" && <p className="text-xs text-muted-foreground">{activeParticipants.length === 1 ? "1 pessoa na sala" : `${activeParticipants.length} pessoas na sala`}</p>}
               </div>
-              <ul className="flex gap-3 overflow-x-auto pb-1">
+              <ul className="flex gap-2 overflow-x-auto pb-1">
                 {activeParticipants.map((participant) => {
                   const selectable = view.role === "host";
                   return (
                     <li key={participant.id} aria-label={selectable ? undefined : participant.displayName} className="shrink-0">
                       {selectable ? (
-                        <RoomHostPerson participant={participant} money={roomMoney?.byParticipant[participant.id]} disabled={hostControlsDisabled} removable={view.room.status === "open"} onRemove={onRemoveParticipant} />
+                        <RoomHostPerson participant={participant} label={labels.get(participant.id) ?? participant.displayName} money={roomMoney?.byParticipant[participant.id]} disabled={hostControlsDisabled} removable={view.room.status === "open"} onRemove={onRemoveParticipant} />
                       ) : (
-                        <span className="flex min-h-11 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1">
-                          <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="sm" />
-                          <span className="max-w-24 truncate text-xs font-medium">{participant.displayName.split(" ")[0]}</span>
+                        <span className="flex h-9 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1.5">
+                          {participant.isGuest
+                            ? <GuestAvatar id={participant.id} name={participant.displayName} size="xs" />
+                            : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />}
+                          <span title={participant.displayName} className="max-w-24 truncate text-xs font-medium">{labels.get(participant.id)}</span>
                         </span>
                       )}
                     </li>
@@ -332,6 +341,7 @@ export function RoomBoard({
                       money={rowMoney(row.item)}
                       claimMoney={roomMoney?.byItem[row.item.id]?.claims}
                       selfParticipantId={selfParticipantId}
+                      labels={labels}
                       onUndoParticipant={(participantId) => { void onClaim(row.item.id, participantId, 0, row.item.revision); }}
                       onOpen={(trigger, participantId) => openItemEditor(row.item.id, trigger, participantId)}
                     />
@@ -388,7 +398,7 @@ export function RoomBoard({
                         onOpen={(trigger) => openItemEditor(row.item.id, trigger)}
                       />
                     ))}
-                    {mineRows.length === 0 && <li className="px-4 py-4 text-sm text-muted-foreground">Toque em um item acima pra marcar.</li>}
+                    {mineRows.length === 0 && <li className="px-4 py-4 text-sm text-muted-foreground">Nenhum item escolhido ainda</li>}
                     {selfMoney && selfMoney.serviceFeeCents > 0 && (
                       <li className="flex min-h-11 items-center justify-between gap-3 border-t border-dashed px-4 py-2 text-xs text-muted-foreground">
                         <span>+ taxa de serviço {new Intl.NumberFormat("pt-BR").format(view.room.serviceFeeBasisPoints / 100)}%</span>
@@ -396,7 +406,7 @@ export function RoomBoard({
                       </li>
                     )}
                   </ul>
-                  {claimError && !editorOpen && <p role="alert" className="text-sm text-destructive">{claimError.message}</p>}
+                  {claimError && !editorOpen && <p role="alert" className="text-sm text-destructive-text">{claimError.message}</p>}
                 </section>
               </>
             )}
@@ -406,6 +416,7 @@ export function RoomBoard({
                 open={editorOpen}
                 onOpenChange={setEditorOpen}
                 getReturnFocus={getReturnFocus}
+                selfParticipantId={selfParticipantId}
                 item={selectedItem.item}
                 claims={selectedItem.claims}
                 availableTicks={selectedItem.availableTicks}
@@ -433,7 +444,7 @@ export function RoomBoard({
               />
             )}
 
-            {view.role === "host" && claimError && !editorOpen && <p role="alert" className="text-sm text-destructive">{claimError.message}</p>}
+            {view.role === "host" && claimError && !editorOpen && <p role="alert" className="text-sm text-destructive-text">{claimError.message}</p>}
           </>
         )}
       </main>
@@ -442,7 +453,7 @@ export function RoomBoard({
       )}
       {view.role === "participant" && !accessRemoved && (view.room.status === "open" || view.room.status === "closed") && (
         <footer className="sticky bottom-0 z-10 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
-          <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-4 md:max-w-2xl">
             <div>
               <p className="text-xs text-muted-foreground">Sua parte</p>
               {selfMoney && <Money cents={selfMoney.withFeeCents} className="text-xl font-bold tabular-nums" />}

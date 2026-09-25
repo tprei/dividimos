@@ -8,27 +8,15 @@ interface SkeletonProps {
 export function Skeleton({ className, variant = "pulse" }: SkeletonProps) {
   return (
     <div
+      aria-hidden="true"
       className={cn(
-        "rounded-md",
+        "rounded-lg bg-muted motion-reduce:animate-none",
         variant === "shimmer"
-          ? "bg-[length:200%_100%] bg-[linear-gradient(90deg,var(--muted)_0%,var(--muted-foreground)/12%_50%,var(--muted)_100%)] [animation:shimmer_1.8s_ease-in-out_infinite]"
-          : "animate-pulse bg-muted",
+          ? "bg-[length:200%_100%] bg-[linear-gradient(90deg,var(--muted),var(--card),var(--muted))] motion-safe:[animation:shimmer_1.8s_ease-in-out_infinite]"
+          : "motion-safe:animate-pulse",
         className,
       )}
     />
-  );
-}
-
-export function ContactAvatarSkeleton({
-  variant = "shimmer",
-}: {
-  variant?: "pulse" | "shimmer";
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <Skeleton variant={variant} className="h-8 w-8 rounded-full" />
-      <Skeleton variant={variant} className="h-2.5 w-10" />
-    </div>
   );
 }
 
@@ -99,9 +87,9 @@ export function ModalLoadingSkeleton({
   variant?: "pulse" | "shimmer";
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-12">
-      <div className="relative h-10 w-10">
-        <div className="absolute inset-0 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    <div role="status" aria-label="Carregando" className="flex flex-col items-center justify-center gap-4 py-12">
+      <div aria-hidden="true" className="relative h-10 w-10">
+        <div className="absolute inset-0 motion-safe:animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
       <Skeleton variant={variant} className="h-3.5 w-32" />
     </div>
@@ -110,7 +98,7 @@ export function ModalLoadingSkeleton({
 
 export function BillCardSkeleton() {
   return (
-    <div className="flex items-center gap-4 rounded-2xl border bg-card p-4">
+    <div role="status" aria-label="Carregando" className="flex items-center gap-4 rounded-2xl border bg-card p-4">
       <Skeleton className="h-11 w-11 rounded-xl" />
       <div className="flex-1 space-y-2">
         <Skeleton className="h-4 w-3/4" />
@@ -126,7 +114,7 @@ export function BillCardSkeleton() {
 
 export function DashboardSkeleton() {
   return (
-    <div className="space-y-6">
+    <div role="status" aria-label="Carregando" className="space-y-6">
       <Skeleton className="h-32 rounded-2xl" />
       <div className="grid grid-cols-3 gap-3">
         <Skeleton className="h-20 rounded-2xl" />

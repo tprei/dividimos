@@ -43,6 +43,17 @@ describe("sign-in destination", () => {
     searchParams.set("next", "/join/abc123");
   });
 
+  it("keeps a failed Google sign-in inline and allows retry", async () => {
+    mockGoogleSignIn.mockResolvedValueOnce(false);
+    render(<AuthPage />);
+    fireEvent.click(screen.getByRole("button", { name: /google/i }));
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.getByRole("button", { name: /google/i })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /google/i }));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/auth/continue?next=%2Fjoin%2Fabc123"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("routes a sign-in through the onboarding decision, keeping the destination", async () => {
     render(<AuthPage />);
 
@@ -132,5 +143,23 @@ describe("auth invitation scanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "decodificar" }));
 
     expect(mockPush).toHaveBeenCalledWith(`/room/${roomId}#${token}`);
+  });
+});
+describe("auth card layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams.delete("error");
+    searchParams.delete("next");
+  });
+
+  it("renders restored sign-in card layout, copy and privacy notice", () => {
+    render(<AuthPage />);
+
+    expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
+    expect(screen.getByText("Como quer entrar?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Entrar com Google/i })).toBeInTheDocument();
+    expect(screen.getByText("ou")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ler um convite" })).toBeInTheDocument();
+    expect(screen.getByText(/Em conformidade com a LGPD/)).toBeInTheDocument();
   });
 });

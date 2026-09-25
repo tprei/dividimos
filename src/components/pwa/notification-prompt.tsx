@@ -4,13 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { popIn } from "@/lib/animations";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { pushFailureMessage } from "@/lib/push/failures";
 
 const SESSION_KEY = "dividimos:notification-prompt-dismissed";
 
 /**
- * Contextual notification opt-in banner shown once per session on group pages.
+ * Contextual notification opt-in banner on Home and group pages.
  *
  * On web: renders when push is supported, permission hasn't been decided, and
  * the user hasn't dismissed this session.
@@ -50,10 +52,14 @@ export function NotificationPrompt() {
   if (isInitializing) return null;
 
   // Don't show if already subscribed, denied, unsupported, or dismissed
-  if (isSubscribed || permission === "denied" || permission === "unsupported" || dismissed) {
+  if (
+    isSubscribed ||
+    permission === "denied" ||
+    permission === "unsupported" ||
+    dismissed
+  ) {
     return null;
   }
-
 
   const handleSubscribe = async () => {
     await subscribe();
@@ -62,45 +68,54 @@ export function NotificationPrompt() {
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.3 }}
-        className="mt-4 flex items-center gap-3 rounded-2xl border bg-card p-3"
+        variants={popIn}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        className="relative space-y-3 rounded-2xl border border-border bg-card p-4 pr-14"
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Bell className="h-5 w-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">Ativar notificações</p>
-          {error === null ? (
-            <p className="text-xs text-muted-foreground">
-              {isNative
-                ? "Receba alertas de contas novas e pagamentos"
-                : "Fica sabendo quando rolar conta nova ou pagamento"}
-            </p>
-          ) : (
-            <p role="alert" className="text-xs text-destructive">
-              {pushFailureMessage(error)}
-            </p>
-          )}
+        <div className="flex items-start gap-3">
+          <Bell
+            className="mt-0.5 size-5 shrink-0 text-primary"
+            aria-hidden="true"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Ativar notificações</p>
+            {error === null ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Alertas de contas novas e pagamentos.
+              </p>
+            ) : (
+              <p role="alert" className="mt-1 text-sm text-destructive-text">
+                {pushFailureMessage(error)}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
             size="sm"
-            onClick={error !== null && error.retryable ? () => void retry() : handleSubscribe}
+            onClick={
+              error !== null && error.retryable
+                ? () => void retry()
+                : handleSubscribe
+            }
             disabled={isLoading}
           >
-            {isLoading ? "..." : error !== null && error.retryable ? "Tentar de novo" : "Ativar"}
+            {isLoading
+              ? "Ativando…"
+              : error !== null && error.retryable
+              ? "Tentar de novo"
+              : "Ativar"}
           </Button>
           {!isNative && (
-            <button
+            <IconButton
               onClick={handleDismiss}
-              className="-m-2 flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
+              className="absolute top-2 right-2"
               aria-label="Fechar"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X className="size-4" aria-hidden="true" />
+            </IconButton>
           )}
         </div>
       </motion.div>

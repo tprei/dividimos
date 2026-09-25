@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Clock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 
 export type PendingOperationStatus = "idle" | "confirming" | "confirmed" | "error";
 
-export const PENDING_OPERATION_TIMEOUT_MS = 15000;
+const PENDING_OPERATION_TIMEOUT_MS = 15000;
 
 /**
  * One contract for sheets whose mutation may stall: while `status` is
@@ -61,15 +61,16 @@ export function PendingOperationNotice({
   if (!show) return null;
   return (
     <div
-      className="mb-3 rounded-xl border border-warning bg-warning/25 p-3"
+      role="status"
+      className="mb-3 rounded-2xl border border-warning/30 bg-warning/10 p-3"
       data-testid={testId}
     >
-      <Badge variant="outline" className="border-warning text-warning-foreground">
+      <Chip tone="warning">
         Pendente
-      </Badge>
+      </Chip>
       <div className="mt-1 flex items-center gap-1.5">
         <Clock className="size-4 text-warning-foreground" />
-        <p className="text-sm font-semibold">Ainda aguardando confirmação</p>
+        <p className="text-sm font-semibold">Aguardando confirmação</p>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
       <Button variant="outline" className="mt-2 min-h-11" onClick={onLeave}>

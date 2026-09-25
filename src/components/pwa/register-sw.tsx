@@ -4,12 +4,17 @@ import { useRouter } from "next/navigation";
 import { registerServiceWorker } from "@/lib/push/service-worker";
 import { useEffect } from "react";
 
+declare global {
+  interface Window {
+    androidBridge?: unknown;
+    webkit?: { messageHandlers?: { bridge?: unknown } };
+  }
+}
+
 function isNativeWebView(): boolean {
   if (typeof window === "undefined") return false;
-  const w = window as unknown as Record<string, unknown>;
-  if (typeof w.androidBridge !== "undefined") return true;
-  const webkit = w.webkit as Record<string, Record<string, unknown>> | undefined;
-  return typeof webkit?.messageHandlers?.bridge !== "undefined";
+  if (typeof window.androidBridge !== "undefined") return true;
+  return typeof window.webkit?.messageHandlers?.bridge !== "undefined";
 }
 
 const HANDOFF_KEY = "dividimos.sw.handoff";

@@ -85,6 +85,7 @@ function renderPopover(onOpenChange: (open: boolean) => void = () => {}) {
       settlementId="set-1"
       groupId="g1"
       open
+      anchor={null}
       onOpenChange={onOpenChange}
     />,
   );
@@ -107,14 +108,13 @@ describe("SettlementDetailPopover", () => {
     expect(screen.queryByRole("button", { name: /Desfazer/i })).not.toBeInTheDocument();
   });
 
-  it("closes from the anchored panel without a backdrop", () => {
+  it("closes the detail with Escape", () => {
     seedStore({ settlement: settlement() });
     const onOpenChange = vi.fn();
     renderPopover(onOpenChange);
 
-    expect(screen.getByRole("dialog", { name: "Detalhes do pagamento" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Fechar pagamento" }));
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
   });
 
   it("keeps cached detail visible and retries a failed refresh", () => {

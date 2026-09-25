@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { lookupProfile } from "@/lib/profile-lookup";
 import { AppError } from "@/lib/errors";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton, SplitBillButton } from "./profile-actions";
 import type { UserProfile } from "@/types/ledger";
@@ -58,12 +58,9 @@ export default async function PublicProfilePage({
   }
 
   if (anonymous) {
-    // The lookup boundary is authenticated-only, so a signed-out visitor
-    // cannot read the profile; the CTA branch stays present and renders
-    // from the handle in the URL.
     return (
-      <div className="flex min-h-[80vh] items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-6">
+      <div className="flex min-h-[80svh] items-center justify-center px-4 py-6">
+        <div className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-6">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-card p-1 shadow-lg">
               <UserAvatar
@@ -74,25 +71,18 @@ export default async function PublicProfilePage({
               />
             </div>
             <h1 className="mt-4 text-2xl font-bold">@{normalizedHandle}</h1>
-            <p className="text-muted-foreground">@{normalizedHandle}</p>
           </div>
 
-          <div className="rounded-2xl border bg-card p-4 text-center">
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <UserCircle className="h-4 w-4" />
-              <span>Perfil no Dividimos</span>
-            </div>
-          </div>
 
           <div className="space-y-3">
             <Link
               href={`/auth?next=${encodeURIComponent(`/u/${normalizedHandle}`)}`}
               className={buttonVariants({ size: "lg", className: "w-full" })}
             >
-              Criar conta
+              Entrar no Dividimos
             </Link>
             <p className="text-center text-xs text-muted-foreground">
-              Crie sua conta para dividir contas com @{normalizedHandle}
+              Entre para conversar e dividir contas com @{normalizedHandle}.
             </p>
           </div>
         </div>
@@ -109,12 +99,13 @@ export default async function PublicProfilePage({
 
   const isSelf = callerId === profile.id;
   return (
-    <div className="flex min-h-[80vh] items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="flex min-h-[80svh] items-center justify-center px-4 py-6">
+      <div className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-6">
         <div className="flex flex-col items-center text-center">
           <div className="rounded-full bg-card p-1 shadow-lg">
             <UserAvatar
               name={profile.name || normalizedHandle}
+              id={profile.id}
               avatarUrl={profile.avatarUrl ?? null}
               size="lg"
               className="h-24 w-24 text-2xl"
@@ -122,22 +113,16 @@ export default async function PublicProfilePage({
             />
           </div>
 
-          <h1 className="mt-4 text-2xl font-bold">{profile.name || `@${profile.handle}`}</h1>
-          <p className="text-muted-foreground">@{profile.handle}</p>
+          <h1 className="mt-4 max-w-full break-words text-2xl font-bold">{profile.name || `@${profile.handle}`}</h1>
+          <p className="max-w-full break-words text-sm text-muted-foreground">@{profile.handle}</p>
           {profile.isBot && (
-            <Badge variant="secondary" className="mt-2">
+            <Chip tone="primary" className="mt-2">
               <Bot />
               Bot verificado
-            </Badge>
+            </Chip>
           )}
         </div>
 
-        <div className="rounded-2xl border bg-card p-4 text-center">
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <UserCircle className="h-4 w-4" />
-            <span>Perfil no Dividimos</span>
-          </div>
-        </div>
 
         {!callerId && (
           <div className="space-y-3">
@@ -155,8 +140,8 @@ export default async function PublicProfilePage({
 
         {callerId && !isSelf && (
           <>
-            <SplitBillButton targetUserId={profile.id} targetName={profile.name} />
-            <SendMessageButton targetUserId={profile.id} targetName={profile.name} />
+            <SplitBillButton targetUserId={profile.id} />
+            <SendMessageButton targetUserId={profile.id} />
           </>
         )}
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Camera, CreditCard, Mic, ScanLine } from "lucide-react";
+import { Camera, ChevronRight, CreditCard, Mic, ScanLine } from "lucide-react";
 import { haptics } from "@/hooks/use-haptics";
+import { popIn, tapScale } from "@/lib/animations";
 import type { ExpenseType } from "@/types";
 
 interface BillTypeSelectorProps {
@@ -16,21 +17,18 @@ const options: {
   icon: React.ElementType;
   title: string;
   subtitle: string;
-  examples: string;
 }[] = [
   {
     type: "single_amount",
     icon: CreditCard,
     title: "Valor único",
     subtitle: "Um total pra dividir",
-    examples: "Airbnb, Uber, assinatura, voo, presente",
   },
   {
     type: "itemized",
     icon: ScanLine,
     title: "Vários itens",
-    subtitle: "Cada um paga o que comeu",
-    examples: "Restaurante, bar, mercado, delivery",
+    subtitle: "Cada um paga o que consumiu",
   },
 ];
 
@@ -39,98 +37,65 @@ export function BillTypeSelector({
   onScanReceipt,
   onVoiceExpense,
 }: BillTypeSelectorProps) {
+  const shortcuts = [
+    ...(onScanReceipt
+      ? [{ icon: Camera, title: "Escanear nota", onClick: onScanReceipt }]
+      : []),
+    ...(onVoiceExpense
+      ? [{ icon: Mic, title: "Falar conta", onClick: onVoiceExpense }]
+      : []),
+  ];
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">Que tipo de conta?</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Escolha como você quer rachar.
-        </p>
-      </div>
-
-      <div className="grid gap-3">
-        {options.map((opt, idx) => (
+      <h2 className="px-1 text-base font-bold tracking-tight">Que tipo de conta?</h2>
+      <div className="space-y-2">
+        {options.map((option) => (
           <motion.button
-            key={opt.type}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.08, duration: 0.3 }}
-            whileTap={{ scale: 0.98 }}
+            key={option.type}
+            type="button"
+            variants={popIn}
+            initial="hidden"
+            animate="visible"
+            whileTap={{ scale: tapScale.card }}
             onClick={() => {
-              haptics.tap();
-              onSelect(opt.type);
+              haptics.selectionChanged();
+              onSelect(option.type);
             }}
-            className="group flex items-start gap-4 rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/30"
+            className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-border bg-card px-3 py-2.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-              <opt.icon className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="font-semibold">{opt.title}</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {opt.subtitle}
-              </p>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {opt.examples}
-              </p>
-            </div>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[0.75rem] bg-primary/10 text-primary-text">
+              <option.icon className="size-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-base font-semibold">{option.title}</span>
+              <span className="block truncate text-sm text-muted-foreground">{option.subtitle}</span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           </motion.button>
         ))}
-
-        {onScanReceipt && (
-          <motion.button
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: options.length * 0.08, duration: 0.3 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              haptics.tap();
-              onScanReceipt!();
-            }}
-            className="group flex items-start gap-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 text-left transition-colors hover:border-primary/50"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-              <Camera className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="font-semibold">Escanear nota</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Foto do cupom
-              </p>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Restaurante, bar, mercado, padaria
-              </p>
-            </div>
-          </motion.button>
-        )}
-
-        {onVoiceExpense && (
-          <motion.button
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: (options.length + 1) * 0.08, duration: 0.3 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              haptics.tap();
-              onVoiceExpense!();
-            }}
-            className="group flex items-start gap-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 text-left transition-colors hover:border-primary/50"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-              <Mic className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="font-semibold">Falar despesa</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Diga o que gastou e com quem
-              </p>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                &ldquo;Uber com João 25 reais&rdquo;
-              </p>
-            </div>
-          </motion.button>
-        )}
       </div>
+      {shortcuts.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {shortcuts.map((shortcut) => (
+            <motion.button
+              key={shortcut.title}
+              type="button"
+              variants={popIn}
+              initial="hidden"
+              animate="visible"
+              whileTap={{ scale: tapScale.icon }}
+              onClick={() => {
+                haptics.selectionChanged();
+                shortcut.onClick();
+              }}
+              className="flex h-10 min-w-0 items-center justify-center gap-2 rounded-[0.75rem] border border-border bg-background px-3 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <shortcut.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="truncate">{shortcut.title}</span>
+            </motion.button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

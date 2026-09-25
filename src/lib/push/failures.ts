@@ -23,18 +23,14 @@ export class PushFailure extends Error {
 
 const MESSAGES: Record<PushFailureCode, string> = {
   denied: "As notificações estão bloqueadas nas configurações do navegador.",
-  unsupported: "Este dispositivo não suporta notificações.",
-  config: "As notificações não estão configuradas neste ambiente.",
-  worker: "Não conseguimos preparar as notificações. Tente de novo.",
-  server: "Não conseguimos salvar as notificações. Tente de novo.",
-  native: "Não conseguimos ativar as notificações neste aparelho. Tente de novo.",
+  unsupported: "As notificações não estão disponíveis neste dispositivo.",
+  config: "As notificações ainda não foram configuradas por aqui.",
+  worker: "Não deu para preparar as notificações neste dispositivo.",
+  server: "Não deu para salvar suas notificações.",
+  native: "Não deu para ativar as notificações neste dispositivo.",
 };
 
 export function pushFailureMessage(error: unknown): string {
   if (error instanceof PushFailure) return MESSAGES[error.code];
   return MESSAGES.server;
-}
-
-export function isRetryablePushFailure(error: unknown): boolean {
-  return error instanceof PushFailure && error.retryable;
 }

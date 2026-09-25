@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { JoinActions } from "./join-actions";
+import { joinViaLink } from "@/lib/sync/mutations-group";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 
 const pushMock = vi.fn();
 
@@ -9,35 +11,16 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-const rpcMock = vi.fn().mockResolvedValue({
-  data: { groupId: "group-1" },
-  error: null,
-});
-const getUserMock = vi.fn().mockResolvedValue({
-  data: { user: { id: "user-1" } },
-  error: null,
-});
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    rpc: rpcMock,
-    auth: { getUser: getUserMock },
-  }),
+vi.mock("@/lib/sync/mutations-group", () => ({
+  joinViaLink: vi.fn(),
 }));
 
+const joinMock = vi.mocked(joinViaLink);
 
 beforeEach(() => {
   pushMock.mockClear();
-  rpcMock.mockClear();
-  getUserMock.mockClear();
-  rpcMock.mockResolvedValue({
-    data: { groupId: "group-1" },
-    error: null,
-  });
-  getUserMock.mockResolvedValue({
-    data: { user: { id: "user-1" } },
-    error: null,
-  });
+  joinMock.mockReset();
+  joinMock.mockResolvedValue({ groupId: "group-1", ledgerVersion: 2, eventId: 7 });
 });
 
 const defaultProps = {
@@ -46,18 +29,6 @@ const defaultProps = {
 };
 
 describe("JoinActions", () => {
-  it("shows login button when not authenticated", () => {
-    render(
-      <JoinActions
-        {...defaultProps}
-        isAuthenticated={false}
-      />,
-    );
-
-    expect(
-      screen.getByText("Criar conta e entrar no grupo"),
-    ).toBeInTheDocument();
-  });
 
   it("redirects to auth with next param when login button clicked", async () => {
     const user = userEvent.setup();
@@ -68,77 +39,63 @@ describe("JoinActions", () => {
       />,
     );
 
-    await user.click(screen.getByText("Criar conta e entrar no grupo"));
+    await user.click(screen.getByRole("button", { name: "Entrar no grupo" }));
     expect(pushMock).toHaveBeenCalledWith("/auth?next=%2Fjoin%2Fabc-123");
   });
 
-  it("shows join button when authenticated", () => {
-    render(<JoinActions {...defaultProps} />);
 
-    expect(screen.getByText("Entrar no grupo")).toBeInTheDocument();
-  });
-
-  it("calls join RPC and redirects on success", async () => {
+  it("joins through the sync mutation and redirects to the joined group", async () => {
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
 
-    expect(rpcMock).toHaveBeenCalledWith("join_via_link", {
-      p_token: "abc-123",
-    });
+    expect(joinMock).toHaveBeenCalledWith("abc-123");
     expect(pushMock).toHaveBeenCalledWith("/app/groups/group-1");
   });
 
-  it("redirects to group when already a member", async () => {
-    rpcMock.mockResolvedValue({
-      data: { groupId: "group-1", already_member: true },
-      error: null,
-    });
+  it("offers the existing group when the invitation belongs to a current member", async () => {
+    joinMock.mockResolvedValue({ groupId: "group-1", ledgerVersion: 5, eventId: null });
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
+    expect(screen.getByRole("status")).toHaveTextContent("Você já faz parte deste grupo.");
+    await user.click(screen.getByRole("button", { name: "Abrir grupo" }));
     expect(pushMock).toHaveBeenCalledWith("/app/groups/group-1");
   });
 
-  it("shows error when RPC returns invalid_token", async () => {
-    rpcMock.mockResolvedValue({
-      data: null,
-      error: { message: "invalid_token: invite link not found" },
-    });
+  it("shows the ledger message for an invalid link and re-enables the button", async () => {
+    joinMock.mockRejectedValue(new LedgerError("invalid_link"));
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
-    expect(
-      screen.getByText("Convite inválido ou não encontrado."),
-    ).toBeInTheDocument();
+
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Esse convite não é mais válido.")).toBeInTheDocument();
+    expect(screen.getByText("Entrar no grupo")).toBeEnabled();
   });
 
-  it("shows error when RPC returns link_expired", async () => {
-    rpcMock.mockResolvedValue({
-      data: null,
-      error: { message: "link_expired: this invite link has expired" },
-    });
+  it("shows the removal message when the caller was excluded from the group", async () => {
+    joinMock.mockRejectedValue(new LedgerError("member_excluded"));
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
-    expect(screen.getByText("Este convite expirou.")).toBeInTheDocument();
+
+    expect(screen.getByText("Essa pessoa foi removida do grupo.")).toBeInTheDocument();
   });
 
-  it("shows generic error for unknown RPC errors", async () => {
-    rpcMock.mockResolvedValue({
-      data: null,
-      error: { message: "some unexpected error" },
-    });
+  it("shows the shared fallback for an unrecognized failure", async () => {
+    joinMock.mockRejectedValue(new Error("boom"));
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
+
     expect(
-      screen.getByText("Erro ao entrar no grupo. Tente novamente."),
+      screen.getByText(ledgerErrorMessage(new Error("boom"))),
     ).toBeInTheDocument();
   });
 });

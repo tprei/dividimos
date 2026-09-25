@@ -2,6 +2,7 @@
 
 import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { haptics } from "@/hooks/use-haptics";
 
 export type DivisionModeKey = "equal" | "percent" | "fixed";
 
@@ -44,13 +45,14 @@ export function DivisionModePills({
             aria-checked={active}
             aria-label={option.name}
             disabled={disabled}
-            onClick={() => onChange(option.key)}
+            onClick={() => { haptics.selectionChanged(); onChange(option.key); }}
             className={cn(
-              "flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors",
+              "flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors",
               active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
             )}
           >
             <option.icon className="size-4" aria-hidden="true" />
+            <span>{option.name}</span>
           </button>
         );
       })}

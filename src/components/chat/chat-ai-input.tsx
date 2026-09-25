@@ -2,12 +2,15 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Send, Sparkles } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { ChatDraftCard, type ChatDraftStatus } from "@/components/chat/chat-draft-card";
 import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
+import { haptics } from "@/hooks/use-haptics";
+import { popIn } from "@/lib/animations";
 
 type InputMode = "normal" | "ai";
 
@@ -23,10 +26,11 @@ interface ChatAiInputProps {
   ) => Promise<{ expenseId: string } | { error: string }>;
   onEditDraft: (result: ChatExpenseResult) => void;
   disabled?: boolean;
+  actions?: ReactNode;
 }
 
 export function ChatAiInput(props: ChatAiInputProps) {
-  const { groupId, members, onSend, onConfirmDraft, onEditDraft, disabled = false } = props;
+  const { groupId, members, onSend, onConfirmDraft, onEditDraft, disabled = false, actions } = props;
   const [mode, setMode] = useState<InputMode>("normal");
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +44,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const handleSparkleToggle = useCallback(() => {
     if (isConfirming) return;
+    if (hasDraft && !window.confirm("Descartar esta conta?")) return;
     if (hasDraft || isParsing) {
       reset();
       setText("");
@@ -73,6 +78,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
     if (sendingRef.current || onSend === undefined) return;
     sendingRef.current = true;
+    haptics.tap();
     const submittedGeneration = editGenerationRef.current;
     const submittedGroupId = groupId;
     setSending(true);
@@ -106,12 +112,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
         handleSubmit();
       }
       if (e.key === "Escape" && isAiMode && !isConfirming) {
+        if (hasDraft && !window.confirm("Descartar esta conta?")) return;
         setMode("normal");
         reset();
         setText("");
       }
     },
-    [handleSubmit, isAiMode, isConfirming, reset],
+    [handleSubmit, isAiMode, isConfirming, hasDraft, reset],
   );
 
   const handleConfirm = useCallback(
@@ -125,6 +132,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
         return;
       }
       setConfirmStatus("confirmed");
+      haptics.success();
       reset();
       setText("");
       setMode("normal");
@@ -144,14 +152,12 @@ export function ChatAiInput(props: ChatAiInputProps) {
   );
 
   return (
-    <div className="space-y-3">
+    <div className="shrink-0 space-y-2 bg-background px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <AnimatePresence mode="wait">
         {isParsing && (
           <motion.div
             key="parsing"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             className="rounded-2xl border bg-card p-4"
             data-testid="parsing-skeleton"
           >
@@ -170,13 +176,17 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {hasDraft && !isParsing && (
           <motion.div
             key="draft"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            className="max-h-[calc(var(--app-viewport-height,100dvh)*0.35)] overflow-y-auto overscroll-contain rounded-2xl"
           >
             <ChatDraftCard
               result={result}
               onConfirm={handleConfirm}
+              onDiscard={() => {
+                if (!window.confirm("Descartar esta conta?")) return;
+                reset();
+                setMode("normal");
+              }}
               onEdit={handleEdit}
               status={confirmStatus}
               errorMessage={confirmError}
@@ -187,10 +197,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {error && !isParsing && !hasDraft && (
           <motion.div
             key="error"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive-text"
             data-testid="parse-error"
           >
             {error}
@@ -200,41 +208,37 @@ export function ChatAiInput(props: ChatAiInputProps) {
         {sendError !== null && (
           <motion.div
             key="send-error"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
             role="alert"
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive-text"
             data-testid="send-error"
           >
-            {sendError} Sua mensagem continua aqui, toca em enviar pra tentar de novo.
+            {sendError}
           </motion.div>
         )}
       </AnimatePresence>
 
       <div
         className={cn(
-          "flex items-center gap-2 rounded-2xl border bg-background px-3 py-2 transition-colors",
-          isAiMode && "border-primary/60 ring-1 ring-primary/20",
+          "flex items-center gap-1 rounded-[0.75rem] border border-border bg-card p-1 transition-colors focus-within:ring-3 focus-within:ring-ring/50",
+          isAiMode && "border-primary/60",
         )}
       >
-        <button
-          type="button"
+        <IconButton
           onClick={handleSparkleToggle}
           disabled={disabled}
           data-testid="sparkle-toggle"
-          title={isAiMode ? "Modo IA ativo — pressione Esc para sair" : "Ativar IA para registrar despesa"}
+          title={isAiMode ? "Modo IA ativo — pressione Esc para sair" : "Ativar IA para registrar conta"}
           className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors",
             isAiMode || hasDraft || isParsing
-              ? "bg-primary/15 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              ? "bg-primary/15 text-primary-text hover:bg-primary/20 hover:text-primary-text"
+              : "text-muted-foreground",
           )}
-          aria-label={isAiMode ? "Desativar IA" : "Ativar IA para despesas"}
+          aria-label={isAiMode ? "Desativar IA" : "Ativar IA para contas"}
           aria-pressed={isAiMode}
         >
-          <Sparkles className="h-4 w-4" />
-        </button>
+          <Sparkles />
+        </IconButton>
 
         <input
           ref={inputRef}
@@ -249,29 +253,32 @@ export function ChatAiInput(props: ChatAiInputProps) {
           disabled={disabled || isParsing || hasDraft}
           placeholder={
             isAiMode
-              ? "Descreva a despesa (ex: 'uber 25 eu paguei')"
+              ? 'Ex.: "pizza 80 com João"'
               : "Mensagem…"
           }
-          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+          className="h-10 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+          aria-label={isAiMode ? "Descrever conta com IA" : "Mensagem"}
           data-testid="chat-input"
         />
+
+        {actions && !isAiMode && !hasDraft && !isParsing && text.length === 0 && (
+          <div className="flex shrink-0 items-center">{actions}</div>
+        )}
 
         <Button
           type="button"
           size="icon"
-          variant="ghost"
-          className="h-8 w-8 shrink-0"
           onClick={handleSubmit}
           disabled={disabled || isParsing || hasDraft || sending || !text.trim()}
           data-testid="send-button"
           aria-label="Enviar"
         >
           {sending ? (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className="animate-spin" />
           ) : isAiMode ? (
-            <Sparkles className="h-4 w-4 text-primary" />
+            <Sparkles />
           ) : (
-            <Send className="h-4 w-4" />
+            <Send />
           )}
         </Button>
       </div>

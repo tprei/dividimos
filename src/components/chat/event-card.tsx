@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Receipt, Undo2 } from "lucide-react";
+import { ArrowRight, ReceiptText } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { formatChatTime } from "@/components/chat/chat-rail-row";
 import { Button } from "@/components/ui/button";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
 import { describeEvent } from "@/lib/ledger/event-copy";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
@@ -13,7 +14,14 @@ import { cn } from "@/lib/utils";
 import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
+import { haptics } from "@/hooks/use-haptics";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
+
+const EXPENSE_VERBS: Record<string, string> = {
+  expense_created: "adicionou",
+  expense_deleted: "apagou",
+  expense_restored: "restaurou",
+};
 
 const EXPENSE_KINDS: Record<string, true> = {
   expense_created: true,
@@ -28,9 +36,17 @@ const SETTLEMENT_KINDS: Record<string, true> = {
 };
 
 const STATUS_CONFIG: Record<SettlementStatus, { label: string; className: string }> = {
-  confirmed: { label: "Confirmado", className: "bg-success/15 text-success" },
-  voided: { label: "Desfeito", className: "bg-muted text-muted-foreground" },
+  confirmed: { label: "Confirmado", className: "text-success-text" },
+  voided: { label: "Desfeito", className: "text-muted-foreground" },
 };
+
+function CardTime({ at }: { at: string }) {
+  return (
+    <time dateTime={at} className="shrink-0 text-2xs leading-4 tabular-nums text-muted-foreground">
+      {formatChatTime(at)}
+    </time>
+  );
+}
 
 function payloadNumber(payload: Record<string, unknown>, key: string): number | null {
   const value = payload[key];
@@ -72,12 +88,14 @@ interface EventCardProps {
   settlement: Settlement | null;
   latestStatus: SettlementStatus | null;
   nameOf: (userId: string) => string;
+  myShareCents?: number;
 }
 
-export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf }: EventCardProps) {
+export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf, myShareCents }: EventCardProps) {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [settlementAnchor, setSettlementAnchor] = useState<HTMLElement | null>(null);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId);
   const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "");
   const copy = describeEvent(event, {
@@ -89,10 +107,11 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
 
   if (!(event.kind in EXPENSE_KINDS) && !(event.kind in SETTLEMENT_KINDS)) {
     return (
-      <div className="py-1 text-center">
-        <p className="text-[11px] text-muted-foreground" data-testid="event-sentence">
+      <div className="flex min-h-6 max-w-80 items-baseline gap-2 pr-3">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="event-sentence">
           {copy}
         </p>
+        <CardTime at={event.createdAt} />
       </div>
     );
   }
@@ -100,40 +119,53 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   if (event.kind in EXPENSE_KINDS) {
     const totalCents = eventTotalCents(event);
     const deleted = event.kind === "expense_deleted";
+    const verb = EXPENSE_VERBS[event.kind];
+    const meta = verb && actorName ? `${actorName} ${verb}` : copy;
+    const title = eventTitle(event);
     const card = (
       <div
         className={cn(
-          "rounded-2xl border bg-card p-3 transition-colors",
-          !deleted && "hover:bg-muted/30",
+          "max-w-80 rounded-[0.75rem] border border-dashed border-border bg-card px-3 py-2 transition-colors",
+          !deleted && "hover:bg-muted/40",
         )}
         data-testid="event-expense-card"
       >
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted">
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{eventTitle(event)}</p>
-            <p className="text-xs text-muted-foreground">
-              {new Date(event.createdAt).toLocaleDateString("pt-BR")}
-            </p>
-          </div>
-          {totalCents !== null && (
-            <span className="text-sm font-semibold tabular-nums">{formatBRL(totalCents)}</span>
+        <div className="flex items-center gap-2">
+          <ReceiptText aria-hidden="true" className="size-4 shrink-0 text-primary-text" />
+          <p
+            title={title}
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm font-semibold",
+              deleted && "text-muted-foreground line-through",
+            )}
+          >
+            {title}
+          </p>
+          {totalCents !== null && <Money cents={totalCents} size="sm" />}
+        </div>
+        <div className="mt-0.5 flex items-baseline gap-2 pl-6">
+          <p title={meta} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {meta}
+          </p>
+          {myShareCents !== undefined && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              Sua parte <Money cents={myShareCents} size="sm" className="text-xs text-foreground" />
+            </span>
           )}
+          <CardTime at={event.createdAt} />
         </div>
       </div>
     );
 
-    return (
-      <div className="mx-auto w-full max-w-xs py-1">
-        <p className="mb-1 text-center text-[11px] text-muted-foreground">{copy}</p>
-        {event.expenseId && !deleted ? (
-          <Link href={`/app/bill/${event.expenseId}`}>{card}</Link>
-        ) : (
-          card
-        )}
-      </div>
+    return event.expenseId && !deleted ? (
+      <Link
+        href={`/app/bill/${event.expenseId}`}
+        className="block max-w-80 rounded-[0.75rem] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        {card}
+      </Link>
+    ) : (
+      card
     );
   }
 
@@ -163,73 +195,78 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
     try {
       await voidSettlement(groupId, settlementId);
       toast.success("Pagamento desfeito");
+      haptics.success();
       setConfirmOpen(false);
     } catch (error) {
       toast.error(ledgerErrorMessage(error));
+      haptics.error();
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="relative w-full">
-      <p className="mb-1 text-center text-[11px] text-muted-foreground">{copy}</p>
-      <div className="rounded-2xl border bg-card p-3" data-testid="event-settlement-card">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            {fromUserId && toUserId && (
-              <p className="flex items-center gap-1 truncate text-sm font-medium">
-                {nameOf(fromUserId)}
-                <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                {nameOf(toUserId)}
-              </p>
+    <div className="relative max-w-80">
+      <div
+        className="rounded-[0.75rem] border border-success/30 bg-success/5 px-3 py-2"
+        data-testid="event-settlement-card"
+      >
+        <div className="flex items-center gap-2">
+          <p className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold">
+            {fromUserId && toUserId ? (
+              <>
+                <span className="truncate">{nameOf(fromUserId)}</span>
+                <ArrowRight aria-label="para" className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{nameOf(toUserId)}</span>
+              </>
+            ) : (
+              <span className="truncate">{copy}</span>
             )}
-            <p className="text-xs text-muted-foreground">
-              {new Date(event.createdAt).toLocaleDateString("pt-BR")}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-sm font-semibold tabular-nums">{formatBRL(amountCents)}</span>
-            <span
-              className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", cfg.className)}
-            >
-              {cfg.label}
-            </span>
-          </div>
+          </p>
+          <Money
+            cents={amountCents}
+            size="sm"
+            className={cn(status === "voided" && "text-muted-foreground line-through")}
+          />
         </div>
-        {settlementId !== null && (
-          <div className="mt-2.5 flex gap-2">
-            {canUndo && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="min-h-11 flex-1 gap-1.5 text-xs"
-                onClick={() => {
-                  if (preferences.confirmVoidSettlement) setConfirmOpen(true);
-                  else void handleVoid();
-                }}
-                disabled={busy}
-                data-testid="event-undo-settlement"
-              >
-                <Undo2 className="h-3.5 w-3.5" />
-                Desfazer
-              </Button>
-            )}
+        <div className="mt-0.5 flex items-center gap-1">
+          <span className={cn("text-xs font-semibold", cfg.className)}>{cfg.label}</span>
+          {canUndo && (
             <Button
               size="sm"
-              variant="outline"
-              className="min-h-11 flex-1 gap-1.5 text-xs"
-              onClick={() => setDetailOpen(true)}
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={(e) => {
+                setSettlementAnchor(e.currentTarget);
+                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                else void handleVoid();
+              }}
+              disabled={busy}
+              data-testid="event-undo-settlement"
+            >
+              Desfazer
+            </Button>
+          )}
+          {settlementId !== null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={(e) => { setSettlementAnchor(e.currentTarget); setDetailOpen(true); }}
               data-testid="event-view-settlement"
             >
-              Ver pagamento
+              Detalhes
             </Button>
-          </div>
-        )}
+          )}
+          <span className="ml-auto">
+            <CardTime at={event.createdAt} />
+          </span>
+        </div>
       </div>
       {canUndo && (
         <VoidSettlementDialog
           open={confirmOpen && canUndo}
+          anchor={settlementAnchor}
           amountCents={amountCents}
           payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
           recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
@@ -247,6 +284,13 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           groupId={groupId}
           open={detailOpen}
           onOpenChange={setDetailOpen}
+          anchor={settlementAnchor}
+          busy={busy}
+          onUndo={canUndo ? () => {
+            setDetailOpen(false);
+            if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+            else void handleVoid();
+          } : undefined}
         />
       )}
     </div>

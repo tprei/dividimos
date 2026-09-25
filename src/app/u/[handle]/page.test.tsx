@@ -26,12 +26,8 @@ vi.mock("next/image", () => ({
   },
 }));
 vi.mock("./profile-actions", () => ({
-  SendMessageButton: (props: { targetName: string }) => (
-    <button type="button">{`Enviar mensagem para ${props.targetName}`}</button>
-  ),
-  SplitBillButton: (props: { targetName: string }) => (
-    <button type="button">{`Dividir uma conta com ${props.targetName}`}</button>
-  ),
+  SendMessageButton: () => <button type="button">Enviar mensagem</button>,
+  SplitBillButton: () => <button type="button">Dividir uma conta</button>,
 }));
 
 import PublicProfilePage from "./page";
@@ -62,9 +58,9 @@ describe("/u/[handle]", () => {
     expect(mocks.lookupProfile).toHaveBeenCalledExactlyOnceWith("daniel");
     expect(html).toContain("Daniel Santos");
     expect(html).toContain("@daniel");
-    expect(html).toContain("Dividir uma conta com Daniel Santos");
-    expect(html).toContain("Enviar mensagem para Daniel Santos");
-    expect(html).not.toContain("Criar conta");
+    expect(html).toContain("Dividir uma conta");
+    expect(html).toContain("Enviar mensagem");
+    expect(html).not.toContain("Entrar no Dividimos");
     expect(html).not.toContain("Bot verificado");
   });
 
@@ -84,8 +80,8 @@ describe("/u/[handle]", () => {
     const html = await renderPage("daniel");
 
     expect(html).toContain("Ir para meu perfil");
-    expect(html).not.toContain("Dividir uma conta com");
-    expect(html).not.toContain("Enviar mensagem para");
+    expect(html).not.toContain("Dividir uma conta");
+    expect(html).not.toContain("Enviar mensagem");
   });
 
   it("calls notFound when no onboarded profile owns the handle", async () => {
@@ -111,7 +107,7 @@ describe("/u/[handle]", () => {
     const html = await renderPage("daniel");
 
     expect(html).toContain("indisponível");
-    expect(html).not.toContain("Dividir uma conta com");
+    expect(html).not.toContain("Dividir uma conta");
     expect(mocks.getClaims).not.toHaveBeenCalled();
   });
 
@@ -120,10 +116,9 @@ describe("/u/[handle]", () => {
 
     const html = await renderPage("Daniel");
 
-    expect(html).toContain("Criar conta");
+    expect(html).toContain("Entrar no Dividimos");
     expect(html).toContain("@daniel");
-    expect(html).toContain("Perfil no Dividimos");
-    expect(html).not.toContain("Dividir uma conta com");
+    expect(html).not.toContain("Dividir uma conta");
     expect(mocks.getClaims).not.toHaveBeenCalled();
   });
 });

@@ -9,10 +9,16 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "./app-store";
 import {
+  formatOccurredOn,
+  groupNameOf,
+  selectConversationRows,
   selectDmMembership,
   selectExpenseList,
+  selectHomeRecentBills,
   selectMyDebts,
+  selectMyExpenseRows,
   selectPendingInvitations,
+  selectRecentBills,
   selectTransfers,
   selectUnreadTotal,
 } from "./app-selectors";
@@ -362,5 +368,284 @@ describe("selectDmMembership", () => {
     expect(selectDmMembership(dm("accepted"), "someone-else", { status: "ready" })).toEqual({
       status: "absent",
     });
+  });
+});
+
+function dmSnapshot(groupId: string): GroupSnapshot {
+  return snapshot(groupId, {
+    group: {
+      id: groupId,
+      kind: "dm",
+      name: "",
+      creatorId: "user-2",
+      dmUserA: me.id,
+      dmUserB: "user-2",
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members: [member(me.id, "accepted"), member("user-2", "accepted")],
+  });
+}
+
+describe("selectMyExpenseRows", () => {
+  it("maps history ids to rows in server order, naming a DM by the counterparty", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1"), dm1: dmSnapshot("dm1") },
+      expenses: { e1: summary("e1", "g1"), e2: summary("e2", "dm1") },
+      myExpenses: {
+        ids: ["e1", "e2"],
+        cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e2" },
+        complete: false,
+        total: 2,
+      },
+    });
+
+    const rows = selectMyExpenseRows(useAppStore.getState());
+
+    expect(rows.map((row) => row.id)).toEqual(["e1", "e2"]);
+    expect(rows[0]?.groupName).toBe("Group g1");
+    expect(rows[1]?.groupName).toBe("User user-2");
+    expect(rows[0]?.deleted).toBe(false);
+  });
+
+  it("keeps the previous array when an unrelated group is patched", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1"), g2: snapshot("g2") },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+    const before = selectMyExpenseRows(useAppStore.getState());
+
+    // What applyGroup produces for a refresh of g2: a new record, a new g2
+    // snapshot, and a reordered groupOrder. Nothing g1's rows render changed.
+    useAppStore.setState({
+      groups: {
+        g2: { ...snapshot("g2"), lastActivityAt: "2026-02-02T00:00:00Z" },
+        g1: useAppStore.getState().groups.g1,
+      },
+      groupOrder: ["g2", "g1"],
+    });
+
+    expect(selectMyExpenseRows(useAppStore.getState())).toBe(before);
+  });
+
+  it("recomputes a row when its own expense or group changes", () => {
+    const original = snapshot("g1");
+    useAppStore.setState({
+      me,
+      groups: { g1: original },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+    const before = selectMyExpenseRows(useAppStore.getState());
+
+    useAppStore.setState({
+      groups: { g1: { ...original, group: { ...original.group, name: "Renamed" } } },
+    });
+    const renamed = selectMyExpenseRows(useAppStore.getState());
+    expect(renamed).not.toBe(before);
+    expect(renamed[0]?.groupName).toBe("Renamed");
+
+    useAppStore.setState({ expenses: { e1: { ...summary("e1", "g1"), title: "Novo título" } } });
+    const retitled = selectMyExpenseRows(useAppStore.getState());
+    expect(retitled).not.toBe(renamed);
+    expect(retitled[0]?.title).toBe("Novo título");
+  });
+});
+
+describe("selectConversationRows", () => {
+  it("builds one row per conversable group in groupOrder order", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", { members: [member(me.id, "accepted")] }),
+        dm1: dmSnapshot("dm1"),
+      },
+      groupOrder: ["dm1", "g1"],
+    });
+
+    const rows = selectConversationRows(useAppStore.getState(), me.id);
+
+    expect(rows.map((row) => row.groupId)).toEqual(["dm1", "g1"]);
+    expect(rows[0]?.kind).toBe("dm");
+    expect(rows[0]?.title).toBe("User user-2");
+    expect(rows[1]?.kind).toBe("group");
+    expect(rows[1]?.title).toBe("Group g1");
+  });
+
+  it("returns no rows without a viewer", () => {
+    useAppStore.setState({
+      me: null,
+      groups: { g1: snapshot("g1") },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectConversationRows(useAppStore.getState(), null)).toEqual([]);
+  });
+
+  it("keeps the array when a store write touches no group snapshot", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
+      groupOrder: ["g1"],
+    });
+    const before = selectConversationRows(useAppStore.getState(), me.id);
+    expect(before).toHaveLength(1);
+
+    useAppStore.setState({ reads: { charges: { status: "ready" } } });
+
+    expect(selectConversationRows(useAppStore.getState(), me.id)).toBe(before);
+  });
+
+  it("keeps the array when groupOrder is rebuilt with identical snapshots", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
+      groupOrder: ["g1"],
+    });
+    const before = selectConversationRows(useAppStore.getState(), me.id);
+
+    const state = useAppStore.getState();
+    useAppStore.setState({ groups: { ...state.groups }, groupOrder: ["g1"] });
+
+    expect(selectConversationRows(useAppStore.getState(), me.id)).toBe(before);
+  });
+
+  it("rebuilds only the changed conversation's row", () => {
+    const original = snapshot("g1", { members: [member(me.id, "accepted")] });
+    const other = snapshot("g2", { members: [member(me.id, "accepted")] });
+    useAppStore.setState({
+      me,
+      groups: { g1: original, g2: other },
+      groupOrder: ["g1", "g2"],
+    });
+    const before = selectConversationRows(useAppStore.getState(), me.id);
+
+    useAppStore.setState({
+      groups: {
+        g1: { ...original, unreadCount: 7 },
+        g2: useAppStore.getState().groups.g2,
+      },
+    });
+    const after = selectConversationRows(useAppStore.getState(), me.id);
+
+    expect(after).not.toBe(before);
+    expect(after[0]?.unreadCount).toBe(7);
+    expect(after[1]).toBe(before[1]);
+  });
+});
+
+describe("selectHomeRecentBills", () => {
+  it("returns the first non-deleted bills with formatted dates and dm names", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1"), dm1: dmSnapshot("dm1") },
+      expenses: {
+        e1: summary("e1", "g1"),
+        e2: summary("e2", "dm1"),
+        e3: { ...summary("e3", "g1"), status: "deleted" as const },
+      },
+      myExpenses: { ids: ["e3", "e1", "e2"], cursor: null, complete: true, total: 3 },
+    });
+
+    const bills = selectHomeRecentBills(useAppStore.getState());
+
+    expect(bills.map((bill) => bill.id)).toEqual(["e1", "e2"]);
+    expect(bills[0]).toMatchObject({ title: "Expense e1", occurredOn: "01/01/2026", groupName: "Group g1" });
+    expect(bills[1]?.groupName).toBe("User user-2");
+  });
+
+  it("keeps the array across store writes it does not read", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1") },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+    const before = selectHomeRecentBills(useAppStore.getState());
+
+    useAppStore.setState({ activityViewedAt: { [me.id]: "2026-02-01T00:00:00Z" } });
+
+    expect(selectHomeRecentBills(useAppStore.getState())).toBe(before);
+  });
+
+  it("recomputes when the history or its expenses change", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1") },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+    const before = selectHomeRecentBills(useAppStore.getState());
+
+    useAppStore.setState({
+      expenses: { e1: summary("e1", "g1"), e2: summary("e2", "g1") },
+      myExpenses: { ids: ["e2", "e1"], cursor: null, complete: true, total: 2 },
+    });
+    const after = selectHomeRecentBills(useAppStore.getState());
+
+    expect(after).not.toBe(before);
+    expect(after.map((bill) => bill.id)).toEqual(["e2", "e1"]);
+  });
+});
+
+describe("formatOccurredOn", () => {
+  it("formats yyyy-mm-dd as dd/mm/yyyy", () => {
+    expect(formatOccurredOn("2026-09-17")).toBe("17/09/2026");
+  });
+
+  it("returns the original string when it is not a calendar date", () => {
+    expect(formatOccurredOn("invalid")).toBe("invalid");
+  });
+});
+
+describe("groupNameOf", () => {
+  it("returns an empty string without a snapshot", () => {
+    expect(groupNameOf(undefined, me.id)).toBe("");
+  });
+
+  it("names a DM by the counterparty and a group by its own name", () => {
+    expect(groupNameOf(dmSnapshot("dm1"), me.id)).toBe("User user-2");
+    expect(groupNameOf(snapshot("g1"), me.id)).toBe("Group g1");
+  });
+});
+
+describe("selectRecentBills", () => {
+  it("returns up to the limit of active expenses, skipping deleted ones", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1") },
+      expenses: {
+        e1: summary("e1", "g1"),
+        e2: { ...summary("e2", "g1"), status: "deleted" as const },
+        e3: summary("e3", "g1"),
+        e4: summary("e4", "g1"),
+        e5: summary("e5", "g1"),
+      },
+      myExpenses: { ids: ["e1", "e2", "e3", "e4", "e5"], cursor: null, complete: true, total: 5 },
+    });
+
+    const recent = selectRecentBills(useAppStore.getState(), 3);
+
+    expect(recent.map((bill) => bill.title)).toEqual([
+      "Expense e1",
+      "Expense e3",
+      "Expense e4",
+    ]);
+    expect(recent[0]?.occurredOn).toBe("01/01/2026");
+    expect(recent[0]?.groupName).toBe("Group g1");
+  });
+
+  it("returns nothing without a viewer", () => {
+    useAppStore.setState({
+      me: null,
+      groups: { g1: snapshot("g1") },
+      expenses: { e1: summary("e1", "g1") },
+      myExpenses: { ids: ["e1"], cursor: null, complete: true, total: 1 },
+    });
+
+    expect(selectRecentBills(useAppStore.getState(), 3)).toEqual([]);
   });
 });

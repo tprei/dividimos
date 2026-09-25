@@ -47,8 +47,8 @@ test.describe("Group register payment", () => {
 
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByRole("tab", { name: "Saldos" }).click();
-    await expect(page.getByRole("button", { name: /Você paga/i })).toContainText("R$ 20,00");
+    await page.getByRole("radio", { name: "Saldos" }).click();
+    await expect(page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ })).toHaveAccessibleName(/R\$\s*20,00/);
   });
 
   test("settles with the counterparty picked from the list, not the default one", async ({
@@ -85,12 +85,12 @@ test.describe("Group register payment", () => {
     const picker = page.getByRole("combobox", { name: "Com quem?" });
     await expect(picker).toBeVisible();
     const shown = (await picker.textContent()) ?? "";
-    const target = shown.includes(`@${bob.handle}`) ? carol : bob;
+    const target = shown.includes(bob.name) ? carol : bob;
     const expectedCents = target.id === bob.id ? 5000 : 3000;
 
     await picker.click();
     await page
-      .getByRole("option", { name: `${target.name} (@${target.handle})`, exact: true })
+      .getByRole("option", { name: target.name, exact: true })
       .click();
     await expect(page.getByText(`Você pagou para ${target.name}`)).toBeVisible();
 

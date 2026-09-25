@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Copy,
   ExternalLink,
@@ -9,15 +8,14 @@ import {
   MessageCircle,
   RefreshCw,
   Users,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { InviteContactsList, type InviteContact } from "@/components/group/group-invite-contacts";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
-import { useBackHandler } from "@/hooks/use-back-handler";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { haptics } from "@/hooks/use-haptics";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import {
   createInviteLink,
@@ -28,6 +26,9 @@ import {
   isContactPickerSupported,
   pickContacts,
 } from "@/lib/contacts";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
 
 interface GroupInviteModalProps {
   open: boolean;
@@ -46,9 +47,7 @@ export function GroupInviteModal({
 }: GroupInviteModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestedRef = useRef(false);
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [contacts, setContacts] = useState<InviteContact[]>([]);
   const [picking, setPicking] = useState(false);
@@ -98,41 +97,37 @@ export function GroupInviteModal({
 
   useEffect(() => {
     if (!open || !joinUrl || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, joinUrl, {
-      width: 200,
+    void qrToCanvas(canvasRef.current, joinUrl, {
+      width: 160,
       margin: 2,
       color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
+    }).catch(() => toast.error("Não deu pra gerar o QR code"));
   }, [open, joinUrl]);
 
   const inviteMessage = `Entre no grupo "${groupName}" no Dividimos!`;
 
   const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Dividimos",
-          text: inviteMessage,
-          url: joinUrl,
-        });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${inviteMessage}\n${joinUrl}`);
-      toast.success("Link copiado!");
+    if (!canShare) {
+      if (await copyText(`${inviteMessage}\n${joinUrl}`)) { haptics.success(); toast.success("Link copiado"); }
+      else toast.error("Não deu pra copiar");
+      return;
     }
-  }, [inviteMessage, joinUrl]);
+    const outcome = await shareLink({
+      title: "Dividimos",
+      text: inviteMessage,
+      url: joinUrl,
+    });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
+  }, [canShare, inviteMessage, joinUrl]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(joinUrl);
-    toast.success("Link copiado!");
+    if (await copyText(joinUrl)) { haptics.success(); toast.success("Link copiado"); }
+    else toast.error("Não deu pra copiar");
   }, [joinUrl]);
 
   const handleWhatsAppDirect = useCallback(() => {
     const url = buildWhatsAppLink(`${inviteMessage}\n${joinUrl}`);
+    haptics.tap();
     window.open(url, "_blank");
   }, [inviteMessage, joinUrl]);
 
@@ -194,6 +189,7 @@ export function GroupInviteModal({
       await deactivateInviteLink(groupId);
       setToken(null);
       setLinkState("revoked");
+      haptics.success();
       toast.success("Link desativado");
     } catch (e) {
       toast.error(ledgerErrorMessage(e));
@@ -202,10 +198,6 @@ export function GroupInviteModal({
     }
   }, [groupId]);
 
-  // This overlay is hand-rolled rather than a Dialog, so it has to join the
-  // hardware-back stack itself. Without this, Back navigated away from the
-  // group behind the modal, or closed the app.
-  useBackHandler(open, onClose);
 
   const handleRegenerate = useCallback(() => {
     requestedRef.current = false;
@@ -216,58 +208,23 @@ export function GroupInviteModal({
 
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          drag="y"
-          dragConstraints={{ top: 0 }}
-          dragElastic={0.2}
-          onDragEnd={(_, info) => {
-            if (info.offset.y > 100 || info.velocity.y > 500) {
-              onClose();
-            }
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl overflow-y-auto max-h-[90vh]"
-        >
-          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
-
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold">Convite para o grupo</h3>
-              <p className="text-sm text-muted-foreground">{groupName}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="gap-3">
+        <DialogHeader>
+          <DialogTitle>Convidar pro grupo</DialogTitle>
+          <DialogDescription className="truncate" title={groupName}>{groupName}</DialogDescription>
+        </DialogHeader>
 
           {linkState === "ready" ? (
             <>
-              <div className="flex justify-center rounded-2xl bg-white p-4">
-                <canvas ref={canvasRef} />
+              <div className="mx-auto flex w-fit justify-center rounded-2xl bg-paper p-2">
+                <canvas ref={canvasRef} aria-label="QR code do convite" />
               </div>
-              <p className="mt-3 text-center text-xs text-muted-foreground">
-                Escaneie ou compartilhe o link para entrar no grupo
-              </p>
-              <div className="mt-2 flex justify-center">
+              <div className="flex justify-center">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-destructive-text"
                   disabled={deactivating}
                   onClick={handleDeactivate}
                 >
@@ -308,13 +265,13 @@ export function GroupInviteModal({
             onRemove={handleRemoveContact}
           />
 
-          <div className="mt-4 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
             {hasContactPicker && (
               <Button
-                className="w-full gap-2"
+                className="col-span-2 w-full gap-2"
                 variant="outline"
                 onClick={handlePickContacts}
-                disabled={picking}
+                disabled={picking || !joinUrl}
               >
                 <Users className="h-4 w-4" />
                 {contacts.length > 0
@@ -324,7 +281,7 @@ export function GroupInviteModal({
             )}
 
             <Button
-              className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+              className="col-span-2 w-full gap-2 bg-[#25D366] text-[#082b15] hover:bg-[#1da851]"
               onClick={handleWhatsAppDirect}
               disabled={!joinUrl}
             >
@@ -346,7 +303,7 @@ export function GroupInviteModal({
 
             <Button
               variant="outline"
-              className="w-full gap-2"
+              className={`w-full gap-2 ${canShare ? "" : "col-span-2"}`}
               onClick={handleCopy}
               disabled={!joinUrl}
             >
@@ -355,11 +312,8 @@ export function GroupInviteModal({
             </Button>
           </div>
 
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Seus contatos não são enviados para nossos servidores
-          </p>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+          {hasContactPicker && <p className="text-center text-xs text-muted-foreground">Seus contatos ficam no seu dispositivo.</p>}
+      </DialogContent>
+    </Dialog>
   );
 }

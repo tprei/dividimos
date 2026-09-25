@@ -27,15 +27,6 @@ const eslintConfig = defineConfig([
     "supabase/.temp/**",
     "supabase/.branches/**",
   ]),
-  // react-hooks/set-state-in-effect runs at its recommended severity (error).
-  // Synchronous setState-in-effect is an infinite-render class of bug (see
-  // #588, #579); the rule permits legitimate async fetch → setState.
-  {
-    files: ["e2e/**/*.ts"],
-    rules: {
-      "react-hooks/rules-of-hooks": "off",
-    },
-  },
   // @next/next/no-img-element is a production-bundle performance rule (LCP,
   // bandwidth). It has no meaning in vitest unit tests, which stub next/image
   // with a plain <img> on purpose. Scope it off there rather than mocking

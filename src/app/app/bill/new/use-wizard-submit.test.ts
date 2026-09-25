@@ -246,7 +246,7 @@ describe("useWizardSubmit", () => {
     });
 
     expect(ok).toBe(false);
-    expect(mockToast.error).toHaveBeenCalledWith("Escolha um grupo para dividir a conta.");
+    expect(mockToast.error).toHaveBeenCalledWith("Falta escolher o grupo da conta.");
     expect(mockCreateExpense).not.toHaveBeenCalled();
   });
 
@@ -323,7 +323,7 @@ describe("useWizardSubmit", () => {
 
     const { result } = renderHook(() =>
       useWizardSubmit({
-        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        router,
         editExpenseId: null,
         expectedVersionNo: null,
         onStaleVersion,
@@ -357,7 +357,7 @@ describe("useWizardSubmit", () => {
 
     const { result } = renderHook(() =>
       useWizardSubmit({
-        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        router,
         editExpenseId: null,
         expectedVersionNo: null,
         onStaleVersion,

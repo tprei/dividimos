@@ -4,6 +4,7 @@ import { Ban, Lock, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -23,7 +24,7 @@ interface RoomHostControlsProps {
 export function RoomHostControls({ unownedLineCount, complete, closed, disabled = false, closePending = false, onReturnToReview, onClose }: RoomHostControlsProps) {
   return (
     <footer className="sticky bottom-0 z-10 border-t bg-background/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
-      <div className="mx-auto max-w-lg px-4">
+      <div className="mx-auto max-w-lg px-4 md:max-w-2xl">
         <Button type="button" className="h-12 w-full text-base font-semibold disabled:border disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100" disabled={disabled || (closed ? !onReturnToReview : !complete || closePending)} onClick={closed ? onReturnToReview : onClose}>
           {!closed && !complete && <Lock aria-hidden="true" className="size-4" />}
           {closed ? "Voltar à revisão" : closePending ? "Encerrando..." : complete ? "Encerrar sala" : `Encerrar sala · ${unownedLineCount} sem dono`}
@@ -43,11 +44,11 @@ export function RoomHostMenu({ disabled = false, onCancel }: { disabled?: boolea
           <MoreHorizontal aria-hidden="true" className="size-5" />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-52">
-          <Button variant="ghost" className="min-h-11 justify-start text-destructive" disabled={disabled} onClick={() => { setOpen(false); setCancelOpen(true); }}><Ban aria-hidden="true" className="size-4" />Cancelar sala</Button>
+          <Button variant="ghost" className="min-h-11 justify-start text-destructive-text" disabled={disabled} onClick={() => { setOpen(false); setCancelOpen(true); }}><Ban aria-hidden="true" className="size-4" />Cancelar sala</Button>
         </PopoverContent>
       </Popover>
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent showCloseButton={false} aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Cancelar sala</DialogTitle></DialogHeader>
           <DialogFooter showCloseButton>
             <Button variant="destructive" disabled={disabled} onClick={() => { onCancel(); setCancelOpen(false); }}>Cancelar sala</Button>
@@ -58,8 +59,9 @@ export function RoomHostMenu({ disabled = false, onCancel }: { disabled?: boolea
   );
 }
 
-export function RoomHostPerson({ participant, money, disabled, removable, onRemove }: {
+export function RoomHostPerson({ participant, label, money, disabled, removable, onRemove }: {
   participant: AssignmentRoomParticipant;
+  label: string;
   money?: RoomParticipantMoney;
   disabled: boolean;
   removable: boolean;
@@ -68,16 +70,18 @@ export function RoomHostPerson({ participant, money, disabled, removable, onRemo
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger aria-label={participant.displayName} className="flex w-[72px] flex-col items-center gap-1 rounded-xl border bg-card px-1 py-2 text-center hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary">
-        <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="md" className={participant.isGuest ? "border-2 border-dashed border-muted-foreground/40 bg-transparent" : undefined} />
-        <span className="w-full truncate text-xs font-medium">{participant.ordinal === 0 ? "Você" : participant.displayName.split(" ")[0]}</span>
-        <span className="text-[11px] text-muted-foreground tabular-nums">{money ? money.lineCount > 0 ? <Money cents={money.itemsCents} /> : "nada ainda" : "—"}</span>
+      <PopoverTrigger aria-label={participant.displayName} className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border bg-card py-1 pr-3 pl-1.5 text-xs font-medium hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary">
+        {participant.isGuest
+          ? <GuestAvatar id={participant.id} name={participant.displayName} size="xs" />
+          : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />}
+        <span title={participant.displayName} className="max-w-24 truncate">{label}</span>
+        <span className="text-muted-foreground tabular-nums">{money ? <Money cents={money.itemsCents} /> : "—"}</span>
       </PopoverTrigger>
       <PopoverContent>
         <PopoverTitle>{participant.displayName}</PopoverTitle>
         {money && <PopoverDescription>{money.lineCount} {money.lineCount === 1 ? "item" : "itens"} · <Money cents={money.itemsCents} /></PopoverDescription>}
         {participant.ordinal !== 0 && removable && (
-          <Button variant="ghost" className="mt-2 min-h-11 w-full rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/15" disabled={disabled} onClick={() => { onRemove(participant.id); setOpen(false); }}>
+          <Button variant="ghost" size="sm" className="mt-2 h-9 w-full rounded-lg bg-destructive/10 text-xs font-semibold text-destructive-text hover:bg-destructive/15" disabled={disabled} onClick={() => { onRemove(participant.id); setOpen(false); }}>
             <span>{money && money.lineCount > 0 ? <>Remover · libera <Money cents={money.itemsCents} /></> : "Remover da sala"}</span>
           </Button>
         )}

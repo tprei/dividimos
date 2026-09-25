@@ -1,13 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronRight, Plus, Users, X } from "lucide-react";
+import { Bot, Plus, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { GroupAvatar } from "@/components/shared/group-avatar";
-import { AvatarStack } from "@/components/shared/avatar-stack";
+import { IconButton } from "@/components/ui/icon-button";
+import { ListRow } from "@/components/ui/list-row";
+import { SectionCard } from "@/components/ui/section-card";
+import { haptics } from "@/hooks/use-haptics";
 import { EmptyState } from "@/components/shared/empty-state";
 import { InvitationCard } from "@/components/groups/invitation-card";
 import { Money } from "@/components/shared/money";
@@ -26,7 +28,7 @@ import type { GroupSnapshot } from "@/types/ledger";
 
 function netInGroup(snapshot: GroupSnapshot, meId: string): number {
   const row = snapshot.balances.find(
-    (balance) => balance.kind === "user" && balance.participantId === meId,
+    (balance) => balance.kind === "user" && balance.participantId === meId
   );
   return row?.netCents ?? 0;
 }
@@ -38,63 +40,45 @@ function GroupRow({
   snapshot: GroupSnapshot;
   meId: string;
 }) {
-  const accepted = snapshot.members.filter((member) => member.status === "accepted");
+  const accepted = snapshot.members.filter(
+    (member) => member.status === "accepted"
+  );
   const netCents = netInGroup(snapshot, meId);
-  const balanceLabel = netCents < 0 ? "A pagar" : "A receber";
-  const balanceDescription =
-    netCents === 0 ? "Em dia" : `${balanceLabel} ${formatBRL(Math.abs(netCents))}`;
-  const people = accepted.map((member) => ({
-    id: member.userId,
-    name: member.user.name,
-    avatarUrl: member.user.avatarUrl,
-  }));
+  const balanceLabel =
+    netCents < 0 ? "a pagar" : netCents > 0 ? "a receber" : "em dia";
   const botGroup = isBotGroup(snapshot.members, meId);
 
   return (
-    <Link
+    <ListRow
       href={`/app/groups/${snapshot.group.id}`}
-      aria-label={`${snapshot.group.name}, ${accepted.length} membros, ${snapshot.expenseCount} contas, ${balanceDescription}${botGroup ? ", grupo de bots" : ""}`}
-      className={
-        botGroup
-          ? "flex min-h-16 w-full items-center gap-3 border-l-2 border-gold bg-gold/5 px-4 py-2"
-          : "flex min-h-16 w-full items-center gap-3 px-4 py-2"
+      title={snapshot.group.name}
+      subtitle={`${accepted.length + snapshot.guests.length} pessoas · ${
+        snapshot.expenseCount
+      } conta${snapshot.expenseCount !== 1 ? "s" : ""}`}
+      leading={
+        <GroupAvatar
+          name={snapshot.group.name}
+          avatar={snapshot.overview?.avatar}
+          groupId={snapshot.group.id}
+        />
       }
-    >
-      <GroupAvatar
-        name={snapshot.group.name}
-        avatar={snapshot.overview?.avatar}
-        groupId={snapshot.group.id}
-        size="sm"
-      />
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-[15px] font-semibold">
-          {botGroup && <Bot className="size-3.5 shrink-0 text-gold" aria-hidden="true" />}
-          <span className={botGroup ? "truncate text-gold" : "truncate"}>
-            {snapshot.group.name}
-          </span>
-        </p>
-        <p className="truncate text-xs text-muted-foreground">
-          {accepted.length} membros · {snapshot.expenseCount} contas
-        </p>
-        <div className="mt-1.5">
-          <AvatarStack people={people} />
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end">
-        {netCents !== 0 && (
+      meta={
+        botGroup ? (
+          <Bot className="size-4 text-gold" aria-label="Grupo de bots" />
+        ) : undefined
+      }
+      trailing={
+        <span className="flex flex-col items-end gap-1">
           <Money
             cents={netCents}
-            signed
-            className="text-sm"
+            size="sm"
+            tone="auto"
             label={`${balanceLabel} ${formatBRL(Math.abs(netCents))}`}
           />
-        )}
-        <span className="text-[11px] text-muted-foreground">
-          {netCents === 0 ? "Em dia" : balanceLabel}
+          <span className="text-xs text-muted-foreground">{balanceLabel}</span>
         </span>
-      </div>
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </Link>
+      }
+    />
   );
 }
 
@@ -106,7 +90,7 @@ export function GroupsListContent() {
       groupOrder: state.groupOrder,
       groups: state.groups,
       meId: state.me?.id ?? null,
-    })),
+    }))
   );
   const invitations = useAppStore(selectPendingInvitations);
   const { accept, decline, pendingGroupId } = useInvitationActions();
@@ -129,11 +113,14 @@ export function GroupsListContent() {
   const handleCreateGroup = async (): Promise<void> => {
     const name = newGroupName.trim();
     if (!name || creating) return;
+    haptics.tap();
     setCreating(true);
     try {
       const ack = await createGroup(name, []);
+      haptics.success();
       router.push(`/app/groups/${ack.groupId}`);
     } catch (error) {
+      haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
       setCreating(false);
@@ -155,23 +142,21 @@ export function GroupsListContent() {
   return (
     <>
       <ScreenHeader
-        eyebrow="Suas divisões"
         title="Grupos"
         action={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-lg"
-            className="min-h-11 min-w-11"
+          <IconButton
             aria-label="Novo grupo"
             aria-expanded={showCreate}
-            onClick={() => setShowCreate((current) => !current)}
+            onClick={() => {
+              haptics.tap();
+              setShowCreate((current) => !current);
+            }}
           >
             <Plus className="size-5" />
-          </Button>
+          </IconButton>
         }
       />
-      <div className="mx-auto max-w-lg space-y-4 px-4 pb-4">
+      <div className="mx-auto max-w-lg space-y-6 px-4 pb-6 md:max-w-2xl">
         {showCreate && (
           <div className="rounded-2xl border bg-card p-4">
             <div className="flex items-center justify-between">
@@ -225,18 +210,22 @@ export function GroupsListContent() {
         )}
 
         {meId !== null && joined.length > 0 && (
-          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+          <SectionCard>
             {joined.map((snapshot) => (
-              <GroupRow key={snapshot.group.id} snapshot={snapshot} meId={meId} />
+              <GroupRow
+                key={snapshot.group.id}
+                snapshot={snapshot}
+                meId={meId}
+              />
             ))}
-          </div>
+          </SectionCard>
         )}
 
         {joined.length === 0 && invitations.length === 0 && (
           <EmptyState
             icon={Users}
             title="Nenhum grupo ainda"
-            description="Grupos juntam a galera pra dividir contas. Cria um e convida seus amigos pelo @handle."
+            description="As contas compartilhadas ficam juntas por aqui."
             actionLabel="Criar grupo"
             onAction={() => setShowCreate(true)}
           />

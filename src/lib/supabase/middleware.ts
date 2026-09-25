@@ -5,7 +5,6 @@ import { evaluateServerFinancialGate } from "@/lib/financial-compatibility";
 
 const PUBLIC_PATHS = [
   "/",
-  "/demo",
   "/auth",
   "/api/dev/login",
   "/claim",

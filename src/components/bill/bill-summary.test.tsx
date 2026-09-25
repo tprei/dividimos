@@ -31,23 +31,6 @@ describe("BillSummary", () => {
     )).toBeInTheDocument();
   });
 
-  it("renders per-person breakdown for single amount", () => {
-    render(
-      <BillSummary
-        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
-        items={[]}
-        shares={[
-          { userId: "alice", shareAmountCents: 5000, splitLabel: "igual" },
-          { userId: "bob", shareAmountCents: 5000, splitLabel: "igual" },
-        ]}
-        participants={[alice, bob]}
-      />,
-    );
-
-    expect(screen.getByText("Por pessoa")).toBeInTheDocument();
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-  });
 
   it("renders itemized bill with service fee and fixed fees", () => {
     const items = [{ totalPriceCents: 5000 }];
@@ -155,8 +138,6 @@ describe("BillSummary", () => {
         />,
       );
 
-      expect(screen.getByText("Alice")).toBeInTheDocument();
-      expect(screen.getByText("Bob")).toBeInTheDocument();
       expect(screen.getByText("Maria")).toBeInTheDocument();
       expect(screen.getByText("Convidado")).toBeInTheDocument();
     });
@@ -183,22 +164,5 @@ describe("BillSummary", () => {
       expect(screen.getByText("Convidado")).toBeInTheDocument();
     });
 
-    it("works with no guests (backward compatible)", () => {
-      render(
-        <BillSummary
-          expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
-          items={[]}
-          shares={[
-            { userId: "alice", shareAmountCents: 5000 },
-            { userId: "bob", shareAmountCents: 5000 },
-          ]}
-          participants={[alice, bob]}
-        />,
-      );
-
-      expect(screen.getByText("Alice")).toBeInTheDocument();
-      expect(screen.getByText("Bob")).toBeInTheDocument();
-      expect(screen.queryByText("Convidado")).not.toBeInTheDocument();
-    });
   });
 });

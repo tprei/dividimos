@@ -122,10 +122,10 @@ describe("divisionStatusText", () => {
 
   it("names the accepted format when a field cannot be parsed", () => {
     expect(divisionStatusText({ ok: false, reason: "invalid_input" }, "percent")).toBe(
-      "Informe percentuais de 0 a 100 com até duas casas decimais.",
+      "Percentuais vão de 0 a 100, com até duas casas decimais.",
     );
     expect(divisionStatusText({ ok: false, reason: "invalid_input" }, "fixed")).toBe(
-      "Informe valores em reais com até duas casas decimais.",
+      "Valores em reais, com até duas casas decimais.",
     );
   });
 });

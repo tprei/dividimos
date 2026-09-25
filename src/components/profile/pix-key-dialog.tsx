@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { haptics } from "@/hooks/use-haptics";
 import { updatePixKey } from "@/app/app/profile/actions";
 import type { UpdatePixKeySuccess } from "@/app/app/profile/actions";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,16 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
     }
   }
 
+  useEffect(() => {
+    if (!open || !pixInput) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, pixInput]);
+  const changeOpen = (next: boolean) => {
+    if (!next && (isSaving || (pixInput && !window.confirm("Descartar a chave não salva?")))) return;
+    onOpenChange(next);
+  };
   const handleSave = async () => {
     if (!pixInput || isSaving) return;
     const key = toPixKeyValue(pixType, pixInput);
@@ -106,6 +117,7 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
         return;
       }
       onSaved(result);
+      haptics.success();
       onOpenChange(false);
     } catch {
       setPixError("Erro ao salvar. Tente novamente.");
@@ -115,7 +127,7 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent>
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-lg font-bold">Chave Pix</DialogTitle>
@@ -135,24 +147,17 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
                 {PIX_TYPE_OPTIONS.map((option) => {
                   const selected = option.value === pixType;
                   return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => {
+                    <label key={option.value} className={`relative flex min-h-11 cursor-pointer items-center rounded-full border px-3 text-sm font-semibold has-focus-visible:ring-3 has-focus-visible:ring-ring ${
+                      selected ? "border-primary/40 bg-primary/15 text-primary-text" : "border-border bg-card text-foreground"
+                    }`}>
+                      <input type="radio" name="pix-type" value={option.value} checked={selected} className="absolute inset-0 size-full opacity-0" onChange={() => {
+                        haptics.selectionChanged();
                         setPixType(option.value);
                         setPixInput("");
                         setPixError("");
-                      }}
-                      className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
-                        selected
-                          ? "border-primary/40 bg-primary/15 text-primary"
-                          : "border-border bg-card text-foreground"
-                      }`}
-                    >
+                      }} />
                       {option.label}
-                    </button>
+                    </label>
                   );
                 })}
               </div>
@@ -174,7 +179,7 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
                 }}
               />
               {pixError && (
-                <p id="pix-key-error" role="alert" className="text-xs text-destructive">
+                <p id="pix-key-error" role="alert" className="text-sm text-destructive-text">
                   {pixError}
                 </p>
               )}

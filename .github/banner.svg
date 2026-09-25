@@ -1,12 +1,95 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
-  <rect width="800" height="200" rx="16" fill="#FEA101"/>
-  <g transform="translate(400,52)">
-    <circle cx="-15" cy="0" r="6" fill="white"/>
-    <rect x="-4" y="-16" width="9" height="32" rx="4.5" fill="white"/>
-    <circle cx="16" cy="0" r="6" fill="white"/>
-    <rect x="-12" y="36" width="24" height="5" rx="2" fill="#E08E00"/>
-    <rect x="-9" y="41" width="19" height="4.5" rx="2" fill="#C87E00"/>
-    <rect x="-7" y="45.5" width="14" height="4.5" rx="2.25" fill="#B07000"/>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="banner-title banner-desc">
+  <title id="banner-title">Dividimos: quem divide, multiplica</title>
+  <desc id="banner-desc">Logo do Dividimos sobre fundo âmbar com o slogan "Quem divide, multiplica" e o selo "Pix na hora, sem enrolação". À direita, um cupom de R$ 147,80 se divide em três partes de R$ 49,27, R$ 49,27 e R$ 49,26, cada uma com um QR Code Pix.</desc>
+  <defs>
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFB627"/>
+      <stop offset="1" stop-color="#F59400"/>
+    </linearGradient>
+    <clipPath id="banner-clip">
+      <rect width="1280" height="400" rx="32"/>
+    </clipPath>
+    <symbol id="banner-qr" viewBox="0 0 9 9">
+      <path fill-rule="evenodd" d="M0 0h3v3h-3zM1 1v1h1v-1zM6 0h3v3h-3zM7 1v1h1v-1zM0 6h3v3h-3zM1 7v1h1v-1zM4 0h1v1h-1zM5 1h1v1h-1zM4 2h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM7 4h1v1h-1zM4 5h1v1h-1zM8 5h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM4 7h1v1h-1zM7 7h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM8 8h1v1h-1z"/>
+    </symbol>
+    <marker id="banner-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1L8 5L1 9" fill="none" stroke="#061C31" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+  </style>
+
+  <g clip-path="url(#banner-clip)">
+    <rect width="1280" height="400" fill="url(#banner-bg)"/>
+    <circle cx="1210" cy="-30" r="190" fill="#FFFFFF" fill-opacity="0.10"/>
+    <circle cx="600" cy="470" r="150" fill="#FFFFFF" fill-opacity="0.08"/>
   </g>
-  <text x="400" y="150" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="28" letter-spacing="-0.5" fill="white">dividimos<tspan opacity="0.8">.ai</tspan></text>
+
+  <g transform="translate(88 84)">
+    <rect width="72" height="72" rx="18" fill="#FFFFFF"/>
+    <circle cx="20" cy="36" r="6" fill="#FEA101"/>
+    <rect x="31" y="20" width="10" height="32" rx="5" fill="#FEA101"/>
+    <circle cx="52" cy="36" r="6" fill="#FEA101"/>
+  </g>
+  <text class="sans" x="180" y="140" font-size="58" font-weight="800" letter-spacing="-1.5" fill="#FFFFFF">dividimos.ai</text>
+
+  <text class="sans" x="88" y="238" font-size="44" font-weight="800" letter-spacing="-1" fill="#061C31">Quem divide, multiplica</text>
+  <rect x="88" y="268" width="332" height="44" rx="22" fill="#061C31"/>
+  <rect x="106" y="284" width="12" height="12" rx="2" transform="rotate(45 112 290)" fill="#32BCAD"/>
+  <text class="sans" x="132" y="297" font-size="20" font-weight="700" fill="#FFFFFF">Pix na hora, sem enrolação</text>
+
+  <g transform="translate(744 62)">
+    <path transform="translate(5 8)" fill="#7A4A00" fill-opacity="0.18" d="M0 12Q0 0 12 0H184Q196 0 196 12V250L189 262L182 250L175 262L168 250L161 262L154 250L147 262L140 250L133 262L126 250L119 262L112 250L105 262L98 250L91 262L84 250L77 262L70 250L63 262L56 250L49 262L42 250L35 262L28 250L21 262L14 250L7 262L0 250Z"/>
+    <path fill="#FFFDF8" d="M0 12Q0 0 12 0H184Q196 0 196 12V250L189 262L182 250L175 262L168 250L161 262L154 250L147 262L140 250L133 262L126 250L119 262L112 250L105 262L98 250L91 262L84 250L77 262L70 250L63 262L56 250L49 262L42 250L35 262L28 250L21 262L14 250L7 262L0 250Z"/>
+    <rect x="24" y="24" width="110" height="14" rx="4" fill="#FDD27E"/>
+    <rect x="24" y="46" width="70" height="8" rx="3" fill="#EFE3CC"/>
+    <line x1="20" y1="68" x2="176" y2="68" stroke="#E6D5B3" stroke-width="2" stroke-dasharray="4 3"/>
+    <rect x="24" y="82" width="96" height="9" rx="3" fill="#E9E0D0"/>
+    <rect x="142" y="82" width="32" height="9" rx="3" fill="#D8CAB0"/>
+    <rect x="24" y="108" width="80" height="9" rx="3" fill="#E9E0D0"/>
+    <rect x="142" y="108" width="32" height="9" rx="3" fill="#D8CAB0"/>
+    <rect x="24" y="134" width="108" height="9" rx="3" fill="#E9E0D0"/>
+    <rect x="142" y="134" width="32" height="9" rx="3" fill="#D8CAB0"/>
+    <rect x="24" y="160" width="72" height="9" rx="3" fill="#E9E0D0"/>
+    <rect x="142" y="160" width="32" height="9" rx="3" fill="#D8CAB0"/>
+    <rect x="24" y="186" width="90" height="9" rx="3" fill="#E9E0D0"/>
+    <rect x="142" y="186" width="32" height="9" rx="3" fill="#D8CAB0"/>
+    <line x1="20" y1="208" x2="176" y2="208" stroke="#E6D5B3" stroke-width="2" stroke-dasharray="4 3"/>
+    <text class="sans" x="24" y="236" font-size="16" font-weight="600" fill="#6B5A40">Total</text>
+    <text class="sans" x="174" y="236" font-size="18" font-weight="800" text-anchor="end" fill="#061C31">R$ 147,80</text>
+  </g>
+
+  <g fill="none" stroke="#061C31" stroke-opacity="0.45" stroke-width="2.5" stroke-linecap="round" marker-end="url(#banner-arrow)">
+    <path d="M948 193C968 193 968 112 988 112"/>
+    <path d="M948 193H988"/>
+    <path d="M948 193C968 193 968 274 988 274"/>
+  </g>
+
+  <g class="sans">
+    <g transform="translate(996 80)">
+      <rect y="4" width="220" height="64" rx="32" fill="#7A4A00" fill-opacity="0.16"/>
+      <rect width="220" height="64" rx="32" fill="#FFFFFF"/>
+      <circle cx="34" cy="32" r="22" fill="#061C31"/>
+      <text x="34" y="39" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">A</text>
+      <text x="68" y="40" font-size="22" font-weight="800" fill="#061C31">R$ 49,27</text>
+      <use href="#banner-qr" xlink:href="#banner-qr" x="176" y="17" width="30" height="30" fill="#061C31"/>
+    </g>
+    <g transform="translate(996 161)">
+      <rect y="4" width="220" height="64" rx="32" fill="#7A4A00" fill-opacity="0.16"/>
+      <rect width="220" height="64" rx="32" fill="#FFFFFF"/>
+      <circle cx="34" cy="32" r="22" fill="#0B8F8C"/>
+      <text x="34" y="39" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">B</text>
+      <text x="68" y="40" font-size="22" font-weight="800" fill="#061C31">R$ 49,27</text>
+      <use href="#banner-qr" xlink:href="#banner-qr" x="176" y="17" width="30" height="30" fill="#061C31"/>
+    </g>
+    <g transform="translate(996 242)">
+      <rect y="4" width="220" height="64" rx="32" fill="#7A4A00" fill-opacity="0.16"/>
+      <rect width="220" height="64" rx="32" fill="#FFFFFF"/>
+      <circle cx="34" cy="32" r="22" fill="#0A8A4E"/>
+      <text x="34" y="39" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">C</text>
+      <text x="68" y="40" font-size="22" font-weight="800" fill="#061C31">R$ 49,26</text>
+      <use href="#banner-qr" xlink:href="#banner-qr" x="176" y="17" width="30" height="30" fill="#061C31"/>
+    </g>
+  </g>
 </svg>

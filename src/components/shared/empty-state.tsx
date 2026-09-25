@@ -1,9 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { springs } from "@/lib/animations";
 
 interface EmptyStateProps {
   icon: LucideIcon;
@@ -20,22 +21,23 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: EmptyStateProps) {
+  const reducedMotion = useReducedMotion();
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="flex flex-col items-center py-16 text-center"
+      transition={springs.snappy}
+      className="flex flex-col items-center px-4 py-8 text-center"
     >
-      <div className="rounded-2xl bg-muted/50 p-4">
-        <Icon className="h-8 w-8 text-muted-foreground/50" />
+      <div className="rounded-xl bg-muted/50 p-3">
+        <Icon aria-hidden="true" className="size-6 text-muted-foreground" />
       </div>
-      <h3 className="mt-4 text-base font-semibold">{title}</h3>
-      <p className="mt-1.5 max-w-[260px] text-sm text-muted-foreground">
+      <h3 className="mt-3 text-base font-semibold">{title}</h3>
+      <p className="mt-1 max-w-[260px] text-sm text-muted-foreground">
         {description}
       </p>
       {actionLabel && onAction && (
-        <Button onClick={onAction} className="mt-5 min-h-11 gap-2" size="sm">
+        <Button onClick={onAction} className="mt-4 gap-2" size="sm">
           <Plus className="h-4 w-4" />
           {actionLabel}
         </Button>

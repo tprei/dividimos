@@ -22,9 +22,12 @@ test.describe("Group profile behind the header", () => {
 
     await expect(page).toHaveURL(new RegExp(`/app/groups/${group.id}/info$`));
     await expect(page.getByRole("heading", { name: "Grupo Perfil", level: 2 })).toBeVisible();
-    await expect(page.getByText(/2 membros · desde /)).toBeVisible();
+    await expect(page.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", `/app/groups/${group.id}?tab=membros`);
     await expect(page.getByTestId("group-spending")).toContainText("120,00");
     await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();
+    await page.getByRole("link", { name: /2 pessoas/ }).click();
+    await expect(page.getByRole("radio", { name: "Membros" })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Remover Bob Perfil" })).toBeVisible();
   });
 
   test("the header avatar links to the same profile", async ({ page, seed, loginAs }) => {

@@ -49,8 +49,14 @@ test.describe("Mobile interactions", () => {
     await amount.fill("30,00");
     await expect(page.getByTestId("group-payment-confirm")).toBeVisible();
 
-    // Dismissing over the thread must not activate anything underneath.
+    // Dismissing over the thread must not activate anything underneath, and a
+    // typed amount is only dropped after the discard confirmation.
+    const discard = page.waitForEvent("dialog").then((dialog) => {
+      expect(dialog.message()).toBe("Descartar este pagamento?");
+      return dialog.accept();
+    });
     await page.locator('[data-slot="popover-backdrop"]').click({ position: { x: 5, y: 5 } });
+    await discard;
     await expect(form).toBeHidden();
 
     const { data } = await adminClient
@@ -100,7 +106,7 @@ test.describe("Mobile interactions", () => {
 
     const marker = await page.evaluate(() => {
       const token = `pull-${Date.now()}`;
-      (window as unknown as Record<string, unknown>).__pullMarker = token;
+      window.__pullMarker = token;
       return token;
     });
 
@@ -114,9 +120,7 @@ test.describe("Mobile interactions", () => {
     }
 
     // A reload would drop the marker; the wizard must stay exactly where it is.
-    const survived = await page.evaluate(
-      () => (window as unknown as Record<string, unknown>).__pullMarker,
-    );
+    const survived = await page.evaluate(() => window.__pullMarker);
     expect(survived).toBe(marker);
     await expect(page).toHaveURL(/\/app\/bill\/new/);
   });

@@ -15,10 +15,11 @@ import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
-import toast from "react-hot-toast";
+import { haptics } from "@/hooks/use-haptics";
 import { parseClaimQrCode } from "@/lib/claim-qr";
 import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
+import { BRAND } from "@/lib/brand";
 
 type AuthMode = "choose" | "scan";
 
@@ -32,6 +33,7 @@ function AuthPageContent() {
   const [scanPaused, setScanPaused] = useState(false);
   const error = searchParams.get("error");
   const [dismissedError, setDismissedError] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   useEffect(() => {
     void prepareGoogleSignIn();
@@ -66,6 +68,8 @@ function AuthPageContent() {
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
+    setSignInError(null);
+    haptics.tap();
     try {
       if (!isNativePlatform()) {
         await startGoogleRedirect(next);
@@ -81,11 +85,13 @@ function AuthPageContent() {
         router.refresh();
       } else {
         setIsGoogleLoading(false);
-        toast.error("Não foi possível entrar com Google. Tente novamente.");
+        haptics.error();
+        setSignInError("Não conseguimos entrar com o Google. Tente de novo.");
       }
     } catch {
       setIsGoogleLoading(false);
-      toast.error("Erro ao conectar com Google. Verifique sua conexão.");
+      haptics.error();
+      setSignInError("Sem conexão com o Google. Tente de novo.");
     }
   };
 
@@ -108,7 +114,7 @@ function AuthPageContent() {
           transition={{ duration: 0.4, delay: 0.15 }}
           className="mt-4 text-center text-muted-foreground"
         >
-          Racha a conta com a galera via Pix
+          {BRAND.tagline}
         </motion.p>
 
         <motion.div
@@ -133,7 +139,7 @@ function AuthPageContent() {
                   </p>
 
                   <div className="mt-8 space-y-3">
-                    {error === "callback_failed" && !dismissedError && (
+                    {((error === "callback_failed" && !dismissedError) || signInError) && (
                       <div
                         role="alert"
                         className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5 text-left"
@@ -141,7 +147,7 @@ function AuthPageContent() {
                         <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-destructive">
-                            Não conseguimos concluir a entrada com o Google.
+                            {signInError ?? "Não conseguimos concluir a entrada com o Google."}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             Toque em &quot;Entrar com Google&quot; para tentar de novo.
@@ -152,6 +158,7 @@ function AuthPageContent() {
                           aria-label="Dispensar aviso"
                           onClick={() => {
                             setDismissedError(true);
+                            setSignInError(null);
                             const params = new URLSearchParams(searchParams.toString());
                             params.delete("error");
                             router.replace(params.toString() ? `/auth?${params.toString()}` : "/auth");
@@ -190,7 +197,7 @@ function AuthPageContent() {
                     <button
                       type="button"
                       onClick={() => setMode("scan")}
-                      className="flex w-full items-center justify-center gap-2 text-sm text-primary hover:underline"
+                      className="flex min-h-11 w-full items-center justify-center gap-2 text-sm text-primary-text hover:underline"
                     >
                       <QrCode className="h-4 w-4" />
                       Ler um convite
@@ -208,8 +215,9 @@ function AuthPageContent() {
                   transition={{ duration: 0.25 }}
                 >
                   <button
+                    type="button"
                     onClick={() => setMode("choose")}
-                    className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                    className="mb-4 flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Voltar

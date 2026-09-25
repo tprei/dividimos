@@ -10,16 +10,21 @@ import {
 import { CheckCheck, Eye } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { DebtEdge } from "@/lib/simplify";
+import { avatarStyle } from "@/components/shared/user-avatar";
+import { displayNames, initialsOf } from "@/lib/people";
+import type { DebtEdge } from "@/types";
 import { formatBRL } from "@/lib/currency";
 
 export interface DebtGraphNode {
   id: string;
   name: string;
+  handle?: string | null;
+  isGuest?: boolean;
 }
 
 interface DebtGraphProps {
   participants: DebtGraphNode[];
+  viewerId?: string;
   edges: DebtEdge[];
   rawEdges?: DebtEdge[];
   replayKey?: number;
@@ -222,7 +227,7 @@ function GraphEdge({
           style={{ overflow: "visible" }}
         >
           <motion.div
-            className="flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold tabular-nums bg-card border border-border shadow-sm"
+            className="flex items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums bg-card border border-border shadow-sm"
             style={{ color: labelColor, whiteSpace: "nowrap" }}
             initial={mode === "crossfade" ? { opacity: 0, scale: 0.6 } : false}
             animate={{ opacity: 1, scale: 1 }}
@@ -239,6 +244,7 @@ function GraphEdge({
 
 export function DebtGraph({
   participants,
+  viewerId,
   edges,
   rawEdges,
   replayKey = 0,
@@ -249,6 +255,8 @@ export function DebtGraph({
   dimOthers = false,
 }: DebtGraphProps) {
   const reducedMotion = useReducedMotion();
+  const labels = displayNames(participants, { style: "short", viewerId });
+  const accessibleLabels = displayNames(participants, { style: "full" });
   const hasRawPhase = rawEdges !== undefined;
   const animateRaw = hasRawPhase && !reducedMotion;
   const mode: EdgeAnimationMode = !hasRawPhase
@@ -389,12 +397,8 @@ export function DebtGraph({
             const hasReverse = displayedEdges.some(
               (e) => e.fromUserId === edge.toUserId && e.toUserId === edge.fromUserId,
             );
-            const fromName =
-              participants.find((p) => p.id === edge.fromUserId)?.name ??
-              edge.fromUserId;
-            const toName =
-              participants.find((p) => p.id === edge.toUserId)?.name ??
-              edge.toUserId;
+            const fromName = accessibleLabels.get(edge.fromUserId);
+            const toName = accessibleLabels.get(edge.toUserId);
 
             return (
               <GraphEdge
@@ -420,40 +424,43 @@ export function DebtGraph({
 
         {participants.map((participant, i) => {
           const pos = positions[i];
-          const initial = participant.name.charAt(0).toUpperCase();
-          const firstName = participant.name.split(" ")[0];
+          const initials = initialsOf(participant.name);
+          const label = labels.get(participant.id);
+          const tone = avatarStyle(participant.id);
 
           return (
             <g
               key={participant.id}
               {...(onSelectEdge
-                ? selectable(participant.name, () => handleSelectNode(participant.id))
+                ? selectable(accessibleLabels.get(participant.id) ?? participant.name, () => handleSelectNode(participant.id))
                 : {})}
             >
+              <title>{participant.name}</title>
               <circle
                 cx={pos.x}
                 cy={pos.y}
                 r={NODE_RADIUS}
-                className="fill-muted stroke-border"
+                style={{ fill: tone.backgroundColor, stroke: tone.color }}
+                strokeDasharray={participant.isGuest ? "3 3" : undefined}
                 strokeWidth={1.5}
               />
               <text
                 x={pos.x}
                 y={pos.y + 5}
                 textAnchor="middle"
-                className="fill-foreground text-sm font-semibold pointer-events-none"
-                style={{ fontSize: 14, fontWeight: 600 }}
+                className="text-sm font-semibold pointer-events-none"
+                style={{ fill: tone.color }}
               >
-                {initial}
+                {initials}
               </text>
               <text
                 x={pos.x}
                 y={pos.y + NODE_RADIUS + 13}
                 textAnchor="middle"
                 className="fill-muted-foreground pointer-events-none"
-                style={{ fontSize: 10 }}
+                style={{ fontSize: 12 }}
               >
-                {firstName}
+                {label}
               </text>
             </g>
           );
@@ -464,7 +471,7 @@ export function DebtGraph({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             className="text-muted-foreground"
             onClick={toggleRawView}
           >

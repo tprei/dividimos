@@ -408,7 +408,7 @@ const EXPENSE_VERSION_KEYS = [
   "changeSummary",
 ] as const;
 
-export function decodeExpenseVersion(
+function decodeExpenseVersion(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ExpenseVersion, WireIssue> {
@@ -573,7 +573,7 @@ const PARTICIPANT_KEYS = [
   "guest",
 ] as const;
 
-export function decodeParticipant(
+function decodeParticipant(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<Participant, WireIssue> {
@@ -626,7 +626,7 @@ const EXPENSE_RECORD_KEYS = [
   "deletedBy",
 ] as const;
 
-export function decodeExpenseRecord(
+function decodeExpenseRecord(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ExpenseRecord, WireIssue> {
@@ -668,7 +668,7 @@ export function decodeExpenseRecord(
 
 const EXPENSE_GROUP_SUMMARY_KEYS = ["id", "name", "kind"] as const;
 
-export function decodeExpenseGroupSummary(
+function decodeExpenseGroupSummary(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ExpenseGroupSummary, WireIssue> {

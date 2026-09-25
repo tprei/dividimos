@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PayerStep, type PayerStepParticipant } from "@/components/bill/payer-step";
 import { RoomFinalBoard } from "@/components/assignment-room/room-final-board";
 import { Money } from "@/components/shared/money";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { Button } from "@/components/ui/button";
 import { buildAssignmentDivision } from "@/lib/assignment-room-money";
 import type { AssignmentRoomView } from "@/types/assignment-room";
@@ -139,18 +140,15 @@ export function RoomReview({
   } else if (!blocker && !divisionResult.ok) {
     blocker = buildAssignmentRoomFailureMessage(divisionResult.issue.code);
   } else if (!blocker && payers.length === 0) {
-    blocker = "Escolha pelo menos uma pessoa que pagou a conta.";
+    blocker = "Falta dizer quem pagou a conta.";
   } else if (!blocker && paidCents !== view.room.totalCents) {
     blocker = "Os valores pagos precisam somar exatamente o total da conta.";
   }
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <div className="flex-1 space-y-6 px-4 py-6">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{view.room.title}</p>
-        <h2 className="mt-2 font-heading text-2xl font-bold tracking-tight">Tudo escolhido. Vamos fechar?</h2>
-      </header>
+      <ScreenHeader title="Revisão" subtitle={view.room.title} />
+      <div className="flex-1 space-y-6 px-4 py-3">
 
       <section className="rounded-2xl border bg-card p-4" aria-label="Quem pagou?">
         <PayerStep
@@ -177,7 +175,7 @@ export function RoomReview({
       )}
 
       {blocker && (attempted || (payerEdited && paidCents !== view.room.totalCents)) && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-destructive-text">
           {blocker}
         </p>
       )}

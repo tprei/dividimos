@@ -26,19 +26,7 @@ const toastMocks = vi.hoisted(() => ({
 vi.mock("react-hot-toast", () => ({ default: toastMocks }));
 
 vi.mock("next/link", () => ({
-  default: ({
-    children,
-    href,
-    className,
-  }: {
-    children: React.ReactNode;
-    href: string;
-    className?: string;
-  }) => (
-    <a href={href} className={className}>
-      {children}
-    </a>
-  ),
+  default: (props: React.ComponentProps<"a">) => <a {...props} />,
 }));
 
 
@@ -310,15 +298,29 @@ describe("ActivityContent", () => {
   it("links expense rows to /app/bill/<expenseId>", () => {
     render(<ActivityContent />);
 
-    const expense1Link = screen
-      .getByText(/Alice adicionou Almoço.*50,00/)
-      .closest("a");
+    const expense1Link = screen.getByRole("link", { name: /Alice adicionou Almoço/ });
     expect(expense1Link).toHaveAttribute("href", "/app/bill/exp-123");
 
-    const expense2Link = screen
-      .getByText(/Bob adicionou Café.*20,00/)
-      .closest("a");
+    const expense2Link = screen.getByRole("link", { name: /Bob adicionou Café/ });
     expect(expense2Link).toHaveAttribute("href", "/app/bill/exp-456");
+  });
+
+  it("groups events across calendar boundaries and links non-expense activity to its group", () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    useAppStore.setState((state) => ({
+      activity: {
+        ...state.activity,
+        items: [
+          { ...recordedSettlementEvent, kind: "member_joined", settlementId: null, payload: {}, createdAt: today.toISOString() },
+          { ...expenseCreatedEvent, createdAt: yesterday.toISOString() },
+        ],
+      },
+    }));
+    render(<ActivityContent />);
+    expect(within(screen.getByRole("region", { name: "Hoje" })).getByRole("link")).toHaveAttribute("href", "/app/groups/group-dm");
+    expect(within(screen.getByRole("region", { name: "Ontem" })).getByRole("link")).toHaveAttribute("href", "/app/bill/exp-123");
   });
 
   it("loads activity on mount and records the view once the read succeeded", () => {
@@ -354,19 +356,13 @@ describe("ActivityContent", () => {
     fireEvent.click(undoButton);
 
     expect(voidSettlement).not.toHaveBeenCalled();
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText("Bob")).toBeInTheDocument();
     expect(dialog.getByText("você")).toBeInTheDocument();
-    expect(
-      screen.getByText(/O registro fica marcado como Desfeito e os saldos são recalculados na hora\./),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/O Pix em si não é estornado\. Combina a devolução direto com a outra pessoa\./),
-    ).toBeInTheDocument();
   });
 
-  it("closes confirmation dialog without calling voidSettlement when Cancelar is clicked in activity feed", async () => {
+  it("dismisses confirmation with Escape without voiding the payment", async () => {
     useAppStore.setState({
       groups: {
         "group-1": groupNormal,
@@ -375,16 +371,16 @@ describe("ActivityContent", () => {
     });
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
     await waitFor(() => {
-      expect(screen.queryByText(/Desfazer este registro\?/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(voidSettlement).not.toHaveBeenCalled();
   });
 
-  it("voids settlement when Desfazer registro is confirmed in dialog", async () => {
+  it("voids the payment after confirmation", async () => {
     useAppStore.setState({
       groups: {
         "group-1": groupNormal,
@@ -394,7 +390,7 @@ describe("ActivityContent", () => {
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
@@ -413,7 +409,7 @@ describe("ActivityContent", () => {
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
@@ -421,8 +417,7 @@ describe("ActivityContent", () => {
     await waitFor(() => {
       expect(toastMocks.error).toHaveBeenCalled();
     });
-    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" })).toBeEnabled();
   });
 
   it("does not show 'Desfazer' once the settlement is voided and gone from the snapshot", () => {

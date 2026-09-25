@@ -4,6 +4,14 @@ import type { NotificationPreferences } from "@/types";
 import type { Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 
+beforeEach(() => { window.confirm = vi.fn(() => true); });
+it("does not sign out when the confirmation is cancelled", () => {
+  window.confirm = vi.fn(() => false);
+  useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+  render(<SettingsPage />);
+  fireEvent.click(screen.getByRole("button", { name: "Sair da conta" }));
+  expect(mockSignOut).not.toHaveBeenCalled();
+});
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
@@ -145,7 +153,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(screen.queryByText("Configurações")).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
   });
 
   it("renders notification preference switches seeded from me", () => {
@@ -156,9 +164,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(screen.getByText("Configurações")).toBeInTheDocument();
-    const sws = screen.getAllByRole("switch");
-    expect(sws[0]).toHaveAttribute("aria-checked", "true");
-    expect(sws[1]).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Pagamentos" })).toHaveAttribute("aria-checked", "false");
   });
 });
 
@@ -213,8 +220,7 @@ describe("SettingsPage notification deltas", () => {
     });
     render(<SettingsPage />);
 
-    const sws = screen.getAllByRole("switch");
-    fireEvent.click(sws[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
 
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledTimes(1);
@@ -223,7 +229,7 @@ describe("SettingsPage notification deltas", () => {
       notificationPreferences: { expenses: false },
     });
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(false);
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "false");
   });
 
   it("sends two single-key deltas for different categories and neither clobbers the other", async () => {
@@ -234,9 +240,8 @@ describe("SettingsPage notification deltas", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    const sws = screen.getAllByRole("switch");
-    fireEvent.click(sws[4]);
-    fireEvent.click(screen.getAllByRole("switch")[2]);
+    fireEvent.click(screen.getByRole("switch", { name: "Mensagens" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Lembretes" }));
 
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledTimes(2);
@@ -269,13 +274,12 @@ describe("SettingsPage notification deltas", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    const sws = screen.getAllByRole("switch");
-    fireEvent.click(sws[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
 
     firstDeferred.resolve(makeMe("user-a", { expenses: false }));
@@ -299,8 +303,7 @@ describe("SettingsPage notification deltas", () => {
     });
     render(<SettingsPage />);
 
-    const sws = screen.getAllByRole("switch");
-    fireEvent.click(sws[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
 
     await waitFor(() => {
       expect(mockToastError).toHaveBeenCalled();
@@ -308,7 +311,7 @@ describe("SettingsPage notification deltas", () => {
 
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
     expect(useAppStore.getState().me?.notificationPreferences?.settlements).toBe(false);
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("keeps a newer optimistic value when a superseded request fails", async () => {
@@ -318,13 +321,12 @@ describe("SettingsPage notification deltas", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    const sws = screen.getAllByRole("switch");
-    fireEvent.click(sws[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
 
     firstDeferred.reject(new Error("Network error"));
     await waitFor(() => {
@@ -347,12 +349,12 @@ describe("SettingsPage notification deltas", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
     await waitFor(() => {
       expect(updateProfileMock).toHaveBeenCalledTimes(1);
     });
-    fireEvent.click(screen.getAllByRole("switch")[0]);
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(false);
 
     firstDeferred.resolve(makeMe("user-a", { expenses: false }));
@@ -361,7 +363,7 @@ describe("SettingsPage notification deltas", () => {
     });
     expect(updateProfileMock).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
   });
 });
 
@@ -378,7 +380,7 @@ describe("SettingsPage account", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
 
     await waitFor(() => {
       expect(screen.getByText("Salvando...")).toBeInTheDocument();
@@ -399,13 +401,13 @@ describe("SettingsPage account", () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
-    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getByRole("switch", { name: "Contas" }));
 
     const retry = await screen.findByRole("button", {
       name: "Não salvou. Tentar novamente",
     });
     // The failed category reverted, so the switch shows the old value again.
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
 
     fireEvent.click(retry);
 
@@ -457,13 +459,13 @@ describe("SettingsPage account", () => {
       me: makeMe("user-a", { expenses: false }),
     });
     const { rerender } = render(<SettingsPage />);
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "false");
 
     useAppStore.setState({
       hydrated: true,
       me: makeMe("user-b", { expenses: true }),
     });
     rerender(<SettingsPage />);
-    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
   });
 });

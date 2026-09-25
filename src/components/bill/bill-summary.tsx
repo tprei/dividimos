@@ -3,6 +3,11 @@
 import { motion } from "framer-motion";
 import { Calculator, Receipt } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { PersonLabel } from "@/components/shared/person-label";
+import { Chip } from "@/components/ui/chip";
+import { displayNames } from "@/lib/people";
 import {
   allocateByWeights,
   allocateEvenly,
@@ -51,9 +56,10 @@ interface BillSummaryProps {
   shares?: ShareEntry[];
   participants: UserProfile[];
   guests?: GuestEntry[];
+  viewerId?: string;
 }
 
-export function BillSummary({ expense, items, itemSplits = [], shares = [], participants, guests = [] }: BillSummaryProps) {
+export function BillSummary({ expense, items, itemSplits = [], shares = [], participants, guests = [], viewerId }: BillSummaryProps) {
   const isSingleAmount = expense.expenseType === "single_amount";
 
   const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
@@ -63,10 +69,11 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
     ? expense.totalAmount
     : itemsTotal + serviceFee + expense.fixedFees;
 
-  const allPersons: { id: string; name: string; isGuest: boolean }[] = [
-    ...participants.map((p) => ({ id: p.id, name: p.name, isGuest: false })),
-    ...guests.map((g) => ({ id: g.id, name: g.name, isGuest: true })),
+  const allPersons = [
+    ...participants.map((p) => ({ ...p, isGuest: false })),
+    ...guests.map((g) => ({ id: g.id, name: g.name, avatarUrl: null, isGuest: true })),
   ];
+  const labels = displayNames(allPersons, { style: "full", viewerId });
 
   const perPerson = (() => {
     if (isSingleAmount) {
@@ -118,7 +125,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
           {isSingleAmount ? (
             <div className="flex justify-between font-semibold">
               <span>Total</span>
-              <span className="tabular-nums text-primary">{formatBRL(grandTotal)}</span>
+              <span className="tabular-nums text-primary-text">{formatBRL(grandTotal)}</span>
             </div>
           ) : (
             <>
@@ -142,7 +149,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
               )}
               <div className="flex justify-between border-t border-border pt-2 font-semibold">
                 <span>Total</span>
-                <span className="tabular-nums text-primary">{formatBRL(grandTotal)}</span>
+                <span className="tabular-nums text-primary-text">{formatBRL(grandTotal)}</span>
               </div>
             </>
           )}
@@ -173,29 +180,25 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
                 transition={{ delay: idx * 0.05 }}
                 className="rounded-xl bg-muted/50 p-3"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${entry.person.isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/15 text-primary"}`}>
-                      {entry.person.name.charAt(0)}
-                    </span>
-                    <span className="font-medium">
-                      {entry.person.name.split(" ")[0]}
-                    </span>
-                    {entry.person.isGuest && (
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
-                    )}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {entry.person.isGuest
+                      ? <GuestAvatar id={entry.person.id} name={entry.person.name} size="sm" />
+                      : <UserAvatar id={entry.person.id} name={entry.person.name} avatarUrl={entry.person.avatarUrl} size="sm" />}
+                    <PersonLabel name={entry.person.name} overrideName={labels.get(entry.person.id)} />
+                    {entry.person.isGuest && <Chip tone="guest">Convidado</Chip>}
                     {entry.splitLabel && (
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         ({entry.splitLabel})
                       </span>
                     )}
                   </div>
-                  <span className="text-lg font-bold tabular-nums">
+                  <span className="shrink-0 text-lg font-bold tabular-nums">
                     {formatBRL(entry.total)}
                   </span>
                 </div>
                 {!isSingleAmount && (
-                  <div className="mt-1.5 flex gap-3 text-[11px] text-muted-foreground">
+                  <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
                     <span>Itens: {formatBRL(entry.itemTotal)}</span>
                     {entry.serviceFee > 0 && (
                       <span>Garçom: {formatBRL(entry.serviceFee)}</span>

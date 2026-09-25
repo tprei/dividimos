@@ -66,14 +66,12 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
         `&payerId=${troupe.bots[0].id}`,
     );
     // The draft prefills the form but the wizard still opens on its first
-    // step, so the review step is one Continuar away. Whether that button is
-    // there at all depends on the draft, hence waiting for either.
-    const create = page.getByRole("button", { name: "Criar conta" });
-    const next = page.getByRole("button", { name: "Continuar" });
-    await expect(create.or(next).first()).toBeVisible({ timeout: 20000 });
-    if (await next.isVisible()) {
-      await next.click();
-    }
+    // step (Participantes), so Salvar conta sits two Continuar away, past
+    // Valor e divisão and on Quem pagou.
+    const next = page.getByRole("button", { name: "Continuar", exact: true });
+    const create = page.getByRole("button", { name: "Salvar conta" });
+    await next.click({ timeout: 20000 });
+    await next.click();
     await expect(create).toBeVisible({ timeout: 20000 });
     // Photographed with the payer already chosen: the wizard shows its own
     // "Selecione quem pagou." error until then, and a board that shows an
@@ -93,11 +91,10 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
     // The sheet picks a counterparty through a select, and it opens on
     // whichever member the group listed first, so Bruno has to be chosen.
-    // The option label is the one SelectField builds: name plus @handle.
+    // The option label is the member's display name; a handle only appears
+    // when two members share a name, which the troupe never does.
     await page.getByRole("combobox", { name: "Com quem?" }).click();
-    await page
-      .getByRole("option", { name: `${bruno.name} (@${bruno.handle})`, exact: true })
-      .click();
+    await page.getByRole("option", { name: bruno.name, exact: true }).click();
     await expect(page.getByText(`Você pagou para ${bruno.name}`)).toBeVisible();
     await page.getByTestId("group-payment-payer-other").click();
 

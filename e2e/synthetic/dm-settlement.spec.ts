@@ -137,8 +137,7 @@ test.describe("DM settlements", () => {
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: /^Pagar R\$\s*25,00$/i }).click();
-    await page.getByRole("button", { name: /^Pagar R\$\s*25,00$/i }).last().click();
-    await page.getByRole("button", { name: /Já paguei/i }).click();
+    await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
     // The response is lost after the write commits, so the optimistic entry
     // rolls back and the client reconciles from the server. The committed
@@ -250,8 +249,8 @@ test.describe("DM settlements", () => {
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: /^Cobrar R\$\s*15,00$/i }).click();
-    await expect(page.getByText("Cobrar via Pix")).toBeVisible();
-    await page.getByRole("button", { name: /Já recebi/i }).click();
+    await expect(page.getByRole("dialog", { name: "Cobrar Bob DM Recebimento" })).toBeVisible();
+    await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
     await expect
       .poll(async () => netFor(bob.id), { timeout: 10000 })

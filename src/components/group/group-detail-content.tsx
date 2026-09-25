@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { GroupSpendingSection } from "@/components/group/group-spending-section";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
@@ -27,7 +26,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IconButton } from "@/components/ui/icon-button";
+import { UnreadBadge } from "@/components/shared/unread-badge";
+import { haptics } from "@/hooks/use-haptics";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { isBotGroup } from "@/lib/bot-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -77,11 +79,14 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
   useEffect(() => {
     if (!hydrated || snapshot || loadError || departedRef.current) return;
-    if (read.status === "loading" || read.status === "error") return;
+    // Only an unattempted read may start one. A completed read without a
+    // snapshot means the group is gone; refetching would loop forever.
+    if (read.status !== "idle") return;
     load();
   }, [hydrated, snapshot, loadError, read.status, load]);
 
-  if (!hydrated || (!snapshot && !loadError && read.status !== "error")) {
+  const readPending = read.status === "idle" || read.status === "loading";
+  if (!hydrated || (!snapshot && !loadError && readPending)) {
     return (
       <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
         {[1, 2, 3].map((i) => (
@@ -228,7 +233,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg px-4 pb-6 md:max-w-2xl [&>header]:px-0 [&>header_h1]:line-clamp-2">
       <ScreenHeader
         back
         leading={
@@ -240,8 +245,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             {groupAvatar}
           </Link>
         }
-        eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
-        title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
+        subtitle={`${accepted.length + snapshot.guests.length} pessoas`}
+        title={snapshot.group.name}
         onBack={() => router.push("/app/groups")}
         onTitleClick={() => router.push(`/app/groups/${groupId}/info`)}
         titleClickLabel="Ver perfil do grupo"
@@ -254,55 +259,41 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           ) : null
         }
         action={
-          <div className="flex items-center gap-1">
-            {isAcceptedMember && (
-              <Button
-                size="icon-lg"
-                variant="ghost"
-                className="relative size-11 rounded-full"
-                render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
-              >
-                <MessageSquare className="size-5" />
-                {snapshot.unreadCount > 0 && (
-                  <span
-                    aria-label={`${snapshot.unreadCount} mensagens não lidas`}
-                    className="absolute top-0.5 right-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-[5px] text-[9.5px] font-extrabold text-primary-foreground"
-                  >
-                    {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
-                  </span>
-                )}
-              </Button>
-            )}
-          </div>
+          isAcceptedMember && (
+            <IconButton
+              aria-label="Conversa"
+              className="relative"
+              nativeButton={false}
+              role="link"
+              render={<Link href={`/app/groups/${groupId}/chat`} />}
+              onClick={() => haptics.tap()}
+            >
+              <MessageSquare className="size-5" />
+              {snapshot.unreadCount > 0 && <span aria-label={`${snapshot.unreadCount} mensagens não lidas`}><UnreadBadge count={snapshot.unreadCount} /></span>}
+            </IconButton>
+          )
         }
       />
 
-      <NotificationPrompt />
-
-      <Tabs value={tab} onValueChange={setTab} className="mt-5">
-        <TabsList className="w-full">
-          <TabsTrigger value="saldos">Saldos</TabsTrigger>
-          <TabsTrigger value="contas">Contas</TabsTrigger>
-          <TabsTrigger value="membros">Membros</TabsTrigger>
-        </TabsList>
-        <TabsContent value="saldos" className="mt-4">
+      <div className="mt-5">
+        <SegmentedControl aria-label="Seções do grupo" value={tab} onChange={setTab} options={[{ value: "saldos", label: "Saldos" }, { value: "contas", label: "Contas" }, { value: "membros", label: "Membros" }]} />
+        {tab === "saldos" && <div className="mt-4">
           <GroupSettlementView
             groupId={groupId}
             snapshot={snapshot}
             meId={meId ?? ""}
           />
-        </TabsContent>
-        <TabsContent value="contas" className="mt-4 space-y-4">
-          <GroupSpendingSection spending={snapshot.overview?.spending} meId={meId ?? ""} />
+        </div>}
+        {tab === "contas" && <div className="mt-4 space-y-4">
           <GroupExpensesSection groupId={groupId} members={members} />
-        </TabsContent>
-        <TabsContent value="membros" className="mt-4 space-y-4">
+        </div>}
+        {tab === "membros" && <div className="mt-4 space-y-4">
           {canInvite && (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
-                onClick={() => setShowInviteModal(true)}
+                onClick={() => { haptics.tap(); setShowInviteModal(true); }}
                 aria-label="Compartilhar link e QR code do grupo"
               >
                 <Share2 className="size-4" />
@@ -311,7 +302,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               <Button
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
-                onClick={() => setShowInvitePanel(!showInvitePanel)}
+                onClick={() => { haptics.tap(); setShowInvitePanel(!showInvitePanel); }}
                 aria-label="Convidar por @handle"
               >
                 <UserPlus className="size-4" />
@@ -336,8 +327,9 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               departedRef.current = true;
             }}
           />
-        </TabsContent>
-      </Tabs>
+        </div>}
+      </div>
+      <div className="mt-6"><NotificationPrompt /></div>
 
       <GroupInviteModal
         open={showInviteModal}

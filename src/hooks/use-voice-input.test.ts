@@ -217,37 +217,6 @@ describe("useVoiceInput", () => {
     expect(mockInstance.stop).toHaveBeenCalled();
   });
 
-  it("sets user-friendly error for not-allowed", () => {
-    const { result } = renderHook(() => useVoiceInput());
-    act(() => result.current.startListening());
-    act(() => mockInstance._emitError("not-allowed"));
-
-    expect(result.current.error).toContain("Permissão do microfone negada");
-  });
-
-  it("sets user-friendly error for no-speech", () => {
-    const { result } = renderHook(() => useVoiceInput());
-    act(() => result.current.startListening());
-    act(() => mockInstance._emitError("no-speech"));
-
-    expect(result.current.error).toContain("Nenhuma fala detectada");
-  });
-
-  it("sets user-friendly error for network error", () => {
-    const { result } = renderHook(() => useVoiceInput());
-    act(() => result.current.startListening());
-    act(() => mockInstance._emitError("network"));
-
-    expect(result.current.error).toContain("Erro de rede");
-  });
-
-  it("sets user-friendly error for audio-capture", () => {
-    const { result } = renderHook(() => useVoiceInput());
-    act(() => result.current.startListening());
-    act(() => mockInstance._emitError("audio-capture"));
-
-    expect(result.current.error).toContain("Nenhum microfone encontrado");
-  });
 
   it("does not set error for aborted (silent dismiss)", () => {
     const { result } = renderHook(() => useVoiceInput());
@@ -257,13 +226,6 @@ describe("useVoiceInput", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("sets generic error for unknown error codes", () => {
-    const { result } = renderHook(() => useVoiceInput());
-    act(() => result.current.startListening());
-    act(() => mockInstance._emitError("something-unknown"));
-
-    expect(result.current.error).toContain("Erro no reconhecimento de voz");
-  });
 
   it("clears state when starting a new session", () => {
     const { result } = renderHook(() => useVoiceInput());

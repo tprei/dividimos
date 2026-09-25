@@ -203,8 +203,8 @@ export function CurrencyInput({
       autoFocus={autoFocus}
       aria-invalid={isInvalid || undefined}
       className={cn(
-        "bg-transparent text-center tabular-nums outline-none placeholder:text-muted-foreground/40 disabled:pointer-events-none disabled:opacity-50",
-        isInvalid && "text-destructive",
+        "h-11 min-w-0 rounded-[0.75rem] border border-input bg-card px-3 py-2 text-base leading-6 md:text-sm text-center tabular-nums outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+        isInvalid && "border-destructive text-destructive-text",
         className,
       )}
       {...rest}

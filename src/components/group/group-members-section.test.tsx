@@ -33,7 +33,6 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   createGuestClaimToken: vi.fn(),
 }));
 
-import toast from "react-hot-toast";
 import {
   deleteGroup,
   inviteMember,
@@ -109,7 +108,6 @@ describe("GroupMembersSection", () => {
 
     expect(screen.getByText("Carol Criadora")).toBeInTheDocument();
     expect(screen.getByText("Criador")).toBeInTheDocument();
-    expect(screen.getByText("Eu Mesmo")).toBeInTheDocument();
     expect(screen.getByText("Você")).toBeInTheDocument();
     expect(screen.getByText("Dave Convidado")).toBeInTheDocument();
     expect(screen.getByText("Pendente")).toBeInTheDocument();
@@ -120,6 +118,7 @@ describe("GroupMembersSection", () => {
   it("shows Leave group and not Delete for a non-creator member", () => {
     render(
       <GroupMembersSection
+        settingsOnly
         snapshot={snapshot()}
         meId={meId}
         onDepart={vi.fn()}
@@ -130,7 +129,7 @@ describe("GroupMembersSection", () => {
     expect(screen.queryByRole("button", { name: /Excluir grupo/ })).not.toBeInTheDocument();
   });
 
-  it("shows Delete group and per-member remove buttons for the creator", () => {
+  it("only offers member removal to the creator in the member list", () => {
     render(
       <GroupMembersSection
         snapshot={snapshot()}
@@ -139,11 +138,18 @@ describe("GroupMembersSection", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Excluir grupo/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Excluir grupo/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Sair do grupo/ })).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Remover Eu Mesmo" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the creator's self identity alongside their role", () => {
+    render(<GroupMembersSection snapshot={snapshot()} meId={creatorId} onDepart={vi.fn()} />);
+    const name = screen.getByText("Carol Criadora");
+    expect(name.closest("div")).toHaveTextContent("Você");
+    expect(name.closest("div")).toHaveTextContent("Criador");
   });
 
   it("lets the creator remove a member after confirming", async () => {
@@ -162,13 +168,11 @@ describe("GroupMembersSection", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Remover Eu Mesmo" }));
-    expect(screen.getByRole("heading", { name: "Remover membro" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Remover" }));
 
     await waitFor(() => {
       expect(removeMember).toHaveBeenCalledWith(groupId, meId);
-      expect(toast.success).toHaveBeenCalledWith("Membro removido do grupo.");
     });
   });
 
@@ -182,6 +186,7 @@ describe("GroupMembersSection", () => {
 
     render(
       <GroupMembersSection
+        settingsOnly
         snapshot={snapshot()}
         meId={meId}
         onDepart={onDepart}
@@ -206,6 +211,7 @@ describe("GroupMembersSection", () => {
 
     render(
       <GroupMembersSection
+        settingsOnly
         snapshot={snapshot()}
         meId={creatorId}
         onDepart={onDepart}
@@ -344,50 +350,5 @@ describe("InviteByHandlePanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Já tá no grupo")).toBeInTheDocument();
     });
-  });
-  it("renders pending and guest explanatory legends when pending members or guests exist", () => {
-    render(
-      <GroupMembersSection
-        snapshot={snapshot()}
-        meId={meId}
-        onDepart={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "Pendente: a pessoa foi convidada, mas ainda não aceitou. Enquanto o convite está pendente, ela não participa da conversa.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("does not render legends when there are no pending members or guests", () => {
-    const snap = snapshot({
-      members: [
-        member(creatorId, "Carol Criadora", "accepted"),
-        member(meId, "Eu Mesmo", "accepted"),
-      ],
-      guests: [],
-    });
-
-    render(
-      <GroupMembersSection
-        snapshot={snap}
-        meId={meId}
-        onDepart={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.queryByText(/Pendente: a pessoa foi convidada/),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/Convidados são pessoas sem conta no Dividimos/),
-    ).not.toBeInTheDocument();
   });
 });

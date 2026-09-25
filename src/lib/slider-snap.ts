@@ -1,5 +1,5 @@
 /** Round `raw` up to the next value in the 1-2-5 series (in centavos). */
-export function niceStep(raw: number): number {
+function niceStep(raw: number): number {
   if (raw <= 0) return 1;
   const exp = Math.floor(Math.log10(raw));
   const base = Math.pow(10, exp);

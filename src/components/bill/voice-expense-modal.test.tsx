@@ -164,7 +164,7 @@ describe("VoiceExpenseModal", () => {
         onCancel={onCancel}
       />,
     );
-    await user.click(screen.getByText("Cancelar"));
+    await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
@@ -311,17 +311,6 @@ describe("VoiceExpenseModal", () => {
     expect(screen.getByDisplayValue("25,00")).toBeInTheDocument();
   });
 
-  it("shows dash when amount is zero and not editing", () => {
-    const zeroResult: VoiceExpenseResult = {
-      ...singleResult,
-      amountCents: 0,
-      participants: [],
-    };
-    render(
-      <VoiceExpenseModal result={zeroResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
-    );
-    expect(screen.getByText("—")).toBeInTheDocument();
-  });
 
   // ============================================================
   // Participant matching: match to member
@@ -539,9 +528,7 @@ describe("VoiceExpenseModal", () => {
       />,
     );
 
-    // Merchant field should be visible
-    expect(screen.getByText("Estabelecimento")).toBeInTheDocument();
-    const merchantInput = screen.getByPlaceholderText("Nome do local");
+    const merchantInput = screen.getByRole("textbox", { name: "Estabelecimento" });
     expect(merchantInput).toHaveValue("Padaria Central");
 
     // Edit it via fireEvent.change (happy-dom doesn't support user.clear reliably)
@@ -557,7 +544,7 @@ describe("VoiceExpenseModal", () => {
     render(
       <VoiceExpenseModal result={singleResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
     );
-    expect(screen.queryByText("Estabelecimento")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Estabelecimento" })).not.toBeInTheDocument();
   });
 
   // ============================================================

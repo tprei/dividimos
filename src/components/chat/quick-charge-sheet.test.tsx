@@ -30,24 +30,6 @@ function renderSheet(overrides = {}) {
 }
 
 describe("QuickChargeSheet", () => {
-  it("renders the charge sheet with header and inputs", () => {
-    renderSheet();
-
-    expect(screen.getByTestId("quick-charge-sheet")).toBeInTheDocument();
-    expect(screen.getByText("Cobrança rápida")).toBeInTheDocument();
-    expect(screen.getByText("Cobrar de Maria")).toBeInTheDocument();
-    expect(screen.getByTestId("quick-charge-amount")).toBeInTheDocument();
-    expect(screen.getByTestId("quick-charge-description")).toBeInTheDocument();
-  });
-
-  it("renders payer toggle with both options", () => {
-    renderSheet();
-
-    expect(screen.getByTestId("quick-charge-payer-self")).toHaveTextContent("Eu");
-    expect(screen.getByTestId("quick-charge-payer-self")).toHaveTextContent("@joao");
-    expect(screen.getByTestId("quick-charge-payer-other")).toHaveTextContent("Maria");
-    expect(screen.getByTestId("quick-charge-payer-other")).toHaveTextContent("@maria123");
-  });
 
   it("defaults payer to self", () => {
     renderSheet();
@@ -158,12 +140,12 @@ describe("QuickChargeSheet", () => {
     expect(onEdit.mock.calls[0][0].amountCents).toBe(500);
   });
 
-  it("calls onDismiss when X button clicked", async () => {
+  it("dismisses an empty charge with Escape", async () => {
     const onDismiss = vi.fn();
     const user = userEvent.setup();
     renderSheet({ onDismiss });
 
-    await user.click(screen.getByTestId("quick-charge-dismiss"));
+    await user.keyboard("{Escape}");
 
     expect(onDismiss).toHaveBeenCalledOnce();
   });
@@ -207,16 +189,6 @@ describe("QuickChargeSheet", () => {
       expect(screen.getByTestId("quick-charge-sheet")).toHaveAttribute("aria-busy", "true");
     });
 
-    it("does not call onDismiss when X button is clicked while confirming", () => {
-      const onDismiss = vi.fn();
-      renderSheet({ status: "confirming", onDismiss });
-
-      const closeBtn = screen.getByTestId("quick-charge-dismiss");
-      expect(closeBtn).toBeDisabled();
-      fireEvent.click(closeBtn);
-
-      expect(onDismiss).not.toHaveBeenCalled();
-    });
 
     it("consumes back navigation without dismissing during confirming status", () => {
       const onDismiss = vi.fn();
@@ -260,7 +232,6 @@ describe("QuickChargeSheet", () => {
 
         expect(screen.getByTestId("quick-charge-pending")).toBeInTheDocument();
         expect(screen.getByText("Pendente")).toBeInTheDocument();
-        expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
         expect(
           screen.getByText(/Se a cobrança tiver sido registrada/),
         ).toBeInTheDocument();

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssignmentBillBreakdown, AssignmentRoomView } from "@/types/assignment-room";
 
 const mocks = vi.hoisted(() => ({
+  rehydrate: vi.fn(() => Promise.resolve()),
   back: vi.fn(),
   push: vi.fn(),
   me: null as { id: string; name: string } | null,
@@ -30,10 +31,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back: mocks.back, push: mocks.push }) }));
-vi.mock("@/stores/app-store", () => ({
-  useAppStore: (selector: (state: { me: typeof mocks.me }) => unknown) =>
-    selector({ me: mocks.me }),
-}));
+vi.mock("@/stores/app-store", () => {
+  const store = (selector: (state: { me: typeof mocks.me }) => unknown) =>
+    selector({ me: mocks.me });
+  store.persist = {
+    rehydrate: mocks.rehydrate,
+  };
+  return { useAppStore: store };
+});
 vi.mock("@/lib/sync/auth", () => ({ attachAuthListener: mocks.attachAuth }));
 vi.mock("@/lib/sync/client", () => ({ getAuthGeneration: mocks.authGeneration }));
 vi.mock("@/lib/sync/assignment-room-realtime", () => ({
@@ -160,6 +165,7 @@ vi.mock("@/components/assignment-room/room-breakdown", () => ({
   ),
 }));
 
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
 import { RoomPageClient } from "./room-page-client";
 
@@ -415,7 +421,7 @@ describe("RoomPageClient", () => {
     expect(await screen.findByText("host:open")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Rotacionar" }));
-    expect(await screen.findByText("Deu ruim aqui. Tente de novo em instantes.")).toBeInTheDocument();
+    expect(await screen.findByText(ledgerErrorMessage(new Error("boom")))).toBeInTheDocument();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
   it("opens the registered expense from the authorized completion action", async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock, Loader2, Undo2 } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -13,8 +14,11 @@ import { Button } from "@/components/ui/button";
 import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
+import { haptics } from "@/hooks/use-haptics";
 import { newestActivityAt } from "@/lib/activity-badge";
 import { formatRelativeDate } from "@/lib/datetime";
+import { popIn, staggerContainer, tapScale } from "@/lib/animations";
+import { displayNames } from "@/lib/people";
 import { describeEvent } from "@/lib/ledger/event-copy";
 import { getGroupName, makeNameOf } from "@/lib/ledger/group-names";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -28,12 +32,14 @@ interface ActivityRowProps {
   event: GroupEvent;
   groups: Record<string, GroupSnapshot>;
   meId: string | undefined;
+  actorLabel?: string;
 }
 
-function ActivityRow({ event, groups, meId }: ActivityRowProps) {
+function ActivityRow({ event, groups, meId, actorLabel }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [settlementAnchor, setSettlementAnchor] = useState<HTMLElement | null>(null);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
@@ -41,7 +47,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     [event.groupId, groups, meId],
   );
 
-  const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
+  const actorName = actorLabel ?? event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
   const sentence = describeEvent(event, {
     actorName,
     nameOf,
@@ -75,74 +81,75 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     try {
       await voidSettlement(event.groupId, event.settlementId);
       toast.success("Pagamento desfeito");
+      haptics.success();
       setConfirmOpen(false);
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
+      haptics.error();
     } finally {
       setIsUndoing(false);
     }
   };
 
   const cardContent = (
-    <div className="flex items-start gap-3">
+    <div className="flex items-center gap-3">
       <UserAvatar
-        name={actorName}
+        id={event.actorId ?? undefined}
+        name={event.actor?.name ?? actorName}
         avatarUrl={event.actor?.avatarUrl}
         size="sm"
         isBot={event.actor?.isBot}
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm leading-snug">{sentence}</p>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {groupLabel}
-            </span>
-            <span className="text-[11px] text-muted-foreground">
-              {relativeTime}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {event.settlementId !== null && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDetailOpen(true);
-                }}
-                data-testid="activity-view-settlement"
-              >
-                Ver pagamento
-              </Button>
-            )}
-            {canUndo && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (preferences.confirmVoidSettlement) setConfirmOpen(true);
-                  else void handleConfirmUndo();
-                }}
-                disabled={isUndoing}
-                data-testid="activity-undo-settlement"
-              >
-                {isUndoing ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <>
-                    <Undo2 className="mr-1 h-3 w-3" />
-                    Desfazer
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
+        <p className="truncate text-sm leading-5" title={sentence}>{sentence}</p>
+        <div className="flex h-6 items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={groupLabel}>
+            <span>{groupLabel}</span>
+            <span aria-hidden="true"> · </span>
+            <time dateTime={event.createdAt}>{relativeTime}</time>
+          </p>
+          {event.settlementId !== null && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSettlementAnchor(e.currentTarget);
+                haptics.tap();
+                setDetailOpen(true);
+              }}
+              data-testid="activity-view-settlement"
+            >
+              Ver pagamento
+            </Button>
+          )}
+          {canUndo && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground hover:text-destructive-text"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSettlementAnchor(e.currentTarget);
+                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                else void handleConfirmUndo();
+              }}
+              disabled={isUndoing}
+              data-testid="activity-undo-settlement"
+            >
+              {isUndoing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <>
+                  <Undo2 className="h-3 w-3" />
+                  Desfazer
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -155,12 +162,20 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         groupId={event.groupId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        anchor={settlementAnchor}
+        busy={isUndoing}
+        onUndo={canUndo ? () => {
+          setDetailOpen(false);
+          if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+          else void handleConfirmUndo();
+        } : undefined}
       />
     ) : null;
 
   const dialog = canUndo ? (
     <VoidSettlementDialog
       open={confirmOpen && canUndo}
+      anchor={settlementAnchor}
       amountCents={amountCents}
       payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
       recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
@@ -173,24 +188,24 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     />
   ) : null;
 
-  if (event.expenseId) {
-    return (
-      <div className="relative">
-        <Link
-          href={`/app/bill/${event.expenseId}`}
-          className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
-        >
-          {cardContent}
-        </Link>
-        {dialog}
-        {sheet}
-      </div>
-    );
-  }
+  const href = event.expenseId ? `/app/bill/${event.expenseId}` : `/app/groups/${event.groupId}`;
 
   return (
-    <div className="relative">
-      <div className="rounded-xl border bg-card p-3">
+    <div className="relative rounded-xl px-3 py-2 transition-colors hover:bg-accent/40 focus-within:bg-accent/40">
+      <Link
+        href={href}
+        aria-label={sentence}
+        onClick={(e) => {
+          haptics.tap();
+          if (event.settlementId) {
+            e.preventDefault();
+            setSettlementAnchor(e.currentTarget);
+            setDetailOpen(true);
+          }
+        }}
+        className="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-ring"
+      />
+      <div className="pointer-events-none relative [&_button]:pointer-events-auto">
         {cardContent}
       </div>
       {dialog}
@@ -209,6 +224,28 @@ export function ActivityContent() {
   const me = useAppStore((s) => s.me);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const actorNames = useMemo(() => displayNames(
+    items.flatMap((event) => event.actor ? [event.actor] : []),
+    { style: "short", viewerId: me?.id },
+  ), [items, me?.id]);
+  const days = useMemo(() => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const sections = new Map<string, { label: string; events: GroupEvent[] }>();
+    for (const event of items) {
+      const date = new Date(event.createdAt);
+      const key = date.toDateString();
+      const label = key === today.toDateString() ? "Hoje"
+        : key === yesterday.toDateString() ? "Ontem"
+        : date.toLocaleDateString("pt-BR", { day: "numeric", month: "long", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } as const : {}) });
+      const section = sections.get(key);
+      if (section) section.events.push(event);
+      else sections.set(key, { label, events: [event] });
+    }
+    return Array.from(sections.values());
+  }, [items]);
 
   const load = useCallback(() => {
     void loadActivity().catch(() => {
@@ -247,7 +284,7 @@ export function ActivityContent() {
     (items.length === 0 && (read.status === "idle" || read.status === "loading"))
   ) {
     return (
-      <div className="mx-auto max-w-lg space-y-4 px-4 py-4">
+      <div className="mx-auto max-w-lg space-y-4 px-4 py-6 md:max-w-2xl">
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <ActivityCardSkeleton key={i} />
@@ -260,7 +297,7 @@ export function ActivityContent() {
   // A failed first read is not an empty history.
   if (items.length === 0 && read.status === "error") {
     return (
-      <div className="mx-auto max-w-lg px-4 py-4">
+      <div className="mx-auto max-w-lg px-4 py-6 md:max-w-2xl">
         <SyncErrorState
           message={ledgerErrorMessage(new LedgerError(read.code))}
           onRetry={load}
@@ -271,7 +308,7 @@ export function ActivityContent() {
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-4">
+      <div className="mx-auto max-w-lg px-4 py-6 md:max-w-2xl">
         <EmptyState
           icon={Clock}
           title="Nenhuma atividade ainda"
@@ -282,17 +319,23 @@ export function ActivityContent() {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 px-4 py-4">
-      <div className="space-y-2.5">
-        {items.map((event) => (
-          <ActivityRow
-            key={event.id}
-            event={event}
-            groups={groups}
-            meId={me?.id}
-          />
-        ))}
-      </div>
+    <div className="mx-auto max-w-lg space-y-6 px-4 py-6 md:max-w-2xl">
+      {days.map((day, dayIndex) => (
+        <section key={day.label} aria-label={day.label}>
+          <h2 className="mb-2 px-3 text-sm font-semibold text-muted-foreground">{day.label}</h2>
+          <motion.ul variants={staggerContainer} initial={reducedMotion ? false : "hidden"} animate="visible" className="divide-y divide-border">
+            {day.events.map((event, eventIndex) => (
+              <motion.li
+                key={event.id}
+                variants={!reducedMotion && dayIndex === 0 && eventIndex < 6 ? popIn : undefined}
+                whileTap={reducedMotion ? undefined : { scale: tapScale.card }}
+              >
+                <ActivityRow event={event} groups={groups} meId={me?.id} actorLabel={event.actorId ? actorNames.get(event.actorId) : undefined} />
+              </motion.li>
+            ))}
+          </motion.ul>
+        </section>
+      ))}
 
       {oldestId !== null && !complete && (
         <div className="pt-2 text-center">

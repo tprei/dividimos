@@ -12,6 +12,7 @@ import {
   QrCode,
   Receipt,
   Shield,
+  Settings,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -23,8 +24,9 @@ import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -32,6 +34,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
+import { readThemePreference, resolveTheme, setThemePreference } from "@/lib/theme";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import type { UpdatePixKeySuccess } from "./actions";
@@ -48,20 +51,16 @@ export default function ProfilePage() {
   const me = useMe();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof document === "undefined") return false;
-    const stored = localStorage.getItem("theme");
-    if (stored) {
-      const isDark = stored === "dark";
-      document.documentElement.classList.toggle("dark", isDark);
-      return isDark;
-    }
-    return document.documentElement.classList.contains("dark");
+    return (
+      resolveTheme(readThemePreference(), window.matchMedia("(prefers-color-scheme: dark)").matches) ===
+      "dark"
+    );
   });
 
   const toggleDark = () => {
     const next = !darkMode;
     setDarkMode(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+    setThemePreference(next ? "dark" : "light");
   };
 
   if (!me) {
@@ -112,7 +111,6 @@ function AuthenticatedProfilePage({
   const [shareOpen, setShareOpen] = useState(false);
 
   const aliveRef = useRef(true);
-  const identityRef = useRef({ userId });
 
   useEffect(() => {
     aliveRef.current = true;
@@ -120,10 +118,6 @@ function AuthenticatedProfilePage({
       aliveRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    identityRef.current = { userId };
-  });
 
   const handleSignOut = async () => {
     const result = await signOut();
@@ -142,17 +136,16 @@ function AuthenticatedProfilePage({
     const cleanHandle = handleInput.trim().replace(/^@/, "");
     if (!cleanName || !cleanHandle) return;
 
-    const ownerId = userId;
     setIsSavingProfile(true);
     setProfileError("");
 
     try {
       await updateProfile({ name: cleanName, handle: cleanHandle });
-      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      if (!aliveRef.current) return;
       toast.success("Perfil atualizado");
       setEditingProfile(false);
     } catch (err) {
-      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      if (!aliveRef.current) return;
       setProfileError(ledgerErrorMessage(err));
     } finally {
       if (aliveRef.current) {
@@ -178,7 +171,7 @@ function AuthenticatedProfilePage({
 
   return (
     <div className="mx-auto max-w-lg">
-      <ScreenHeader title="Perfil" />
+      <ScreenHeader title="Perfil" action={<IconButton nativeButton={false} role="link" aria-label="Configurações" render={<Link href="/app/settings" />}><Settings className="size-5" /></IconButton>} />
       <div className="px-4 pb-6">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -195,7 +188,7 @@ function AuthenticatedProfilePage({
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold truncate">{me.name}</h1>
+            <h2 className="text-xl font-bold truncate">{me.name}</h2>
             {!editingProfile && (
               <button
                 onClick={startEditProfile}
@@ -325,7 +318,7 @@ function AuthenticatedProfilePage({
               {me.pixKeyHint || "Nenhuma chave cadastrada"}
             </p>
             {me.pixKeyType && (
-              <Badge variant="secondary">{pixKeyTypeLabels[me.pixKeyType]}</Badge>
+              <Chip tone="primary">{pixKeyTypeLabels[me.pixKeyType]}</Chip>
             )}
           </div>
           <div className="px-4 pb-3">
@@ -454,6 +447,7 @@ function AuthenticatedProfilePage({
       </div>
 
       <ProfileShareModal
+        id={me.id}
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         handle={me.handle}

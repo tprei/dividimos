@@ -53,11 +53,6 @@ describe("ChatAiInput", () => {
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-    const input = screen.getByTestId("chat-input");
-    expect(input).toHaveAttribute(
-      "placeholder",
-      "Descreva a despesa (ex: 'uber 25 eu paguei')",
-    );
   });
 
   it("toggles back to normal mode on second sparkle click", async () => {

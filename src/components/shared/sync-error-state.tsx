@@ -37,7 +37,7 @@ export function SyncErrorState({
         disabled={retrying}
         className="mt-2 w-full max-w-xs gap-2"
       >
-        <RefreshCw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
+        <RefreshCw className={`h-4 w-4 ${retrying ? "motion-safe:animate-spin" : ""}`} />
         {retrying ? "Tentando..." : "Tentar novamente"}
       </Button>
     </div>

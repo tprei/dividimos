@@ -22,7 +22,7 @@ export type FinancialCompatibilityCheck =
   | Readonly<{ compatible: true }>
   | Readonly<{ compatible: false; issue: FinancialCompatibilityIssue }>;
 
-export function readFinancialCompatibilityManifest(): FinancialCompatibilityManifest {
+function readFinancialCompatibilityManifest(): FinancialCompatibilityManifest {
   return {
     status: process.env.FINANCIAL_MAINTENANCE === "true" ? "maintenance" : "ready",
   };

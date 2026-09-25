@@ -24,7 +24,7 @@ test.describe("Expense Lifecycle", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("Lifecycle Dinner")).toBeVisible();
-    const total = page.getByText("Total", { exact: true }).locator("..");
+    const total = page.getByText("Total da conta", { exact: true }).locator("..");
     await expect(total).toContainText("R$ 100,00");
 
     // Bob views the same expense in a separate context
@@ -34,7 +34,7 @@ test.describe("Expense Lifecycle", () => {
     await bobPage.waitForLoadState("networkidle");
 
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
-    await expect(bobPage.getByText("Total", { exact: true }).locator("..")).toContainText("R$ 100,00");
+    await expect(bobPage.getByText("Total da conta", { exact: true }).locator("..")).toContainText("R$ 100,00");
 
     // Bob sees the bill and his debt on the group page
     await bobPage.goto(`/app/groups/${group.id}`);
@@ -42,13 +42,13 @@ test.describe("Expense Lifecycle", () => {
 
     await expect(bobPage.getByText("Lifecycle Test")).toBeVisible();
 
-    await bobPage.getByRole("tab", { name: "Contas" }).click();
+    await bobPage.getByRole("radio", { name: "Contas" }).click();
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
 
-    await bobPage.getByRole("tab", { name: "Saldos" }).click();
-    const payRow = bobPage.getByRole("button", { name: /Você paga/i });
+    await bobPage.getByRole("radio", { name: "Saldos" }).click();
+    const payRow = bobPage.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ });
     await expect(payRow).toBeVisible({ timeout: 10000 });
-    await expect(payRow).toContainText("R$ 50,00");
+    await expect(payRow).toHaveAccessibleName(/R\$\s*50,00/);
 
     // Bob records the payment
     const bobClient = await seed.authenticateAs(bob.id);
@@ -72,8 +72,8 @@ test.describe("Expense Lifecycle", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Nenhuma dívida pendente no grupo")).toBeVisible();
+    await expect(page.getByRole("status")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("region", { name: "Quem paga quem" })).toHaveCount(0);
 
     await bobContext.close();
   });
@@ -92,10 +92,10 @@ test.describe("Expense Lifecycle", () => {
     await page.goto(`/app/bill/new?groupId=${group.id}&title=Draft Test&amount=8000`);
     await page.waitForLoadState("networkidle");
 
-    // participants sheet → nothing is persisted while the form is open
-    await page.getByRole("button", { name: /Participantes/ }).click();
-    await expect(page.getByText(bob.name).first()).toBeVisible({ timeout: 5000 });
-    await page.getByRole("button", { name: "Concluir" }).click();
+    // Walking the steps persists nothing until the final save.
+    await expect(page.getByText(bob.name)).toBeVisible({ timeout: 5000 });
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
     const { data: beforeSubmit } = await adminClient
       .from("expenses")
@@ -103,9 +103,7 @@ test.describe("Expense Lifecycle", () => {
       .eq("group_id", group.id);
     expect(beforeSubmit ?? []).toHaveLength(0);
 
-    await page.getByRole("button", { name: "Continuar" }).click();
-    await page.getByRole("button", { name: /Alice/ }).click();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
 
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 15000 });
 

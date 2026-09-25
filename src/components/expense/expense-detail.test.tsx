@@ -274,13 +274,7 @@ describe("ExpenseDetail", () => {
     const list = within(screen.getByRole("list", { name: "Participantes" }));
     const rows = list.getAllByRole("listitem");
     expect(within(rows[0]).getByText("Você")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") ===
-          "Consumiu R$ 70,00 · Pagou R$ 120,00",
-      ),
-    ).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("Consumiu R$ 70,00 · Pagou R$ 120,00");
     expect(
       within(rows[0]).getByLabelText("Saldo de Alice nessa conta").textContent,
     ).toBe("+R$\u00a050,00");
@@ -347,8 +341,8 @@ describe("ExpenseDetail", () => {
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
 
-    const trigger = screen.getByRole("button", { name: "Excluir" });
-    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
+    await user.click(screen.getByRole("button", { name: "Excluir conta" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Excluir conta?")).toBeInTheDocument();
@@ -363,13 +357,13 @@ describe("ExpenseDetail", () => {
     });
   });
 
-  it("hides linked mutation actions from a nonhost party", () => {
+  it("hides linked mutation actions from a nonhost party", async () => {
+    const user = userEvent.setup();
     seedStore("active", { id: "room-1", hostUserId: "user-2" });
     render(<ExpenseDetail expenseId="e1" />);
-
-    expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Excluir" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Ver sala" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
+    expect(screen.queryByRole("button", { name: "Editar conta" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Excluir conta" })).not.toBeInTheDocument();
   });
 
   it("links a room host back to the read-only board", async () => {
@@ -377,10 +371,11 @@ describe("ExpenseDetail", () => {
     seedStore("active", { id: "room-1", hostUserId: me.id });
     render(<ExpenseDetail expenseId="e1" />);
 
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
     await user.click(screen.getByRole("button", { name: "Ver sala" }));
     expect(routerMock.push).toHaveBeenCalledWith("/room/room-1");
-    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Excluir" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Editar conta" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Excluir conta" })).toBeInTheDocument();
   });
 
   it("audits room consumption and history in keyboard-accessible tabs without losing guest actions", async () => {
@@ -401,21 +396,20 @@ describe("ExpenseDetail", () => {
     useAppStore.setState({ expenseDetails: { e1: detail } });
     const { unmount } = render(<ExpenseDetail expenseId="e1" />);
 
-    const people = screen.getByRole("tab", { name: "Por pessoa" });
-    expect(people).toHaveAttribute("aria-selected", "true");
+    const people = screen.getByRole("radio", { name: "Por pessoa" });
+    expect(people).toBeChecked();
     expect(screen.getByLabelText("Saldo de Bruno nessa conta")).toHaveTextContent("−R$ 50,00");
     expect(screen.queryByText("Jantar completo")).not.toBeInTheDocument();
     expect(screen.queryByText("Alice criou a conta")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Resumo por pessoa" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Por item" }));
-    expect(screen.getByRole("tabpanel", { name: "Por item" })).toHaveTextContent("Jantar completo");
+    await user.click(screen.getByRole("radio", { name: "Por item" }));
+    expect(screen.getByText("Jantar completo")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Participantes" })).not.toBeInTheDocument();
 
-    await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "Histórico" })).toHaveFocus();
-    await user.keyboard("{Enter}");
-    expect(screen.getByRole("tabpanel", { name: "Histórico" })).toHaveTextContent("Alice criou a conta");
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(screen.getByRole("radio", { name: "Histórico" })).toHaveFocus();
+    expect(screen.getByText("Alice criou a conta")).toBeInTheDocument();
 
     await user.click(people);
     await user.click(screen.getByRole("button", { name: "Convidar Bruno" }));
@@ -424,7 +418,7 @@ describe("ExpenseDetail", () => {
 
     unmount();
     render(<ExpenseDetail expenseId="e1" />);
-    expect(screen.getByRole("tab", { name: "Por pessoa" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Por pessoa" })).toBeChecked();
   });
 
   it("renders EmptyState when expense is not found", async () => {

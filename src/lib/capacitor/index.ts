@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { configureStatusBar } from "./status-bar";
+import { readThemePreference, resolveTheme } from "../theme";
 import { isSingleUseTarget, resolveDeepLinkTarget } from "./deep-link";
 import { runBackHandlers } from "./back-handler";
 
@@ -50,7 +51,9 @@ export async function initCapacitor(
 ): Promise<void> {
   if (!isNativePlatform()) return;
 
-  await configureStatusBar();
+  await configureStatusBar(
+    resolveTheme(readThemePreference(), window.matchMedia("(prefers-color-scheme: dark)").matches),
+  );
 
   App.addListener("backButton", ({ canGoBack }) => {
     if (runBackHandlers()) return;

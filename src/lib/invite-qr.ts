@@ -19,7 +19,7 @@ export interface ProfileQrResult {
 export const INVITE_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 
 /** Routing guard only; `lookup_user_by_handle` is the authority on existence. */
-export const PROFILE_HANDLE_RE = /^[a-z0-9._]{3,30}$/;
+const PROFILE_HANDLE_RE = /^[a-z0-9._]{3,30}$/;
 
 // ASCII + Unicode whitespace. QR payloads with any whitespace are rejected
 // verbatim — never trimmed — so padding cannot smuggle extra data.

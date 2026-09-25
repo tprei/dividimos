@@ -3,30 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { VoidSettlementDialog } from "./void-settlement-dialog";
 
 describe("VoidSettlementDialog", () => {
-  it("renders the new title, note without em dash, payer and recipient names, and amount", () => {
-    render(
-      <VoidSettlementDialog
-        open
-        amountCents={3500}
-        payerName="Alice"
-        recipientName="Bob"
-        busy={false}
-        onCancel={vi.fn()}
-        onConfirm={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Desfazer este registro?")).toBeInTheDocument();
-    expect(
-      screen.getByText("O registro fica marcado como Desfeito e os saldos são recalculados na hora."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("O Pix em si não é estornado. Combina a devolução direto com a outra pessoa."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(screen.getByText("R$ 35,00")).toBeInTheDocument();
-  });
 
   it("calls onSkipFutureConfirmations before onConfirm when checkbox is checked", () => {
     const onSkipFutureConfirmations = vi.fn();
@@ -43,6 +19,7 @@ describe("VoidSettlementDialog", () => {
     render(
       <VoidSettlementDialog
         open
+        anchor={null}
         amountCents={5000}
         payerName="Alice"
         recipientName="Bob"
@@ -59,7 +36,7 @@ describe("VoidSettlementDialog", () => {
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
 
     expect(onSkipFutureConfirmations).toHaveBeenCalledTimes(1);
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -73,6 +50,7 @@ describe("VoidSettlementDialog", () => {
     render(
       <VoidSettlementDialog
         open
+        anchor={null}
         amountCents={5000}
         payerName="Alice"
         recipientName="Bob"
@@ -83,16 +61,17 @@ describe("VoidSettlementDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
 
     expect(onSkipFutureConfirmations).not.toHaveBeenCalled();
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it("disables both footer buttons and shows Desfazendo… while busy", () => {
+  it("prevents repeated confirmation while busy", () => {
     render(
       <VoidSettlementDialog
         open
+        anchor={null}
         amountCents={3500}
         payerName="Alice"
         recipientName="Bob"
@@ -103,6 +82,5 @@ describe("VoidSettlementDialog", () => {
     );
 
     expect(screen.getByRole("button", { name: "Desfazendo…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
   });
 });

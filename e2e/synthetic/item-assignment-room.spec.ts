@@ -158,7 +158,7 @@ test.describe("Assignment room multi-client acceptance", () => {
     // the app copies instead of reading the real clipboard.
     await context.addInitScript(() => {
       const record = (text: string) => {
-        (window as unknown as { __copiedText?: string }).__copiedText = text;
+        window.__copiedText = text;
         return Promise.resolve();
       };
       Object.defineProperty(navigator, "clipboard", {
@@ -231,7 +231,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await inviteDialog.getByRole("button", { name: "Entrar na sala" }).click();
       await expect(inviteDialog).toBeHidden();
       await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();
-      await expect(page.getByRole("region", { name: "Na sala" }).getByText("toque pra gerenciar")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Na sala" }).getByRole("button", { name: HOST_NAME })).toBeVisible();
 
       // The people who scan the QR are on phones, so the joiners run on the
       // real iPhone and Pixel descriptors instead of an invented viewport.
@@ -247,14 +247,14 @@ test.describe("Assignment room multi-client acceptance", () => {
       const guestBPage = await guestBContext.newPage();
       await joinRoom(guestAPage, invitation, GUEST_A);
       await expect(
-        page.getByRole("region", { name: "Na sala" }).getByLabel(GUEST_A),
+        page.getByRole("region", { name: "Na sala" }).getByRole("button", { name: GUEST_A, exact: true }),
       ).toBeVisible({ timeout: ROOM_TIMEOUT });
       await joinRoom(guestBPage, invitation, GUEST_B);
 
       for (const roomPage of [page, guestAPage, guestBPage]) {
         const roster = roomPage.getByRole("region", { name: "Na sala" });
         if (roomPage === page) {
-          await expect(roster.getByText("toque pra gerenciar")).toBeVisible({
+          await expect(roster.getByRole("button", { name: HOST_NAME })).toBeVisible({
             timeout: ROOM_TIMEOUT,
           });
         } else {
@@ -262,13 +262,13 @@ test.describe("Assignment room multi-client acceptance", () => {
             timeout: ROOM_TIMEOUT,
           });
         }
-        await expect(roster.getByLabel(HOST_NAME)).toBeVisible({
+        await expect(roster.getByRole(roomPage === page ? "button" : "listitem", { name: HOST_NAME, exact: true })).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
-        await expect(roster.getByLabel(GUEST_A)).toBeVisible({
+        await expect(roster.getByRole(roomPage === page ? "button" : "listitem", { name: GUEST_A, exact: true })).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
-        await expect(roster.getByLabel(GUEST_B)).toBeVisible({
+        await expect(roster.getByRole(roomPage === page ? "button" : "listitem", { name: GUEST_B, exact: true })).toBeVisible({
           timeout: ROOM_TIMEOUT,
         });
       }
@@ -344,6 +344,7 @@ test.describe("Assignment room multi-client acceptance", () => {
           "true",
         );
         await petiscoDialog.getByRole("button", { name: "2", exact: true }).click();
+        guestBPage.once("dialog", (dialog) => dialog.accept());
         await guestBPage.keyboard.press("Escape");
         await expect(petiscoDialog).toBeHidden();
         const reopenPetisco = itemCard(guestBPage, "Minha parte", "Petisco").getByRole(
@@ -591,7 +592,7 @@ test.describe("Assignment room multi-client acceptance", () => {
         },
         async () => {
           for (const surface of [page, guestBPage]) {
-            const ownRow = surface.getByRole("button", { name: /Ana Sala/ });
+            const ownRow = surface.getByRole("button", { name: surface === page ? /Você/ : /Ana Sala/ });
             if ((await ownRow.getAttribute("aria-expanded")) === "false") {
               await ownRow.click();
             }

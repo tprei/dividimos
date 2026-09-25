@@ -2,7 +2,6 @@
 
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
@@ -53,31 +52,24 @@ export function ConversationPayButton({
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-6 gap-1 rounded-[0.375rem] px-2 text-xs"
+        aria-label={`${mode === "pay" ? "Pagar" : "Cobrar"} ${formatBRL(absAmount)}`}
+        onClick={() => setShowPix(true)}
       >
-        <Button
-          variant={mode === "pay" ? "default" : "outline"}
-          size="sm"
-          className="gap-1.5 rounded-full text-xs"
-          onClick={() => setShowPix(true)}
-        >
-          {mode === "pay" ? (
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          ) : (
-            <ArrowDownLeft className="h-3.5 w-3.5" />
-          )}
-          {mode === "pay" ? "Pagar" : "Cobrar"} {formatBRL(absAmount)}
-        </Button>
-      </motion.div>
+        {mode === "pay" ? <ArrowUpRight className="size-3.5" /> : <ArrowDownLeft className="size-3.5" />}
+        {mode === "pay" ? "Pagar" : "Cobrar"}
+      </Button>
 
       {showPix && (
         <PixQrModal
           open
           onClose={() => setShowPix(false)}
           recipientName={counterpartyName}
+          counterpartyId={counterpartyId}
+          counterpartyAvatarUrl={rows[0]?.counterpartyAvatarUrl}
           amountCents={absAmount}
           recipientUserId={recipientUserId}
           groupId={groupId}
