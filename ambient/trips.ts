@@ -70,6 +70,15 @@ export interface TripContext {
   notesLeft: number;
 }
 
+/**
+ * What the fact math and the done checks read. The offline simulation
+ * (trips.ambient.test.ts) builds exactly this — no troupe, no diary budget,
+ * and members known by id only.
+ */
+export type TripModelContext = Pick<TripContext, "groupId" | "state"> & {
+  members: ReadonlyArray<{ id: string }>;
+};
+
 export interface CreateSpec {
   title: string;
   totalCents: number;
@@ -82,7 +91,7 @@ export interface CreateSpec {
 }
 
 export type TripStep =
-  | { key: string; kind: "create"; actor: number; spec: (ctx: TripContext) => CreateSpec }
+  | { key: string; kind: "create"; actor: number; spec: (ctx: TripModelContext) => CreateSpec }
   | {
       key: string;
       kind: "edit";
@@ -99,7 +108,7 @@ export type TripStep =
       actor: number;
       from: number;
       to: number;
-      amount: (ctx: TripContext) => number;
+      amount: (ctx: TripModelContext) => number;
       allowOverpay?: boolean;
     }
   | { key: string; kind: "void"; actor: number; targetKey: string }
@@ -129,16 +138,16 @@ export function factId(groupId: string, key: string): string {
   ].join("-");
 }
 
-export function netOf(ctx: TripContext, member: number): number {
+export function netOf(ctx: TripModelContext, member: number): number {
   const id = ctx.members[member].id;
   return projectBalances(ctx.state.facts).find((row) => row.participantId === id)?.netCents ?? 0;
 }
 
-export function debt(ctx: TripContext, member: number): number {
+export function debt(ctx: TripModelContext, member: number): number {
   return Math.max(0, -netOf(ctx, member));
 }
 
-export function owed(ctx: TripContext, member: number): number {
+export function owed(ctx: TripModelContext, member: number): number {
   return Math.max(0, netOf(ctx, member));
 }
 
@@ -332,7 +341,7 @@ export async function verifyAgainstProduction(ctx: TripContext, label: string): 
   }
 }
 
-export function expenseFor(ctx: TripContext, key: string): ExpenseRecord {
+export function expenseFor(ctx: TripModelContext, key: string): ExpenseRecord {
   const clientId = factId(ctx.groupId, key);
   const record = ctx.state.expenses.find((expense) => expense.clientId === clientId);
   if (!record) {
@@ -341,12 +350,12 @@ export function expenseFor(ctx: TripContext, key: string): ExpenseRecord {
   return record;
 }
 
-function settlementFor(ctx: TripContext, key: string): SettlementRecord | undefined {
+function settlementFor(ctx: TripModelContext, key: string): SettlementRecord | undefined {
   const operationId = factId(ctx.groupId, key);
   return ctx.state.settlements.find((settlement) => settlement.operationId === operationId);
 }
 
-function closeSettlementCount(ctx: TripContext): number {
+function closeSettlementCount(ctx: TripModelContext): number {
   let count = 0;
   while (settlementFor(ctx, `close-${count}`)) {
     count += 1;
@@ -360,7 +369,7 @@ function closeSettlementCount(ctx: TripContext): number {
  * deleted_at), so progress past them is read from the steps that do: a
  * created expense, an edit's version bump, a settlement, a void.
  */
-function durableIndex(ctx: TripContext, trip: Trip): number {
+function durableIndex(ctx: TripModelContext, trip: Trip): number {
   let last = -1;
   trip.steps.forEach((step, index) => {
     switch (step.kind) {
@@ -389,7 +398,7 @@ function durableIndex(ctx: TripContext, trip: Trip): number {
 }
 
 function isDone(
-  ctx: TripContext,
+  ctx: TripModelContext,
   step: TripStep,
   index: number,
   durable: number,
@@ -424,7 +433,7 @@ function isDone(
 }
 
 /** Steps still to run, in script order. Probes never count as pending. */
-export function pendingSteps(ctx: TripContext, trip: Trip): TripStep[] {
+export function pendingSteps(ctx: TripModelContext, trip: Trip): TripStep[] {
   const restorable = new Set<string>();
   const durable = durableIndex(ctx, trip);
   const pending: TripStep[] = [];

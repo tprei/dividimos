@@ -74,6 +74,14 @@ function optInOnThisDevice(): void {
 import { __resetNativeRegistrationForTests } from "@/lib/push/native-registration";
 import { __resetServiceWorkerForTests } from "@/lib/push/service-worker";
 
+function stubNotification(permission: NotificationPermission): void {
+  Object.defineProperty(globalThis, "Notification", {
+    value: Object.assign(vi.fn(), { permission, requestPermission: vi.fn() }),
+    writable: true,
+    configurable: true,
+  });
+}
+
 describe("usePushNotifications", () => {
   const originalNavigator = globalThis.navigator;
   const originalNotification = globalThis.Notification;
@@ -154,11 +162,7 @@ describe("usePushNotifications", () => {
     });
 
     // Mock Notification
-    Object.defineProperty(globalThis, "Notification", {
-      value: Object.assign(vi.fn(), { permission: "default", requestPermission: vi.fn() }),
-      writable: true,
-      configurable: true,
-    });
+    stubNotification("default");
 
     // Mock fetch: status answers "owned", subscribe answers ok.
     globalThis.fetch = vi.fn().mockImplementation((url: string) =>
@@ -252,7 +256,7 @@ describe("usePushNotifications", () => {
     const fresh = subscriptionWithCurrentKey();
     mockPushManager.getSubscription.mockResolvedValue(stale);
     mockPushManager.subscribe.mockResolvedValue(fresh);
-    (globalThis.Notification as unknown as { permission: string }).permission = "granted";
+    stubNotification("granted");
 
     const { result } = renderHook(() => usePushNotifications());
     await settle();
