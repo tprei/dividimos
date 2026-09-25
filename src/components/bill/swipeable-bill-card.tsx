@@ -5,11 +5,14 @@ import {
   useMotionValue,
   useTransform,
   useAnimationControls,
+  useReducedMotion,
   type PanInfo,
 } from "framer-motion";
-import { ChevronLeft, Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { springs } from "@/lib/animations";
+import { Button } from "@/components/ui/button";
 
 const ACTION_WIDTH = 120; // total width of the action panel
 const SNAP_THRESHOLD = 40; // how far user must drag to snap open
@@ -29,6 +32,8 @@ export function SwipeableBillCard({
   const x = useMotionValue(0);
   const [isOpen, setIsOpen] = useState(false);
   const isDragging = useRef(false);
+  const reducedMotion = useReducedMotion();
+  const transition = reducedMotion ? { duration: 0 } : springs.snappy;
 
   // Fade in the action buttons as the card slides left
   const actionsOpacity = useTransform(x, [-ACTION_WIDTH, -20, 0], [1, 0.5, 0]);
@@ -51,57 +56,60 @@ export function SwipeableBillCard({
     const shouldClose = info.offset.x > SNAP_THRESHOLD || info.velocity.x > 200;
 
     if (isOpen && shouldClose) {
-      haptics.impact();
-      controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+      haptics.selectionChanged();
+      controls.start({ x: 0, transition });
       setIsOpen(false);
     } else if (!isOpen && shouldOpen) {
-      haptics.impact();
+      haptics.selectionChanged();
+      localStorage.setItem("bills-swipe-seen", "true");
       controls.start({
         x: -ACTION_WIDTH,
-        transition: { type: "spring", stiffness: 400, damping: 30 },
+        transition,
       });
       setIsOpen(true);
     } else {
       // Snap back to current state
       controls.start({
         x: isOpen ? -ACTION_WIDTH : 0,
-        transition: { type: "spring", stiffness: 400, damping: 30 },
+        transition,
       });
     }
   };
 
   const close = () => {
-    controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+    controls.start({ x: 0, transition });
     setIsOpen(false);
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl">
+    <div className="relative overflow-hidden bg-card">
       {/* Action buttons behind the card */}
       <motion.div
         style={{ opacity: actionsOpacity }}
         className="absolute inset-y-0 right-0 flex w-[120px] items-stretch"
+        aria-hidden={!isOpen}
       >
         <button
           onClick={() => {
             close();
             onDelete();
           }}
-          className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
+          className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive/15 font-semibold text-destructive-text transition-colors hover:bg-destructive/20 dark:bg-destructive/25 dark:hover:bg-destructive/30"
           aria-label="Excluir conta"
+          tabIndex={isOpen ? 0 : -1}
         >
           <Trash2 className="h-4 w-4" />
-          <span className="text-[10px] font-medium">Excluir</span>
+          <span className="text-xs font-semibold">Excluir</span>
         </button>
       </motion.div>
-
       {/* Draggable card layer */}
       <motion.div
-        style={{ x }}
+        style={{ x, touchAction: "pan-y" }}
         animate={controls}
         drag="x"
         dragConstraints={{ left: -ACTION_WIDTH, right: 0 }}
         dragElastic={0.1}
+        onDragStartCapture={(event) => event.preventDefault()}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onPointerDownCapture={(e) => {
@@ -122,19 +130,24 @@ export function SwipeableBillCard({
           };
           el.addEventListener("pointerup", onPointerUp);
         }}
-        className="relative"
+        className="relative bg-card pr-11"
       >
         {children}
 
-        {/* Swipe hint: subtle chevron on the right edge */}
-        <motion.div
-          initial={{ opacity: 0.6 }}
-          animate={{ opacity: [0.6, 0.3, 0.6], x: [0, -3, 0] }}
-          transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-          className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2"
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={isOpen ? "Ocultar ações da conta" : "Mostrar ações da conta"}
+          aria-expanded={isOpen}
+          className="absolute right-0 top-1/2 -translate-y-1/2"
+          onClick={() => {
+            haptics.selectionChanged();
+            controls.start({ x: isOpen ? 0 : -ACTION_WIDTH, transition });
+            setIsOpen(!isOpen);
+          }}
         >
-          <ChevronLeft className="h-4 w-4 text-muted-foreground/50" />
-        </motion.div>
+          <MoreHorizontal className="size-4" />
+        </Button>
       </motion.div>
     </div>
   );

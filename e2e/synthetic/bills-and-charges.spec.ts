@@ -21,11 +21,11 @@ test.describe("Bills and charges", () => {
     await page.goto("/app/bills");
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByRole("heading", { name: "Suas contas" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Contas", exact: true })).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Jantar de sexta")).toBeVisible();
     await expect(page.getByText("Cinema sábado")).toBeVisible();
 
-    const search = page.getByPlaceholder("Buscar por título ou estabelecimento...");
+    const search = page.getByRole("textbox", { name: "Buscar contas" });
     await search.fill("Cinema");
     await expect(page.getByText("Cinema sábado")).toBeVisible();
     await expect(page.getByText("Jantar de sexta")).toBeHidden();
@@ -37,7 +37,7 @@ test.describe("Bills and charges", () => {
     await expect(page.getByText("Jantar de sexta")).toBeVisible();
     await expect(page.getByText("Cinema sábado")).toBeVisible();
 
-    await page.getByRole("tab", { name: "Cobranças" }).click();
+    await page.getByRole("radio", { name: "Cobranças" }).click();
     await expect(page.getByText("Nenhuma cobrança ainda")).toBeVisible({ timeout: 10000 });
   });
 
