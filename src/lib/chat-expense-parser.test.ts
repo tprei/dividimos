@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type {
-  ChatExpenseResult,
-  ChatParticipantMatch,
-} from "./chat-expense-parser";
+import type { ChatExpenseResult } from "./chat-expense-parser";
 import type { MemberContext } from "./voice-expense-parser";
 
 const mockGenerateContent = vi.fn();
@@ -34,10 +31,12 @@ function makeResult(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResu
   };
 }
 
+function mockGeminiJson(json: object) {
+  mockGenerateContent.mockResolvedValue({ text: JSON.stringify(json) });
+}
+
 function mockGemini(result: Partial<ChatExpenseResult>) {
-  mockGenerateContent.mockResolvedValue({
-    text: JSON.stringify(makeResult(result)),
-  });
+  mockGeminiJson(makeResult(result));
 }
 
 describe("parseChatExpense", () => {
@@ -250,8 +249,8 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
     vi.clearAllMocks();
   });
 
-  async function expectRejected(overrides: Partial<ChatExpenseResult>) {
-    mockGemini(overrides);
+  async function expectRejected(overrides: Record<string, unknown>) {
+    mockGeminiJson({ ...makeResult(), ...overrides });
     await expect(parseChatExpense("teste", fakeApiKey)).rejects.toThrow(
       "Gemini returned invalid expense data",
     );
@@ -266,8 +265,8 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
   });
 
   it("rejects null/undefined amountCents instead of defaulting to 0", async () => {
-    await expectRejected({ amountCents: null as unknown as number });
-    await expectRejected({ amountCents: undefined as unknown as number });
+    await expectRejected({ amountCents: null });
+    await expectRejected({ amountCents: undefined });
   });
 
   it("rejects a blank title instead of trimming it away", async () => {
@@ -275,17 +274,17 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
   });
 
   it("rejects a null title instead of defaulting to empty string", async () => {
-    await expectRejected({ title: null as unknown as string });
+    await expectRejected({ title: null });
   });
 
   it("rejects null participants instead of defaulting to an empty array", async () => {
     await expectRejected({
-      participants: null as unknown as ChatParticipantMatch[],
+      participants: null,
     });
   });
 
   it("rejects null items instead of defaulting to an empty array", async () => {
-    await expectRejected({ items: null as unknown as ChatExpenseResult["items"] });
+    await expectRejected({ items: null });
   });
 
   it("accepts a null payerHandle (a legitimately ambiguous payer, not a defect)", async () => {
@@ -296,13 +295,13 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
 
   it("rejects null confidence instead of defaulting to low", async () => {
     await expectRejected({
-      confidence: null as unknown as ChatExpenseResult["confidence"],
+      confidence: null,
     });
   });
 
   it("rejects null/missing splitType instead of defaulting to equal", async () => {
     await expectRejected({
-      splitType: null as unknown as ChatExpenseResult["splitType"],
+      splitType: null,
     });
   });
 
@@ -351,9 +350,9 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
       items: [
         {
           description: "Item",
-          quantity: null as unknown as number,
-          unitPriceCents: null as unknown as number,
-          totalCents: null as unknown as number,
+          quantity: null,
+          unitPriceCents: null,
+          totalCents: null,
         },
       ],
     });
@@ -413,10 +412,7 @@ describe("parseChatExpense — #477 strict decoding (no repair, no silent defaul
   ])(
     "#476: collapses a custom-split allocation with %s to [] - never rejects, never defaults to equal",
     async (_label, allocations) => {
-      mockGemini({
-        splitType: "custom",
-        allocations: allocations as unknown as ChatExpenseResult["allocations"],
-      });
+      mockGeminiJson({ ...makeResult(), splitType: "custom", allocations });
       const result = await parseChatExpense("teste", fakeApiKey);
       expect(result.splitType).toBe("custom");
       expect(result.allocations).toEqual([]);

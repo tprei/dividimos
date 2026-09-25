@@ -323,7 +323,7 @@ describe("useWizardSubmit", () => {
 
     const { result } = renderHook(() =>
       useWizardSubmit({
-        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        router,
         editExpenseId: null,
         expectedVersionNo: null,
         onStaleVersion,
@@ -357,7 +357,7 @@ describe("useWizardSubmit", () => {
 
     const { result } = renderHook(() =>
       useWizardSubmit({
-        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        router,
         editExpenseId: null,
         expectedVersionNo: null,
         onStaleVersion,

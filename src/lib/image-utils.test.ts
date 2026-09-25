@@ -10,8 +10,8 @@ function makeFile(name = "receipt.jpg", size = 1024) {
   return new File([buf], name, { type: "image/jpeg" });
 }
 
-function makeBitmap(width: number, height: number) {
-  return { width, height, close: vi.fn() } as unknown as ImageBitmap;
+function makeBitmap(width: number, height: number): ImageBitmap {
+  return { width, height, close: vi.fn() };
 }
 
 function makeCtx() {

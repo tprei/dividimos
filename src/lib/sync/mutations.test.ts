@@ -1375,14 +1375,14 @@ describe("mutations", () => {
     });
 
     it("looks up user through the route boundary, issues and claims guest token, and manages vendor charges", async () => {
-      const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+      const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
       fetchMock.mockResolvedValueOnce(
         new Response(JSON.stringify({ profile: USER_2 }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
       );
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = fetchMock;
       const user = await lookupUserByHandle("amigo");
       expect(user).toEqual(USER_2);
       expect(fetchMock).toHaveBeenCalledWith("/api/users/lookup?handle=amigo");
@@ -1473,9 +1473,9 @@ describe("mutations", () => {
       });
     }
 
-    function stubRoute(response: Response): Mock {
-      const fetchMock = vi.fn().mockResolvedValue(response);
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+    function stubRoute(response: Response): Mock<typeof fetch> {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response);
+      globalThis.fetch = fetchMock;
       return fetchMock;
     }
 
@@ -1520,7 +1520,7 @@ describe("mutations", () => {
     });
 
     it("throws a transport failure when the route is unreachable", async () => {
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+      globalThis.fetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"));
 
       await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({ code: "network" });
     });
