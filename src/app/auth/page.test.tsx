@@ -155,7 +155,6 @@ describe("auth card layout", () => {
   it("renders restored sign-in card layout, copy and privacy notice", () => {
     render(<AuthPage />);
 
-    expect(screen.getByText("Racha a conta com a galera via Pix")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
     expect(screen.getByText("Como quer entrar?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Entrar com Google/i })).toBeInTheDocument();

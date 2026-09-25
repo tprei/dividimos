@@ -1,6 +1,6 @@
 export const BRAND = {
   name: "Dividimos",
-  tagline: "Vamos dividir",
+  tagline: "Quem divide, multiplica",
   logoWords: ["Dividimos", "ai"] as const,
   domain: "dividimos.ai",
   localDomain: "dividimos.local",

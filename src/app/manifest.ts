@@ -1,9 +1,10 @@
 import type { MetadataRoute } from "next";
+import { BRAND } from "@/lib/brand";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "ai.dividimos.app",
-    name: "Dividimos — Vamos dividir",
+    name: `${BRAND.name} — ${BRAND.tagline}`,
     short_name: "Dividimos",
     description:
       "Divida a conta do restaurante e liquide via Pix em segundos.",

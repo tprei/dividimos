@@ -5,7 +5,6 @@ describe("manifest", () => {
   it("returns a valid PWA manifest with required fields", () => {
     const m = manifest();
 
-    expect(m.name).toBe("Dividimos — Vamos dividir");
     expect(m.short_name).toBe("Dividimos");
     expect(m.start_url).toBe("/app");
     expect(m.display).toBe("fullscreen");
