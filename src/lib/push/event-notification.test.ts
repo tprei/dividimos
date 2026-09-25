@@ -189,13 +189,11 @@ describe("eventNotification", () => {
       event({
         kind: "expense_edited",
         payload: {
-          changeSummary: {
-            title: null,
-            totalCents: [5000, 7500],
-            participantsAdded: [],
-            participantsRemoved: [],
-            payersChanged: false,
-          },
+          title: null,
+          totalCents: [5000, 7500],
+          participantsAdded: [],
+          participantsRemoved: [],
+          payersChanged: false,
         },
       }),
       ctx("bruno"),

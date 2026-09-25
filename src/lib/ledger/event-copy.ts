@@ -1,6 +1,7 @@
 import { formatBRL } from "@/lib/currency";
+import { decodeChangeSummary } from "@/lib/ledger/decode-expense";
 import { sentenceStart } from "@/lib/people";
-import type { ChangeSummary, GroupEvent } from "@/types/ledger";
+import type { GroupEvent } from "@/types/ledger";
 
 export interface EventCopyContext {
   actorName: string;
@@ -52,55 +53,38 @@ function describeExpenseEdited(
     "a conta",
   );
 
-  const rawSummary =
-    (event.payload?.changeSummary as ChangeSummary | undefined) ??
-    (event.payload as unknown as ChangeSummary | undefined);
+  const summaryResult = decodeChangeSummary(event.payload);
+  const summary = summaryResult.ok ? summaryResult.value : null;
 
   const sentences: string[] = [];
 
-  if (
-    rawSummary?.title &&
-    Array.isArray(rawSummary.title) &&
-    rawSummary.title.length === 2
-  ) {
+  if (summary?.title) {
     sentences.push(
-      `${actor} mudou o nome de “${rawSummary.title[0]}” para “${rawSummary.title[1]}”`,
+      `${actor} mudou o nome de “${summary.title[0]}” para “${summary.title[1]}”`,
     );
   }
 
-  if (
-    rawSummary?.totalCents &&
-    Array.isArray(rawSummary.totalCents) &&
-    rawSummary.totalCents.length === 2
-  ) {
+  if (summary?.totalCents) {
     sentences.push(
-      `${actor} mudou o total de ${formatBRL(rawSummary.totalCents[0])} para ${formatBRL(rawSummary.totalCents[1])}`,
+      `${actor} mudou o total de ${formatBRL(summary.totalCents[0])} para ${formatBRL(summary.totalCents[1])}`,
     );
   }
 
-  if (
-    rawSummary?.participantsAdded &&
-    Array.isArray(rawSummary.participantsAdded) &&
-    rawSummary.participantsAdded.length > 0
-  ) {
+  if (summary && summary.participantsAdded.length > 0) {
     const names = formatNames(
-      rawSummary.participantsAdded.map((id) => resolveName(ctx.nameOf, id)),
+      summary.participantsAdded.map((id) => resolveName(ctx.nameOf, id)),
     );
     sentences.push(`${actor} adicionou ${names}`);
   }
 
-  if (
-    rawSummary?.participantsRemoved &&
-    Array.isArray(rawSummary.participantsRemoved) &&
-    rawSummary.participantsRemoved.length > 0
-  ) {
+  if (summary && summary.participantsRemoved.length > 0) {
     const names = formatNames(
-      rawSummary.participantsRemoved.map((id) => resolveName(ctx.nameOf, id)),
+      summary.participantsRemoved.map((id) => resolveName(ctx.nameOf, id)),
     );
     sentences.push(`${actor} removeu ${names}`);
   }
 
-  if (rawSummary?.payersChanged) {
+  if (summary?.payersChanged) {
     sentences.push(`${actor} mudou quem pagou`);
   }
 

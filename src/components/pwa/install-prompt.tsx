@@ -18,6 +18,13 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+// Written by the inline head script in src/app/layout.tsx.
+declare global {
+  interface Window {
+    __pwaInstallPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
 /** iOS home-screen launches report installation here, not via display-mode. */
 interface StandaloneNavigator extends Navigator {
   standalone?: boolean;
@@ -74,11 +81,10 @@ export function InstallPrompt({
 
     sync();
 
-    const captured = (window as unknown as Record<string, unknown>)
-      .__pwaInstallPrompt as BeforeInstallPromptEvent | null;
+    const captured = window.__pwaInstallPrompt;
     if (captured) {
       deferredPrompt.current = captured;
-      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
+      window.__pwaInstallPrompt = null;
     }
 
     const onBeforeInstall = (e: Event) => {
