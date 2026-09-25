@@ -194,7 +194,7 @@ function usePullToRefresh(onRefresh: () => Promise<void>, enabled: boolean) {
       if (source?.closest(PULL_BLOCKING_SELECTOR)) return;
 
       const container = e.currentTarget as HTMLElement;
-      if (container.scrollTop > 0) return;
+      if (container.scrollTop >= 1) return;
       if (performance.now() - lastScrollAt.current < PULL_REST_MS) return;
       // A gesture that starts inside a nested scroller belongs to that
       // scroller, even when the shell happens to be at the top.
