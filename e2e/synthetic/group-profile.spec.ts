@@ -21,7 +21,7 @@ test.describe("Group profile behind the header", () => {
     await page.getByRole("button", { name: "Ver perfil do grupo" }).click();
 
     await expect(page).toHaveURL(new RegExp(`/app/groups/${group.id}/info$`));
-    await expect(page.getByRole("heading", { name: "Grupo Perfil", level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Grupo Perfil", level: 1 })).toBeVisible();
     await expect(page.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", `/app/groups/${group.id}?tab=membros`);
     await expect(page.getByTestId("group-spending")).toContainText("120,00");
     await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();

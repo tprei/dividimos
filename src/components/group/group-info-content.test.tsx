@@ -128,7 +128,7 @@ describe("GroupInfoContent", () => {
 
     render(<GroupInfoContent groupId={groupId} />);
 
-    expect(screen.getByRole("heading", { name: "Viagem", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Viagem", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", "/app/groups/g1?tab=membros");
     const spending = screen.getByTestId("group-spending");
     expect(spending).toHaveTextContent("120,00");
@@ -159,7 +159,7 @@ describe("GroupInfoContent", () => {
 
     render(<GroupInfoContent groupId={groupId} />);
 
-    const heading = screen.getByRole("heading", { name: "Viagem", level: 2 });
+    const heading = screen.getByRole("heading", { name: "Viagem", level: 1 });
     const hero = within(heading.closest("section") as HTMLElement);
     expect(hero.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
     await user.click(hero.getByRole("button", { name: "Voltar" }));

@@ -71,7 +71,7 @@ export function GroupHero({ groupId, name, avatar, meta, onBack, onEditPhoto }: 
         <div aria-hidden="true" className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
         {controls}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-4 pt-16 pb-4">
-          <h2 className="line-clamp-2 text-2xl font-bold tracking-tight break-words text-white">{name}</h2>
+          <h1 className="line-clamp-2 text-2xl font-bold tracking-tight break-words text-white">{name}</h1>
           <p className="mt-0.5 truncate text-sm text-white/85">{meta}</p>
         </div>
       </section>
@@ -91,7 +91,7 @@ export function GroupHero({ groupId, name, avatar, meta, onBack, onEditPhoto }: 
       <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 px-4 pb-4">
         <GroupAvatar name={name} avatar={avatar} groupId={groupId} size="lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="line-clamp-2 text-2xl leading-tight font-bold tracking-tight break-words">{name}</h2>
+          <h1 className="line-clamp-2 text-2xl leading-tight font-bold tracking-tight break-words">{name}</h1>
           <p className="mt-0.5 truncate text-sm text-foreground/75">{meta}</p>
         </div>
       </div>
