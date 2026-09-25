@@ -8,6 +8,8 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { popIn } from "@/lib/animations";
+import { haptics } from "@/hooks/use-haptics";
 import {
   inviteMember,
   lookupUserByHandle,
@@ -68,23 +70,24 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
 
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
+      variants={popIn}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       className="overflow-hidden rounded-2xl border bg-card p-4"
     >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-semibold">Convidar por @handle</span>
-        <button
+        <Button variant="ghost" size="icon" aria-label="Fechar convite por handle"
           onClick={() => {
             onClose();
             setLookupResult(null);
             setLookupError("");
           }}
-          className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+          className="text-muted-foreground"
         >
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex gap-2">
@@ -93,7 +96,8 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
             @
           </span>
           <Input
-            className="pl-7"
+            className="pl-7 text-base md:text-sm"
+            aria-label="Handle da pessoa"
             placeholder="handle do usuario"
             value={handleInput}
             onChange={(e) => {
@@ -117,13 +121,14 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
       </div>
 
       {lookupError && (
-        <p className="mt-2 text-xs text-destructive">{lookupError}</p>
+        <p role="alert" className="mt-2 text-sm text-destructive-text">{lookupError}</p>
       )}
 
       {lookupResult && (
         <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          variants={popIn}
+          initial="hidden"
+          animate="visible"
           data-testid="lookup-result"
           className="mt-3 flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
         >
@@ -134,13 +139,13 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
             size="sm"
             isBot={lookupResult.isBot}
           />
-          <div className="flex-1">
-            <p className="text-sm font-medium">{lookupResult.name}</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="min-w-0 flex-1">
+            <p title={lookupResult.name} className="truncate text-base font-semibold">{lookupResult.name}</p>
+            <p title={`@${lookupResult.handle}`} className="truncate text-xs text-muted-foreground">
               @{lookupResult.handle}
             </p>
           </div>
-          <Button size="sm" className="gap-1" onClick={handleInvite} disabled={inviting}>
+          <Button size="sm" className="shrink-0 gap-1" onClick={() => { haptics.tap(); void handleInvite(); }} disabled={inviting}>
             <UserPlus className="h-3.5 w-3.5" />
             Convidar
           </Button>

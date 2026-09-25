@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { GroupSpendingSection } from "@/components/group/group-spending-section";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
@@ -286,7 +285,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           />
         </div>}
         {tab === "contas" && <div className="mt-4 space-y-4">
-          <GroupSpendingSection spending={snapshot.overview?.spending} meId={meId ?? ""} />
           <GroupExpensesSection groupId={groupId} members={members} />
         </div>}
         {tab === "membros" && <div className="mt-4 space-y-4">
@@ -295,7 +293,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               <Button
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
-                onClick={() => setShowInviteModal(true)}
+                onClick={() => { haptics.tap(); setShowInviteModal(true); }}
                 aria-label="Compartilhar link e QR code do grupo"
               >
                 <Share2 className="size-4" />
@@ -304,7 +302,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               <Button
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
-                onClick={() => setShowInvitePanel(!showInvitePanel)}
+                onClick={() => { haptics.tap(); setShowInvitePanel(!showInvitePanel); }}
                 aria-label="Convidar por @handle"
               >
                 <UserPlus className="size-4" />

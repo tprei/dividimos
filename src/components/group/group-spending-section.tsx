@@ -52,9 +52,6 @@ export function GroupSpendingSection({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold">Gastos do grupo</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Inclui as despesas ativas e as taxas. Acertos não entram nesse total.
-          </p>
         </div>
         <Money cents={spending.totalCents} className="shrink-0 text-base" label="Total gasto no grupo" />
       </div>
@@ -82,12 +79,9 @@ export function GroupSpendingSection({
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <p className="truncate text-sm font-medium">{displayName}</p>
+                  <p title={displayName} className="truncate text-sm font-semibold">{displayName}</p>
                   {row.kind === "guest" && <Chip tone="guest">Convidado</Chip>}
                 </div>
-                {row.kind === "user" && row.participantId === meId && (
-                  <p className="text-xs text-muted-foreground">Sua parte</p>
-                )}
               </div>
               <Money cents={row.shareCents} className="text-sm" label={`${displayName}: gasto compartilhado`} />
             </div>

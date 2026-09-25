@@ -1,8 +1,10 @@
 "use client";
 
-import { Check, Send, Users, X } from "lucide-react";
+import { Check, Send, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { haptics } from "@/hooks/use-haptics";
 
 export interface InviteContact {
   name: string;
@@ -23,17 +25,15 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
 
   return (
     <>
-      <div className="mt-4 max-h-48 space-y-2 overflow-y-auto">
+      <div className="max-h-48 space-y-2 overflow-y-auto">
         {contacts.map((contact) => (
           <div
             key={contact.phone}
             className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Users className="h-4 w-4" />
-            </div>
+            <UserAvatar id={contact.phone} name={contact.name || contact.phone} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">
+              <p title={contact.name || contact.phone} className="truncate text-sm font-semibold">
                 {contact.name || contact.phone}
               </p>
               {contact.name && (
@@ -43,7 +43,7 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
               )}
             </div>
             {contact.sent ? (
-              <span className="flex items-center gap-1 text-xs text-success">
+              <span className="flex items-center gap-1 text-xs text-success-text">
                 <Check className="h-3.5 w-3.5" />
                 Aberto
               </span>
@@ -52,15 +52,16 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => onRemove(contact.phone)}
+                  className="size-11 p-0 text-muted-foreground hover:text-destructive-text"
+                  aria-label={`Remover ${contact.name || contact.phone}`}
+                  onClick={() => { haptics.tap(); onRemove(contact.phone); }}
                 >
                   <X className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 gap-1 bg-[#25D366] hover:bg-[#1da851] text-white"
-                  onClick={() => onSend(contact.phone)}
+                  className="gap-1 bg-[#25D366] text-[#082b15] hover:bg-[#1da851]"
+                  onClick={() => { haptics.tap(); onSend(contact.phone); }}
                 >
                   <Send className="h-3 w-3" />
                   Enviar
@@ -73,7 +74,7 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
 
       {unsent.length > 1 && (
         <Button
-          className="mt-2 w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+          className="mt-2 w-full gap-2 bg-[#25D366] text-[#082b15] hover:bg-[#1da851]"
           onClick={() => {
             let opened = 0;
             for (const c of unsent) {
