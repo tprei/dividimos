@@ -45,7 +45,14 @@ test.describe("Voice expense", () => {
       if (!navigator.mediaDevices) {
         Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
       }
-      navigator.mediaDevices.getUserMedia = async () => new MediaStream();
+      // WebKit's Linux build behind Playwright has no MediaStream constructor,
+      // so the stream is a plain object with the one method the hook calls.
+      const track = { kind: "audio", enabled: true, stop() {} };
+      const fakeStream = { getTracks: () => [track], getAudioTracks: () => [track] };
+      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+        configurable: true,
+        value: async () => fakeStream,
+      });
 
       class FakeMediaRecorder {
         static isTypeSupported(mimeType: string) {
