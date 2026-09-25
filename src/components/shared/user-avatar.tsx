@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Image from "next/image";
 import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,6 +56,14 @@ export function UserAvatar({ id, name, avatarUrl, size = "md", className, priori
     setPrevUrl(avatarUrl);
     setPhotoState("loading");
   }
+  // A cached photo can already be decoded by the time React attaches: start
+  // loaded so it paints instantly instead of pulsing behind opacity-0 until
+  // onLoad's state update round-trips through hydration.
+  const attachPhoto = useCallback((img: HTMLImageElement | null) => {
+    if (img?.complete && img.naturalWidth > 0) {
+      setPhotoState("loaded");
+    }
+  }, []);
   const sizeClass = sizeClasses[size];
   const px = sizePx[size];
 
@@ -89,6 +97,7 @@ export function UserAvatar({ id, name, avatarUrl, size = "md", className, priori
           alt={standalone ? name : ""}
           sizes={`${px}px`}
           priority={priority}
+          ref={attachPhoto}
           onLoad={() => setPhotoState("loaded")}
           onError={() => setPhotoState("error")}
           className={cn(

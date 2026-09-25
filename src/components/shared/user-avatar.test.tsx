@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 // Mock next/image before importing the component
@@ -94,5 +94,42 @@ describe("UserAvatar", () => {
     expect(toneLayer.className).toContain("motion-reduce:animate-none");
     fireEvent.load(screen.getByAltText(""));
     expect(toneLayer.className).not.toContain("animate-pulse");
+  });
+
+  describe("cached photo already complete at mount", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("renders an already-decoded photo instantly, without fade or pulse", () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(64);
+
+      render(<UserAvatar name="Maria Silva" avatarUrl="https://example.com/photo.jpg" />);
+
+      const img = screen.getByAltText("");
+      expect(img.className).toContain("opacity-100");
+      expect(img.className).not.toContain("opacity-0");
+      expect(screen.getByText("MS").className).not.toContain("animate-pulse");
+    });
+
+    it("keeps the fade for a photo that has not finished loading", () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+
+      render(<UserAvatar name="Maria Silva" avatarUrl="https://example.com/photo.jpg" />);
+
+      expect(screen.getByAltText("").className).toContain("opacity-0");
+      expect(screen.getByText("MS").className).toContain("animate-pulse");
+    });
+
+    it("ignores a broken cached response (complete but zero-width)", () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+
+      render(<UserAvatar name="Maria Silva" avatarUrl="https://example.com/photo.jpg" />);
+
+      expect(screen.getByAltText("").className).toContain("opacity-0");
+    });
   });
 });
