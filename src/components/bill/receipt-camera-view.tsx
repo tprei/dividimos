@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useBackHandler } from "@/hooks/use-back-handler";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { haptics } from "@/hooks/use-haptics";
 
 export interface ReceiptCameraViewProps {
   /** Called with the captured JPEG when the user taps the shutter. */
@@ -83,6 +84,7 @@ export function ReceiptCameraView({
 
   const fail = useCallback(
     (message: string) => {
+      haptics.error();
       stopStream();
       setStatus("error");
       setErrorMessage(message);
@@ -124,6 +126,7 @@ export function ReceiptCameraView({
       },
       (cause: unknown) => {
         if (generation !== streamGenerationRef.current) return;
+        haptics.error();
         setStatus("error");
         setErrorMessage(describeCameraError(cause));
       },
@@ -165,9 +168,6 @@ export function ReceiptCameraView({
     onClose();
   }, [onClose, stopStream]);
 
-  // The live camera is the top overlay while mounted: hardware Back closes
-  // it like the Fechar button instead of navigating.
-  useBackHandler(true, handleClose);
 
   const handleRetry = useCallback(() => {
     setStatus("starting");
@@ -207,8 +207,8 @@ export function ReceiptCameraView({
   if (status === "error") {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-destructive/30 bg-destructive/5 p-6 text-center">
-        <CameraOff className="h-8 w-8 text-destructive/60" />
-        <p role="alert" className="text-sm text-destructive">
+        <CameraOff className="h-8 w-8 text-destructive-text" />
+        <p role="alert" className="text-sm text-destructive-text">
           {errorMessage}
         </p>
         <div className="flex w-full flex-col gap-2">
@@ -233,48 +233,33 @@ export function ReceiptCameraView({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-2xl border bg-black">
-        <video
-          ref={videoRef}
-          className="h-64 w-full object-cover"
-          autoPlay
-          playsInline
-          muted
-          onLoadedMetadata={handleVideoReady}
-          data-testid="receipt-camera-video"
-        />
-        {status === "starting" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80">
-            <Camera className="h-8 w-8 animate-pulse text-primary" />
-            <p className="text-sm text-white/70">Iniciando câmera...</p>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={handleGallery}
-        >
-          <ImagePlus className="h-4 w-4" />
-          Galeria
-        </Button>
-        <button
-          type="button"
-          onClick={handleCapture}
-          disabled={status !== "ready"}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform active:scale-95 disabled:opacity-40"
-          aria-label="Capturar foto"
-        >
-          <Camera className="h-5 w-5" />
-        </button>
-        <Button type="button" variant="ghost" size="sm" onClick={handleClose}>
-          Fechar
-        </Button>
-      </div>
-    </div>
+    <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent showCloseButton={false}
+        className="left-0 top-(--app-viewport-top) h-(--app-viewport-height) max-h-none w-full max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 sm:max-w-none">
+        <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
+          <DialogTitle>Nota fiscal</DialogTitle>
+          <Button variant="ghost" onClick={handleClose}>Fechar</Button>
+        </div>
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
+          <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover" autoPlay playsInline muted onLoadedMetadata={handleVideoReady} data-testid="receipt-camera-video" />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-[8%] rounded-2xl border-2 border-primary shadow-[0_0_0_100vmax_rgb(0_0_0/0.3)]" />
+          {status === "starting" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/90" role="status">
+              <Camera className="size-8 text-primary motion-safe:animate-pulse" />
+              <p className="text-sm">Iniciando câmera…</p>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-3 items-center gap-3 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <Button variant="outline" className="h-auto min-h-12 flex-col gap-1 py-2" onClick={handleGallery}>
+            <ImagePlus className="size-5" />Galeria
+          </Button>
+          <Button onClick={handleCapture} disabled={status !== "ready"} aria-label="Capturar foto" className="mx-auto size-16 rounded-full ring-2 ring-primary ring-offset-4 ring-offset-background">
+            <Camera className="size-7" />
+          </Button>
+          <span className="text-center text-xs text-muted-foreground">Nota inteira no quadro</span>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

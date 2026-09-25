@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Camera, ScanLine } from "lucide-react";
+import { popIn } from "@/lib/animations";
 
 export interface QrScannerViewProps {
   /** Called with the raw decoded string from any QR code */
@@ -104,27 +105,26 @@ export function QrScannerView({ onDecode, paused = false }: QrScannerViewProps) 
   if (error) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-destructive/30 bg-destructive/5 p-8 text-center">
-        <Camera className="h-8 w-8 text-destructive/60" />
-        <p className="text-sm text-destructive">{error}</p>
+        <Camera className="h-8 w-8 text-destructive-text" />
+        <p role="alert" className="text-sm text-destructive-text">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border bg-black">
+    <div className="relative overflow-hidden rounded-2xl border bg-muted">
       {starting && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80"
+          variants={popIn} initial="hidden" animate="visible"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/90"
         >
-          <ScanLine className="h-8 w-8 animate-pulse text-primary" />
-          <p className="text-sm text-white/70">Iniciando câmera...</p>
+          <ScanLine className="h-8 w-8 motion-safe:animate-pulse text-primary" />
+          <p className="text-sm">Iniciando câmera…</p>
         </motion.div>
       )}
       <video
         ref={videoRef}
-        className="h-64 w-full object-cover"
+        className="h-[min(60svh,24rem)] min-h-44 w-full object-cover"
         playsInline
         muted
       />
@@ -134,8 +134,8 @@ export function QrScannerView({ onDecode, paused = false }: QrScannerViewProps) 
         </div>
       )}
       {paused && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-          <p className="text-sm text-white/70">QR detectado!</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-background/90">
+          <p role="status" className="text-sm font-semibold">QR detectado</p>
         </div>
       )}
     </div>

@@ -63,7 +63,7 @@ test.describe("Voice expense", () => {
 
     await page.getByRole("button", { name: /Falar despesa/ }).click();
 
-    const micButton = page.getByRole("button").filter({ has: page.locator("svg.lucide-mic") });
+    const micButton = page.getByRole("button", { name: "Gravar despesa" });
     await expect(micButton).toHaveCount(1);
     await micButton.click();
 

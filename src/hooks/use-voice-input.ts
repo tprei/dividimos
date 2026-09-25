@@ -6,6 +6,7 @@ import {
   isNativeSpeechSupported,
   startNativeListening,
 } from "@/lib/capacitor/speech";
+import { haptics } from "@/hooks/use-haptics";
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
@@ -46,10 +47,10 @@ function getSpeechRecognitionConstructor():
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
-  "not-allowed": "Permissão do microfone negada. Verifique as configurações do navegador.",
+  "not-allowed": "Libere o microfone nas configurações.",
   "no-speech": "Nenhuma fala detectada. Tente novamente.",
   network: "Erro de rede. Verifique sua conexão.",
-  "audio-capture": "Nenhum microfone encontrado. Conecte um microfone e tente novamente.",
+  "audio-capture": "Nenhum microfone encontrado.",
   aborted: "",
 };
 
@@ -168,6 +169,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         },
         (message) => {
           if (instanceId !== instanceCounterRef.current) return;
+          haptics.error();
           setError(message);
           clearSilenceTimer();
         },
@@ -196,6 +198,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         }
 
         nativeStopRef.current = null;
+        haptics.error();
         setIsListening(false);
         clearSilenceTimer();
         if (outcome.kind === "permission_denied") {
@@ -251,6 +254,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (instanceId !== instanceCounterRef.current) return;
+      if (event.error !== "aborted") haptics.error();
       const message = ERROR_MESSAGES[event.error];
       if (message !== undefined) {
         if (message) setError(message);
@@ -276,6 +280,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     try {
       recognition.start();
     } catch {
+      haptics.error();
       setError("Reconhecimento de voz não disponível neste navegador.");
       recognitionRef.current = null;
     }
