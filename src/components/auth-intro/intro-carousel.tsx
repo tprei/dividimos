@@ -8,7 +8,7 @@ import {
   type AnimationPlaybackControls,
   type MotionValue,
 } from "framer-motion";
-import { useEffect, useEffectEvent, useRef, useState, type FocusEvent } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from "react";
 import { haptics } from "@/hooks/use-haptics";
 import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { INTRO_SEEN_COOKIE } from "@/lib/auth-intro";
@@ -21,7 +21,10 @@ import type { IntroSceneStage } from "./scene-stage";
 import { useAutoAdvance, type AutoAdvance } from "./use-auto-advance";
 import { useIntroSwipe } from "./use-intro-swipe";
 
-const LOGIN_INDEX = INTRO_SLIDES.length;
+/** Matches Tailwind's `lg` breakpoint, which lays the story and the login side by side. */
+const SPLIT_QUERY = "(min-width: 64rem)";
+const STORY_COUNT = INTRO_SLIDES.length;
+const LOGIN_INDEX = STORY_COUNT;
 const SLIDE_TITLES = [...INTRO_SLIDES.map((slide) => slide.title), LOGIN_SLIDE_TITLE];
 const SNAP_SECONDS = 0.38;
 const SKIP_DELAY_MS = 1000;
@@ -52,14 +55,22 @@ interface IntroCarouselProps {
   playStory: boolean;
 }
 
+/**
+ * Phones get one carousel whose last slide is the login. From `lg` up the story loops on the left
+ * and the login stays on the right; the same login node is only moved by CSS, so nothing remounts.
+ */
 export function IntroCarousel({ playStory }: IntroCarouselProps) {
   const still = useMediaQuery(REDUCED_MOTION_QUERY);
+  const split = useMediaQuery(SPLIT_QUERY);
   const [index, setIndex] = useState(playStory ? 0 : LOGIN_INDEX);
   const [phase, setPhase] = useState<CarouselPhase>({ kind: "settled" });
+  // Seeded with the server's answer, so a client-side mount on a wide screen still leaves the login index.
+  const [trackedSplit, setTrackedSplit] = useState(false);
   const [loginVisit, setLoginVisit] = useState(0);
   const [swiped, setSwiped] = useState(false);
   const [skipReady, setSkipReady] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
   const loginRef = useRef<HTMLElement>(null);
@@ -67,6 +78,15 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
   const focusLoginOnSettle = useRef(false);
   const progress = useMotionValue(index);
   const trackX = useTransform(progress, (position) => `${-position * 100}%`);
+  const loginX = useTransform(progress, (position) => `${(LOGIN_INDEX - position) * 100}%`);
+
+  if (trackedSplit !== split) {
+    setTrackedSplit(split);
+    setPhase({ kind: "settled" });
+    if (split && index === LOGIN_INDEX) setIndex(0);
+  }
+
+  const lastIndex = split ? STORY_COUNT - 1 : LOGIN_INDEX;
 
   const settleAt = (target: number, kind: "moving" | "returning") => {
     snap.current?.stop();
@@ -87,7 +107,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
   };
 
   const goTo = (target: number) => {
-    const next = Math.min(LOGIN_INDEX, Math.max(0, target));
+    const next = Math.min(lastIndex, Math.max(0, target));
     if (next === index) {
       if (phase.kind !== "settled") settleAt(next, "returning");
       return;
@@ -96,21 +116,26 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
     focusLoginOnSettle.current =
       next === LOGIN_INDEX && navRef.current !== null && navRef.current.contains(document.activeElement);
     setIndex(next);
-    setAnnouncement(`Slide ${next + 1} de ${SLIDE_TITLES.length}: ${SLIDE_TITLES[next]}`);
+    setAnnouncement(`Slide ${next + 1} de ${split ? STORY_COUNT : SLIDE_TITLES.length}: ${SLIDE_TITLES[next]}`);
     settleAt(next, "moving");
   };
 
+  const step = (direction: 1 | -1) => {
+    if (split) goTo((index + direction + STORY_COUNT) % STORY_COUNT);
+    else goTo(index + direction);
+  };
+
   const autoAdvance = useAutoAdvance({
-    enabled: !still && index < LOGIN_INDEX,
+    enabled: !still && (split || index < LOGIN_INDEX),
     slide: index,
-    onAdvance: () => goTo(index + 1),
+    onAdvance: () => step(1),
   });
 
   const swipe = useIntroSwipe({
     stageRef,
     progress,
     index,
-    lastIndex: LOGIN_INDEX,
+    lastIndex,
     onDragStart: () => {
       snap.current?.stop();
       snap.current = null;
@@ -127,6 +152,19 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
       settleAt(index, entered ? "returning" : "moving");
     },
   });
+
+  const syncedSplit = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    if (syncedSplit.current === split) return;
+    syncedSplit.current = split;
+    snap.current?.stop();
+    snap.current = null;
+    progress.set(index);
+  }, [split, index, progress]);
+
+  useEffect(() => {
+    if (split) markIntroSeen();
+  }, [split]);
 
   useEffect(() => {
     if (!playStory) return;
@@ -146,7 +184,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
   useEffect(() => {
     if (phase.kind !== "settled" || index !== LOGIN_INDEX || !focusLoginOnSettle.current) return;
     focusLoginOnSettle.current = false;
-    stageRef.current?.querySelector<HTMLButtonElement>("[data-google-sign-in]")?.focus({ preventScroll: true });
+    rootRef.current?.querySelector<HTMLButtonElement>("[data-google-sign-in]")?.focus({ preventScroll: true });
   }, [phase, index]);
 
   const onArrowKey = useEffectEvent((event: KeyboardEvent) => {
@@ -155,7 +193,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
     if (event.target instanceof Element && event.target.closest("input, select, textarea") !== null) return;
     if (event.target instanceof Node && loginRef.current?.contains(event.target)) return;
     event.preventDefault();
-    goTo(index + (event.key === "ArrowRight" ? 1 : -1));
+    step(event.key === "ArrowRight" ? 1 : -1);
   });
 
   const { resume } = autoAdvance;
@@ -182,9 +220,23 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
     }
   };
 
+  const onStoryEnter = (event: PointerEvent<HTMLDivElement>) => {
+    if (split && event.pointerType === "mouse") autoAdvance.pause("hover");
+  };
+
+  const onStoryLeave = (event: PointerEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    const stillOverStory =
+      next instanceof Node && [stageRef.current, navRef.current].some((area) => area?.contains(next));
+    if (!stillOverStory) autoAdvance.resume("hover");
+  };
+
+  const loginStage = split ? "play" : stageOf(LOGIN_INDEX, index, phase);
+
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      ref={rootRef}
+      className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden lg:grid-cols-[58fr_42fr]"
       onPointerDownCapture={() => autoAdvance.pause("press")}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -192,18 +244,22 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
       <div
         ref={stageRef}
         {...swipe}
+        onPointerEnter={onStoryEnter}
+        onPointerLeave={onStoryLeave}
         onDragStart={(event) => event.preventDefault()}
+        data-at-login={index === LOGIN_INDEX ? "" : undefined}
         className={cn(
-          "relative min-h-0 flex-1 touch-pan-y touch-pinch-zoom overflow-hidden select-none",
+          "relative min-h-0 touch-pan-y touch-pinch-zoom overflow-hidden select-none [grid-area:1/1] lg:[&[data-at-login]>div]:transform-none!",
           phase.kind === "dragging" ? "cursor-grabbing" : "cursor-grab",
         )}
       >
-        <motion.div className="flex h-full" style={{ x: trackX }}>
+        <motion.div key={split ? "split" : "phone"} className="flex h-full" style={{ x: trackX }}>
           {INTRO_SLIDES.map((slide, slideIndex) => (
             <StorySlide
               key={slide.title}
               slide={slide}
               slideIndex={slideIndex}
+              slideCount={split ? STORY_COUNT : SLIDE_TITLES.length}
               current={slideIndex === index}
               stage={stageOf(slideIndex, index, phase)}
               progress={progress}
@@ -211,19 +267,21 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
               autoAdvance={autoAdvance}
             />
           ))}
-          <section
-            ref={loginRef}
-            role="group"
-            aria-roledescription="slide"
-            aria-label={`${LOGIN_INDEX + 1} de ${SLIDE_TITLES.length}`}
-            inert={index !== LOGIN_INDEX}
-            className="h-full w-full shrink-0"
-          >
-            <LoginSlide key={loginVisit} stage={stageOf(LOGIN_INDEX, index, phase)} />
-          </section>
         </motion.div>
       </div>
-      <div ref={navRef}>
+      <motion.section
+        ref={loginRef}
+        {...(split ? {} : swipe)}
+        role={split ? "region" : "group"}
+        aria-roledescription={split ? undefined : "slide"}
+        aria-label={split ? LOGIN_SLIDE_TITLE : `${LOGIN_INDEX + 1} de ${SLIDE_TITLES.length}`}
+        inert={!split && index !== LOGIN_INDEX}
+        style={{ x: loginX }}
+        className="min-h-0 min-w-0 [grid-area:1/1] lg:border-l lg:border-border lg:bg-surface lg:transform-none! lg:[grid-area:1/2/3/3]"
+      >
+        <LoginSlide key={loginVisit} stage={loginStage} />
+      </motion.section>
+      <div ref={navRef} className="[grid-area:2/1]" onPointerEnter={onStoryEnter} onPointerLeave={onStoryLeave}>
         <IntroNav
           index={index}
           titles={SLIDE_TITLES}
@@ -232,6 +290,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
           showSkip={playStory && skipReady && index !== LOGIN_INDEX}
           showCue={playStory && !swiped && index !== LOGIN_INDEX}
           onGoTo={goTo}
+          onStep={step}
         />
       </div>
       <p className="sr-only" aria-live="polite">
@@ -244,6 +303,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
 interface StorySlideProps {
   slide: IntroSlide;
   slideIndex: number;
+  slideCount: number;
   current: boolean;
   stage: IntroSceneStage;
   progress: MotionValue<number>;
@@ -251,7 +311,7 @@ interface StorySlideProps {
   autoAdvance: AutoAdvance;
 }
 
-function StorySlide({ slide, slideIndex, current, stage, progress, still, autoAdvance }: StorySlideProps) {
+function StorySlide({ slide, slideIndex, slideCount, current, stage, progress, still, autoAdvance }: StorySlideProps) {
   const offset = useTransform(progress, (position) => {
     const distance = slideIndex - position;
     return still || Math.abs(distance) >= 1.02 ? 0 : distance;
@@ -264,10 +324,10 @@ function StorySlide({ slide, slideIndex, current, stage, progress, still, autoAd
     <section
       role="group"
       aria-roledescription="slide"
-      aria-label={`${slideIndex + 1} de ${SLIDE_TITLES.length}`}
+      aria-label={`${slideIndex + 1} de ${slideCount}`}
       inert={!current}
       onContextMenu={(event) => event.preventDefault()}
-      className="flex h-full w-full shrink-0 flex-col overflow-hidden px-5.5 pt-3.5 [contain:layout_style_paint] intro-tiny:pt-2 intro-landscape:flex-row intro-landscape:items-center intro-landscape:gap-5 intro-landscape:px-7 intro-landscape:pt-2"
+      className="flex h-full w-full shrink-0 flex-col overflow-hidden px-5.5 pt-3.5 [contain:layout_style_paint] intro-tiny:pt-2 intro-landscape:flex-row intro-landscape:items-center intro-landscape:gap-5 intro-landscape:px-7 intro-landscape:pt-2 lg:px-16 lg:pt-11"
     >
       <motion.div
         data-intro-scene=""
@@ -277,13 +337,13 @@ function StorySlide({ slide, slideIndex, current, stage, progress, still, autoAd
         <Scene stage={stage} onSettle={autoAdvance.settle} onBusy={autoAdvance.busy} />
       </motion.div>
       <motion.div
-        className="flex-none px-1.5 pt-1.5 pb-2.5 text-center intro-tiny:pb-1 intro-landscape:basis-[48%] intro-landscape:text-left"
+        className="flex-none px-1.5 pt-1.5 pb-2.5 text-center intro-tiny:pb-1 intro-landscape:basis-[48%] intro-landscape:text-left lg:pt-4.5"
         style={{ x: copyX }}
       >
-        <h2 className="text-[28px] leading-[1.12] font-black tracking-[-0.025em] text-balance intro-short:text-[25px] intro-tiny:text-[23px]">
+        <h2 className="text-[28px] leading-[1.12] font-black tracking-[-0.025em] text-balance intro-short:text-[25px] intro-tiny:text-[23px] lg:text-[34px]">
           {slide.title}
         </h2>
-        <p className="mx-auto mt-2 max-w-[32ch] text-base leading-[1.45] text-pretty text-muted-foreground intro-short:mt-1.5 intro-short:text-[15px] intro-tiny:text-[14.5px] intro-tiny:leading-[1.4] intro-landscape:ml-0">
+        <p className="mx-auto mt-2 max-w-[32ch] text-base leading-[1.45] text-pretty text-muted-foreground intro-short:mt-1.5 intro-short:text-[15px] intro-tiny:text-[14.5px] intro-tiny:leading-[1.4] intro-landscape:ml-0 lg:max-w-[40ch] lg:text-[17px]">
           {slide.support}
         </p>
       </motion.div>

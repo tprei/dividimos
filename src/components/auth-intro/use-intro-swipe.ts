@@ -44,11 +44,11 @@ interface IntroSwipeOptions {
 }
 
 export interface IntroSwipeHandlers {
-  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerCancel: (event: PointerEvent<HTMLDivElement>) => void;
-  onClickCapture: (event: MouseEvent<HTMLDivElement>) => void;
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLElement>) => void;
+  onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
+  onClickCapture: (event: MouseEvent<HTMLElement>) => void;
 }
 
 /**
@@ -77,7 +77,7 @@ export function useIntroSwipe({
     progress.set(x / current.width);
   };
 
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (event: PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (gesture.current !== null) return;
     const width = stageRef.current?.clientWidth || 1;
@@ -97,7 +97,7 @@ export function useIntroSwipe({
     };
   };
 
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+  const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const current = gesture.current;
     if (current === null || event.pointerId !== current.pointerId) return;
     current.lastY = event.clientY;
@@ -119,7 +119,7 @@ export function useIntroSwipe({
     });
   };
 
-  const end = (event: PointerEvent<HTMLDivElement>) => {
+  const end = (event: PointerEvent<HTMLElement>) => {
     const current = gesture.current;
     if (current === null || event.pointerId !== current.pointerId) return;
     gesture.current = null;
@@ -157,7 +157,7 @@ export function useIntroSwipe({
     };
   }, []);
 
-  const onClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+  const onClickCapture = (event: MouseEvent<HTMLElement>) => {
     const pending = guard.current;
     if (pending === null || performance.now() > pending.until) return;
     const inScene = event.target instanceof Element && event.target.closest("[data-intro-scene]") !== null;
