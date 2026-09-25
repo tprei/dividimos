@@ -264,17 +264,19 @@ export function TypeStep({
 
   if (showVoiceInput) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <VoiceExpenseButton
+          preview
           members={groupMembers.map((m) => ({ handle: m.handle, name: m.name }))}
           onResult={handleVoiceResult}
           onError={handleVoiceError}
         />
         {voiceError && (
           <motion.p
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center text-sm text-destructive"
+            role="alert"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center text-sm text-destructive-text"
           >
             {voiceError}
           </motion.p>
