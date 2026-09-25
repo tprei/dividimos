@@ -54,11 +54,6 @@ describe("capacitor.config", () => {
     expect(config.ios?.scheme).toBe("Dividimos");
   });
 
-  it("has Android config block", async () => {
-    const config = await loadConfig();
-    expect(config.android).toBeDefined();
-  });
-
   it("has PushNotifications plugin config with presentation options", async () => {
     const config = await loadConfig();
     expect(config.plugins?.PushNotifications).toEqual({

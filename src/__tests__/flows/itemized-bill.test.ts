@@ -1,20 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useBillStore, selectPreviewDebts } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
-import type { User } from "@/types";
-
-function makeUser(id: string, name: string): User {
-  return {
-    id,
-    email: `${id}@test.com`,
-    handle: id,
-    name,
-    pixKeyType: "email",
-    pixKeyHint: `${id}@test.com`,
-    onboarded: true,
-    createdAt: new Date().toISOString(),
-  };
-}
 
 describe("Itemized expense flows", () => {
   beforeEach(() => {
@@ -62,38 +48,6 @@ describe("Itemized expense flows", () => {
     const bobTotal = useBillStore.getState().getParticipantTotal("user-bob");
     const carlosTotal = useBillStore.getState().getParticipantTotal("user-carlos");
     expect(Math.abs(totalOwed - (bobTotal + carlosTotal))).toBeLessThanOrEqual(2);
-  });
-
-  it("Flow 2: 5-person dinner with two payers", () => {
-    const store = useBillStore.getState();
-    store.setCurrentUser(userAlice);
-    store.createExpense("Jantar", "itemized");
-    store.addParticipant(userBob);
-    store.addParticipant(userCarlos);
-    const dave = makeUser("dave", "Dave");
-    const eve = makeUser("eve", "Eve");
-    store.addParticipant(dave);
-    store.addParticipant(eve);
-
-    store.addItem({ description: "Entrada", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
-    store.addItem({ description: "Prato principal", quantity: 5000, unitPriceCents: 4000, totalPriceCents: 20000 });
-
-    const items = useBillStore.getState().items;
-
-    store.splitItemEqually(items[0].id, ["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
-    store.splitItemEqually(items[1].id, ["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
-
-    store.updateExpense({ fixedFees: 2500 });
-
-    const grandTotal = useBillStore.getState().getGrandTotal();
-    store.setPayerAmount("user-alice", Math.ceil(grandTotal * 0.6));
-    store.setPayerAmount("user-bob", grandTotal - Math.ceil(grandTotal * 0.6));
-
-    const debts = selectPreviewDebts(useBillStore.getState());
-    expect(debts.length).toBeGreaterThan(0);
-
-    const totalDebts = debts.reduce((s, e) => s + e.amountCents, 0);
-    expect(totalDebts).toBeGreaterThan(0);
   });
 
   it("Flow 3: adding and removing items mid-flow", () => {

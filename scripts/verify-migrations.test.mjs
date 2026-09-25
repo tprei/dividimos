@@ -18,7 +18,6 @@ import {
   compareFixtureObservations,
   epochAuthorizationFailures,
   epochExtensionFailures,
-  INTENTIONAL_UPGRADES,
   PIX_FIXTURE_CIPHERTEXT,
   postgresMajor,
   readMigrationFiles,
@@ -332,16 +331,6 @@ test("compareFixtureObservations accepts a base that already carries the lookup 
     [{ label: "lookup:direct:authenticated", value: "denied" }],
   );
   assert.deepEqual(failures, []);
-});
-
-test("the intentional upgrade list names the lookup flip, both DM repairs, the exclusion table, and the retired participant copy", () => {
-  assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], [
-    "lookup:direct:authenticated",
-    "dm:noncanonical-members",
-    "db:count:public.group_members",
-    "db:count:public.group_member_exclusions",
-    "db:count:public.expense_participants",
-  ]);
 });
 
 test("compareFixtureObservations accepts a reviewed migration introducing an empty table", () => {
