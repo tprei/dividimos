@@ -53,12 +53,12 @@ test.describe("Expense edit conflict", () => {
       panel.getByText("Bob Editor alterou esta conta enquanto você editava"),
     ).toBeVisible({ timeout: 15000 });
     await expect(
-      page.getByText("Carregue a versão mais recente pra salvar."),
+      page.getByText("Tem uma versão mais recente desta conta."),
     ).toBeVisible();
 
     await panel.getByRole("button", { name: "Carregar versão mais recente" }).click();
     await expect(
-      page.getByText("Carregue a versão mais recente pra salvar."),
+      page.getByText("Tem uma versão mais recente desta conta."),
     ).toBeHidden({ timeout: 15000 });
 
     await expect(titleInput).toHaveValue("Jantar Replanejado", { timeout: 10000 });

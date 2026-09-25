@@ -566,12 +566,12 @@ export function PixQrModal({
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {payload.reason === "rate-limited"
-                              ? "Muitas tentativas. Espera alguns segundos."
+                              ? "Muitas tentativas. Espere alguns segundos."
                               : payload.reason === "session"
-                                ? "Sua sessão expirou. Entra de novo pra continuar."
+                                ? "Sua sessão expirou. Entre de novo para continuar."
                                 : payload.reason === "denied" || payload.reason === "invalid"
                                   ? "Não deu pra gerar esse código agora."
-                                  : "Sem conexão? Confere a internet e tenta de novo."}
+                                  : "Sem conexão? Confira a internet e tente de novo."}
                           </p>
                         </div>
                         {(payload.reason === "rate-limited" ||

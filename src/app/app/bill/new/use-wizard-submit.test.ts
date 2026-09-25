@@ -246,7 +246,7 @@ describe("useWizardSubmit", () => {
     });
 
     expect(ok).toBe(false);
-    expect(mockToast.error).toHaveBeenCalledWith("Escolha um grupo para dividir a conta.");
+    expect(mockToast.error).toHaveBeenCalledWith("Falta escolher o grupo da conta.");
     expect(mockCreateExpense).not.toHaveBeenCalled();
   });
 

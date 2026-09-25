@@ -128,7 +128,7 @@ describe("PixQrModal", () => {
       ).toBeInTheDocument();
     });
     expect(
-      screen.getByText("Sem conexão? Confere a internet e tenta de novo."),
+      screen.getByText("Sem conexão? Confira a internet e tente de novo."),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Tentar de novo/i }),
@@ -312,7 +312,7 @@ describe("PixQrModal", () => {
 
     await waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(
-        "Sem conexão. Tente de novo quando a internet voltar.",
+        "Sem conexão. Você pode tentar de novo quando a internet voltar.",
       );
     });
     expect(screen.queryByRole("dialog", { name: "Pagamento registrado" })).not.toBeInTheDocument();

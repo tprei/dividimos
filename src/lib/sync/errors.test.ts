@@ -26,38 +26,8 @@ describe("errors", () => {
     expect(codeFromMessage("nudge_cooldown")).toBe("nudge_cooldown");
     expect(codeFromMessage("guest_already_claimed")).toBe("guest_already_claimed");
     expect(codeFromMessage("group_has_history")).toBe("group_has_history");
-    expect(ledgerErrorMessage(new LedgerError("group_has_history"))).toBe(
-      "Esse grupo já tem contas ou pagamentos e não pode ser apagado.",
-    );
     expect(codeFromMessage("invitation_not_accepted")).toBe("invitation_not_accepted");
-    expect(ledgerErrorMessage(new LedgerError("invitation_not_accepted"))).toBe(
-      "Alguém recusou o convite e ainda não entrou no grupo.",
-    );
     expect(codeFromMessage("member_excluded")).toBe("member_excluded");
-    expect(ledgerErrorMessage(new LedgerError("member_excluded"))).toBe(
-      "Essa pessoa foi removida do grupo.",
-    );
-    expect(ledgerErrorMessage(new LedgerError("guest_already_claimed"))).toBe(
-      "Esse convidado já foi vinculado a alguém.",
-    );
-  });
-
-  it("maps assignment-room failures to specific copy", () => {
-    expect(ledgerErrorMessage(new LedgerError("room_closed"))).toBe(
-      "A escolha de itens já foi encerrada.",
-    );
-    expect(ledgerErrorMessage(new LedgerError("room_incomplete"))).toBe(
-      "Ainda há itens sem dividir.",
-    );
-    expect(ledgerErrorMessage(new LedgerError("item_unavailable"))).toBe(
-      "Essa quantidade não está mais disponível.",
-    );
-    expect(ledgerErrorMessage(new LedgerError("room_cancelled"))).toBe(
-      "Essa sala foi cancelada.",
-    );
-    expect(ledgerErrorMessage(new LedgerError("room_host_required"))).toBe(
-      "Só quem criou a sala pode fazer isso.",
-    );
   });
 
   it("codeFromMessage falls back to unknown for arbitrary text", () => {

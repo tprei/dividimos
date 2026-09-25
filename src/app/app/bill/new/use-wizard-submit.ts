@@ -39,9 +39,9 @@ function payloadIssueMessage(issue: { code: string }): string {
     return "O pagamento não bate com o total da conta.";
   }
   if (issue.code === "incomplete_expense") {
-    return "Preencha os dados da conta antes de concluir.";
+    return "Faltam dados da conta.";
   }
-  return "Confira os valores da conta";
+  return "Os valores da conta não fecham.";
 }
 export interface WizardSubmitInput {
   router: { push: (url: string) => void };
@@ -77,7 +77,7 @@ export async function planGroup(input: GroupPlanInput): Promise<GroupPlan> {
     }
   }
   if (!input.createGroupEnabled) {
-    toast.error("Escolha um grupo existente ou deixe \"Criar grupo\" marcado.");
+    toast.error("Sem grupo escolhido e sem grupo novo marcado.");
     return { kind: "invalid" };
   }
   return {
@@ -139,7 +139,7 @@ export function useWizardSubmit({
         const plan = await planGroup();
         if (plan.kind === "invalid") return false;
         if (plan.kind === "none") {
-          toast.error("Escolha um grupo para dividir a conta.");
+          toast.error("Falta escolher o grupo da conta.");
           return false;
         }
 

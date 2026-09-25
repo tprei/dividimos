@@ -62,7 +62,7 @@ export function VoiceExpenseButton({
   }, [isListening, transcript, voiceError, parseTranscript, onError]);
 
   if (!isSupported) return null;
-  const message = isListening ? "Ouvindo…" : parsing ? "Entendendo sua conta…" : attempted ? "Tentar novamente" : "Falar despesa";
+  const message = isListening ? "Ouvindo…" : parsing ? "Entendendo sua conta…" : attempted ? "Tentar novamente" : "Falar conta";
   const hint = isListening ? "Toque para parar e revisar" : "“Uber com João, 25 reais”";
   return (
     <motion.div variants={popIn} initial="hidden" animate="visible" className="gradient-mesh space-y-3 overflow-hidden rounded-2xl border border-border bg-card p-4">
@@ -75,7 +75,7 @@ export function VoiceExpenseButton({
             </>
           )}
           <Button disabled={parsing}
-            aria-label={isListening ? "Parar gravação" : attempted ? "Tentar novamente" : "Gravar despesa"}
+            aria-label={isListening ? "Parar gravação" : attempted ? "Tentar novamente" : "Gravar conta"}
             onClick={() => {
               haptics.tap();
               if (isListening) stopListening();

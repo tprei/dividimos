@@ -191,7 +191,7 @@ describe("GroupRegisterPaymentSheet", () => {
     renderSheet(undefined, zeroMember);
 
     expect(screen.getByTestId("group-payment-settled")).toHaveTextContent(
-      "Vocês estão quitados nesse grupo.",
+      "Vocês estão em dia nesse grupo.",
     );
     expect(screen.queryByRole("button", { name: "Adicionar R$1" })).not.toBeInTheDocument();
   });

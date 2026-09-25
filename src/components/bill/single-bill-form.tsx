@@ -182,14 +182,14 @@ export function SingleBillForm({
 
   const stepBlocker = [
     !title.trim()
-      ? "Dê um nome pra conta."
+      ? "Falta o nome da conta."
       : participantCount < 2
-        ? "Adicione quem divide com você."
+        ? "Falta alguém pra dividir com você."
         : null,
     !amountValid
-      ? "Confira o valor da conta."
+      ? "O valor da conta está inválido."
       : totalCents <= 0
-        ? "Informe o valor da conta."
+        ? "Falta o valor da conta."
         : consumed.included.length === 0
           ? "Escolha quem consumiu."
           : null,
@@ -197,7 +197,7 @@ export function SingleBillForm({
       (payers.draft.included.length === 0
         ? "Escolha quem pagou."
         : !hasPayer
-          ? "Confira quem pagou o total."
+          ? "O que foi pago não bate com o total."
           : null),
   ];
   const firstBlockedStep = stepBlocker.findIndex((reason) => reason !== null);

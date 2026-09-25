@@ -61,9 +61,9 @@ export function classifyLlmFailure(error: unknown): LlmFailure {
  * provider, the model, quotas or credentials.
  */
 export const LLM_FAILURE_MESSAGE: Record<LlmFailureCode, string> = {
-  LLM_TIMEOUT: "Demorou demais. Tenta de novo.",
-  LLM_QUOTA: "Muitas requisições agora. Tenta de novo em alguns segundos.",
-  LLM_UNAVAILABLE: "Serviço temporariamente indisponível. Tenta de novo.",
+  LLM_TIMEOUT: "Demorou demais. Tente de novo.",
+  LLM_QUOTA: "Muitas requisições agora. Tente de novo em alguns segundos.",
+  LLM_UNAVAILABLE: "Serviço temporariamente indisponível. Tente de novo.",
   LLM_CONFIG: "Serviço temporariamente indisponível.",
   LLM_INTERNAL: "Não foi possível processar agora.",
 };

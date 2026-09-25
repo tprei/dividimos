@@ -267,7 +267,7 @@ describe("VoiceExpenseButton", () => {
         expect(onError).toHaveBeenCalledOnce();
       });
 
-      expect(onError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
+      expect(onError).toHaveBeenCalledWith("Sem conexão. Você pode tentar de novo quando a internet voltar.");
     });
 
     it("calls onError when transcript is empty and no voiceError on stop", () => {

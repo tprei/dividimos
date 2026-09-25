@@ -80,14 +80,14 @@ describe("BillTypeSelector", () => {
   describe("voice expense option", () => {
     it("does not render voice option when onVoiceExpense is not provided", () => {
       render(<BillTypeSelector onSelect={vi.fn()} />);
-      expect(screen.queryByText("Falar despesa")).not.toBeInTheDocument();
+      expect(screen.queryByText("Falar conta")).not.toBeInTheDocument();
     });
 
     it("renders voice option when onVoiceExpense is provided", () => {
       render(
         <BillTypeSelector onSelect={vi.fn()} onVoiceExpense={vi.fn()} />,
       );
-      expect(screen.getByText("Falar despesa")).toBeInTheDocument();
+      expect(screen.getByText("Falar conta")).toBeInTheDocument();
     });
 
     it("calls onVoiceExpense when voice option is clicked", async () => {
@@ -96,7 +96,7 @@ describe("BillTypeSelector", () => {
       render(
         <BillTypeSelector onSelect={vi.fn()} onVoiceExpense={onVoiceExpense} />,
       );
-      const btn = screen.getByText("Falar despesa").closest("button");
+      const btn = screen.getByText("Falar conta").closest("button");
       expect(btn).not.toBeNull();
       await user.click(btn!);
       expect(onVoiceExpense).toHaveBeenCalledOnce();
@@ -108,7 +108,7 @@ describe("BillTypeSelector", () => {
       render(
         <BillTypeSelector onSelect={onSelect} onVoiceExpense={vi.fn()} />,
       );
-      const btn = screen.getByText("Falar despesa").closest("button");
+      const btn = screen.getByText("Falar conta").closest("button");
       await user.click(btn!);
       expect(onSelect).not.toHaveBeenCalled();
     });

@@ -209,7 +209,7 @@ describe("SearchContent", () => {
     await waitFor(() => {
       expect(screen.getByText("Não foi possível buscar esse @handle")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Nenhum resultado encontrado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nada encontrado")).not.toBeInTheDocument();
   });
 
   it("keeps the failure tied to the query that produced it", async () => {
@@ -233,7 +233,7 @@ describe("SearchContent", () => {
     vi.useRealTimers();
 
     await waitFor(() => {
-      expect(screen.getByText("Nenhum resultado encontrado")).toBeInTheDocument();
+      expect(screen.getByText("Nada encontrado")).toBeInTheDocument();
     });
     expect(
       screen.queryByText("Não foi possível buscar esse @handle"),

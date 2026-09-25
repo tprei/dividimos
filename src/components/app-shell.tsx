@@ -441,7 +441,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             title="Não conseguimos carregar sua conta"
             message={
               bootstrapErrorCode === null
-                ? "Verifique sua conexão e tente novamente."
+                ? "Parece que você está sem conexão."
                 : ledgerErrorMessage(new LedgerError(bootstrapErrorCode))
             }
             onRetry={retryBootstrap}

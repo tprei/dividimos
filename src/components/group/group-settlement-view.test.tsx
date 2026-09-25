@@ -239,7 +239,7 @@ describe("GroupSettlementView", () => {
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
 
     const row = screen.getByLabelText(
-      "Outro acerto: Dan Silva paga R$ 90,00 para Carlos Souza",
+      "Outro pagamento: Dan Silva paga R$ 90,00 para Carlos Souza",
     );
     expect(row).toBeInTheDocument();
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();

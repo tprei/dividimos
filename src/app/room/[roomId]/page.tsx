@@ -7,8 +7,8 @@ const ROOM_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const metadata: Metadata = {
-  title: "Escolha seus itens | Dividimos",
-  description: "Abra uma sala compartilhada do Dividimos.",
+  title: "Sala de itens | Dividimos",
+  description: "Cada um marca o que consumiu e a conta fecha sozinha.",
 };
 
 export default async function AssignmentRoomPage({

@@ -162,9 +162,8 @@ export function SearchContent() {
           ) : (
             isHandleQuery && !current ? <p role="status" className="text-sm text-muted-foreground">Buscando pessoa...</p> : <>
               <p className="text-sm font-semibold text-foreground">
-                Nenhum resultado encontrado
+                Nada encontrado
               </p>
-              <p className="mt-1 break-words text-sm text-muted-foreground">Tente outro nome ou @usuário.</p>
             </>
           )}
         </div>

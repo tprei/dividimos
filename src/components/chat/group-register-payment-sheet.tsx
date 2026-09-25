@@ -189,7 +189,7 @@ export function GroupRegisterPaymentSheet({
         )}
         {capped && capCents === 0 && (
           <p className="mt-2 text-xs text-muted-foreground" data-testid="group-payment-settled">
-            Vocês estão quitados nesse grupo.
+            Vocês estão em dia nesse grupo.
           </p>
         )}
         {capped ? (

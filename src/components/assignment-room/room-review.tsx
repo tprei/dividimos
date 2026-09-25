@@ -140,7 +140,7 @@ export function RoomReview({
   } else if (!blocker && !divisionResult.ok) {
     blocker = buildAssignmentRoomFailureMessage(divisionResult.issue.code);
   } else if (!blocker && payers.length === 0) {
-    blocker = "Escolha pelo menos uma pessoa que pagou a conta.";
+    blocker = "Falta dizer quem pagou a conta.";
   } else if (!blocker && paidCents !== view.room.totalCents) {
     blocker = "Os valores pagos precisam somar exatamente o total da conta.";
   }

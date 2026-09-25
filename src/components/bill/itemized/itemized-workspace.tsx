@@ -84,7 +84,7 @@ export function ItemizedWorkspace({
         ? "Adicione quem divide com você."
         : null,
     store.items.length === 0
-      ? "Adicione pelo menos um item."
+      ? "Ainda não tem nenhum item."
       : invalidAmountIds.length > 0
         ? "Confira o valor dos itens."
         : null,
@@ -102,7 +102,7 @@ export function ItemizedWorkspace({
           : null,
   ];
   const blocked = conflictBlocked
-    ? "Carregue a versão mais recente pra salvar."
+    ? "Tem uma versão mais recente desta conta."
     : (stepBlockers.slice(0, current + 1).find((reason) => reason !== null) ?? null);
   const lastStep = current === ITEMIZED_SECTIONS.length - 1;
   return (

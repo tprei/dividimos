@@ -165,6 +165,7 @@ vi.mock("@/components/assignment-room/room-breakdown", () => ({
   ),
 }));
 
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
 import { RoomPageClient } from "./room-page-client";
 
@@ -420,7 +421,7 @@ describe("RoomPageClient", () => {
     expect(await screen.findByText("host:open")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Rotacionar" }));
-    expect(await screen.findByText("Deu ruim aqui. Tente de novo em instantes.")).toBeInTheDocument();
+    expect(await screen.findByText(ledgerErrorMessage(new Error("boom")))).toBeInTheDocument();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
   it("opens the registered expense from the authorized completion action", async () => {

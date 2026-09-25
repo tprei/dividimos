@@ -339,7 +339,7 @@ describe("GroupsListContent", () => {
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
-        "Sem conexão. Tente de novo quando a internet voltar.",
+        "Sem conexão. Você pode tentar de novo quando a internet voltar.",
       );
     });
     expect(screen.getByText("Convite · Casa nova")).toBeInTheDocument();
@@ -419,7 +419,7 @@ describe("GroupsListContent", () => {
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
-        "Esse nome não vale. Use entre 1 e 80 caracteres.",
+        "O nome precisa ter de 1 a 80 caracteres.",
       );
     });
   });

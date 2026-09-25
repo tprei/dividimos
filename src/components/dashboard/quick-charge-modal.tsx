@@ -217,7 +217,7 @@ export function QuickChargeModal({
       if (!isCurrentOperation(operation)) return;
       setError(
         err instanceof LedgerError && err.code === "network"
-          ? "Sem conexão. Tenta de novo."
+          ? "Sem conexão. Tente de novo."
           : err instanceof Error && err.message
             ? err.message
             : "Não deu para gerar o Pix",

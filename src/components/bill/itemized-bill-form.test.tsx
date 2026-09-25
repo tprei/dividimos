@@ -98,7 +98,7 @@ describe("ItemizedBillForm Participantes section", () => {
     expect(continuar).toBeEnabled();
     fireEvent.click(continuar);
     expect(screen.getByPlaceholderText("Descrição (ex: Picanha 400g)")).toHaveFocus();
-    expect(screen.getByRole("status")).toHaveTextContent("Adicione pelo menos um item.");
+    expect(screen.getByRole("status")).toHaveTextContent("Ainda não tem nenhum item.");
   });
 
   it("steps back on hardware back before leaving the wizard", () => {

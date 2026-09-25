@@ -55,7 +55,7 @@ export function RoomJoin({
     event.preventDefault();
     const normalized = displayName.trim();
     if (normalized.length === 0 || normalized.length > 80) {
-      setLocalError("Digite um nome com até 80 caracteres.");
+      setLocalError("O nome precisa ter de 1 a 80 caracteres.");
       return;
     }
     setLocalError(null);

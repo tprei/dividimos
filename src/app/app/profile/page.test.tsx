@@ -221,7 +221,7 @@ describe("ProfilePage name and handle editing", () => {
     await user.click(screen.getByRole("button", { name: /salvar/i }));
 
     expect(
-      await screen.findByText("Esse @ já está em uso. Tente outro."),
+      await screen.findByText("Esse @ já está em uso."),
     ).toBeInTheDocument();
   });
 });

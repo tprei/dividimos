@@ -156,7 +156,7 @@ describe("useInvitationActions", () => {
     });
 
     expect(declined).toBe(false);
-    expect(mockToast.error).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
+    expect(mockToast.error).toHaveBeenCalledWith("Sem conexão. Você pode tentar de novo quando a internet voltar.");
     expect(mockToast.success).not.toHaveBeenCalled();
     expect(useAppStore.getState().groups).toBe(groupsBefore);
     expect(result.current.pendingGroupId).toBeNull();
