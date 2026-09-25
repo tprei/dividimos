@@ -61,7 +61,8 @@ export function PendingOperationNotice({
   if (!show) return null;
   return (
     <div
-      className="mb-3 rounded-xl border border-warning bg-warning/25 p-3"
+      role="status"
+      className="mb-3 rounded-2xl border border-warning/30 bg-warning/10 p-3"
       data-testid={testId}
     >
       <Chip tone="warning">
@@ -69,7 +70,7 @@ export function PendingOperationNotice({
       </Chip>
       <div className="mt-1 flex items-center gap-1.5">
         <Clock className="size-4 text-warning-foreground" />
-        <p className="text-sm font-semibold">Ainda aguardando confirmação</p>
+        <p className="text-sm font-semibold">Aguardando confirmação</p>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
       <Button variant="outline" className="mt-2 min-h-11" onClick={onLeave}>

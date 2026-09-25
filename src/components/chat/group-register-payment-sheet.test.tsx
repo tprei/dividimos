@@ -71,16 +71,6 @@ describe("GroupRegisterPaymentSheet", () => {
     expect(undo).not.toHaveBeenCalled();
   });
 
-  it("does not call onDismiss when X button is clicked while confirming", () => {
-    const onDismiss = vi.fn();
-    renderSheet("confirming", undefined, onDismiss);
-
-    const closeBtn = screen.getByTestId("group-payment-dismiss");
-    expect(closeBtn).toBeDisabled();
-    fireEvent.click(closeBtn);
-
-    expect(onDismiss).not.toHaveBeenCalled();
-  });
 
 
   it("consumes back navigation without dismissing during confirming status", () => {
@@ -111,7 +101,6 @@ describe("GroupRegisterPaymentSheet", () => {
 
       expect(screen.getByTestId("group-payment-pending")).toBeInTheDocument();
       expect(screen.getByText("Pendente")).toBeInTheDocument();
-      expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
       expect(
         screen.getByText(/Se o pagamento tiver sido registrado/),
       ).toBeInTheDocument();

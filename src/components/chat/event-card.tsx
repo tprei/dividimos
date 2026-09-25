@@ -87,9 +87,10 @@ interface EventCardProps {
   settlement: Settlement | null;
   latestStatus: SettlementStatus | null;
   nameOf: (userId: string) => string;
+  myShareCents?: number;
 }
 
-export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf }: EventCardProps) {
+export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf, myShareCents }: EventCardProps) {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -144,6 +145,11 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           <p title={meta} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {meta}
           </p>
+          {myShareCents !== undefined && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              Sua parte <Money cents={myShareCents} size="sm" className="text-xs text-foreground" />
+            </span>
+          )}
           <CardTime at={event.createdAt} />
         </div>
       </div>

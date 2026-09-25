@@ -160,11 +160,14 @@ export function ConversationsListContent() {
             ))}
           </motion.ul>
         ) : (
-          <EmptyState
-            icon={MessageSquare}
-            title="Nenhuma conversa"
-            description="Conversas aparecem quando você divide contas diretamente com alguém."
-          />
+          <div className="flex flex-col items-center">
+            <EmptyState
+              icon={MessageSquare}
+              title="Nenhuma conversa"
+              description="Conversas aparecem quando você divide contas diretamente com alguém."
+            />
+            {me && <NewConversationButton inline label="Começar conversa" />}
+          </div>
         )}
       </motion.div>
     </div>

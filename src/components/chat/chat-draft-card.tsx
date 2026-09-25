@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
+import { popIn } from "@/lib/animations";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
@@ -24,6 +25,7 @@ interface ChatDraftCardProps {
   result: ChatExpenseResult;
   onConfirm: (result: ChatExpenseResult) => void;
   onEdit: (result: ChatExpenseResult) => void;
+  onDiscard?: () => void;
   status?: ChatDraftStatus;
   errorMessage?: string;
 }
@@ -38,6 +40,7 @@ export function ChatDraftCard({
   result,
   onConfirm,
   onEdit,
+  onDiscard,
   status = "idle",
   errorMessage,
 }: ChatDraftCardProps) {
@@ -54,9 +57,7 @@ export function ChatDraftCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      variants={popIn} initial="hidden" animate="visible"
       className="rounded-2xl border bg-card p-4"
       data-testid="chat-draft-card"
     >
@@ -66,7 +67,7 @@ export function ChatDraftCard({
             <Sparkles className="h-4 w-4 text-primary" />
           </div>
           <span className="text-xs font-medium text-muted-foreground">
-            Despesa via IA
+            Conta sugerida
           </span>
         </div>
         {isConfirmed ? (
@@ -96,12 +97,7 @@ export function ChatDraftCard({
 
         <div className="flex items-center gap-4">
           {hasAmount && (
-            <span
-              className="text-lg font-bold tabular-nums"
-              data-testid="draft-amount"
-            >
-              {formatBRL(result.amountCents)}
-            </span>
+            <span data-testid="draft-amount"><Money cents={result.amountCents} size="lg" /></span>
           )}
           <span className="text-xs text-muted-foreground" data-testid="draft-split-type">
             {result.splitType === "equal" ? "Divisão igual" : "Divisão personalizada"}
@@ -122,9 +118,7 @@ export function ChatDraftCard({
                         ? "Você"
                         : `@${allocation.participantHandle}`}
                     </span>
-                    <span className="tabular-nums">
-                      {formatBRL(allocation.shareAmountCents)}
-                    </span>
+                    <Money cents={allocation.shareAmountCents} size="sm" />
                   </div>
                 ))}
               </div>
@@ -147,7 +141,7 @@ export function ChatDraftCard({
                   {item.quantity > 1000 ? `${formatExpenseQuantity(item.quantity as ExpenseQuantity)}x ` : ""}
                   {item.description}
                 </span>
-                <span className="tabular-nums">{formatBRL(item.totalCents)}</span>
+                <Money cents={item.totalCents} size="sm" />
               </div>
             ))}
           </div>
@@ -188,10 +182,8 @@ export function ChatDraftCard({
         {isError && errorMessage && (
           <motion.div
             key="error"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-3 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            className="mt-3 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-text"
             data-testid="draft-error"
           >
             <XCircle className="h-3.5 w-3.5 shrink-0" />
@@ -202,6 +194,7 @@ export function ChatDraftCard({
 
       {!isConfirmed && (
         <div className="mt-4 flex gap-2">
+          {onDiscard && <Button variant="ghost" size="sm" disabled={isDisabled} onClick={onDiscard}>Descartar</Button>}
           <Button
             variant="outline"
             size="sm"

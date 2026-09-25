@@ -12,7 +12,7 @@ export function ChatBalanceStrip({ netCents, owedLabel, action }: ChatBalanceStr
   if (netCents === 0) return null;
   const owed = netCents > 0;
   return (
-    <div className="flex min-h-9 shrink-0 items-center justify-center gap-2 border-y border-border bg-muted/40 px-4 py-1">
+    <div className="flex min-h-8 shrink-0 items-center justify-center gap-2 border-y border-border bg-muted/40 px-4 py-0.5">
       <p
         className={cn(
           "flex min-w-0 items-baseline gap-1 text-xs font-semibold",

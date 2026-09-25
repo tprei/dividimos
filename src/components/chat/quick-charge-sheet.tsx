@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
-import { Popover, PopoverContent } from "@/components/ui/popover";
+import { Check, DollarSign, Loader2, Pencil } from "lucide-react";
+import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
@@ -91,7 +91,10 @@ export function QuickChargeSheet({
   const [descriptionEdited, setDescriptionEdited] = useState(false);
   const [payerIsSelf, setPayerIsSelf] = useState(true);
 
-  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  const { showPending, guardedDismiss } = usePendingOperation(status, () => {
+    if ((amountCents > 0 || descriptionEdited) && !window.confirm("Descartar esta cobrança?")) return;
+    onDismiss();
+  });
   const { keyboardOpen } = useAppViewport();
 
   const autoDescription = useMemo(
@@ -154,20 +157,8 @@ export function QuickChargeSheet({
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
             <DollarSign className="h-4 w-4 text-primary" />
           </div>
-          <span className="text-xs font-medium text-muted-foreground">
-            Cobrança rápida
-          </span>
+          <PopoverTitle>Nova cobrança</PopoverTitle>
         </div>
-        <button
-          type="button"
-          onClick={guardedDismiss}
-          disabled={status === "confirming"}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Fechar"
-          data-testid="quick-charge-dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
 
       <div className="mb-3 text-center">
@@ -215,9 +206,9 @@ export function QuickChargeSheet({
           <button
             type="button"
             onClick={() => setPayerIsSelf(true)}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
               payerIsSelf
-                ? "border-primary bg-primary/10 text-primary"
+                ? "border-primary bg-primary/10 text-primary-text"
                 : "border-border bg-background text-muted-foreground hover:border-primary/30"
             }`}
             data-testid="quick-charge-payer-self"
@@ -227,9 +218,9 @@ export function QuickChargeSheet({
           <button
             type="button"
             onClick={() => setPayerIsSelf(false)}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
               !payerIsSelf
-                ? "border-primary bg-primary/10 text-primary"
+                ? "border-primary bg-primary/10 text-primary-text"
                 : "border-border bg-background text-muted-foreground hover:border-primary/30"
             }`}
             data-testid="quick-charge-payer-other"
@@ -241,7 +232,7 @@ export function QuickChargeSheet({
 
       {status === "error" && errorMessage && (
         <div
-          className="mb-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+          className="mb-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-text"
           data-testid="quick-charge-error"
         >
           {errorMessage}
@@ -265,7 +256,7 @@ export function QuickChargeSheet({
           data-testid="quick-charge-edit"
         >
           <Pencil className="mr-1.5 h-3.5 w-3.5" />
-          Editar no wizard
+          Mais opções
         </Button>
         <Button
           size="sm"

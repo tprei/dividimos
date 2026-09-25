@@ -9,7 +9,7 @@ import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/ch
 import { EventCard } from "@/components/chat/event-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
-import type { ChatMessage, EventKind, GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
+import type { ChatMessage, EventKind, ExpenseSummary, GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
 
 const STATUS_BY_EVENT_KIND: Partial<Record<EventKind, SettlementStatus>> = {
   settlement_recorded: "confirmed",
@@ -63,6 +63,7 @@ interface ChatThreadProps {
   messages: ChatMessage[];
   events: GroupEvent[];
   settlements: Settlement[];
+  expenses?: ExpenseSummary[];
   nameOf: (userId: string) => string;
   showSenderNames?: boolean;
   loading?: boolean;
@@ -80,6 +81,7 @@ export function ChatThread({
   messages,
   events,
   settlements,
+  expenses = [],
   nameOf,
   showSenderNames = true,
   loading,
@@ -94,10 +96,11 @@ export function ChatThread({
   const prevItemCount = useRef(messages.length + events.length);
 
   const items = mergeTimeline(messages, events);
-  const senderNames = displayNames(messages.map(({ sender }) => sender), { style: "short", viewerId: meId });
+  const senderNames = displayNames([...messages.map(({ sender }) => sender), ...events.flatMap(({ actor }) => actor ? [actor] : [])], { style: "short", viewerId: meId });
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
   }, []);
 
   useEffect(() => {
@@ -111,6 +114,16 @@ export function ChatThread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView();
   }, []);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (isAtBottom) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isAtBottom, items.length]);
 
   useEffect(() => {
     // Reporting after render is what makes acknowledgement honest: a boundary
@@ -175,7 +188,7 @@ export function ChatThread({
             const candidate = items[cursor];
             if (candidate.kind !== "event" || candidate.event.kind !== item.event.kind || shouldShowDateSeparator(candidate.at, item.at)) break;
             const id = candidate.event.subjectUserId ?? candidate.event.actorId;
-            if (id) memberNames.push(nameOf(id));
+            if (id) memberNames.push(senderNames.get(id) ?? nameOf(id));
           }
         }
         const continuesRun = item.kind === "message" && isSameRun(previous, item.message);
@@ -233,6 +246,7 @@ export function ChatThread({
                       : null
                   }
                   nameOf={nameOf}
+                  myShareCents={expenses.find((expense) => expense.id === item.event.expenseId)?.myShareCents}
                 />
               )}
             </ChatRailRow>
