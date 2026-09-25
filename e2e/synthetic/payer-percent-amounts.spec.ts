@@ -17,18 +17,18 @@ test.describe("Itemized payer split balances percentages as you type", () => {
     await page.getByLabel("Nome da conta").fill("Conta detalhada");
     await page.getByRole("combobox", { name: "Grupo", exact: true }).click();
     await page.getByRole("option", { name: "Grupo Percentual" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Itens" }).click();
     await page.getByRole("textbox", { name: "Taxa de serviço (%)" }).fill("0");
     await page.getByRole("button", { name: "Adicionar item" }).click();
     await page.getByPlaceholder("Descrição (ex: Picanha 400g)").fill("Rodízio");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("100,00");
     await page.getByRole("button", { name: "Adicionar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Quem consumiu" }).click();
     await page.getByRole("button", { name: "Dividir tudo igualmente" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Pagamento" }).click();
     const payers = page.getByRole("list", { name: "Quem pagou" });
     await payers.getByRole("button", { name: /Bob/ }).click();
     await page.getByRole("radiogroup", { name: "Como dividir: Quem pagou" }).getByText("%", { exact: true }).click();
@@ -37,6 +37,6 @@ test.describe("Itemized payer split balances percentages as you type", () => {
     await expect(page.getByRole("textbox", { name: "Percentual que Bob Percentual pagou" })).toHaveValue("60");
     await expect(payers.getByText(/R\$\s*40,00/)).toBeVisible();
     await expect(payers.getByText(/R\$\s*60,00/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Criar conta" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Salvar conta" })).toBeEnabled();
   });
 });

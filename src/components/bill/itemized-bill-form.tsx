@@ -1,9 +1,11 @@
 "use client";
 
+import { X } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { ScreenHeader } from "@/components/shared/screen-header";
-import { ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
+import { Button } from "@/components/ui/button";
+import { ITEMIZED_SECTIONS, ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
 import type { SplitPerson } from "@/components/bill/split/split-editor";
 import { usePayerSplit } from "@/components/bill/split/use-payer-split";
 import { useBackHandler } from "@/hooks/use-back-handler";
@@ -40,8 +42,6 @@ export interface ItemizedBillFormProps {
   conflictPanel?: ReactNode;
   conflictBlocked?: boolean;
 }
-
-const SECTION_ORDER: ItemizedSectionKey[] = ["account", "items", "split", "payment"];
 
 function serviceFeeText(basisPoints: number): string {
   return String(basisPoints / 100).replace(".", ",");
@@ -102,7 +102,12 @@ export function ItemizedBillForm({
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
   const [pickerSentinel, setPickerSentinel] = useState<string | null>(null);
 
-  useBackHandler(expandedId !== null, () => setExpandedId(null));
+  useBackHandler(true, () => {
+    const index = ITEMIZED_SECTIONS.indexOf(section);
+    if (expandedId !== null) setExpandedId(null);
+    else if (index > 0) setSection(ITEMIZED_SECTIONS[index - 1]);
+    else onBack();
+  });
 
   const expense = store.expense;
   const grandTotal = store.getGrandTotal();
@@ -206,15 +211,6 @@ export function ItemizedBillForm({
     store.updateExpense({ serviceFeeBasisPoints: parsed.value, serviceFeePercent: parsed.value / 100 });
   };
 
-  const handleFooter = async () => {
-    if (section === "payment") {
-      await onSubmit();
-      return;
-    }
-    const index = SECTION_ORDER.indexOf(section);
-    setSection(SECTION_ORDER[Math.min(index + 1, SECTION_ORDER.length - 1)]);
-  };
-
   const participantsStepProps = {
     me,
     participants: store.participants,
@@ -234,8 +230,16 @@ export function ItemizedBillForm({
   };
 
   return (
-    <div className="mx-auto flex min-h-full max-w-lg flex-col">
-      <ScreenHeader back onBack={onBack} subtitle="Nova conta" title="Conta detalhada" />
+    <div className="mx-auto flex min-h-full max-w-lg flex-col pb-[env(safe-area-inset-bottom)] md:max-w-2xl">
+      <ScreenHeader
+        title={isEditing ? "Editar conta" : "Nova conta"}
+        subtitle="Vários itens"
+        action={
+          <Button variant="ghost" size="icon-lg" aria-label="Fechar" onClick={onBack}>
+            <X className="size-5" />
+          </Button>
+        }
+      />
       {conflictPanel}
       <ItemizedWorkspace
         conflictBlocked={conflictBlocked}
@@ -303,7 +307,7 @@ export function ItemizedBillForm({
           store.assignItemsEqually(itemIds, personIds);
           setExpandedId(null);
         }}
-        onFooter={() => void handleFooter()}
+        onSubmit={() => void onSubmit()}
         isEditing={isEditing}
         submitting={submitting}
       />

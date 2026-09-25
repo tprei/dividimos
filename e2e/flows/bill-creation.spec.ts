@@ -40,7 +40,12 @@ test.describe("Bill Creation Flow", () => {
   test("keeps itemized entry and item editing reachable", async ({ page }) => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Vários itens/ }).click();
-    await page.getByRole("tab", { name: "Itens" }).click();
+    await page.getByLabel("Nome da conta").fill("Pizzaria");
+    await page.getByRole("button", { name: "Por @handle" }).click();
+    await page.getByPlaceholder("handle do usuario").fill("bob_test");
+    await page.getByRole("button", { name: "Buscar handle" }).click();
+    await page.getByRole("button", { name: "Adicionar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByRole("button", { name: "Adicionar item" }).click();
     await page.getByRole("textbox", { name: "Descrição (ex: Picanha 400g)" }).fill("Pizza Margherita");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("80");

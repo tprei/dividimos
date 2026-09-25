@@ -8,7 +8,6 @@ import { Money } from "@/components/shared/money";
 import { formatBRL } from "@/lib/currency";
 
 export interface PaymentSectionProps {
-  /** Registered people only: guests cannot pay. */
   payers: readonly SplitPerson[];
   mode: SplitMode;
   onModeChange: (mode: SplitMode) => void;
