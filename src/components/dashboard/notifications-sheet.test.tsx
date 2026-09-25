@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as FramerMotion from "framer-motion";
-import { render, screen, within } from "@testing-library/react";
+import * as framerMotion from "framer-motion";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NotificationsSheet } from "./notifications-sheet";
 import { loadActivity } from "@/lib/sync/refresh";
@@ -9,11 +9,6 @@ import type { GroupEvent, GroupSnapshot, Me } from "@/types/ledger";
 
 vi.mock("@/lib/sync/refresh", () => ({
   loadActivity: vi.fn(),
-}));
-
-vi.mock("framer-motion", async (importOriginal) => ({
-  ...(await importOriginal<typeof FramerMotion>()),
-  useReducedMotion: () => true,
 }));
 
 vi.mock("next/link", () => ({
@@ -115,6 +110,7 @@ function renderSheet() {
 describe("NotificationsSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(framerMotion, "useReducedMotion").mockReturnValue(true);
     useAppStore.getState().reset();
     useAppStore.setState({
       me,
@@ -134,34 +130,38 @@ describe("NotificationsSheet", () => {
     vi.mocked(loadActivity).mockResolvedValue(undefined);
   });
 
-  it("dismisses a row and keeps the dismissal in local state", async () => {
+  it("discards a row: it leaves the preview and stops counting as unread", async () => {
     const { user } = renderSheet();
 
-    await user.click(within(rowFor("Alguém adicionou Pizza")).getByRole("button", { name: "Dispensar" }));
+    await user.click(within(rowFor("Alguém adicionou Pizza")).getByRole("button", { name: "Descartar" }));
 
-    expect(screen.queryByText("Alguém adicionou Pizza")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Alguém adicionou Pizza")).not.toBeInTheDocument());
     expect(useAppStore.getState().activity.dismissedIds).toEqual([9]);
+    expect(useAppStore.getState().activity.readIds).toEqual([9]);
     expect(screen.getByText("Alguém adicionou Cinema")).toBeInTheDocument();
   });
 
-  it("marks a row as read and clears its unread marker", async () => {
+  // The swipe-revealed action is a separate element from the inline one; both
+  // must discard, not just dismiss.
+  it("discards through the action revealed behind a swipeable row", async () => {
+    vi.spyOn(framerMotion, "useReducedMotion").mockReturnValue(false);
     const { user } = renderSheet();
-    expect(screen.getByTestId("unread-dot-9")).toBeInTheDocument();
 
-    await user.click(
-      within(rowFor("Alguém adicionou Pizza")).getByRole("button", { name: "Marcar como lida" }),
-    );
+    await user.click(within(rowFor("Alguém adicionou Cinema")).getByRole("button", { name: "Descartar" }));
 
-    expect(screen.queryByTestId("unread-dot-9")).not.toBeInTheDocument();
-    expect(useAppStore.getState().activity.readIds).toEqual([9]);
+    await waitFor(() => expect(screen.queryByText("Alguém adicionou Cinema")).not.toBeInTheDocument());
+    expect(useAppStore.getState().activity.dismissedIds).toEqual([8]);
+    expect(useAppStore.getState().activity.readIds).toEqual([8]);
   });
 
-  it("renders an event older than the last view without a mark-read action", () => {
-    useAppStore.setState({ activityViewedAt: { [me.id]: "2026-09-19T00:00:00.000Z" } });
-    renderSheet();
+  it("discards every visible row at once", async () => {
+    const { user } = renderSheet();
 
-    expect(screen.getByText("Alguém adicionou Pizza")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Marcar como lida" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Dispensar" })).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Descartar todas" }));
+
+    await waitFor(() => expect(screen.getByText("Nenhuma notificação")).toBeInTheDocument());
+    expect(useAppStore.getState().activity.dismissedIds).toEqual([9, 8]);
+    expect(useAppStore.getState().activity.readIds).toEqual([9, 8]);
+    expect(screen.queryByRole("button", { name: "Descartar todas" })).not.toBeInTheDocument();
   });
 });

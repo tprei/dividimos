@@ -48,9 +48,20 @@ vi.mock("framer-motion", async () => {
         const cached = motionStubs.get(prop);
         if (cached) return cached;
         const MotionStub = React.forwardRef((props: Record<string, unknown>, ref) => {
+          const { onTap, onClick, ...others } = props as {
+            onTap?: (event: unknown) => void;
+            onClick?: (event: unknown) => void;
+          } & Record<string, unknown>;
           const rest: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(props)) {
+          for (const [key, value] of Object.entries(others)) {
             if (!motionPropNames.has(key)) rest[key] = value;
+          }
+          // Plain elements have no press gesture; a tap is a click here.
+          if (onTap || onClick) {
+            rest.onClick = (event: unknown) => {
+              onTap?.(event);
+              onClick?.(event);
+            };
           }
           return React.createElement(prop, { ...rest, ref });
         });

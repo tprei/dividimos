@@ -1,64 +1,36 @@
 "use client";
 
 import {
+  animate,
   motion,
-  useAnimationControls,
   useMotionValue,
+  useMotionValueEvent,
   useReducedMotion,
   useTransform,
   type PanInfo,
 } from "framer-motion";
-import { Check, X, type LucideIcon } from "lucide-react";
+import { X } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { haptics } from "@/hooks/use-haptics";
 import { springs } from "@/lib/animations";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/utils";
 
-const ACTION_WIDTH = 88; // one action column; unread rows show two
-const SNAP_THRESHOLD = 40; // how far user must drag to snap open
+const ACTION_WIDTH = 96;
+/** A release past this share of the row width discards without a tap. */
+const DISCARD_RATIO = 0.5;
+/** A fling this fast (px/s, leftwards) discards regardless of distance. */
+const FLING_VELOCITY = 900;
+const OPEN_THRESHOLD = 40;
 
 export interface NotificationRowProps {
   eventId: number;
   unread: boolean;
   href: string;
   onNavigate: () => void;
-  onMarkRead: () => void;
-  onDismiss: () => void;
+  onDiscard: () => void;
   children: ReactNode;
-}
-
-function ActionButton({
-  label,
-  icon: Icon,
-  className,
-  onClick,
-  compact = false,
-}: {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-  onClick: () => void;
-  /** Inline rows sit next to the text, so the label goes to screen readers. */
-  compact?: boolean;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={label}
-      onClick={onClick}
-      className={
-        compact
-          ?
-            `relative flex size-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-ring ${className}`
-          : `flex h-full min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-1 whitespace-normal px-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring ${className}`
-      }
-    >
-      <Icon className="size-3.5" aria-hidden="true" />
-      {compact ? <span className="sr-only">{label}</span> : <span className="text-xs font-semibold">{label}</span>}
-    </Button>
-  );
 }
 
 export function NotificationRow({
@@ -66,68 +38,68 @@ export function NotificationRow({
   unread,
   href,
   onNavigate,
-  onMarkRead,
-  onDismiss,
+  onDiscard,
   children,
 }: NotificationRowProps) {
-  const controls = useAnimationControls();
-  const x = useMotionValue(0);
-  const [isOpen, setIsOpen] = useState(false);
-  const isDragging = useRef(false);
   const reducedMotion = useReducedMotion();
-  const panelWidth = unread ? ACTION_WIDTH * 2 : ACTION_WIDTH;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  const [open, setOpen] = useState(false);
+  const [armed, setArmed] = useState(false);
+  // A press that began on an open row, or turned into a drag, only moves the
+  // row; the click that may follow must not navigate.
+  const suppressClick = useRef(false);
+  const discarded = useRef(false);
 
-  // Fade in the action buttons as the row slides left
-  const actionsOpacity = useTransform(x, [-panelWidth, -20, 0], [1, 0.5, 0]);
+  // The action fills exactly the gap the row leaves behind, so it never sits
+  // under the drag layer and a tap on it can only ever reach the action.
+  const actionWidth = useTransform(x, (value) => Math.max(0, -value));
 
-  const close = () => {
-    controls.start({ x: 0, transition: springs.snappy });
-    setIsOpen(false);
+  const discardDistance = () => (rowRef.current?.offsetWidth ?? 320) * DISCARD_RATIO;
+
+  useMotionValueEvent(x, "change", (value) => {
+    if (discarded.current) return;
+    const next = -value >= discardDistance();
+    if (next !== armed) {
+      haptics.selectionChanged();
+      setArmed(next);
+    }
+  });
+
+  const settle = (to: number) => {
+    setOpen(to !== 0);
+    void animate(x, to, springs.snappy);
   };
 
-  const markRead = () => {
-    onMarkRead();
-    haptics.success();
-    close();
-  };
-
-  const dismiss = () => {
-    onDismiss();
-    haptics.tap();
-    close();
-  };
-
-  const handleDragStart = () => {
-    isDragging.current = true;
+  const discard = () => {
+    if (discarded.current) return;
+    discarded.current = true;
+    haptics.impact();
+    // The row slides out while the list collapses around it; the store update
+    // is immediate so the unread count and the next preview row follow at once.
+    void animate(x, -(rowRef.current?.offsetWidth ?? 320), { duration: 0.18, ease: "easeIn" });
+    onDiscard();
   };
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
-    // Small timeout so click handlers on children can check isDragging
-    setTimeout(() => {
-      isDragging.current = false;
-    }, 50);
-
-    const shouldOpen = info.offset.x < -SNAP_THRESHOLD || info.velocity.x < -200;
-    const shouldClose = info.offset.x > SNAP_THRESHOLD || info.velocity.x > 200;
-
-    if (isOpen && shouldClose) {
-      haptics.impact();
-      controls.start({ x: 0, transition: springs.snappy });
-      setIsOpen(false);
-    } else if (!isOpen && shouldOpen) {
-      haptics.impact();
-      controls.start({
-        x: -panelWidth,
-        transition: springs.snappy,
-      });
-      setIsOpen(true);
-    } else {
-      // Snap back to current state
-      controls.start({
-        x: isOpen ? -panelWidth : 0,
-        transition: springs.snappy,
-      });
+    if (-x.get() >= discardDistance() || info.velocity.x < -FLING_VELOCITY) {
+      discard();
+      return;
     }
+    const opening = info.offset.x < -OPEN_THRESHOLD || info.velocity.x < -200;
+    const closing = info.offset.x > OPEN_THRESHOLD || info.velocity.x > 200;
+    if (closing) settle(0);
+    else if (opening || open) settle(-ACTION_WIDTH);
+    else settle(0);
+  };
+
+  const handleRowClick = (event: React.MouseEvent) => {
+    if (suppressClick.current) {
+      event.preventDefault();
+      return;
+    }
+    haptics.tap();
+    onNavigate();
   };
 
   const marker = unread ? (
@@ -141,106 +113,93 @@ export function NotificationRow({
     <span aria-hidden="true" className="mt-1.5 size-2 shrink-0" />
   );
 
-  // Reduced motion removes the gesture entirely: the actions sit inline where
-  // they stay reachable without a drag.
+  // Reduced motion removes the gesture entirely: the action sits inline where
+  // it stays reachable without a drag.
   if (reducedMotion) {
     return (
-      <div className="flex items-start gap-1 rounded-lg bg-popover p-2">
+      <div className="flex items-start gap-1 p-2">
         <Link
           href={href}
-          onClick={() => { haptics.tap(); onNavigate(); }}
+          onClick={() => {
+            haptics.tap();
+            onNavigate();
+          }}
           className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
         >
           {marker}
           {children}
         </Link>
-        <div className="mt-0.5 flex shrink-0 items-start gap-1">
-          {unread && (
-            <ActionButton
-              compact
-              label="Marcar como lida"
-              icon={Check}
-              className="text-success-text hover:bg-success/15"
-              onClick={markRead}
-            />
-          )}
-          <ActionButton
-            compact
-            label="Dispensar"
-            icon={X}
-            className="text-muted-foreground hover:bg-muted"
-            onClick={dismiss}
-          />
-        </div>
+        <IconButton
+          aria-label="Descartar"
+          size="icon-lg"
+          onClick={() => {
+            haptics.impact();
+            onDiscard();
+          }}
+          className="rounded-full text-muted-foreground"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </IconButton>
       </div>
     );
   }
 
   return (
-    <div className="relative overflow-hidden rounded-lg">
-      {/* Action buttons behind the row */}
-      <motion.div
-        style={{ opacity: actionsOpacity, width: panelWidth }}
-        className="absolute inset-y-0 right-0 flex items-stretch"
-        onFocusCapture={() => {
-          controls.start({ x: -panelWidth, transition: springs.snappy });
-          setIsOpen(true);
-        }}
-      >
-        {unread && (
-          <ActionButton
-            label="Marcar como lida"
-            icon={Check}
-            className="bg-success/15 text-success-text"
-            onClick={markRead}
-          />
-        )}
-        <ActionButton
-          label="Dispensar"
-          icon={X}
-          className="bg-muted text-muted-foreground"
-          onClick={dismiss}
-        />
-      </motion.div>
-
-      {/* Draggable row layer */}
+    <div ref={rowRef} className="relative overflow-hidden rounded-lg">
       <motion.div
         style={{ x }}
-        animate={controls}
         drag="x"
-        dragConstraints={{ left: -panelWidth, right: 0 }}
-        dragElastic={0.1}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onPointerDownCapture={(e) => {
-          // Prevent Link navigation while dragging
-          const el = e.currentTarget;
-          const onPointerUp = () => {
-            el.removeEventListener("pointerup", onPointerUp);
-            if (isDragging.current) {
-              el.addEventListener(
-                "click",
-                (ev) => {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                },
-                { capture: true, once: true },
-              );
-            }
-          };
-          el.addEventListener("pointerup", onPointerUp);
+        dragDirectionLock
+        dragConstraints={{ right: 0 }}
+        dragElastic={{ right: 0.02 }}
+        dragMomentum={false}
+        onPointerDownCapture={() => {
+          suppressClick.current = open;
         }}
-        className="relative bg-popover"
+        onDragStart={() => {
+          suppressClick.current = true;
+        }}
+        onTap={() => {
+          if (open) settle(0);
+        }}
+        tabIndex={-1}
+        onDragEnd={handleDragEnd}
+        className="relative bg-popover outline-none"
       >
         <Link
           href={href}
-          onClick={() => { haptics.tap(); onNavigate(); }}
+          onClick={handleRowClick}
+          draggable={false}
           className="flex min-h-11 items-start gap-2 rounded-lg p-2 transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
         >
           {marker}
           {children}
         </Link>
       </motion.div>
+
+      {/* Touch browsers drop the synthesized click for a tap that lands right
+          after a swipe, so pointers discard on tap; click only serves
+          keyboard and assistive activation (detail 0). */}
+      <motion.button
+        type="button"
+        style={{ width: actionWidth }}
+        onTap={discard}
+        onClick={(event) => {
+          if (event.detail === 0) discard();
+        }}
+        onFocus={() => {
+          if (!open) settle(-ACTION_WIDTH);
+        }}
+        className={cn(
+          "absolute inset-y-0 right-0 z-10 flex items-center overflow-hidden rounded-r-lg outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          armed ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+        )}
+      >
+        <span className="flex w-24 shrink-0 flex-col items-center justify-center gap-1">
+          <X className={cn("size-4 transition-transform duration-150", armed && "scale-110")} aria-hidden="true" />
+          <span className="text-xs font-semibold">Descartar</span>
+        </span>
+      </motion.button>
     </div>
   );
 }
