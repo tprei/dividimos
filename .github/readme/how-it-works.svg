@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-labelledby="hiw-title hiw-desc">
+  <title id="hiw-title">Como funciona o Dividimos</title>
+  <desc id="hiw-desc">Três passos. 1, Escaneie: tira uma foto do cupom e os itens aparecem na hora. 2, Atribua: cada um marca o que comeu e o app calcula quem deve o quê. 3, Pague: QR Code Pix com o valor certinho, pago no app do banco e registrado no Dividimos.</desc>
+  <defs>
+    <path id="hiw-qr" d="M0 0h7v1h-7zM8 0h1v1h-1zM10 0h1v1h-1zM12 0h1v1h-1zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM9 1h1v1h-1zM11 1h2v1h-2zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM8 2h1v1h-1zM10 2h1v1h-1zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM9 3h3v1h-3zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h1v1h-1zM11 4h2v1h-2zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM12 5h1v1h-1zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h7v1h-7zM8 7h2v1h-2zM11 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM4 8h4v1h-4zM10 8h1v1h-1zM12 8h3v1h-3zM16 8h2v1h-2zM19 8h1v1h-1zM1 9h1v1h-1zM3 9h1v1h-1zM7 9h2v1h-2zM10 9h2v1h-2zM14 9h2v1h-2zM18 9h1v1h-1zM20 9h1v1h-1zM0 10h1v1h-1zM2 10h2v1h-2zM5 10h2v1h-2zM9 10h1v1h-1zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h2v1h-2zM1 11h1v1h-1zM4 11h1v1h-1zM7 11h1v1h-1zM9 11h2v1h-2zM13 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM20 11h1v1h-1zM0 12h2v1h-2zM3 12h1v1h-1zM5 12h2v1h-2zM8 12h1v1h-1zM11 12h2v1h-2zM14 12h2v1h-2zM17 12h2v1h-2zM20 12h1v1h-1zM8 13h1v1h-1zM10 13h1v1h-1zM12 13h1v1h-1zM16 13h1v1h-1zM19 13h1v1h-1zM0 14h7v1h-7zM9 14h1v1h-1zM11 14h1v1h-1zM13 14h2v1h-2zM16 14h3v1h-3zM20 14h1v1h-1zM0 15h1v1h-1zM6 15h1v1h-1zM8 15h1v1h-1zM10 15h1v1h-1zM12 15h1v1h-1zM14 15h2v1h-2zM18 15h1v1h-1zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM10 16h2v1h-2zM13 16h1v1h-1zM16 16h1v1h-1zM18 16h3v1h-3zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM8 17h2v1h-2zM12 17h1v1h-1zM14 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM8 18h1v1h-1zM10 18h2v1h-2zM13 18h3v1h-3zM17 18h1v1h-1zM20 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM9 19h1v1h-1zM11 19h1v1h-1zM15 19h2v1h-2zM18 19h2v1h-2zM0 20h7v1h-7zM8 20h1v1h-1zM11 20h4v1h-4zM16 20h1v1h-1zM18 20h1v1h-1zM20 20h1v1h-1z"/>
+  </defs>
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+    .card { fill: #FFFFFF; stroke: #DFE1E4; }
+    .fg { fill: #091018; }
+    .muted { fill: #505963; }
+    .chevron { stroke: #A3AAB3; }
+    .chip { fill: #FFFFFF; }
+    .chip-line { stroke: #E3E6EA; }
+    .ring { stroke: #FFFFFF; }
+    .paper { fill: #FFFDF8; stroke: #EAD9B8; }
+    .paper-line { fill: #EDE4D4; }
+    .paper-price { fill: #DCCDB2; }
+    .paper-rule { stroke: #E6D5B3; }
+    .tint-amber { fill: #FDF4E3; }
+    .tint-green { fill: #E0F7ED; }
+    .tint-teal { fill: #E4F8F8; }
+    .amber { fill: #F2A618; }
+    .amber-stroke { stroke: #F2A618; }
+    .green { fill: #0A9A5B; }
+    .teal { fill: #0C9C9C; }
+    .teal-stroke { stroke: #0C9C9C; }
+    .qr-bg { fill: #FFFFFF; stroke: #CDEDED; }
+    .qr { fill: #0B5E5E; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #0F2236; stroke: #22384E; }
+      .fg { fill: #EEF3F3; }
+      .muted { fill: #A5ACB2; }
+      .chevron { stroke: #5B6E82; }
+      .chip { fill: #173049; }
+      .chip-line { stroke: #22384E; }
+      .ring { stroke: #173049; }
+      .tint-amber { fill: #3A3220; }
+      .tint-green { fill: #0D383D; }
+      .tint-teal { fill: #11394A; }
+      .green { fill: #14B870; }
+      .teal { fill: #1FB5B5; }
+      .teal-stroke { stroke: #1FB5B5; }
+      .qr-bg { stroke: #11394A; }
+    }
+  </style>
+
+  <rect class="card" x="0.5" y="0.5" width="1199" height="419" rx="24"/>
+
+  <g class="sans">
+    <rect class="tint-amber" x="40" y="40" width="352" height="236" rx="20"/>
+    <g fill="none" class="amber-stroke" stroke-width="4" stroke-linecap="round">
+      <path d="M121 54H143M121 54V76"/>
+      <path d="M311 54H289M311 54V76"/>
+      <path d="M121 262H143M121 262V240"/>
+      <path d="M311 262H289M311 262V240"/>
+    </g>
+    <g transform="translate(141 62)">
+      <path class="paper" stroke-width="1.5" d="M0 10Q0 0 10 0H140Q150 0 150 10V186L144 196L138 186L132 196L126 186L120 196L114 186L108 196L102 186L96 196L90 186L84 196L78 186L72 196L66 186L60 196L54 186L48 196L42 186L36 196L30 186L24 196L18 186L12 196L6 186L0 196Z"/>
+      <rect x="18" y="18" width="84" height="11" rx="3" fill="#FDD27E"/>
+      <rect x="18" y="36" width="54" height="7" rx="3" class="paper-line"/>
+      <line x1="14" y1="54" x2="136" y2="54" class="paper-rule" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <rect x="18" y="66" width="70" height="7" rx="3" class="paper-line"/>
+      <rect x="108" y="66" width="24" height="7" rx="3" class="paper-price"/>
+      <rect x="18" y="86" width="58" height="7" rx="3" class="paper-line"/>
+      <rect x="108" y="86" width="24" height="7" rx="3" class="paper-price"/>
+      <rect x="18" y="106" width="80" height="7" rx="3" class="paper-line"/>
+      <rect x="108" y="106" width="24" height="7" rx="3" class="paper-price"/>
+      <rect x="18" y="126" width="50" height="7" rx="3" class="paper-line"/>
+      <rect x="108" y="126" width="24" height="7" rx="3" class="paper-price"/>
+      <line x1="14" y1="144" x2="136" y2="144" class="paper-rule" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="132" y="172" font-size="16" font-weight="800" text-anchor="end" fill="#061C31">R$ 147,80</text>
+    </g>
+    <rect x="127" y="146" width="178" height="4" rx="2" class="amber" fill-opacity="0.85"/>
+    <circle cx="76" cy="76" r="18" class="amber"/>
+    <text x="76" y="83" font-size="19" font-weight="800" text-anchor="middle" fill="#1C0E00">1</text>
+    <text x="40" y="322" font-size="26" font-weight="800" class="fg">Escaneie</text>
+    <text x="40" y="356" font-size="18" class="muted">Tira uma foto do cupom.</text>
+    <text x="40" y="382" font-size="18" class="muted">Os itens aparecem na hora.</text>
+
+    <path d="M398 146L408 158L398 170" fill="none" class="chevron" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect class="tint-green" x="424" y="40" width="352" height="236" rx="20"/>
+    <g>
+      <rect class="chip chip-line" x="492" y="78" width="252" height="46" rx="14" stroke-width="1"/>
+      <text x="510" y="107" font-size="17" font-weight="600" class="fg">Picanha · 1,5 kg</text>
+      <circle cx="714" cy="101" r="13" fill="#0B8F8C" class="ring" stroke-width="2"/>
+      <text x="714" y="106" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">B</text>
+      <circle cx="694" cy="101" r="13" fill="#E08A00" class="ring" stroke-width="2"/>
+      <text x="694" y="106" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">A</text>
+
+      <rect class="chip chip-line" x="492" y="136" width="252" height="46" rx="14" stroke-width="1"/>
+      <text x="510" y="165" font-size="17" font-weight="600" class="fg">Cerveja · 6 un.</text>
+      <circle cx="714" cy="159" r="13" fill="#0A8A4E" class="ring" stroke-width="2"/>
+      <text x="714" y="164" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">C</text>
+      <circle cx="694" cy="159" r="13" fill="#0B8F8C" class="ring" stroke-width="2"/>
+      <text x="694" y="164" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">B</text>
+      <circle cx="674" cy="159" r="13" fill="#E08A00" class="ring" stroke-width="2"/>
+      <text x="674" y="164" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">A</text>
+
+      <rect class="chip chip-line" x="492" y="194" width="252" height="46" rx="14" stroke-width="1"/>
+      <text x="510" y="223" font-size="17" font-weight="600" class="fg">Pizza · meia</text>
+      <circle cx="714" cy="217" r="13" fill="#0A8A4E" class="ring" stroke-width="2"/>
+      <text x="714" y="222" font-size="13" font-weight="700" text-anchor="middle" fill="#FFFFFF">C</text>
+    </g>
+    <circle cx="460" cy="76" r="18" class="green"/>
+    <text x="460" y="83" font-size="19" font-weight="800" text-anchor="middle" fill="#FFFFFF">2</text>
+    <text x="424" y="322" font-size="26" font-weight="800" class="fg">Atribua</text>
+    <text x="424" y="356" font-size="18" class="muted">Cada um marca o que comeu.</text>
+    <text x="424" y="382" font-size="18" class="muted">O app calcula quem deve o quê.</text>
+
+    <path d="M782 146L792 158L782 170" fill="none" class="chevron" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect class="tint-teal" x="808" y="40" width="352" height="236" rx="20"/>
+    <rect class="chip teal-stroke" x="929" y="56" width="110" height="204" rx="18" stroke-width="2.5"/>
+    <rect x="964" y="63" width="40" height="6" rx="3" class="teal" fill-opacity="0.35"/>
+    <rect class="qr-bg" x="945" y="82" width="78" height="78" rx="6" stroke-width="1.5"/>
+    <use href="#hiw-qr" class="qr" transform="translate(949 86) scale(3.333)"/>
+    <text x="984" y="190" font-size="17" font-weight="800" text-anchor="middle" class="fg">R$ 49,27</text>
+    <rect x="940" y="204" width="88" height="30" rx="9" class="teal"/>
+    <text x="984" y="224" font-size="15" font-weight="700" text-anchor="middle" fill="#FFFFFF">Copiar Pix</text>
+    <circle cx="844" cy="76" r="18" class="teal"/>
+    <text x="844" y="83" font-size="19" font-weight="800" text-anchor="middle" fill="#FFFFFF">3</text>
+    <text x="808" y="322" font-size="26" font-weight="800" class="fg">Pague</text>
+    <text x="808" y="356" font-size="18" class="muted">QR Code Pix com o valor certinho.</text>
+    <text x="808" y="382" font-size="18" class="muted">Paga no app do banco e registra aqui.</text>
+  </g>
+</svg>
