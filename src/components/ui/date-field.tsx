@@ -239,10 +239,11 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
       }
     }
     if (!next) return;
-    const targetView = initialView(next);
-    if (targetView.year !== view.year || targetView.month !== view.month) {
+    // Six rows always span three months, so a day already on screen must not flip the page.
+    const onGrid = next >= weeks[0][0].iso && next <= weeks[5][6].iso;
+    if (!onGrid) {
       setMonthDirection(delta >= 0 ? 1 : -1);
-      setView(targetView);
+      setView(initialView(next));
     }
     requestFocus(next);
   };

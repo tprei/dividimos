@@ -121,4 +121,26 @@ describe("DateField", () => {
     fireEvent.keyDown(document.activeElement as HTMLButtonElement, { key: "ArrowLeft" });
     expect((document.activeElement as HTMLButtonElement).dataset.iso).toBe(today);
   });
+
+  it("keeps the shown month when arrows land on a neighbour day the grid already displays", async () => {
+    const handleChange = vi.fn();
+    render(<DateField label="Data" value="2026-02-15" onChange={handleChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data" }));
+
+    await screen.findByRole("grid");
+    expect((document.activeElement as HTMLButtonElement).dataset.iso).toBe("2026-02-15");
+
+    // February 2026 starts on a Sunday, so its six rows cover Feb 1 to Mar 14.
+    const down = { key: "ArrowDown" };
+    fireEvent.keyDown(document.activeElement as HTMLButtonElement, down);
+    fireEvent.keyDown(document.activeElement as HTMLButtonElement, down);
+    fireEvent.keyDown(document.activeElement as HTMLButtonElement, down);
+    expect((document.activeElement as HTMLButtonElement).dataset.iso).toBe("2026-03-08");
+    expect(screen.getByText("fevereiro de 2026")).toBeInTheDocument();
+
+    fireEvent.keyDown(document.activeElement as HTMLButtonElement, down);
+    expect((document.activeElement as HTMLButtonElement).dataset.iso).toBe("2026-03-15");
+    expect(screen.getByText("março de 2026")).toBeInTheDocument();
+  });
 });
