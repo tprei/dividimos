@@ -4,7 +4,7 @@ import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
 export const INTRO_AUTO_ADVANCE_MS = 4000;
 
-export type AutoAdvancePause = "press" | "focus" | "hidden";
+export type AutoAdvancePause = "press" | "focus" | "hidden" | "hover";
 
 export interface AutoAdvance {
   /** True while the countdown to the next slide runs. */
