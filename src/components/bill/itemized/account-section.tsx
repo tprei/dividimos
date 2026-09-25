@@ -3,7 +3,7 @@
 import type { ReactNode, RefObject } from "react";
 import { ChevronDown, Users } from "lucide-react";
 import { GroupSelect } from "@/components/bill/group-select";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
@@ -100,7 +100,7 @@ export function AccountSection({
           Participantes
         </span>
         <span className="flex items-center gap-2">
-          <Badge variant="secondary">{participantCount}</Badge>
+          <Chip>{participantCount}</Chip>
           <ChevronDown className="size-4 text-muted-foreground" />
         </span>
       </Button>

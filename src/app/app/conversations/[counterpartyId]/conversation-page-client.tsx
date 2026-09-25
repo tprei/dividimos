@@ -543,7 +543,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       <ScreenHeader
         back
         title={counterparty.name}
-        eyebrow={`@${counterparty.handle}`}
+        subtitle={`@${counterparty.handle}`}
         action={
           !isCounterpartyPending ? (
             <ConversationPayButton

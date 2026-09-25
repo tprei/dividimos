@@ -13,7 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { formatBRL } from "@/lib/currency";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -29,9 +29,9 @@ interface ChatDraftCardProps {
 }
 
 const CONFIDENCE_CONFIG = {
-  high: { label: "Alta confiança", variant: "secondary" as const },
-  medium: { label: "Confiança média", variant: "outline" as const },
-  low: { label: "Baixa confiança", variant: "destructive" as const },
+  high: { label: "Alta confiança", tone: "success" },
+  medium: { label: "Confiança média", tone: "warning" },
+  low: { label: "Baixa confiança", tone: "danger" },
 } as const;
 
 export function ChatDraftCard({
@@ -70,14 +70,14 @@ export function ChatDraftCard({
           </span>
         </div>
         {isConfirmed ? (
-          <Badge variant="secondary" data-testid="confirmed-badge">
+          <Chip tone="success" data-testid="confirmed-badge">
             <CheckCircle2 className="mr-1 h-3 w-3" />
             Confirmada
-          </Badge>
+          </Chip>
         ) : (
-          <Badge variant={conf.variant} data-testid="confidence-badge">
+          <Chip tone={conf.tone} data-testid="confidence-badge">
             {conf.label}
-          </Badge>
+          </Chip>
         )}
       </div>
 

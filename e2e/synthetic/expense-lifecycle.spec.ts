@@ -42,10 +42,10 @@ test.describe("Expense Lifecycle", () => {
 
     await expect(bobPage.getByText("Lifecycle Test")).toBeVisible();
 
-    await bobPage.getByRole("tab", { name: "Contas" }).click();
+    await bobPage.getByRole("radio", { name: "Contas" }).click();
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
 
-    await bobPage.getByRole("tab", { name: "Saldos" }).click();
+    await bobPage.getByRole("radio", { name: "Saldos" }).click();
     const payRow = bobPage.getByRole("button", { name: /Você paga/i });
     await expect(payRow).toBeVisible({ timeout: 10000 });
     await expect(payRow).toContainText("R$ 50,00");

@@ -91,13 +91,13 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed z-50 flex min-h-0 w-full flex-col gap-4 overflow-y-auto overscroll-contain bg-background text-sm ring-1 ring-foreground/10 outline-none",
+          "fixed z-50 flex min-h-0 w-full flex-col gap-3 overflow-y-auto overscroll-contain border-border bg-card text-sm shadow-lg outline-none motion-reduce:animate-none",
           variant === "center"
             ? // Anchored to the visual viewport rather than the layout
               // viewport: with the keyboard open the two differ by half the
               // screen.
-              "left-1/2 top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl p-4 duration-100 sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
-            : "left-0 top-[calc(var(--app-viewport-top)+var(--app-viewport-height))] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px)))] max-w-none -translate-y-full rounded-t-3xl rounded-b-none px-6 pt-5 pb-[calc(1.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] motion-safe:duration-200 motion-safe:data-open:animate-in motion-safe:data-open:slide-in-from-bottom-4 motion-safe:data-closed:animate-out motion-safe:data-closed:slide-out-to-bottom-4 sm:left-1/2 sm:top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] sm:max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] sm:max-w-sm sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4 sm:motion-safe:duration-100 sm:motion-safe:data-open:fade-in-0 sm:motion-safe:data-open:zoom-in-95 sm:motion-safe:data-closed:fade-out-0 sm:motion-safe:data-closed:zoom-out-95",
+              "border left-1/2 top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl p-4 duration-200 sm:max-w-md motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95 data-closed:duration-120 motion-safe:data-closed:animate-out motion-safe:data-closed:fade-out-0 motion-safe:data-closed:zoom-out-95"
+            : "border-t sm:border left-0 top-[calc(var(--app-viewport-top)+var(--app-viewport-height))] max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px)))] max-w-none -translate-y-full rounded-t-3xl rounded-b-none px-6 pt-5 pb-[calc(1.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] motion-safe:duration-200 motion-safe:data-open:animate-in motion-safe:data-open:slide-in-from-bottom-4 motion-safe:data-closed:animate-out motion-safe:data-closed:slide-out-to-bottom-4 sm:left-1/2 sm:top-[calc(var(--app-viewport-top)+var(--app-viewport-height)/2)] sm:max-h-[calc(var(--app-viewport-height)-var(--safe-area-inset-top,env(safe-area-inset-top,0px))-var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))-1.5rem)] sm:max-w-sm sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4 sm:motion-safe:duration-100 sm:motion-safe:data-open:fade-in-0 sm:motion-safe:data-open:zoom-in-95 sm:motion-safe:data-closed:fade-out-0 sm:motion-safe:data-closed:zoom-out-95",
           // Only the row the close control actually sits on gives up width to
           // it. Padding the whole popup indents every field and button, which
           // reads as a lopsided dialog.
@@ -123,8 +123,8 @@ function DialogContent({
               <Button
                 variant="ghost"
                 className={cn(
-                  "absolute top-4 right-4 min-h-11 min-w-11 rounded-full bg-background/70 backdrop-blur-sm",
-                  variant === "sheet" && "top-0 right-3 sm:top-4 sm:right-4",
+                  "absolute top-3 right-3 rounded-lg bg-background/70 backdrop-blur-sm",
+                  variant === "sheet" && "top-0 right-3 sm:top-3",
                 )}
                 size="icon-sm"
               />
@@ -144,7 +144,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex flex-col gap-1", className)}
       {...props}
     />
   )
@@ -162,14 +162,14 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 px-4 py-3 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
     >
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close render={<Button variant="outline" className="min-h-11" />}>
+        <DialogPrimitive.Close render={<Button variant="outline" />}>
           Fechar
         </DialogPrimitive.Close>
       )}
@@ -182,7 +182,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-medium",
+        "text-lg leading-snug font-bold",
         className
       )}
       {...props}

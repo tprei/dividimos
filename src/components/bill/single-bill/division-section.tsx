@@ -10,7 +10,7 @@ import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
 import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
 import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
@@ -240,11 +240,11 @@ export function SingleBillDivision({
                 )}
                 <div className="min-w-0 flex-1">
                   <PersonLabel name={person.name} handle={person.handle} nameClassName="text-sm leading-5" />
-                  {person.isGuest && <Badge variant="secondary">Convidado</Badge>}
+                  {person.isGuest && <Chip tone="guest">Convidado</Chip>}
                   {!person.isGuest && invitedUserIds.has(person.id) && (
-                    <Badge variant="secondary" className="shrink-0">
+                    <Chip tone="warning" className="shrink-0">
                       Convite pendente
-                    </Badge>
+                    </Chip>
                   )}
                 </div>
                 {mode === "equal" ? (

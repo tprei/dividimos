@@ -12,7 +12,7 @@ import {
 import { TransferRow } from "@/components/settlement/transfer-row";
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
 import { SectionHeading } from "@/components/shared/section-heading";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import type { DebtEdge } from "@/lib/simplify";
@@ -122,7 +122,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
       <section aria-label="Transferências">
         <SectionHeading
           title="Transferências"
-          trailing={<Badge variant="secondary">{transfers.length}</Badge>}
+          trailing={<Chip>{transfers.length}</Chip>}
         />
         <div className="divide-y divide-border rounded-2xl border bg-card">
           {transfers.map((transfer) => {

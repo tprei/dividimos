@@ -3,7 +3,7 @@
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import type { Participant } from "@/types/ledger";
 
@@ -108,9 +108,9 @@ export function ExpenseParticipantList({
                     {isMe ? "Você" : name}
                   </span>
                   {invited && (
-                    <Badge variant="secondary" className="shrink-0">
+                    <Chip tone="warning" className="shrink-0">
                       Convite pendente
-                    </Badge>
+                    </Chip>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">

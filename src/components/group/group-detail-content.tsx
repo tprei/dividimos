@@ -26,8 +26,8 @@ import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { isBotGroup } from "@/lib/bot-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -240,8 +240,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             {groupAvatar}
           </Link>
         }
-        eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
-        title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
+        subtitle={tab === "saldos" ? "Acerto" : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
+        title={snapshot.group.name}
         onBack={() => router.push("/app/groups")}
         onTitleClick={() => router.push(`/app/groups/${groupId}/info`)}
         titleClickLabel="Ver perfil do grupo"
@@ -256,11 +256,10 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         action={
           <div className="flex items-center gap-1">
             {isAcceptedMember && (
-              <Button
-                size="icon-lg"
-                variant="ghost"
-                className="relative size-11 rounded-full"
-                render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
+              <Link
+                href={`/app/groups/${groupId}/chat`}
+                aria-label="Conversa"
+                className={buttonVariants({ size: "icon", variant: "ghost", className: "relative rounded-full" })}
               >
                 <MessageSquare className="size-5" />
                 {snapshot.unreadCount > 0 && (
@@ -271,7 +270,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
                     {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
                   </span>
                 )}
-              </Button>
+              </Link>
             )}
           </div>
         }
@@ -279,24 +278,20 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
       <NotificationPrompt />
 
-      <Tabs value={tab} onValueChange={setTab} className="mt-5">
-        <TabsList className="w-full">
-          <TabsTrigger value="saldos">Saldos</TabsTrigger>
-          <TabsTrigger value="contas">Contas</TabsTrigger>
-          <TabsTrigger value="membros">Membros</TabsTrigger>
-        </TabsList>
-        <TabsContent value="saldos" className="mt-4">
+      <div className="mt-5">
+        <SegmentedControl aria-label="Seções do grupo" value={tab} onChange={setTab} options={[{ value: "saldos", label: "Saldos" }, { value: "contas", label: "Contas" }, { value: "membros", label: "Membros" }]} />
+        {tab === "saldos" && <div className="mt-4">
           <GroupSettlementView
             groupId={groupId}
             snapshot={snapshot}
             meId={meId ?? ""}
           />
-        </TabsContent>
-        <TabsContent value="contas" className="mt-4 space-y-4">
+        </div>}
+        {tab === "contas" && <div className="mt-4 space-y-4">
           <GroupSpendingSection spending={snapshot.overview?.spending} meId={meId ?? ""} />
           <GroupExpensesSection groupId={groupId} members={members} />
-        </TabsContent>
-        <TabsContent value="membros" className="mt-4 space-y-4">
+        </div>}
+        {tab === "membros" && <div className="mt-4 space-y-4">
           {canInvite && (
             <div className="flex items-center gap-2">
               <Button
@@ -336,8 +331,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               departedRef.current = true;
             }}
           />
-        </TabsContent>
-      </Tabs>
+        </div>}
+      </div>
 
       <GroupInviteModal
         open={showInviteModal}

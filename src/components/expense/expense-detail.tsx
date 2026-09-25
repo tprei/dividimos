@@ -16,7 +16,7 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Popover,
   PopoverContent,
@@ -48,6 +48,8 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [deleteAnchor, setDeleteAnchor] = useState<HTMLButtonElement | null>(null);
   const [inviteIndex, setInviteIndex] = useState<number | null>(null);
   const [inviteAnchor, setInviteAnchor] = useState<HTMLElement | null>(null);
+  const [roomSection, setRoomSection] = useState({ expenseId, value: "people" });
+  const activeRoomSection = roomSection.expenseId === expenseId ? roomSection.value : "people";
   // Default focus of the delete confirmation stays on the safe action.
   const cancelFocusRef = useRef<HTMLButtonElement>(null);
   const footerRef = useRef<HTMLElement | null>(null);
@@ -349,30 +351,12 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       {assignmentRoom ? (
         <section className="mt-5 px-4" aria-label="Sala de itens">
           <h2 className="text-sm font-semibold">Sala de itens</h2>
-          <Tabs key={expenseId} defaultValue="people" className="mt-3 gap-4">
-            <TabsList
-              variant="line"
-              aria-label="Sala de itens"
-              className="w-full justify-start gap-0 border-b p-0 group-data-horizontal/tabs:h-11"
-            >
-              {[
-                ["items", "Por item"],
-                ["people", "Por pessoa"],
-                ["history", "Histórico"],
-              ].map(([value, label]) => (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="h-11 flex-none rounded-none px-3 after:bg-primary group-data-horizontal/tabs:after:bottom-0 motion-reduce:transition-none motion-reduce:after:transition-none"
-                >
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <TabsContent value="items">{items}</TabsContent>
-            <TabsContent value="people">{participantList}</TabsContent>
-            <TabsContent value="history">{history}</TabsContent>
-          </Tabs>
+          <div className="mt-3 space-y-4">
+            <SegmentedControl aria-label="Sala de itens" value={activeRoomSection} onChange={(value) => setRoomSection({ expenseId, value })} options={[{ value: "items", label: "Por item" }, { value: "people", label: "Por pessoa" }, { value: "history", label: "Histórico" }]} />
+            {activeRoomSection === "items" && items}
+            {activeRoomSection === "people" && participantList}
+            {activeRoomSection === "history" && history}
+          </div>
         </section>
       ) : (
         <>

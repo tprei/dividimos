@@ -5,7 +5,7 @@ import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { GroupSelect } from "@/components/bill/group-select";
 import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateField } from "@/components/ui/date-field";
@@ -178,7 +178,7 @@ export function SingleBillDetails({
             {people.length > 0 ? (
               <AvatarStack people={people} />
             ) : (
-              <Badge variant="secondary">{participantCount}</Badge>
+              <Chip>{participantCount}</Chip>
             )}
           </Button>
           <div className="min-h-5 pt-1">

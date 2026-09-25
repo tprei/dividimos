@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Clock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 
 export type PendingOperationStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -64,9 +64,9 @@ export function PendingOperationNotice({
       className="mb-3 rounded-xl border border-warning bg-warning/25 p-3"
       data-testid={testId}
     >
-      <Badge variant="outline" className="border-warning text-warning-foreground">
+      <Chip tone="warning">
         Pendente
-      </Badge>
+      </Chip>
       <div className="mt-1 flex items-center gap-1.5">
         <Clock className="size-4 text-warning-foreground" />
         <p className="text-sm font-semibold">Ainda aguardando confirmação</p>

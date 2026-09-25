@@ -5,7 +5,7 @@ import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type { Transfer } from "@/types/ledger";
@@ -66,9 +66,9 @@ export function TransferRow({
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">
           {(from.isGuest || to.isGuest) && <GuestBadge />}
           {(from.isPending || to.isPending) && (
-            <Badge variant="secondary" className="shrink-0">
+            <Chip tone="warning" className="shrink-0">
               Convite pendente
-            </Badge>
+            </Chip>
           )}
         </span>
         <span className="block text-xs text-muted-foreground">{statusLabel}</span>

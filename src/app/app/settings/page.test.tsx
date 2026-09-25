@@ -145,7 +145,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(screen.queryByText("Configurações")).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
   });
 
   it("renders notification preference switches seeded from me", () => {

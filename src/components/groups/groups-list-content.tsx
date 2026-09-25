@@ -155,7 +155,7 @@ export function GroupsListContent() {
   return (
     <>
       <ScreenHeader
-        eyebrow="Suas divisões"
+        subtitle="Suas divisões"
         title="Grupos"
         action={
           <Button

@@ -47,7 +47,7 @@ test.describe("Group register payment", () => {
 
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByRole("tab", { name: "Saldos" }).click();
+    await page.getByRole("radio", { name: "Saldos" }).click();
     await expect(page.getByRole("button", { name: /Você paga/i })).toContainText("R$ 20,00");
   });
 

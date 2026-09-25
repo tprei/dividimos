@@ -10,7 +10,7 @@ import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
@@ -400,9 +400,9 @@ export function ItemDivisionEditor({
                 nameClassName="text-sm"
               />
               {!participant.isGuest && invitedUserIds.has(participant.id) && (
-                <Badge variant="secondary" className="shrink-0">
+                <Chip tone="warning" className="shrink-0">
                   Convite pendente
-                </Badge>
+                </Chip>
               )}
             </>
           );

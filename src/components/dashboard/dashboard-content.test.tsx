@@ -285,7 +285,7 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
 
     expect(screen.queryByText("Oi, Alice")).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
   });
 
   it("matches net and direction totals to the displayed debt rows", () => {

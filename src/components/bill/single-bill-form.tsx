@@ -140,7 +140,7 @@ export function SingleBillForm({
       <ScreenHeader
         back
         onBack={onBack}
-        eyebrow="Valor único"
+        subtitle="Valor único"
         title={isEditing ? "Editar conta" : "Nova conta"}
       />
       {conflictPanel}

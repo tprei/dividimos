@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { lookupProfile } from "@/lib/profile-lookup";
 import { AppError } from "@/lib/errors";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton, SplitBillButton } from "./profile-actions";
 import type { UserProfile } from "@/types/ledger";
@@ -125,10 +125,10 @@ export default async function PublicProfilePage({
           <h1 className="mt-4 text-2xl font-bold">{profile.name || `@${profile.handle}`}</h1>
           <p className="text-muted-foreground">@{profile.handle}</p>
           {profile.isBot && (
-            <Badge variant="secondary" className="mt-2">
+            <Chip tone="primary" className="mt-2">
               <Bot />
               Bot verificado
-            </Badge>
+            </Chip>
           )}
         </div>
 

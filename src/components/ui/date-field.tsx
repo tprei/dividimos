@@ -238,11 +238,11 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
         id={id}
         data-slot="date-field-trigger"
         aria-label={label}
-        className="flex h-11 w-full min-w-0 items-center rounded-lg border border-input bg-card px-3 text-left text-base font-medium tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 md:text-sm dark:bg-input/30"
+        className="flex h-11 w-full min-w-0 items-center rounded-[0.5rem] border border-input bg-card px-3 text-left text-base tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 md:text-sm"
       >
         {displayValue}
       </DialogTrigger>
-      <DialogContent showCloseButton={false} className="w-auto gap-3">
+      <DialogContent showCloseButton={false} className="w-82 max-w-[calc(100%-1rem)] gap-3 p-2">
         <div className="flex items-center justify-between gap-2">
           <Button
             type="button"
@@ -275,7 +275,7 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
                 key={letter + String(index)}
                 role="columnheader"
                 aria-label={WEEKDAY_NAMES[index]}
-                className="flex size-9 items-center justify-center text-xs font-bold text-muted-foreground"
+                className="flex h-7 items-center justify-center text-xs font-semibold text-muted-foreground"
               >
                 {letter}
               </div>
@@ -301,7 +301,7 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
                       onClick={() => pick(cell.iso)}
                       onKeyDown={handleGridKeyDown}
                       className={cn(
-                        "inline-flex size-9 items-center justify-center rounded-lg text-sm font-medium transition-colors outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                        "inline-flex h-11 w-full min-w-11 items-center justify-center rounded-xl text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
                         cell.iso === value &&
                           "bg-primary text-primary-foreground hover:bg-primary/80",
                         cell.iso !== value &&

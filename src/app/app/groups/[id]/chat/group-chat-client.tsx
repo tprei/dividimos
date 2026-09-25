@@ -221,7 +221,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
       <ScreenHeader
         back
         title={snapshot.group.name}
-        eyebrow={`${accepted.length} membros`}
+        subtitle={`${accepted.length} membros`}
         action={
           <Link
             href={`/app/groups/${groupId}`}

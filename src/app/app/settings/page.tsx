@@ -99,7 +99,7 @@ export default function SettingsPage() {
 
   if (!me) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
+      <div role="status" aria-label="Carregando" className="mx-auto max-w-lg px-4 py-6 space-y-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 rounded-2xl" />
         <Skeleton className="h-48 rounded-2xl" />
