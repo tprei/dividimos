@@ -1,5 +1,5 @@
 import React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Me } from "@/types/ledger";
@@ -33,6 +33,13 @@ const { updateProfileMock } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations-group", () => ({
   updateProfile: updateProfileMock,
+}));
+
+const { configureStatusBarMock } = vi.hoisted(() => ({
+  configureStatusBarMock: vi.fn(),
+}));
+vi.mock("@/lib/capacitor/status-bar", () => ({
+  configureStatusBar: configureStatusBarMock,
 }));
 
 vi.mock("@/components/profile/profile-share-modal", () => ({
@@ -389,5 +396,39 @@ describe("ProfilePage identity-keyed state", () => {
     await waitFor(() => {
       expect(mockRouterReplace).toHaveBeenCalledWith("/auth");
     });
+  });
+});
+
+describe("ProfilePage dark mode toggle", () => {
+  afterEach(() => {
+    document.documentElement.className = "";
+  });
+
+  it("applies the dark class on <html> and stores the choice when switched on", async () => {
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    const toggle = screen.getByRole("switch", { name: "Modo escuro" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+
+    expect(toggle).toBeChecked();
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("theme")).toBe("dark");
+  });
+
+  it("removes the dark class and stores light when switched off", async () => {
+    document.documentElement.classList.add("dark");
+    localStorage.setItem("theme", "dark");
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    const toggle = screen.getByRole("switch", { name: "Modo escuro" });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+
+    expect(toggle).not.toBeChecked();
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe("light");
   });
 });

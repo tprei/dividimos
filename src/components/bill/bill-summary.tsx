@@ -118,7 +118,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
           {isSingleAmount ? (
             <div className="flex justify-between font-semibold">
               <span>Total</span>
-              <span className="tabular-nums text-primary">{formatBRL(grandTotal)}</span>
+              <span className="tabular-nums text-primary-text">{formatBRL(grandTotal)}</span>
             </div>
           ) : (
             <>
@@ -142,7 +142,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
               )}
               <div className="flex justify-between border-t border-border pt-2 font-semibold">
                 <span>Total</span>
-                <span className="tabular-nums text-primary">{formatBRL(grandTotal)}</span>
+                <span className="tabular-nums text-primary-text">{formatBRL(grandTotal)}</span>
               </div>
             </>
           )}

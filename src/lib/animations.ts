@@ -8,12 +8,24 @@ export const springs = {
   sheet: { type: "spring", damping: 25, stiffness: 300 } as Transition,
 };
 
+export const durations = { fast: 0.12, base: 0.2, slow: 0.32 } as const;
+
+export const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+export const tapScale = { card: 0.97, icon: 0.92 } as const;
+
+export const popIn: Variants = {
+  hidden: { opacity: 0, scale: 0.96, y: 4 },
+  visible: { opacity: 1, scale: 1, y: 0, transition: springs.snappy },
+  exit: { opacity: 0, scale: 0.98, transition: { duration: durations.fast } },
+};
+
 export const staggerContainer: Variants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.04,
-      delayChildren: 0.1,
+      staggerChildren: 0.03,
+      delayChildren: 0,
     },
   },
 };

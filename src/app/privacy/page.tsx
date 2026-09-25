@@ -122,7 +122,7 @@ export default function PrivacyPage() {
             Para dúvidas sobre privacidade:{" "}
             <a
               href="mailto:privacy@dividimos.ai"
-              className="font-medium text-primary underline"
+              className="font-medium text-primary-text underline"
             >
               privacy@dividimos.ai
             </a>
