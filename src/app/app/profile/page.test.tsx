@@ -254,7 +254,7 @@ describe("ProfilePage Pix key card", () => {
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
 
-    expect(screen.getByRole("radio", { name: "E-mail" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "E-mail" })).toBeChecked();
     expect(screen.getByLabelText("Chave")).toHaveValue("");
   });
 

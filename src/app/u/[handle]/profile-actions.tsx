@@ -9,15 +9,11 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { getOrCreateDm } from "@/lib/sync/mutations-group";
 import { useStartBillWithUser } from "@/components/profile/use-start-bill-with-user";
 
-interface SendMessageButtonProps {
+interface ProfileActionProps {
   targetUserId: string;
-  targetName: string;
 }
 
-export function SendMessageButton({
-  targetUserId,
-  targetName,
-}: SendMessageButtonProps) {
+export function SendMessageButton({ targetUserId }: ProfileActionProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -36,19 +32,17 @@ export function SendMessageButton({
     <Button
       onClick={handleSendMessage}
       disabled={loading}
+      variant="outline"
       className="w-full gap-2"
       size="lg"
     >
-      <MessageCircle className="h-5 w-5" />
-      {loading ? "Abrindo conversa..." : `Enviar mensagem para ${targetName}`}
+      <MessageCircle className="size-5" />
+      {loading ? "Abrindo conversa..." : "Enviar mensagem"}
     </Button>
   );
 }
 
-export function SplitBillButton({
-  targetUserId,
-  targetName,
-}: SendMessageButtonProps) {
+export function SplitBillButton({ targetUserId }: ProfileActionProps) {
   const { startBill, starting } = useStartBillWithUser();
 
   return (
@@ -58,8 +52,8 @@ export function SplitBillButton({
       className="w-full gap-2"
       size="lg"
     >
-      <Split className="h-5 w-5" />
-      {starting ? "Abrindo conta..." : `Dividir uma conta com ${targetName}`}
+      <Split className="size-5" />
+      {starting ? "Abrindo conta..." : "Dividir uma conta"}
     </Button>
   );
 }

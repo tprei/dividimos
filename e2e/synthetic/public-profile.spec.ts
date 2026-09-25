@@ -18,12 +18,12 @@ test.describe("Public profile", () => {
     });
     await expect(page.getByText(`@${bob.handle}`)).toBeVisible();
 
-    await page.getByRole("button", { name: "Enviar mensagem para Bob Target" }).click();
+    await page.getByRole("button", { name: "Enviar mensagem" }).click();
     await page.waitForURL(new RegExp(`/app/conversations/${bob.id}$`), { timeout: 15000 });
     await expect(page.getByText("Bob Target").first()).toBeVisible({ timeout: 10000 });
 
     await page.goto(`/u/${bob.handle}`);
-    await page.getByRole("button", { name: "Dividir uma conta com Bob Target" }).click();
+    await page.getByRole("button", { name: "Dividir uma conta" }).click();
     await page.waitForURL(/\/app\/bill\/new\?dm=/, { timeout: 15000 });
     await expect(page.getByLabel("Nome da conta")).toHaveValue("Cobrança - Bob", { timeout: 10000 });
   });

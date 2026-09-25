@@ -188,7 +188,7 @@ function AuthenticatedProfilePage({
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold truncate">{me.name}</h1>
+            <h2 className="text-xl font-bold truncate">{me.name}</h2>
             {!editingProfile && (
               <button
                 onClick={startEditProfile}
@@ -447,6 +447,7 @@ function AuthenticatedProfilePage({
       </div>
 
       <ProfileShareModal
+        id={me.id}
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         handle={me.handle}
