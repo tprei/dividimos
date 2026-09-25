@@ -20,19 +20,6 @@ export function Skeleton({ className, variant = "pulse" }: SkeletonProps) {
   );
 }
 
-export function ContactAvatarSkeleton({
-  variant = "shimmer",
-}: {
-  variant?: "pulse" | "shimmer";
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <Skeleton variant={variant} className="h-8 w-8 rounded-full" />
-      <Skeleton variant={variant} className="h-2.5 w-10" />
-    </div>
-  );
-}
-
 export function ContactRowSkeleton({
   variant = "shimmer",
 }: {

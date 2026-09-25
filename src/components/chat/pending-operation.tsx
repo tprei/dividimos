@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 export type PendingOperationStatus = "idle" | "confirming" | "confirmed" | "error";
 
-export const PENDING_OPERATION_TIMEOUT_MS = 15000;
+const PENDING_OPERATION_TIMEOUT_MS = 15000;
 
 /**
  * One contract for sheets whose mutation may stall: while `status` is

@@ -9,7 +9,7 @@ import { useSplitDraft, type SplitDraftSeed } from "./use-split-draft";
  * Reopens who paid: nobody yet means the viewer paid it all; an even split
  * reopens as "Igual", anything else as amounts.
  */
-export function payerSeed(payers: readonly ExpensePayer[], fallbackId: string): SplitDraftSeed {
+function payerSeed(payers: readonly ExpensePayer[], fallbackId: string): SplitDraftSeed {
   const paying = payers.filter((payer) => payer.amountCents > 0);
   if (paying.length === 0) return { mode: "equal", included: [fallbackId] };
   const included = paying.map((payer) => payer.userId);

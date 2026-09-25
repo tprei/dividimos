@@ -49,7 +49,7 @@ export function runBootstrap(): Promise<void> {
   return bootstrapInFlight.promise;
 }
 
-export async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {
+async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {
   const lastAt = useAppStore.getState().lastBootstrapAt;
   if (lastAt !== null) {
     const elapsed = Date.now() - Date.parse(lastAt);

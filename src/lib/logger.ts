@@ -68,7 +68,7 @@ function createLoggerInstance(base: LogContext = {}): Logger {
 
 let globalLogger: Logger | null = null;
 
-export function getLogger(context?: LoggerContext): Logger {
+function getLogger(context?: LoggerContext): Logger {
   if (!globalLogger) {
     globalLogger = createLoggerInstance({
       ...(context?.module && { module: context.module }),
@@ -120,24 +120,4 @@ export function logError(logger: Logger, message: string, error: unknown, contex
 
 export function logWarn(logger: Logger, message: string, context?: LogContext): void {
   logger.warn(context, message);
-}
-
-export function logInfo(logger: Logger, message: string, context?: LogContext): void {
-  logger.info(context ?? {}, message);
-}
-
-export function logDebug(logger: Logger, message: string, context?: LogContext): void {
-  logger.debug(context, message);
-}
-
-export function createRequestLogger(requestId: string, userId?: string): Logger {
-  return getLogger({
-    module: "api",
-    requestId,
-    ...(userId && { userId }),
-  });
-}
-
-export function generateRequestId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
 }

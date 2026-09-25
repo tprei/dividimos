@@ -136,122 +136,6 @@ export class AppError extends Error {
 }
 
 /**
- * Authentication-related errors.
- */
-export class AuthError extends AppError {
-  constructor(
-    code: Extract<
-      ErrorCode,
-      "AUTH_UNAUTHORIZED" | "AUTH_SESSION_EXPIRED" | "AUTH_INVALID_TOKEN" | "AUTH_USER_NOT_FOUND"
-    >,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "AuthError";
-  }
-}
-
-/**
- * User operation errors.
- */
-export class UserError extends AppError {
-  constructor(
-    code: Extract<
-      ErrorCode,
-      | "USER_NOT_FOUND"
-      | "USER_ALREADY_EXISTS"
-      | "USER_INVALID_HANDLE"
-      | "USER_PIX_KEY_REQUIRED"
-    >,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "UserError";
-  }
-}
-
-/**
- * Bill operation errors.
- */
-export class BillError extends AppError {
-  constructor(
-    code: Extract<
-      ErrorCode,
-      "BILL_NOT_FOUND" | "BILL_INVALID_STATE" | "BILL_SYNC_FAILED" | "BILL_FINALIZE_FAILED"
-    >,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "BillError";
-  }
-}
-
-/**
- * Draft operation errors.
- */
-export class DraftError extends AppError {
-  constructor(
-    code: Extract<ErrorCode, "DRAFT_NOT_FOUND" | "DRAFT_SAVE_FAILED" | "DRAFT_DELETE_FAILED">,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "DraftError";
-  }
-}
-
-/**
- * Group operation errors.
- */
-export class GroupError extends AppError {
-  constructor(
-    code: Extract<
-      ErrorCode,
-      "GROUP_NOT_FOUND" | "GROUP_MEMBER_NOT_FOUND" | "GROUP_ALREADY_MEMBER"
-    >,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "GroupError";
-  }
-}
-
-/**
- * Pix-related errors.
- */
-export class PixError extends AppError {
-  constructor(
-    code: Extract<
-      ErrorCode,
-      "PIX_KEY_INVALID" | "PIX_KEY_ENCRYPTION_FAILED" | "PIX_GENERATION_FAILED"
-    >,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "PixError";
-  }
-}
-
-/**
- * Database operation errors.
- */
-export class DatabaseError extends AppError {
-  constructor(
-    code: Extract<ErrorCode, "DB_QUERY_FAILED" | "DB_INSERT_FAILED" | "DB_UPDATE_FAILED" | "DB_DELETE_FAILED">,
-    message: string,
-    options?: { context?: ErrorContext; cause?: Error }
-  ) {
-    super(code, message, options);
-    this.name = "DatabaseError";
-  }
-}
-
-/**
  * Validation errors for user input.
  */
 export class ValidationError extends AppError {
@@ -273,13 +157,6 @@ export class ValidationError extends AppError {
  */
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
-}
-
-/**
- * Check if an error has a specific error code.
- */
-export function hasErrorCode(error: unknown, code: ErrorCode): error is AppError {
-  return isAppError(error) && error.code === code;
 }
 
 /**

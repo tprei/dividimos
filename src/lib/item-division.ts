@@ -284,7 +284,7 @@ export function recomputeDivisionShares(value: ItemDivisionValue, cents: number)
   };
 }
 
-export function divisionInvalidInputText(mode: ItemDivisionMode): string {
+function divisionInvalidInputText(mode: ItemDivisionMode): string {
   return mode === "percent"
     ? "Percentuais vão de 0 a 100, com até duas casas decimais."
     : "Valores em reais, com até duas casas decimais.";

@@ -34,7 +34,3 @@ export function pushFailureMessage(error: unknown): string {
   if (error instanceof PushFailure) return MESSAGES[error.code];
   return MESSAGES.server;
 }
-
-export function isRetryablePushFailure(error: unknown): boolean {
-  return error instanceof PushFailure && error.retryable;
-}
