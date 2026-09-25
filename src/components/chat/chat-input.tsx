@@ -44,6 +44,7 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
       await onSend(trimmed);
       setValue("");
       if (textareaRef.current) {
+        textareaRef.current.value = "";
         textareaRef.current.style.height = "auto";
       }
     } catch (error) {

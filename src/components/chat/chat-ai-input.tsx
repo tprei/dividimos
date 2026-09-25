@@ -103,6 +103,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
         submittedGroupId === groupId
       ) {
         setText("");
+        if (inputRef.current) inputRef.current.value = "";
       }
     } catch {
       setSendError("Não foi possível enviar. Tente novamente.");
