@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,8 @@ export interface DateFieldProps {
   id?: string
   max?: string
   min?: string
+  /** "subtle": a text-sized trigger that reads "Hoje", "Ontem" or the day. */
+  variant?: "field" | "subtle"
 }
 
 const MONTH_NAMES = [
@@ -136,7 +138,7 @@ function monthHasEnabledDay(
 }
 
 export function DateField(props: DateFieldProps): React.JSX.Element {
-  const { label, value, onChange, id, max, min } = props
+  const { label, value, onChange, id, max, min, variant = "field" } = props
   const [open, setOpen] = React.useState(false)
   const [view, setView] = React.useState<CalendarView>(() => initialView(value))
   const [focusRequest, setFocusRequest] = React.useState<{ iso: string; seq: number } | null>(null)
@@ -231,6 +233,14 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
   const displayValue = parts
     ? `${String(parts.day).padStart(2, "0")}/${String(parts.month + 1).padStart(2, "0")}/${String(parts.year).padStart(4, "0")}`
     : value
+  const friendlyValue =
+    value === today
+      ? "Hoje"
+      : value === shiftIso(today, -1)
+        ? "Ontem"
+        : parts && String(parts.year) === today.slice(0, 4)
+          ? `${parts.day} de ${MONTH_NAMES[parts.month].slice(0, 3)}`
+          : displayValue
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -238,9 +248,14 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
         id={id}
         data-slot="date-field-trigger"
         aria-label={label}
-        className="flex h-11 w-full min-w-0 items-center rounded-[0.5rem] border border-input bg-card px-3 text-left text-base tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 md:text-sm"
+        className={
+          variant === "subtle"
+            ? "relative inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[0.5rem] px-2 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:top-1/2 [@media(pointer:coarse)]:after:h-11 [@media(pointer:coarse)]:after:-translate-y-1/2"
+            : "flex h-11 w-full min-w-0 items-center rounded-[0.5rem] border border-input bg-card px-3 text-left text-base tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 md:text-sm"
+        }
       >
-        {displayValue}
+        {variant === "subtle" && <CalendarDays className="size-4 shrink-0" aria-hidden="true" />}
+        {variant === "subtle" ? friendlyValue : displayValue}
       </DialogTrigger>
       <DialogContent showCloseButton={false} className="w-82 max-w-[calc(100%-1rem)] gap-3 p-2">
         <div className="flex items-center justify-between gap-2">
