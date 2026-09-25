@@ -98,3 +98,26 @@ export function selectDebtRows(state: AppState): DebtRow[] {
   debtRowsCache = { groups: state.groups, meId, rows };
   return rows;
 }
+
+/**
+ * Live amount `fromId` still owes `toId` inside `groupId`'s minimized
+ * transfer graph — the same derivation that produces the debt rows and the
+ * group transfer list. Returns 0 when that edge no longer exists (the pair
+ * settled) or the group is unknown, so an open Pix dialog can follow the
+ * ledger instead of a frozen snapshot.
+ */
+export function selectOutstandingCents(
+  state: AppState,
+  groupId: string,
+  fromId: string,
+  toId: string,
+): number {
+  const snapshot = state.groups[groupId];
+  if (!snapshot) return 0;
+  for (const transfer of transfersFromBalances(snapshot.balances)) {
+    if (transfer.fromId === fromId && transfer.toId === toId) {
+      return transfer.amountCents;
+    }
+  }
+  return 0;
+}

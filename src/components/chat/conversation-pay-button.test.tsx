@@ -20,7 +20,7 @@ vi.mock("@/components/settlement/pix-qr-modal", () => ({
         <button
           onClick={() => {
             const onMarkPaid = props.onMarkPaid as (cents: number) => Promise<void>;
-            void onMarkPaid(props.amountCents as number);
+            void onMarkPaid(1234);
           }}
           data-testid="pix-confirm"
         >
@@ -81,7 +81,6 @@ describe("ConversationPayButton", () => {
 
     const modal = await screen.findByTestId("pix-modal");
     expect(modal).toBeDefined();
-    expect(pixModalProps.current?.amountCents).toBe(5000);
     expect(pixModalProps.current?.mode).toBe("pay");
 
     fireEvent.click(screen.getByTestId("pix-confirm"));
@@ -90,7 +89,7 @@ describe("ConversationPayButton", () => {
       groupId: "g-1",
       fromUserId: "user-me",
       toUserId: "user-bob",
-      amountCents: 5000,
+      amountCents: 1234,
     });
   });
 
@@ -117,7 +116,7 @@ describe("ConversationPayButton", () => {
       groupId: "g-1",
       fromUserId: "user-bob",
       toUserId: "user-me",
-      amountCents: 3000,
+      amountCents: 1234,
     });
   });
 });

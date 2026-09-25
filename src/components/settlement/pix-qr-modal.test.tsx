@@ -45,12 +45,63 @@ import { qrToCanvas } from "@/lib/qr";
 import { haptics } from "@/hooks/use-haptics";
 import { PixQrModal } from "./pix-qr-modal";
 import { formatBRL } from "@/lib/currency";
+import { useAppStore } from "@/stores/app-store";
+import type { Me } from "@/types/ledger";
+
+const storeMe: Me = {
+  id: "user-me",
+  handle: "me",
+  name: "Me User",
+  avatarUrl: null,
+  isBot: false,
+  email: "me@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
+
+/** Seeds the store group the fetch-variant modal reads its live amount from. */
+function seedLiveGroup(netMe: number, netCounterparty: number) {
+  useAppStore.setState({
+    me: storeMe,
+    groups: {
+      "group-456": {
+        group: {
+          id: "group-456",
+          kind: "group",
+          name: "Grupo Teste",
+          creatorId: storeMe.id,
+          dmUserA: null,
+          dmUserB: null,
+          ledgerVersion: 1,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        members: [],
+        balances: [
+          { kind: "user", participantId: storeMe.id, netCents: netMe },
+          { kind: "user", participantId: "user-123", netCents: netCounterparty },
+        ],
+        guests: [],
+        settlements: [],
+        recentExpenses: [],
+        expenseCount: 0,
+        lastEventId: 0,
+        unreadCount: 0,
+        lastMessage: null,
+        lastActivityAt: "2026-01-02T00:00:00Z",
+        pairwiseEdges: [],
+      },
+    },
+    groupOrder: ["group-456"],
+  });
+}
 
 const defaultProps = {
   open: true,
   onClose: vi.fn(),
   recipientName: "Bob Santos",
-  amountCents: 10000,
+  counterpartyId: "user-123",
   recipientUserId: "user-123",
   groupId: "group-456",
   onMarkPaid: vi.fn(),
@@ -65,6 +116,8 @@ beforeEach(() => {
     status: 200,
     json: () => Promise.resolve({ copiaECola: "pix-payload" }),
   });
+  useAppStore.getState().reset();
+  seedLiveGroup(-10000, 10000);
 });
 
 afterEach(() => {
@@ -311,13 +364,15 @@ describe("PixQrModal", () => {
   });
 
   it("asks for receipt confirmation in collect mode", async () => {
+    seedLiveGroup(10000, -10000);
     render(<PixQrModal {...defaultProps} mode="collect" />);
 
     expect(await readyButton(/Já recebi/i)).toBeEnabled();
   });
 
   it("snaps slider to round amount and triggers haptic tick", () => {
-    render(<PixQrModal {...defaultProps} amountCents={50000} />);
+    seedLiveGroup(-50000, 50000);
+    render(<PixQrModal {...defaultProps} />);
 
     const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
 
@@ -327,7 +382,8 @@ describe("PixQrModal", () => {
   });
 
   it("handles exact 1-centavo slider values and keyboard navigation without snapback", () => {
-    render(<PixQrModal {...defaultProps} amountCents={12154} />);
+    seedLiveGroup(-12154, 12154);
+    render(<PixQrModal {...defaultProps} />);
 
     const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
     expect(slider).toHaveAttribute("step", "1");
@@ -363,7 +419,8 @@ describe("PixQrModal", () => {
 
 
   it("hides the Metade pill for totals under R$ 2,00", () => {
-    render(<PixQrModal {...defaultProps} amountCents={150} />);
+    seedLiveGroup(-150, 150);
+    render(<PixQrModal {...defaultProps} />);
 
     expect(screen.queryByRole("button", { name: /Metade/ })).not.toBeInTheDocument();
   });
@@ -647,7 +704,8 @@ describe("PixQrModal", () => {
   });
 
   it("renders amount chips enabled with aria-pressed reflecting selection", () => {
-    render(<PixQrModal {...defaultProps} amountCents={10000} />);
+    seedLiveGroup(-10000, 10000);
+    render(<PixQrModal {...defaultProps} />);
 
     const tudoBtn = screen.getByRole("button", { name: "Tudo" });
     const metadeBtn = screen.getByRole("button", { name: "Metade" });
@@ -710,6 +768,7 @@ describe("PixQrModal", () => {
   });
 
   it("renders the collect QR without a disclosure", async () => {
+    seedLiveGroup(10000, -10000);
     render(<PixQrModal {...defaultProps} mode="collect" />);
 
     await waitFor(() => {
@@ -718,6 +777,101 @@ describe("PixQrModal", () => {
     expect(
       screen.queryByRole("button", { name: /Mostrar QR code/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("switches to the settled state when the counterparty settles while the modal is open", async () => {
+    render(<PixQrModal {...defaultProps} />);
+
+    expect(
+      screen.getByRole("slider", { name: /Valor do pagamento/i }),
+    ).toBeInTheDocument();
+
+    act(() => {
+      seedLiveGroup(0, 0);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tudo certo!")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/já registrou esse pagamento\./)).toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Já paguei/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fechar" })).toBeEnabled();
+    expect(haptics.success).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the generic registered copy in collect mode once the debt clears", async () => {
+    render(<PixQrModal {...defaultProps} mode="collect" />);
+
+    act(() => {
+      seedLiveGroup(0, 0);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Esse pagamento já foi registrado."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("clamps the chosen amount when the live outstanding drops and keeps it when it grows", () => {
+    render(<PixQrModal {...defaultProps} />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    expect(slider).toHaveAttribute("max", "10000");
+    expect(slider).toHaveValue("10000");
+
+    fireEvent.change(slider, { target: { value: "5000" } });
+    expect(slider).toHaveValue("5000");
+
+    act(() => {
+      seedLiveGroup(-4000, 4000);
+    });
+    expect(slider).toHaveAttribute("max", "4000");
+    expect(slider).toHaveValue("4000");
+
+    act(() => {
+      seedLiveGroup(-9000, 9000);
+    });
+    expect(slider).toHaveAttribute("max", "9000");
+    expect(slider).toHaveValue("4000");
+  });
+
+  it("does not send an over-max amount and never surfaces the overpay RPC error", async () => {
+    const onMarkPaid = vi.fn().mockRejectedValue(
+      new LedgerError("amount_exceeds_debt"),
+    );
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ copiaECola: "br-code-10000" }),
+    });
+
+    render(<PixQrModal {...defaultProps} onMarkPaid={onMarkPaid} />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Já paguei|Registrar pagamento/ }),
+      ).toBeEnabled();
+    });
+
+    act(() => {
+      seedLiveGroup(-4000, 4000);
+    });
+    expect(slider).toHaveValue("4000");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/ }),
+    );
+
+    await waitFor(() => {
+      expect(onMarkPaid).toHaveBeenCalledWith(4000, expect.any(String));
+    });
+    await waitFor(() => {
+      expect(toastError).not.toHaveBeenCalled();
+    });
+    expect(haptics.error).not.toHaveBeenCalled();
   });
 
 });

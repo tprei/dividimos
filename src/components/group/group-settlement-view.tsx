@@ -48,7 +48,6 @@ interface GroupSettlementViewProps {
 interface PixTarget {
   counterpartyId: string;
   recipientName: string;
-  amountCents: number;
   mode: "pay" | "collect";
 }
 
@@ -131,7 +130,6 @@ export function GroupSettlementView({
     setPixTarget({
       counterpartyId: counterparty.id,
       recipientName: counterparty.name,
-      amountCents: transfer.amountCents,
       mode: paying ? "pay" : "collect",
     });
   };
@@ -169,6 +167,34 @@ export function GroupSettlementView({
       }`
     : "";
 
+  // Built before the settled early return so an open modal survives the
+  // moment the last balance clears and shows its own settled state.
+  const pixModal = pixTarget ? (
+    <PixQrModal
+      open
+      onClose={() => setPixTarget(null)}
+      recipientName={fullNames.get(pixTarget.counterpartyId) ?? pixTarget.recipientName}
+      counterpartyId={pixTarget.counterpartyId}
+      counterpartyAvatarUrl={peopleById.get(pixTarget.counterpartyId)?.avatarUrl}
+      recipientUserId={
+        pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId
+      }
+      groupId={groupId}
+      mode={pixTarget.mode}
+      onMarkPaid={(amountCents: number, operationId: string) =>
+        recordSettlement({
+          groupId,
+          operationId,
+          fromUserId:
+            pixTarget.mode === "pay" ? meId : pixTarget.counterpartyId,
+          toUserId:
+            pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId,
+          amountCents,
+        }).then(() => undefined)
+      }
+    />
+  ) : null;
+
   if (settled) {
     return (
       <div
@@ -182,6 +208,7 @@ export function GroupSettlementView({
         <p className="mt-1 text-sm text-muted-foreground">
           Ninguém deve nada por aqui.
         </p>
+        {pixModal}
       </div>
     );
   }
@@ -279,7 +306,6 @@ export function GroupSettlementView({
                     setPixTarget({
                       counterpartyId: transfer.toId,
                       recipientName: to.name,
-                      amountCents: transfer.amountCents,
                       mode: "pay",
                     })
                   }
@@ -287,7 +313,6 @@ export function GroupSettlementView({
                     setPixTarget({
                       counterpartyId: transfer.fromId,
                       recipientName: from.name,
-                      amountCents: transfer.amountCents,
                       mode: "collect",
                     })
                   }
@@ -344,32 +369,7 @@ export function GroupSettlementView({
         </div>
       </div>
 
-      {pixTarget && (
-        <PixQrModal
-          open
-          onClose={() => setPixTarget(null)}
-          recipientName={fullNames.get(pixTarget.counterpartyId) ?? pixTarget.recipientName}
-          counterpartyId={pixTarget.counterpartyId}
-          counterpartyAvatarUrl={peopleById.get(pixTarget.counterpartyId)?.avatarUrl}
-          amountCents={pixTarget.amountCents}
-          recipientUserId={
-            pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId
-          }
-          groupId={groupId}
-          mode={pixTarget.mode}
-          onMarkPaid={(amountCents: number, operationId: string) =>
-            recordSettlement({
-              groupId,
-              operationId,
-              fromUserId:
-                pixTarget.mode === "pay" ? meId : pixTarget.counterpartyId,
-              toUserId:
-                pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId,
-              amountCents,
-            }).then(() => undefined)
-          }
-        />
-      )}
+      {pixModal}
     </div>
   );
 }

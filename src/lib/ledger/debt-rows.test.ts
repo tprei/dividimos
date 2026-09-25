@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BalanceRow, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { debtRowsForGroup, selectDebtRows } from "./debt-rows";
+import { debtRowsForGroup, selectDebtRows, selectOutstandingCents } from "./debt-rows";
 
 const me: Me = {
   id: "user-1",
@@ -232,5 +232,45 @@ describe("selectDebtRows", () => {
     expect(selectDebtRows(useAppStore.getState())).toEqual([
       expect.objectContaining({ groupId: "g1", amountCents: 100, direction: "owes" }),
     ]);
+  });
+});
+
+describe("selectOutstandingCents", () => {
+  it("returns the minimized transfer amount in the payer-to-recipient direction", () => {
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [balance("user", me.id, -500), balance("user", carol.id, 500)],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, carol.id)).toBe(500);
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", carol.id, me.id)).toBe(0);
+  });
+
+  it("returns 0 once the pair settled or the group is unknown", () => {
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [balance("user", me.id, 0), balance("user", carol.id, 0)],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, carol.id)).toBe(0);
+    expect(selectOutstandingCents(useAppStore.getState(), "missing", me.id, carol.id)).toBe(0);
+  });
+
+  it("follows a partially settled debt", () => {
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [balance("user", me.id, -200), balance("user", carol.id, 200)],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, carol.id)).toBe(200);
   });
 });
