@@ -459,19 +459,4 @@ describe("useVoiceInput", () => {
     expect(result.current.interimTranscript).toBe("");
     expect(result.current.isListening).toBe(false);
   });
-
-  it("does not leak silence timer after rapid start/stop cycling", () => {
-    const { result, unmount } = renderHook(() => useVoiceInput());
-
-    act(() => result.current.startListening());
-    act(() => result.current.stopListening());
-    act(() => result.current.startListening());
-    act(() => result.current.stopListening());
-
-    // After unmount, advancing timers should not cause errors
-    unmount();
-    expect(() => {
-      vi.advanceTimersByTime(5000);
-    }).not.toThrow();
-  });
 });

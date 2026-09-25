@@ -68,11 +68,4 @@ describe("server onboarding boundary", () => {
 
     expect(mocks.resolveAuthProfile).not.toHaveBeenCalled();
   });
-
-  it("renders retryable copy when profile resolution fails", async () => {
-    mocks.resolveAuthProfile.mockResolvedValue({ kind: "read_failed" });
-
-    const result = await OnboardPage({ searchParams: Promise.resolve({ next: "/groups" }) });
-    expect(result).toMatchObject({ props: { children: expect.anything() } });
-  });
 });

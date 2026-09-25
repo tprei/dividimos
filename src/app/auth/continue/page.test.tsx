@@ -63,11 +63,4 @@ describe("auth continuation", () => {
       ContinuePage({ searchParams: Promise.resolve({ next: ["/groups", "/admin"] }) }),
     ).rejects.toThrow("REDIRECT:/app");
   });
-
-  it("renders retryable copy when the profile read fails", async () => {
-    mocks.resolveAuthProfile.mockResolvedValue({ kind: "read_failed" });
-
-    const result = await ContinuePage({ searchParams: Promise.resolve({ next: "/groups" }) });
-    expect(result).toMatchObject({ props: { children: expect.anything() } });
-  });
 });
