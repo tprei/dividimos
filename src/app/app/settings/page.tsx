@@ -28,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { SelectField } from "@/components/ui/select-field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import type { NotificationCategory } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -109,14 +110,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
-      <motion.h1
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="text-2xl font-bold"
-      >
-        Configurações
-      </motion.h1>
+      <div className="-mx-4 -mt-6"><ScreenHeader back title="Configurações" /></div>
 
       {permission !== "unsupported" && (
         <motion.div

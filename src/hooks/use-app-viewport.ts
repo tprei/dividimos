@@ -29,6 +29,8 @@ const KEYBOARD_ATTR = "data-keyboard";
  * keyboard is still up would clear the flag under the shell.
  */
 let keyboardOpenInstances = 0;
+let mountedInstances = 0;
+let initialGeometry: { height: string; top: string; width: string } | null = null;
 
 function registerKeyboardOpen(): () => void {
   keyboardOpenInstances += 1;
@@ -81,11 +83,14 @@ export function useAppViewport(): { keyboardOpen: boolean } {
 
   useEffect(() => {
     const root = document.documentElement;
-    const previous = {
-      height: root.style.getPropertyValue(HEIGHT_VAR),
-      top: root.style.getPropertyValue(TOP_VAR),
-      width: root.style.getPropertyValue(WIDTH_VAR),
-    };
+    if (mountedInstances === 0) {
+      initialGeometry = {
+        height: root.style.getPropertyValue(HEIGHT_VAR),
+        top: root.style.getPropertyValue(TOP_VAR),
+        width: root.style.getPropertyValue(WIDTH_VAR),
+      };
+    }
+    mountedInstances += 1;
 
     const native = isNativePlatform();
     let frame = 0;
@@ -93,6 +98,7 @@ export function useAppViewport(): { keyboardOpen: boolean } {
     // Tallest unobstructed height seen in this orientation. It only grows, so
     // a keyboard that is still closing cannot be mistaken for more free space.
     let restingHeight = 0;
+    let open = false;
 
     const apply = () => {
       frame = 0;
@@ -123,13 +129,15 @@ export function useAppViewport(): { keyboardOpen: boolean } {
       const shrunk = restingHeight - height > KEYBOARD_THRESHOLD_PX;
       if (!shrunk) {
         restingHeight = Math.max(restingHeight, height);
+        open = false;
         setKeyboardOpen(false);
         return;
       }
       // Opening requires a focused text field. Closing does not: after blur the
       // keyboard is still on screen, and hiding it early flashes the navigation
       // bar over a keyboard that has not finished sliding away.
-      if (isTextEditable(document.activeElement)) setKeyboardOpen(true);
+      if (isTextEditable(document.activeElement)) open = true;
+      setKeyboardOpen(open);
     };
 
     const schedule = () => {
@@ -153,8 +161,12 @@ export function useAppViewport(): { keyboardOpen: boolean } {
 
     if (native) {
       const attach = async () => {
-        const show = await Keyboard.addListener("keyboardWillShow", () => setKeyboardOpen(true));
-        const hide = await Keyboard.addListener("keyboardWillHide", () => setKeyboardOpen(false));
+        const show = await Keyboard.addListener("keyboardWillShow", () => {
+          setKeyboardOpen(true);
+        });
+        const hide = await Keyboard.addListener("keyboardWillHide", () => {
+          setKeyboardOpen(false);
+        });
         return () => {
           void show.remove();
           void hide.remove();
@@ -185,14 +197,18 @@ export function useAppViewport(): { keyboardOpen: boolean } {
       window.removeEventListener("focusout", schedule);
       removePluginListeners?.();
 
-      // A later non-app route must not inherit this app's keyboard geometry.
-      for (const [name, value] of [
-        [HEIGHT_VAR, previous.height],
-        [TOP_VAR, previous.top],
-        [WIDTH_VAR, previous.width],
-      ] as const) {
-        if (value) root.style.setProperty(name, value);
-        else root.style.removeProperty(name);
+      mountedInstances = Math.max(0, mountedInstances - 1);
+      if (mountedInstances === 0 && initialGeometry) {
+        // A later non-app route must not inherit this app's keyboard geometry.
+        for (const [name, value] of [
+          [HEIGHT_VAR, initialGeometry.height],
+          [TOP_VAR, initialGeometry.top],
+          [WIDTH_VAR, initialGeometry.width],
+        ] as const) {
+          if (value) root.style.setProperty(name, value);
+          else root.style.removeProperty(name);
+        }
+        initialGeometry = null;
       }
     };
   }, []);

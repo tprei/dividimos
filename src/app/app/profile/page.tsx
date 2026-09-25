@@ -12,6 +12,7 @@ import {
   QrCode,
   Receipt,
   Shield,
+  Settings,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -175,7 +177,7 @@ function AuthenticatedProfilePage({
 
   return (
     <div className="mx-auto max-w-lg">
-      <ScreenHeader title="Perfil" />
+      <ScreenHeader title="Perfil" action={<IconButton nativeButton={false} role="link" aria-label="Configurações" render={<Link href="/app/settings" />}><Settings className="size-5" /></IconButton>} />
       <div className="px-4 pb-6">
       <motion.div
         initial={{ opacity: 0, y: 12 }}

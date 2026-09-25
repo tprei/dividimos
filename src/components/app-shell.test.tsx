@@ -13,15 +13,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
 }));
 
-
-vi.mock("@/components/pwa/install-prompt", () => ({
-  InstallPrompt: () => null,
-}));
-
-vi.mock("@/components/shared/logo", () => ({
-  Logo: () => <div data-testid="logo" />,
-}));
-
 vi.mock("@/components/shared/skeleton", () => ({
   DashboardSkeleton: () => <div data-testid="dashboard-skeleton" />,
 }));
@@ -72,6 +63,7 @@ import { haptics } from "@/hooks/use-haptics";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { AppShell } from "./app-shell";
+import { ScreenHeader } from "@/components/shared/screen-header";
 
 const mockMe: Me = {
   id: "user-1",
@@ -238,36 +230,12 @@ describe("AppShell header", () => {
     });
   });
 
-  it("renders a search icon linking to /app/search", () => {
-    render(<AppShell><div>content</div></AppShell>);
-
-    const searchLink = document.querySelector('a[href="/app/search"]');
-    expect(searchLink).toBeTruthy();
-  });
-
-  it("calls runBootstrap when header refresh button is clicked", async () => {
-    render(<AppShell><div>content</div></AppShell>);
-
-    const refreshButton = document.querySelector("header button")!;
-    await act(async () => {
-      fireEvent.click(refreshButton);
-    });
-
-    expect(mockRunBootstrap).toHaveBeenCalled();
-  });
-
-  it("hides the legacy header on screen-header routes", () => {
-    mockPathname.mockReturnValue("/app");
-    const { rerender } = render(<AppShell><div>content</div></AppShell>);
-
-    expect(document.querySelector('a[href="/app/search"]')).toBeNull();
-    expect(screen.queryByTestId("logo")).toBeNull();
-
-    mockPathname.mockReturnValue("/app/groups/abc");
-    rerender(<AppShell><div>content</div></AppShell>);
-
-    expect(document.querySelector('a[href="/app/search"]')).toBeNull();
-    expect(screen.queryByTestId("logo")).toBeNull();
+  it("provides notifications through the route header without duplicate utilities", () => {
+    render(<AppShell><ScreenHeader title="Configurações" back /></AppShell>);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Notificações/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Atualizar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Configurações" })).not.toBeInTheDocument();
   });
 });
 
@@ -313,16 +281,6 @@ describe("AppShell navigation", () => {
     expect(screen.getByText("Nova")).toBeInTheDocument();
   });
 
-  it("names every header utility control", () => {
-    mockPathname.mockReturnValue("/app/activity");
-    render(<AppShell><div>content</div></AppShell>);
-
-    for (const name of ["Buscar", "Configurações"]) {
-      expect(screen.getByRole("link", { name })).toBeInTheDocument();
-    }
-    expect(screen.getByRole("button", { name: /Notificações/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument();
-  });
 
   it("hides navigation bar inside the expense wizard", () => {
     mockPathname.mockReturnValue("/app/bill/new");
@@ -385,6 +343,7 @@ describe("AppShell haptics", () => {
     act(() => {
       fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
     });
+    expect(haptics.selectionChanged).toHaveBeenCalledOnce();
 
     await act(async () => {
       fireEvent.touchEnd(main);
@@ -573,7 +532,7 @@ describe("AppShell activity bell", () => {
   });
 
   it("renders the unified bell button that opens notifications", () => {
-    render(<AppShell><div>content</div></AppShell>);
+    render(<AppShell><ScreenHeader title="Configurações" /></AppShell>);
 
     const bell = screen.getByRole("button", { name: /Notificações/ });
     expect(bell).toBeDefined();
@@ -583,9 +542,8 @@ describe("AppShell activity bell", () => {
 
   it("shows the badge for activity this account has not seen", () => {
     useAppStore.setState({ groups: { g1: groupAt("2026-02-01T10:00:00.000Z") } });
-    render(<AppShell><div>content</div></AppShell>);
-
-    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).not.toBeNull();
+    render(<AppShell><ScreenHeader title="Configurações" /></AppShell>);
+    expect(screen.getByRole("button", { name: /atividade nova/ })).toBeInTheDocument();
   });
 
   it("hides the badge once this account has seen the newest activity", () => {
@@ -593,9 +551,8 @@ describe("AppShell activity bell", () => {
       groups: { g1: groupAt("2026-02-01T10:00:00.000Z") },
       activityViewedAt: { [mockMe.id]: "2026-02-01T10:00:00.000Z" },
     });
-    render(<AppShell><div>content</div></AppShell>);
-
-    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).toBeNull();
+    render(<AppShell><ScreenHeader title="Configurações" /></AppShell>);
+    expect(screen.queryByRole("button", { name: /atividade nova/ })).not.toBeInTheDocument();
   });
 
   it("does not credit one account with another account's view", () => {
@@ -603,9 +560,8 @@ describe("AppShell activity bell", () => {
       groups: { g1: groupAt("2026-02-01T10:00:00.000Z") },
       activityViewedAt: { "other-account": "2026-02-01T10:00:00.000Z" },
     });
-    render(<AppShell><div>content</div></AppShell>);
-
-    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).not.toBeNull();
+    render(<AppShell><ScreenHeader title="Configurações" /></AppShell>);
+    expect(screen.getByRole("button", { name: /atividade nova/ })).toBeInTheDocument();
   });
 
   it("does not mark activity viewed merely by visiting the route", () => {
@@ -631,28 +587,15 @@ describe("AppShell keyboard padding", () => {
     });
   });
 
-  it("applies pb-20 padding to main when keyboard is closed", () => {
+  it("hides navigation while the keyboard is open and restores it on close", () => {
     mockKeyboardVisible.mockReturnValue(false);
-    render(<AppShell><div>content</div></AppShell>);
-
-    const main = document.querySelector("main")!;
-    expect(main.className).toContain("pb-20");
-  });
-
-  it("removes pb-20 padding from main when keyboard is open", () => {
+    const { rerender } = render(<AppShell><div>content</div></AppShell>);
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
     mockKeyboardVisible.mockReturnValue(true);
-    render(<AppShell><div>content</div></AppShell>);
-
-    const main = document.querySelector("main")!;
-    expect(main.className).not.toContain("pb-20");
-  });
-
-  it("removes pb-20 padding from main inside the expense wizard", () => {
+    rerender(<AppShell><div>content</div></AppShell>);
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     mockKeyboardVisible.mockReturnValue(false);
-    mockPathname.mockReturnValue("/app/bill/new");
-    render(<AppShell><div>content</div></AppShell>);
-
-    const main = document.querySelector("main")!;
-    expect(main.className).not.toContain("pb-20");
+    rerender(<AppShell><div>content</div></AppShell>);
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
   });
 });
