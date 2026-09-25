@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+    inputs:
+      experimental:
+        description: "Also run the experimental ambient probes"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -84,10 +90,16 @@ jobs:
         if: ${{ !cancelled() && steps.config.outputs.configured == 'true' && steps.playwright-cache.outputs.cache-hit == 'true' }}
         run: npx playwright install-deps chromium
 
+      # The realtime freshness probe joined the walk in this step: two
+      # 90s tests with one retry each no longer fit the old 4-minute budget.
+      # Experimental probes (dark legibility, identity) only run when the
+      # dispatch input asks for them; the schedule never enables them.
       - name: Web smoke
         id: web
         if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
-        timeout-minutes: 4
+        timeout-minutes: 7
+        env:
+          AMBIENT_EXPERIMENTAL: ${{ inputs.experimental == true && '1' || '' }}
         run: npm run test:ambient:web
 
       # Playwright records the phone walk as webm; Telegram wants h264 mp4.
