@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode, type RefObject } from "react";
-import { MessageCircle, Plus } from "lucide-react";
+import { Loader2, MessageCircle, Plus } from "lucide-react";
 import type { GroupSelectProps } from "@/components/bill/group-select";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { Button } from "@/components/ui/button";
@@ -88,10 +88,12 @@ export function DateQuestion({
 
 export function GroupQuestion({
   group,
+  groupsPending = false,
   onPick,
   onSkip,
 }: {
   group: GroupSelectProps;
+  groupsPending?: boolean;
   onPick: () => void;
   onSkip: () => void;
 }) {
@@ -124,6 +126,12 @@ export function GroupQuestion({
             detail={`${snapshot.members.length} ${snapshot.members.length === 1 ? "pessoa" : "pessoas"}`}
           />
         ))}
+        {group.groups.length === 0 && groupsPending && (
+          <div role="status" className="flex min-h-14 items-center gap-3 px-3 text-sm text-muted-foreground">
+            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+            Carregando grupos…
+          </div>
+        )}
         {group.dmEligible && (
           <GroupRow
             selected={group.value === "dm"}
@@ -147,7 +155,7 @@ export function GroupQuestion({
             <RowIcon dashed><Plus /></RowIcon>
             <Input
               aria-label="Nome do grupo"
-              placeholder="Nome do novo grupo"
+              placeholder={group.createFallback?.trim() || "Nome do novo grupo"}
               value={group.createValue}
               onChange={(event) => group.onCreateValueChange(event.target.value)}
               autoFocus

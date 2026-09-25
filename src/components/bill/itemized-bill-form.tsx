@@ -13,7 +13,8 @@ import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { assignedDivisionForItem } from "@/lib/item-division";
-import { displayNames } from "@/lib/people";
+import { defaultGroupName, displayNames } from "@/lib/people";
+import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
@@ -173,6 +174,11 @@ export function ItemizedBillForm({
   });
   const others = store.participants.filter((participant) => participant.id !== me.id);
   const dmEligible = others.length === 1 && store.guests.length === 0;
+  const defaultGroupLabel = defaultGroupName(people.map((person) => person.name));
+  // Matches the default the submit plans: with only the user in the bill the
+  // own name is not yet what the group will be called.
+  const createGroupFallback = people.length > 1 ? defaultGroupLabel : "";
+  const groupsPending = useAppStore((s) => s.bootstrapStatus === "idle" || s.bootstrapStatus === "loading");
   const selectedGroup = groups.find((snapshot) => snapshot.group.id === selectedGroupId) ?? null;
   const inviteeNames = selectedGroup
     ? others
@@ -261,6 +267,7 @@ export function ItemizedBillForm({
             groups,
             onSelect: handleGroupSelect,
             createValue: createGroupName,
+            createFallback: createGroupFallback,
             onCreateValueChange: onCreateGroupName,
             createGroupEnabled,
             onToggleCreateGroup,
@@ -272,6 +279,7 @@ export function ItemizedBillForm({
               : null,
           progress: startProgress,
           onProgressChange: setStartProgress,
+          groupsPending,
         }}
         participants={participantsStepProps}
         payment={{

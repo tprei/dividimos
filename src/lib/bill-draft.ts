@@ -14,6 +14,8 @@ export type DraftInspectionState = Pick<
   | "receiptAccessKey"
 >;
 
+const LEGACY_ITEMIZED_TITLE = "Nova conta";
+
 /**
  * Determines if an in-progress draft has meaningful user-entered content
  * that warrants a confirmation dialog before replacement.
@@ -21,7 +23,9 @@ export type DraftInspectionState = Pick<
  * Baselines (from selectDraftForType):
  * - single_amount: title "", serviceFeeBasisPoints 0, participants [me],
  *   no guests/items/payers/splits/billSplits, totalAmountInput 0, fixedFees 0.
- * - itemized: title "", serviceFeeBasisPoints 1000, otherwise same empties.
+ * - itemized: title "" (or "Nova conta", the title drafts saved before the
+ *   guided start was created with), serviceFeeBasisPoints 1000, otherwise
+ *   same empties.
  *
  * Any deviation, or occurredOn !== null, or receiptAccessKey !== null -> meaningful.
  */
@@ -74,7 +78,8 @@ export function hasMeaningfulDraft(
   }
 
   if (expense.expenseType === "itemized") {
-    if (expense.title !== "" || expense.serviceFeeBasisPoints !== 1000) {
+    const untouchedTitle = expense.title === "" || expense.title === LEGACY_ITEMIZED_TITLE;
+    if (!untouchedTitle || expense.serviceFeeBasisPoints !== 1000) {
       return true;
     }
     return false;

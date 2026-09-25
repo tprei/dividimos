@@ -27,7 +27,7 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
         occurredOn: "2026-09-17",
         onOccurredOnChange: vi.fn(),
         group: null,
-        progress: { phase: "people", reached: "people" },
+        progress: { phase: "people", reached: "people", lastAnswered: "people" },
         onProgressChange: vi.fn(),
       }}
       payment={{

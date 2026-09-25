@@ -108,6 +108,12 @@ describe("hasMeaningfulDraft", () => {
     expect(hasMeaningfulDraft(createBaselineItemized(), meId)).toBe(false);
   });
 
+  it("returns false for an untouched itemized draft saved with the old 'Nova conta' title", () => {
+    const state = createBaselineItemized();
+    state.expense = state.expense && { ...state.expense, title: "Nova conta" };
+    expect(hasMeaningfulDraft(state, meId)).toBe(false);
+  });
+
   it("returns false for fresh single_amount baseline", () => {
     expect(hasMeaningfulDraft(createBaselineSingleAmount(), meId)).toBe(false);
   });

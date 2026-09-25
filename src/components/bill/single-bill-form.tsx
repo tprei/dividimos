@@ -24,7 +24,8 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
 import { useBackHandler } from "@/hooks/use-back-handler";
-import { displayNames } from "@/lib/people";
+import { defaultGroupName, displayNames } from "@/lib/people";
+import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
@@ -101,6 +102,7 @@ export function SingleBillForm({
 
   const totalCents = store.totalAmountInput || 0;
   const title = store.expense?.title ?? "";
+  const groupsPending = useAppStore((s) => s.bootstrapStatus === "idle" || s.bootstrapStatus === "loading");
   const people = useMemo(
     () => [
       ...store.participants.map((participant) => ({
@@ -169,11 +171,10 @@ export function SingleBillForm({
   const participantCount = people.length;
   const others = store.participants.filter((participant) => participant.id !== me.id);
   const dmEligible = others.length === 1 && store.guests.length === 0;
-  const defaultGroupName = (() => {
-    const names = people.map((person) => person.name.split(" ")[0]);
-    if (names.length === 0) return "";
-    return names.length <= 3 ? names.join(" e ") : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
-  })();
+  const defaultGroupLabel = defaultGroupName(people.map((person) => person.name));
+  // Before other people exist the default would just be the user's own name,
+  // which is not what the group will be called once the bill is submitted.
+  const createGroupFallback = participantCount > 1 ? defaultGroupLabel : "";
   const selectedGroup = groups.find((snapshot) => snapshot.group.id === groupSelection) ?? null;
   const inviteeNames = selectedGroup
     ? others
@@ -214,8 +215,8 @@ export function SingleBillForm({
 
   const handleSubmit = useCallback(async () => {
     if (firstBlockedStep !== -1) return;
-    await submit(() => planGroup(defaultGroupName));
-  }, [defaultGroupName, firstBlockedStep, planGroup, submit]);
+    await submit(() => planGroup(defaultGroupLabel));
+  }, [defaultGroupLabel, firstBlockedStep, planGroup, submit]);
 
   const footerRef = useRef<HTMLDivElement | null>(null);
   const lastStep = step === STEPS.length - 1;
@@ -247,7 +248,8 @@ export function SingleBillForm({
                   value: groupSelection,
                   groups,
                   onSelect: handleGroupSelect,
-                  createValue: createGroupName || defaultGroupName,
+                  createValue: createGroupName,
+                  createFallback: createGroupFallback,
                   onCreateValueChange: setCreateGroupName,
                   createGroupEnabled,
                   onToggleCreateGroup: setCreateGroupEnabled,
@@ -278,6 +280,7 @@ export function SingleBillForm({
           }
           progress={startProgress}
           onProgressChange={setStartProgress}
+          groupsPending={groupsPending}
         />
       )}
 

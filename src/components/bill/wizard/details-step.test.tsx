@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { toIsoDate } from "@/lib/date-shortcuts";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { DetailsStep, initialStartProgress } from "./details-step";
+import { __resetBackHandlerStackForTests, runBackHandlers } from "@/lib/capacitor/back-handler";
 
 vi.mock("@/components/bill/add-participant-by-handle", () => ({
   AddParticipantByHandle: () => null,
@@ -47,7 +48,23 @@ const churras: GroupSnapshot = {
   pairwiseEdges: [],
 };
 
-function Host({ initialTitle = "", initialGroup = null }: { initialTitle?: string; initialGroup?: string | null }) {
+interface HostProps {
+  initialTitle?: string;
+  initialGroup?: string | null;
+  groups?: GroupSnapshot[];
+  groupsPending?: boolean;
+  createFallback?: string;
+  dmEligible?: boolean;
+}
+
+function Host({
+  initialTitle = "",
+  initialGroup = null,
+  groups = [churras],
+  groupsPending = false,
+  createFallback = "",
+  dmEligible = false,
+}: HostProps) {
   const [title, setTitle] = useState(initialTitle);
   const [occurredOn, setOccurredOn] = useState(toIsoDate(new Date()));
   const [groupId, setGroupId] = useState<string | null>(initialGroup);
@@ -56,19 +73,21 @@ function Host({ initialTitle = "", initialGroup = null }: { initialTitle?: strin
     <DetailsStep
       progress={progress}
       onProgressChange={setProgress}
+      groupsPending={groupsPending}
       title={title}
       onTitleChange={setTitle}
       occurredOn={occurredOn}
       onOccurredOnChange={setOccurredOn}
       group={{
         value: groupId,
-        groups: [churras],
+        groups,
         onSelect: setGroupId,
         createValue: "",
+        createFallback,
         onCreateValueChange: vi.fn(),
         createGroupEnabled: false,
         onToggleCreateGroup: vi.fn(),
-        dmEligible: false,
+        dmEligible,
       }}
       participants={{
         me,
@@ -90,6 +109,10 @@ function Host({ initialTitle = "", initialGroup = null }: { initialTitle?: strin
     />
   );
 }
+
+beforeEach(() => {
+  __resetBackHandlerStackForTests();
+});
 
 describe("DetailsStep guided start", () => {
   it("asks the name, the date and the group in turn, then shows only the people under a summary", async () => {
@@ -136,5 +159,41 @@ describe("DetailsStep guided start", () => {
 
     expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data: Ontem" })).toBeInTheDocument();
+  });
+
+  it("keeps the group question while the groups are still loading", async () => {
+    const user = userEvent.setup();
+    render(<Host groups={[]} groupsPending />);
+
+    await user.type(screen.getByRole("textbox", { name: "Nome da conta" }), "pizzada{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Hoje" }));
+
+    expect(await screen.findByText("De qual grupo?")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Carregando grupos…");
+  });
+
+  it("goes back from the people to the last question answered, not a skipped one", async () => {
+    const user = userEvent.setup();
+    render(<Host />);
+
+    await user.type(screen.getByRole("textbox", { name: "Nome da conta" }), "pizzada{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Hoje" }));
+    await user.click(await screen.findByRole("button", { name: "Pular" }));
+    expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+
+    act(() => {
+      runBackHandlers();
+    });
+
+    expect(await screen.findByText("Quando foi?")).toBeInTheDocument();
+  });
+
+  it("labels an unchosen group by where the bill will land", () => {
+    const { unmount } = render(<Host initialTitle="Jantar" dmEligible />);
+    expect(screen.getByRole("button", { name: "Grupo: Conversa direta" })).toBeInTheDocument();
+    unmount();
+
+    render(<Host initialTitle="Jantar" initialGroup="create" createFallback="Alice e Bia" />);
+    expect(screen.getByRole("button", { name: "Grupo: Alice e Bia" })).toBeInTheDocument();
   });
 });
