@@ -36,7 +36,7 @@ test("bot_bruno sees ana's new expense without reloading", async ({ browser }) =
   try {
     await loginInContext(watcherCtx, watcher, bruno);
     await watcher.goto(`/app/groups/${troupe.groupId}?tab=contas`);
-    await expect(watcher.getByRole("tab", { name: "Contas" })).toBeVisible({
+    await expect(watcher.getByRole("radio", { name: "Contas" })).toBeVisible({
       timeout: 30_000,
     });
 
