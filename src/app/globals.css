@@ -403,3 +403,208 @@
     --tw-exit-translate-y: 0;
   }
 }
+
+/* Auth intro */
+:root {
+  --pix: #32bcad;
+  --pix-deep: oklch(0.50 0.09 185);
+  --food-gold: oklch(0.84 0.14 85);
+  --food-foam: oklch(0.985 0.012 85);
+  --food-lime: oklch(0.82 0.17 135);
+  --food-lime-deep: oklch(0.62 0.15 142);
+  --food-crust: oklch(0.86 0.10 75);
+  --food-crust-deep: oklch(0.68 0.12 58);
+  --food-can: oklch(0.60 0.16 150);
+  --food-can-band: oklch(0.96 0.03 100);
+  --coin-ink: oklch(0.47 0.10 70);
+  --ink: oklch(0.26 0.02 250);
+  --ink-soft: oklch(0.50 0.02 250);
+  --phone-body: oklch(0.21 0.02 250);
+  --obj-shadow: oklch(0.25 0.03 250 / .14);
+
+  --tint-1: oklch(0.945 0.05 85);
+  --tint-2: oklch(0.945 0.045 158);
+  --tint-3: oklch(0.935 0.045 200);
+
+  /* "Physical object" surfaces stay paper-light in both themes: in dark mode
+     they read as light objects lying on a navy table. */
+  --obj-card: oklch(1 0 0);
+  --obj-ink: oklch(0.21 0.02 250);
+  --obj-ink-soft: oklch(0.48 0.02 250);
+  --obj-muted: oklch(0.955 0.006 250);
+  --obj-border: oklch(0.88 0.006 250);
+  --obj-edge: oklch(0.85 0.006 250);
+  --obj-receipt-edge: oklch(0.86 0.008 80);
+  --obj-primary-ink: oklch(0.56 0.16 55);
+  --obj-success-ink: oklch(0.47 0.15 155);
+  --obj-danger-ink: oklch(0.50 0.22 350);
+  --obj-danger-bg: oklch(0.955 0.02 350);
+  --obj-google-ink: oklch(0.30 0.015 250);
+  --obj-avatar-tone-0: oklch(0.88 0.06 75);
+  --obj-avatar-tone-1: oklch(0.88 0.06 35);
+  --obj-avatar-tone-2: oklch(0.88 0.06 350);
+  --obj-avatar-tone-3: oklch(0.88 0.06 305);
+  --obj-avatar-tone-4: oklch(0.88 0.06 265);
+  --obj-avatar-tone-5: oklch(0.88 0.06 225);
+  --obj-avatar-tone-6: oklch(0.88 0.06 185);
+  --obj-avatar-tone-7: oklch(0.88 0.06 135);
+  --obj-avatar-fg: oklch(0.25 0.025 250);
+
+  --cta: oklch(0.58 0.17 55);
+  --cta-foreground: oklch(0.99 0 0);
+  --cta-edge: oklch(0.47 0.15 50);
+}
+
+.dark {
+  --phone-body: oklch(0.10 0.015 250);
+  --obj-shadow: oklch(0.10 0.03 250 / .62);
+  --tint-1: oklch(0.30 0.05 70);
+  --tint-2: oklch(0.30 0.05 160);
+  --tint-3: oklch(0.30 0.055 208);
+}
+
+@theme inline {
+  --color-obj-card: var(--obj-card);
+  --color-obj-ink: var(--obj-ink);
+  --color-obj-ink-soft: var(--obj-ink-soft);
+  --color-obj-muted: var(--obj-muted);
+  --color-obj-border: var(--obj-border);
+  --color-obj-primary-ink: var(--obj-primary-ink);
+  --color-obj-danger-ink: var(--obj-danger-ink);
+  --color-obj-danger-bg: var(--obj-danger-bg);
+  --color-obj-google-ink: var(--obj-google-ink);
+}
+
+/* Height steps of the intro viewport (the element with .intro-vp). */
+@custom-variant intro-short {
+  @container intro-vp (max-height: 740px) {
+    @slot;
+  }
+}
+@custom-variant intro-tiny {
+  @container intro-vp (max-height: 640px) {
+    @slot;
+  }
+}
+@custom-variant intro-landscape {
+  @container intro-vp (orientation: landscape) and (max-height: 500px) {
+    @slot;
+  }
+}
+
+@layer components {
+  .intro-vp {
+    container: intro-vp / size;
+  }
+
+  /* Shared components nested in a light object surface (the sign-in card)
+     resolve the app tokens to the object palette in both themes. */
+  .intro-object {
+    color-scheme: light;
+    --background: var(--obj-card);
+    --foreground: var(--obj-ink);
+    --muted: var(--obj-muted);
+    --muted-foreground: var(--obj-ink-soft);
+    --border: var(--obj-border);
+    --destructive-text: var(--obj-danger-ink);
+  }
+
+  .intro-fx {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .intro-enter-up {
+    animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .intro-fade-up {
+    animation: intro-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .intro-wordmark-left,
+  .intro-wordmark-right {
+    display: inline-block;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .intro-wordmark-left > i,
+  .intro-wordmark-right > i {
+    display: inline-block;
+    font-style: normal;
+  }
+  .intro-wordmark[data-split] .intro-wordmark-left {
+    transform: translateX(-0.12em);
+  }
+  .intro-wordmark[data-split] .intro-wordmark-right {
+    transform: translateX(0.12em);
+  }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .intro-wordmark:hover .intro-wordmark-left {
+      transform: translateX(-0.12em);
+    }
+    .intro-wordmark:hover .intro-wordmark-right {
+      transform: translateX(0.12em);
+    }
+  }
+
+  /* Always-on gentle split: halves drift ~0.05em apart and back (~1.2s every ~4.2s). */
+  .intro-mark-dot-left,
+  .intro-mark-dot-right {
+    transform-box: fill-box;
+  }
+  [data-loop] .intro-wordmark-left > i {
+    animation: intro-drift-left 4.2s ease-in-out infinite;
+  }
+  [data-loop] .intro-wordmark-right > i {
+    animation: intro-drift-right 4.2s ease-in-out infinite;
+  }
+  [data-loop] .intro-mark-dot-left {
+    animation: intro-dot-drift-left 4.2s ease-in-out infinite;
+  }
+  [data-loop] .intro-mark-dot-right {
+    animation: intro-dot-drift-right 4.2s ease-in-out infinite;
+  }
+}
+
+@keyframes intro-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes intro-drift-left {
+  0%, 30%, 100% {
+    transform: none;
+  }
+  15% {
+    transform: translateX(-0.05em);
+  }
+}
+@keyframes intro-drift-right {
+  0%, 30%, 100% {
+    transform: none;
+  }
+  15% {
+    transform: translateX(0.05em);
+  }
+}
+@keyframes intro-dot-drift-left {
+  0%, 30%, 100% {
+    transform: none;
+  }
+  15% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes intro-dot-drift-right {
+  0%, 30%, 100% {
+    transform: none;
+  }
+  15% {
+    transform: translateX(1px);
+  }
+}
