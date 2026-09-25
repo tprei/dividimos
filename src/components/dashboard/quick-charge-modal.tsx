@@ -1,13 +1,18 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, Copy, Loader2, QrCode, Share2, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  type PopoverContentProps,
+} from "@/components/ui/popover";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { formatBRL } from "@/lib/currency";
 import { haptics } from "@/hooks/use-haptics";
@@ -27,9 +32,25 @@ import type { VendorCharge } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { Money } from "@/components/shared/money";
 import { shareLink } from "@/lib/platform/share";
-import { popIn } from "@/lib/animations";
+import { fade, popIn } from "@/lib/animations";
+import { useClientOnly } from "@/hooks/use-client-only";
+import { cn } from "@/lib/utils";
 
-const CHARGE_QR_OPTIONS = { width: 200, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
+// Drawn at 3x the 148px tile so the code stays crisp on dense phone screens.
+const CHARGE_QR_OPTIONS = { width: 444, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
+
+// The QR phase is taller than the amount form. Letting Base UI flip would move
+// the surface to the other side of the button the moment the code appears, so
+// the side stays fixed and overflow is absorbed by shifting instead.
+const PINNED_SIDE: PopoverContentProps["collisionAvoidance"] = {
+  side: "shift",
+  align: "shift",
+  fallbackAxisSide: "none",
+};
+
+// From md up the quick actions become a column at the top right of Home, with
+// no room above but plenty to their left.
+const WIDE_LAYOUT_QUERY = "(min-width: 48rem)";
 
 interface ChargeOperation {
   generation: number;
@@ -77,6 +98,9 @@ export function QuickChargeModal({
   const [error, setError] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmedAmount, setConfirmedAmount] = useState(0);
+  const reducedMotion = useReducedMotion();
+  const wideLayout = useClientOnly(() => window.matchMedia(WIDE_LAYOUT_QUERY).matches);
+  const phaseVariants = reducedMotion ? fade : popIn;
 
   const requestCancellation = useCallback((operation: ChargeOperation, id: string) => {
     if (
@@ -376,6 +400,8 @@ export function QuickChargeModal({
 
   if (!open) return null;
 
+  const qrReady = !loading && !error && Boolean(copiaECola);
+
   return (
     <Popover
       open={open}
@@ -385,196 +411,207 @@ export function QuickChargeModal({
         handleBackdropDismiss();
       }}
     >
-      <PopoverContent anchor={anchor} side="bottom" align="center" data-testid="quick-charge-modal">
+      <PopoverContent
+        anchor={anchor}
+        side={wideLayout ? "inline-start" : "top"}
+        align="start"
+        collisionAvoidance={PINNED_SIDE}
+        data-testid="quick-charge-modal"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {phase === "success" ? (
+            <motion.div
+              key="success"
+              variants={phaseVariants} initial="hidden" animate="visible" exit="exit"
+              className="relative flex flex-col items-center py-6"
+            >
+              <ConfettiBurst />
+              <AnimatedCheckmark size={72} className="text-success" />
 
-          <AnimatePresence mode="wait">
-            {phase === "success" ? (
-              <motion.div
-                key="success"
-                variants={popIn} initial="hidden" animate="visible" exit="exit"
-                className="relative flex flex-col items-center py-8"
+              <PopoverTitle className="mt-4 text-xl">Pagamento recebido</PopoverTitle>
+              <Money cents={confirmedAmount} size="lg" tone="positive" className="mt-1" />
+
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleSuccessClose}
+                className="mt-5"
               >
-                <ConfettiBurst />
-                <AnimatedCheckmark size={72} className="text-success" />
-
-                <PopoverTitle className="mt-5 text-xl">Pagamento recebido</PopoverTitle>
-                <Money cents={confirmedAmount} size="lg" tone="positive" className="mt-2" />
-
+                Fechar
+              </Button>
+            </motion.div>
+          ) : phase === "qr" ? (
+            <motion.div
+              key="qr"
+              variants={phaseVariants} initial="hidden" animate="visible" exit="exit"
+              className="flex flex-col gap-3"
+            >
+              <div className="flex gap-3">
                 <div
-                  className="mt-6"
+                  className={cn(
+                    "flex size-[156px] shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border",
+                    qrReady ? "bg-paper p-1" : "bg-muted/40 p-3",
+                  )}
                 >
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={handleSuccessClose}
-                    className="gap-2"
-                  >
-                    Fechar
-                  </Button>
+                  {loading && (
+                    <div role="status" aria-label="Gerando código Pix">
+                      <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
+                    </div>
+                  )}
+                  {!loading && error && (
+                    <p role="alert" className="text-center text-sm text-destructive-text">{error}</p>
+                  )}
+                  {qrReady && (
+                    <QrCanvas
+                      value={copiaECola}
+                      label={`QR Pix de ${formatBRL(amountCents)}`}
+                      options={CHARGE_QR_OPTIONS}
+                      className="size-full animate-in duration-200 fade-in-0 motion-safe:zoom-in-95"
+                    />
+                  )}
                 </div>
-              </motion.div>
-            ) : phase === "qr" ? (
-              <motion.div
-                key="qr"
-                variants={popIn} initial="hidden" animate="visible" exit="exit"
-              >
-                <div className="compact:flex compact:items-center compact:gap-3">
-                <div className="text-center compact:order-2 compact:min-w-0 compact:flex-1 compact:text-left">
-                  <PopoverTitle className="flex items-center justify-center gap-2 compact:justify-start">
-                    <QrCode className="size-4 text-primary-text" aria-hidden="true" />
+
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <PopoverTitle className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                    <QrCode className="size-3.5 text-primary-text" aria-hidden="true" />
                     Cobrar via Pix
                   </PopoverTitle>
-                  <Money cents={amountCents} size="lg" tone="positive" className="mt-1 block" />
+                  <Money
+                    cents={amountCents}
+                    size="lg"
+                    tone="positive"
+                    className="mt-0.5 block leading-tight whitespace-normal"
+                  />
                   {description && (
-                    <p className="mt-1 break-words text-sm text-muted-foreground">
+                    <p className="truncate text-sm text-muted-foreground" title={description}>
                       {description}
                     </p>
                   )}
-                </div>
 
-                <div
-                  className={`mt-3 flex justify-center rounded-2xl border border-border p-3 compact:order-1 compact:mt-0 compact:shrink-0 compact:p-2 ${loading || error ? "bg-muted/30" : "bg-paper"}`}
-                >
-                  {loading ? (
-                    <div role="status" aria-label="Gerando código Pix" className="flex h-[200px] w-[200px] items-center justify-center compact:size-[112px]">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : error ? (
-                    <div className="flex h-[200px] w-[200px] flex-col items-center justify-center gap-3 text-center compact:size-[112px] compact:gap-1">
-                      <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                      <p role="alert" className="text-sm text-destructive-text">{error}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleBackToInput}
-                      >
-                        Voltar
-                      </Button>
-                    </div>
-                  ) : (
-                    copiaECola && (
-                      <QrCanvas
-                        value={copiaECola}
-                        label={`QR Pix de ${formatBRL(amountCents)}`}
-                        options={CHARGE_QR_OPTIONS}
-                        className="compact:size-[112px]"
-                      />
-                    )
-                  )}
+                  <div className="mt-auto flex flex-col gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCopy}
+                      disabled={!copiaECola || isConfirming}
+                      className="w-full gap-1.5 px-3"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="text-success-text" aria-hidden="true" />
+                          Copiado!
+                        </>
+                      ) : (
+                        <>
+                          <Copy aria-hidden="true" />
+                          Copiar código
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleShare}
+                      disabled={!copiaECola || isConfirming}
+                      className="w-full gap-1.5 px-3"
+                    >
+                      <Share2 aria-hidden="true" />
+                      Compartilhar
+                    </Button>
+                  </div>
                 </div>
-                </div>
+              </div>
 
-                <div className="mt-3 grid gap-2 compact:grid-cols-2">
-                  <Button
-                    onClick={handleCopy}
-                    variant="outline"
-                    className="w-full gap-2"
-                    size="lg"
-                    disabled={!copiaECola || isConfirming}
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4 text-success-text" />
-                        Copiado!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        Copiar código Pix
-                      </>
-                    )}
-                  </Button>
-                  <Button onClick={handleShare} variant="outline" disabled={!copiaECola || isConfirming} className="min-h-11 gap-2">
-                    <Share2 className="size-4" aria-hidden="true" />
-                    Compartilhar Pix
-                  </Button>
-                  {copyFailed && copiaECola && (
-                    <p className="break-all rounded-lg border border-border bg-muted/60 p-2.5 font-mono text-xs select-all">
-                      {copiaECola}
-                    </p>
-                  )}
-                  <Button
-                    onClick={handleConfirm}
-                    className="w-full gap-2 compact:col-span-2"
-                    size="lg"
-                    disabled={!copiaECola || isConfirming}
-                  >
-                    {isConfirming ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Registrando...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Já recebi
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full min-h-11 compact:col-span-2"
-                    size="sm"
-                    onClick={handleBackToInput}
-                    disabled={isConfirming}
-                  >
-                    Alterar valor
-                  </Button>
-                </div>
+              {copyFailed && copiaECola && (
+                <input
+                  readOnly
+                  value={copiaECola}
+                  aria-label="Código Pix copia e cola"
+                  onFocus={(event) => event.currentTarget.select()}
+                  className="h-10 w-full rounded-[0.75rem] border border-border bg-muted/60 px-3 font-mono text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                />
+              )}
 
-              </motion.div>
-            ) : (
-              <motion.div
-                key="input"
-                variants={popIn} initial="hidden" animate="visible" exit="exit"
-              >
-                <PopoverTitle className="flex items-center gap-1.5 text-base">
-                  <Zap className="size-4 text-success-text" aria-hidden="true" />
-                  Cobrar rápido
-                </PopoverTitle>
-
-                <div className="mt-2 flex flex-col gap-2">
-                  <label className="flex h-11 items-center gap-1.5 rounded-[0.75rem] border border-input bg-card px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-                    <span className="text-lg leading-6 font-semibold text-muted-foreground">
-                      R$
-                    </span>
-                    <CurrencyInput
-                      valueCents={amountCents}
-                      onChangeCents={setAmountCents}
-                      autoFocus
-                      className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-2xl font-bold text-foreground shadow-none focus-visible:ring-0 md:text-2xl"
-                      aria-label="Valor da cobrança"
-                    />
-                  </label>
-                  <AmountQuickAdd
-                    valueCents={amountCents}
-                    onChangeCents={(cents) => { setAmountCents(cents); haptics.selectionChanged(); }}
-                    increments={[5, 10, 20, 50]}
-                  />
-                  <Input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Descrição (opcional)"
-                    aria-label="Descrição (opcional)"
-                    maxLength={100}
-                  />
-                  {error && (
-                    <p role="alert" className="text-sm text-destructive-text">{error}</p>
-                  )}
-                </div>
-
+              <div className="flex gap-2">
                 <Button
-                  onClick={generateQr}
-                  className="mt-3 w-full gap-2"
-                  disabled={amountCents <= 0}
+                  variant="ghost"
+                  size="lg"
+                  onClick={handleBackToInput}
+                  disabled={isConfirming}
+                  className="px-3 text-sm text-muted-foreground"
                 >
-                  <QrCode className="h-4 w-4" />
-                  Gerar QR
+                  Alterar valor
                 </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <Button
+                  size="lg"
+                  onClick={handleConfirm}
+                  disabled={!copiaECola || isConfirming}
+                  className="flex-1"
+                >
+                  {isConfirming ? (
+                    <>
+                      <Loader2 className="animate-spin" aria-hidden="true" />
+                      Registrando...
+                    </>
+                  ) : (
+                    <>
+                      <Check aria-hidden="true" />
+                      Já recebi
+                    </>
+                  )}
+                </Button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="input"
+              variants={phaseVariants} initial="hidden" animate="visible" exit="exit"
+            >
+              <PopoverTitle className="flex items-center gap-1.5 text-base">
+                <Zap className="size-4 text-success-text" aria-hidden="true" />
+                Cobrar rápido
+              </PopoverTitle>
+
+              <div className="mt-2 flex flex-col gap-2">
+                <label className="flex h-11 items-center gap-1.5 rounded-[0.75rem] border border-input bg-card px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                  <span className="text-lg leading-6 font-semibold text-muted-foreground">
+                    R$
+                  </span>
+                  <CurrencyInput
+                    valueCents={amountCents}
+                    onChangeCents={setAmountCents}
+                    autoFocus
+                    className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-2xl font-bold text-foreground shadow-none focus-visible:ring-0 md:text-2xl"
+                    aria-label="Valor da cobrança"
+                  />
+                </label>
+                <AmountQuickAdd
+                  valueCents={amountCents}
+                  onChangeCents={(cents) => { setAmountCents(cents); haptics.selectionChanged(); }}
+                  increments={[5, 10, 20, 50]}
+                />
+                <Input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Descrição (opcional)"
+                  aria-label="Descrição (opcional)"
+                  maxLength={100}
+                />
+                {error && (
+                  <p role="alert" className="text-sm text-destructive-text">{error}</p>
+                )}
+              </div>
+
+              <Button
+                onClick={generateQr}
+                className="mt-3 w-full gap-2"
+                disabled={amountCents <= 0}
+              >
+                <QrCode className="h-4 w-4" />
+                Gerar QR
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </PopoverContent>
     </Popover>
   );

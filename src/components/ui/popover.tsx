@@ -105,14 +105,20 @@ export function PopoverDescription({
 export interface PopoverContentProps extends PopoverPrimitive.Popup.Props {
   /** Element the surface is positioned against. */
   anchor?: HTMLElement | null;
-  side?: "top" | "bottom";
+  side?: "top" | "bottom" | "inline-start";
   align?: "start" | "center" | "end";
+  /**
+   * Base UI flips by default. Surfaces whose content changes height pin the
+   * side here so they don't jump across their anchor between states.
+   */
+  collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
 }
 
 export function PopoverContent({
   anchor,
   side = "bottom",
   align = "center",
+  collisionAvoidance,
   className,
   children,
   ...props
@@ -127,6 +133,7 @@ export function PopoverContent({
         anchor={anchor ?? undefined}
         side={side}
         align={align}
+        collisionAvoidance={collisionAvoidance}
         sideOffset={8}
         collisionPadding={12}
         positionMethod="fixed"

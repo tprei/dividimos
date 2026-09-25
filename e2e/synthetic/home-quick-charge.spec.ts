@@ -15,6 +15,42 @@ test.describe("Home quick charge and Pix amount editing", () => {
     await expect(page.getByRole("heading", { name: "Cobrar rápido" })).toBeVisible();
   });
 
+  test("the charge stays above its button and fits without scrolling once the QR appears", async ({
+    page,
+    seed,
+    loginAs,
+  }) => {
+    const alice = await seed.createUser({ name: "Alice QR", pixKeyType: "email" });
+    // Seeded users carry only a key hint, so the server has nothing to encode.
+    await page.route("**/api/pix/generate-self", (route) =>
+      route.fulfill({ json: { copiaECola: "00020126580014br.gov.bcb.pix0136alice-qr@test.dividimos.local" } }),
+    );
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAs(alice);
+    const quickCharge = page.getByRole("button", { name: "Cobrar rápido" });
+    await quickCharge.click();
+
+    const surface = page.getByTestId("quick-charge-modal");
+    const sitsAboveButton = async () => {
+      const [surfaceBox, buttonBox] = await Promise.all([
+        surface.boundingBox(),
+        quickCharge.boundingBox(),
+      ]);
+      return Boolean(surfaceBox && buttonBox && surfaceBox.y + surfaceBox.height <= buttonBox.y);
+    };
+    await expect.poll(sitsAboveButton).toBe(true);
+
+    await page.getByRole("button", { name: "Adicionar R$20", exact: true }).click();
+    await page.getByRole("button", { name: "Gerar QR" }).click();
+    await expect(page.getByRole("img", { name: /QR Pix de/ })).toBeVisible();
+
+    await expect.poll(sitsAboveButton).toBe(true);
+    expect(await surface.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
+    await expect(page.getByRole("button", { name: "Já recebi" })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("button", { name: "Copiar código" })).toBeInViewport({ ratio: 1 });
+  });
+
   test("the Pix amount can be typed after tapping the pen", async ({
     page,
     seed,

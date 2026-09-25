@@ -20,6 +20,13 @@ export const popIn: Variants = {
   exit: { opacity: 0, scale: 0.98, transition: { duration: durations.fast } },
 };
 
+/** Reduced-motion stand-in for `popIn`: same beats, no movement. */
+export const fade: Variants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: durations.fast } },
+  exit: { opacity: 0, transition: { duration: durations.fast } },
+};
+
 export const staggerContainer: Variants = {
   hidden: {},
   visible: {
