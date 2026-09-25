@@ -12,6 +12,8 @@ import { Check, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { springs } from "@/lib/animations";
+import { Button } from "@/components/ui/button";
 
 const ACTION_WIDTH = 88; // one action column; unread rows show two
 const SNAP_THRESHOLD = 40; // how far user must drag to snap open
@@ -41,21 +43,21 @@ function ActionButton({
   compact?: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       aria-label={label}
       onClick={onClick}
       className={
         compact
-          ? // A 32px disc reads as a quiet affordance beside the text; the
-            // pseudo-element pushes the tap area back out to 44px.
-            `relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1.5 after:content-[''] ${className}`
-          : `flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-1 transition-colors ${className}`
+          ?
+            `relative flex size-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-ring ${className}`
+          : `flex h-full min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-1 whitespace-normal px-1 transition-colors focus-visible:outline-2 focus-visible:outline-ring ${className}`
       }
     >
       <Icon className="size-3.5" aria-hidden="true" />
-      {compact ? <span className="sr-only">{label}</span> : <span className="text-[10px] font-medium">{label}</span>}
-    </button>
+      {compact ? <span className="sr-only">{label}</span> : <span className="text-xs font-semibold">{label}</span>}
+    </Button>
   );
 }
 
@@ -79,17 +81,19 @@ export function NotificationRow({
   const actionsOpacity = useTransform(x, [-panelWidth, -20, 0], [1, 0.5, 0]);
 
   const close = () => {
-    controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+    controls.start({ x: 0, transition: springs.snappy });
     setIsOpen(false);
   };
 
   const markRead = () => {
     onMarkRead();
+    haptics.success();
     close();
   };
 
   const dismiss = () => {
     onDismiss();
+    haptics.tap();
     close();
   };
 
@@ -108,20 +112,20 @@ export function NotificationRow({
 
     if (isOpen && shouldClose) {
       haptics.impact();
-      controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+      controls.start({ x: 0, transition: springs.snappy });
       setIsOpen(false);
     } else if (!isOpen && shouldOpen) {
       haptics.impact();
       controls.start({
         x: -panelWidth,
-        transition: { type: "spring", stiffness: 400, damping: 30 },
+        transition: springs.snappy,
       });
       setIsOpen(true);
     } else {
       // Snap back to current state
       controls.start({
         x: isOpen ? -panelWidth : 0,
-        transition: { type: "spring", stiffness: 400, damping: 30 },
+        transition: springs.snappy,
       });
     }
   };
@@ -129,7 +133,8 @@ export function NotificationRow({
   const marker = unread ? (
     <span
       data-testid={`unread-dot-${eventId}`}
-      aria-hidden="true"
+      role="img"
+      aria-label="Não lida"
       className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"
     />
   ) : (
@@ -143,8 +148,8 @@ export function NotificationRow({
       <div className="flex items-start gap-1 rounded-lg bg-popover p-2">
         <Link
           href={href}
-          onClick={onNavigate}
-          className="flex min-w-0 flex-1 items-start gap-2 rounded-lg transition-colors hover:bg-accent/40"
+          onClick={() => { haptics.tap(); onNavigate(); }}
+          className="flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded-lg transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
         >
           {marker}
           {children}
@@ -155,7 +160,7 @@ export function NotificationRow({
               compact
               label="Marcar como lida"
               icon={Check}
-              className="text-success hover:bg-success/15"
+              className="text-success-text hover:bg-success/15"
               onClick={markRead}
             />
           )}
@@ -177,12 +182,16 @@ export function NotificationRow({
       <motion.div
         style={{ opacity: actionsOpacity, width: panelWidth }}
         className="absolute inset-y-0 right-0 flex items-stretch"
+        onFocusCapture={() => {
+          controls.start({ x: -panelWidth, transition: springs.snappy });
+          setIsOpen(true);
+        }}
       >
         {unread && (
           <ActionButton
             label="Marcar como lida"
             icon={Check}
-            className="bg-success/15 text-success"
+            className="bg-success/15 text-success-text"
             onClick={markRead}
           />
         )}
@@ -225,8 +234,8 @@ export function NotificationRow({
       >
         <Link
           href={href}
-          onClick={onNavigate}
-          className="flex items-start gap-2 rounded-lg p-2 transition-colors hover:bg-accent/40"
+          onClick={() => { haptics.tap(); onNavigate(); }}
+          className="flex min-h-11 items-start gap-2 rounded-lg p-2 transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
         >
           {marker}
           {children}

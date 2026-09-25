@@ -59,6 +59,29 @@ test.describe("Notification rows can be marked read or dismissed", () => {
       await expect(row.getByRole("button", { name: "Marcar como lida" })).toHaveCount(0);
       await expect(row.getByRole("button", { name: "Dispensar" })).toBeVisible();
     });
+
+    test("marking all read clears the preview and stays read after reopening", async ({ page, seed, loginAs }) => {
+      const { owner, group } = await seedNotifiedGroup(seed, "Todas");
+      await loginAs(owner);
+      await openBell(page, group.id);
+      await page.getByRole("button", { name: "Marcar todas como lidas" }).click();
+      await expect(page.locator("[data-testid^='unread-dot-']")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: /^Notificações/ }).click();
+      await expect(page.locator("[data-testid^='unread-dot-']")).toHaveCount(0);
+    });
+
+    test("opening a notification navigates to its bill and marks it read", async ({ page, seed, loginAs }) => {
+      const { owner, group, title } = await seedNotifiedGroup(seed, "Abrir");
+      await loginAs(owner);
+      await openBell(page, group.id);
+      const row = page.getByRole("listitem").filter({ hasText: title }).first();
+      await row.getByRole("link").click();
+      await expect(page).toHaveURL(/\/app\/bill\/[a-f0-9-]+$/);
+      await openBell(page, group.id);
+      await expect(page.getByRole("listitem").filter({ hasText: title }).first().locator("[data-testid^='unread-dot-']")).toHaveCount(0);
+    });
   });
 
   test.describe("with a swipe", () => {

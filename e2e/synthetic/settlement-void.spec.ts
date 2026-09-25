@@ -28,7 +28,8 @@ test.describe("Settlement void", () => {
       timeout: 10000,
     });
 
-    await page.getByRole("button", { name: "Desfazer" }).click();
+    await page.getByTestId("activity-view-settlement").click();
+    await page.getByRole("button", { name: "Desfazer pagamento", exact: true }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: /Desfazer pagamento de R\$\s*50,00/ })).toBeVisible();

@@ -8,6 +8,8 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
+import { haptics } from "@/hooks/use-haptics";
+import { displayNames } from "@/lib/people";
 import { isEventUnread } from "@/lib/activity-badge";
 import { formatRelativeDate } from "@/lib/datetime";
 import { describeEvent } from "@/lib/ledger/event-copy";
@@ -43,23 +45,24 @@ function InvitationRow({
   const inviter = snapshot.members.find((member) => member.user.id !== meId);
 
   return (
-    <li className="flex items-start gap-2 rounded-lg border bg-card p-2">
+    <li className="flex items-start gap-3 rounded-xl bg-muted/40 p-2">
       <UserAvatar
+        id={inviter?.user.id}
         name={inviter?.user.name ?? snapshot.group.name}
         avatarUrl={inviter?.user.avatarUrl}
         size="sm"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{snapshot.group.name}</p>
+        <p className="truncate text-sm font-semibold" title={snapshot.group.name}>{snapshot.group.name}</p>
         <p className="text-xs text-muted-foreground">Convite pendente</p>
         <div className="mt-1.5 flex gap-1.5">
-          <Button size="sm" className="min-h-9 flex-1" disabled={busy} onClick={onAccept}>
+          <Button size="sm" className="min-h-11 flex-1" disabled={busy} onClick={onAccept}>
             Aceitar
           </Button>
           <Button
             size="sm"
             variant="outline"
-            className="min-h-9 flex-1"
+            className="min-h-11 flex-1"
             disabled={busy}
             onClick={onDecline}
           >
@@ -112,6 +115,12 @@ export function NotificationsSheet({
     [events, dismissedIds, invitations.length],
   );
   const previewInvitations = invitations.slice(0, PREVIEW_LIMIT);
+  const actorNames = useMemo(() => displayNames(
+    previewEvents.flatMap((event) => event.actor ? [event.actor] : []),
+    { style: "full", viewerId: meId },
+  ), [previewEvents, meId]);
+  const unreadEvents = events.filter((event) =>
+    !dismissedIds.includes(event.id) && isEventUnread(event, readIds, viewedAt));
 
   // Only the snapshots the preview names: a refresh of any other group must
   // not re-render the sheet. useShallow keeps the record stable while every
@@ -136,7 +145,7 @@ export function NotificationsSheet({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverContent anchor={anchor} side="bottom" align="end" aria-label="Notificações">
+      <PopoverContent anchor={anchor} side="bottom" align="end" aria-label="Notificações" className="gap-3 p-3">
         <PopoverTitle>Notificações</PopoverTitle>
 
         {read.status === "loading" && previewEvents.length === 0 && (
@@ -150,7 +159,7 @@ export function NotificationsSheet({
         {read.status === "error" && previewEvents.length === 0 && (
           <div className="rounded-lg border border-dashed p-3 text-center">
             <p className="text-sm text-muted-foreground">Não conseguimos carregar a atividade.</p>
-            <Button size="sm" variant="outline" className="mt-2 min-h-9" onClick={retry}>
+            <Button size="sm" variant="outline" className="mt-2 min-h-11" onClick={retry}>
               Tentar de novo
             </Button>
           </div>
@@ -161,7 +170,7 @@ export function NotificationsSheet({
         )}
 
         {(previewInvitations.length > 0 || previewEvents.length > 0) && (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex min-h-0 flex-col divide-y divide-border overflow-y-auto overscroll-contain">
             {previewInvitations.map((snapshot) => (
               <InvitationRow
                 key={snapshot.group.id}
@@ -178,7 +187,7 @@ export function NotificationsSheet({
             ))}
             {previewEvents.map((event) => {
               const nameOf = makeNameOf(event.groupId, groups, meId);
-              const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
+              const actorName = (event.actorId ? actorNames.get(event.actorId) : undefined) ?? event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
               return (
                 <li key={event.id}>
                   <NotificationRow
@@ -193,13 +202,14 @@ export function NotificationsSheet({
                     onDismiss={() => dismissEvent(event.id)}
                   >
                     <UserAvatar
-                      name={actorName}
+                      id={event.actorId ?? undefined}
+                      name={event.actor?.name ?? actorName}
                       avatarUrl={event.actor?.avatarUrl}
                       size="sm"
                       isBot={event.actor?.isBot}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm leading-snug">
+                      <p className="line-clamp-1 text-sm leading-snug">
                         {describeEvent(event, {
                           actorName,
                           nameOf,
@@ -207,8 +217,9 @@ export function NotificationsSheet({
                           viewerId: meId,
                         })}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {getGroupName(event.groupId, groups, meId)} · {formatRelativeDate(event.createdAt)}
+                      <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate" title={getGroupName(event.groupId, groups, meId)}>{getGroupName(event.groupId, groups, meId)}</span>
+                        <time className="shrink-0" dateTime={event.createdAt}>{formatRelativeDate(event.createdAt)}</time>
                       </p>
                     </div>
                   </NotificationRow>
@@ -218,7 +229,19 @@ export function NotificationsSheet({
           </ul>
         )}
 
-        <div className="flex gap-2">
+        {unreadEvents.length > 0 && (
+          <Button
+            variant="ghost"
+            className="min-h-11 shrink-0 text-primary-text"
+            onClick={() => {
+              unreadEvents.forEach((event) => markEventRead(event.id));
+              haptics.success();
+            }}
+          >
+            Marcar todas como lidas
+          </Button>
+        )}
+        <div className="flex shrink-0 gap-2 border-t border-border pt-2">
           <Link
             href="/app/scan-invite"
             onClick={() => onOpenChange(false)}
