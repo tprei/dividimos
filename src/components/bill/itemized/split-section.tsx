@@ -4,13 +4,20 @@ import { useState } from "react";
 import { Equal } from "lucide-react";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
-import { PersonToggle } from "@/components/bill/person-toggle";
+import { PersonShareButton, PersonToggle } from "@/components/bill/person-toggle";
 import { Money } from "@/components/shared/money";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { formatBRL } from "@/lib/currency";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
-import { divisionForItem, equalDivision, isItemAssigned, percentText, type ItemDivisionValue } from "@/lib/item-division";
+import {
+  divisionForItem,
+  equalDivision,
+  isItemAssigned,
+  shareArcs,
+  sharePercentText,
+  type ItemDivisionValue,
+} from "@/lib/item-division";
 import { displayNames } from "@/lib/people";
 import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { ExpenseItem, User } from "@/types";
@@ -148,7 +155,7 @@ export function SplitSection({
           </div>
           {selectedIds.length > 0 && (
             <div className="space-y-2 border-t pt-2">
-              <div className="flex flex-wrap gap-3 py-1" role="group" aria-label="Dividir itens selecionados entre">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Dividir itens selecionados entre">
                 {people.map((person) => (
                   <PersonToggle
                     key={person.id}
@@ -187,6 +194,10 @@ export function SplitSection({
             .map((share) => share.participantId)
             .filter((id) => peopleIds.has(id));
           const custom = assigned && division !== null && division.mode !== "equal";
+          const arcs = shareArcs(
+            people.map((person) => person.id),
+            assigned ? division : null,
+          );
           const name = item.description || "Item sem nome";
           return (
             <li key={item.id}>
@@ -227,35 +238,33 @@ export function SplitSection({
                     {expanded ? "Fechar" : "Ajustar"}
                   </Button>
                 </div>
-                {!expanded && custom && division && (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {division.shares
-                      .map((share) =>
-                        `${labels.get(share.participantId) ?? ""} ${
-                          division.mode !== "percent" || share.basisPoints === undefined
-                            ? formatBRL(share.cents)
-                            : share.basisPoints % 100 === 0
-                              ? `${share.basisPoints / 100}%`
-                              : `${percentText(share.basisPoints)}%`
-                        }`,
-                      )
-                      .join(" · ")}
-                  </p>
-                )}
-                {!expanded && !custom && (
-                  <div role="group" aria-label={`Quem consumiu ${name}`} className="flex flex-wrap gap-3 py-1">
-                    {people.map((person) => (
-                      <PersonToggle
-                        key={person.id}
-                        id={person.id}
-                        label={labels.get(person.id) ?? person.name}
-                        name={person.name}
-                        avatarUrl={person.avatarUrl}
-                        isGuest={person.isGuest}
-                        selected={consumers.includes(person.id)}
-                        onToggle={() => toggleConsumer(item, consumers, person.id)}
-                      />
-                    ))}
+                {!expanded && (
+                  <div role="group" aria-label={`Quem consumiu ${name}`} className="flex flex-wrap gap-2">
+                    {people.map((person, index) => {
+                      const arc = arcs[index];
+                      const shortName = labels.get(person.id) ?? person.name;
+                      const selected = consumers.includes(person.id);
+                      const personProps = {
+                        id: person.id,
+                        label: arc.consumed
+                          ? `${shortName}: ${sharePercentText(arc.basisPoints)} · ${formatBRL(arc.cents)}`
+                          : shortName,
+                        name: person.name,
+                        avatarUrl: person.avatarUrl,
+                        isGuest: person.isGuest,
+                        selected,
+                        arc,
+                      };
+                      return custom ? (
+                        <PersonShareButton key={person.id} {...personProps} onOpen={() => onToggleItem(item.id)} />
+                      ) : (
+                        <PersonToggle
+                          key={person.id}
+                          {...personProps}
+                          onToggle={() => toggleConsumer(item, consumers, person.id)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>

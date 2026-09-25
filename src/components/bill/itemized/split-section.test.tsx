@@ -182,7 +182,8 @@ describe("SplitSection", () => {
     });
 
     const consumers = screen.getByRole("group", { name: "Quem consumiu Pizza" });
-    expect(within(consumers).getByRole("button", { name: "Você" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(consumers).getByRole("button", { name: /^Você: 100% · R\$\s10,00$/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(consumers).getByRole("button", { name: "Bruno" })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(within(consumers).getByRole("button", { name: "Bruno" }));
 
     expect(onSaveDivision).toHaveBeenCalledWith("a", equalDivision(["u1", "u2"], 1000));
@@ -197,22 +198,43 @@ describe("SplitSection", () => {
       splits: splitsFor(equalDivision(["u1"], 1000), "a"),
     });
 
-    fireEvent.click(within(screen.getByRole("group", { name: "Quem consumiu Pizza" })).getByRole("button", { name: "Você" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Quem consumiu Pizza" })).getByRole("button", { name: /^Você:/ }));
 
     expect(onUnassign).toHaveBeenCalledWith("a", "u1");
     expect(onSaveDivision).not.toHaveBeenCalled();
   });
 
-  it("shows a percentage split as shares instead of equal toggles", () => {
+  it("names each person's share of an equal split", () => {
+    const items = [item("a", "Pizza", 1001)];
+    const participants = [user("u1", "Ana"), user("u2", "Bruno"), user("u3", "Cris")];
+    renderSplitSection({ items, participants, splits: splitsFor(equalDivision(["u1", "u3"], 1001), "a") });
+
+    const consumers = screen.getByRole("group", { name: "Quem consumiu Pizza" });
+    expect(within(consumers).getByRole("button", { name: /^Você: 50,05% · R\$\s5,01$/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(consumers).getByRole("button", { name: "Bruno" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(consumers).getByRole("button", { name: /^Cris: 49,95% · R\$\s5,00$/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows a custom split as people with their shares and opens the editor when one is tapped", () => {
     const items = [item("a", "Pizza", 1000)];
-    const participants = [user("u1", "Ana"), user("u2", "Bruno")];
+    const participants = [user("u1", "Ana"), user("u2", "Bruno"), user("u3", "Cris")];
     const splits: ExpenseSplit[] = [
       { id: "s1", itemId: "a", userId: "u1", splitType: "percentage", value: 60, computedAmountCents: 600 },
       { id: "s2", itemId: "a", userId: "u2", splitType: "percentage", value: 40, computedAmountCents: 400 },
     ];
-    renderSplitSection({ items, participants, splits });
+    const onToggleItem = vi.fn();
+    const { onSaveDivision, onUnassign } = renderSplitSection({ items, participants, splits, onToggleItem });
 
-    expect(screen.queryByRole("group", { name: "Quem consumiu Pizza" })).not.toBeInTheDocument();
-    expect(screen.getByText(/Você 60%.*Bruno 40%/)).toBeInTheDocument();
+    const consumers = screen.getByRole("group", { name: "Quem consumiu Pizza" });
+    const viewer = within(consumers).getByRole("button", { name: /^Você: 60% · R\$\s6,00$/ });
+    expect(within(consumers).getByRole("button", { name: /^Bruno: 40% · R\$\s4,00$/ })).toBeInTheDocument();
+    expect(within(consumers).getByRole("button", { name: "Cris" })).toBeInTheDocument();
+    expect(viewer).not.toHaveAttribute("aria-pressed");
+
+    fireEvent.click(within(consumers).getByRole("button", { name: "Cris" }));
+
+    expect(onToggleItem).toHaveBeenCalledWith("a");
+    expect(onSaveDivision).not.toHaveBeenCalled();
+    expect(onUnassign).not.toHaveBeenCalled();
   });
 });

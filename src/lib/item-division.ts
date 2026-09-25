@@ -310,3 +310,48 @@ export function centsToBasisPoints(cents: number, totalCents: number): number {
   if (totalCents <= 0) return 0;
   return Math.floor((cents * FULL_PERCENT_BASIS_POINTS + Math.floor(totalCents / 2)) / totalCents);
 }
+
+export interface ShareArc {
+  participantId: string;
+  /** Whether the person is part of the division at all, even with a zero share. */
+  consumed: boolean;
+  cents: number;
+  basisPoints: number;
+  startDegrees: number;
+  sweepDegrees: number;
+}
+
+/**
+ * Each person's share of an item as an arc of one shared circle, clockwise
+ * from 12 o'clock. Arcs are laid end to end in `orderedIds` order, so the
+ * rings across a row read as a single pie. Angles derive from the exact
+ * cents (cumulative, so the last consumer always closes at 360°).
+ */
+export function shareArcs(orderedIds: readonly string[], division: ItemDivisionValue | null): ShareArc[] {
+  const shares = new Map((division?.shares ?? []).map((share) => [share.participantId, share]));
+  const totalCents = (division?.shares ?? []).reduce((sum, share) => sum + share.cents, 0);
+  const degreesAt = (cents: number) => (totalCents > 0 ? (cents * 360) / totalCents : 0);
+  let centsBefore = 0;
+  return orderedIds.map((participantId) => {
+    const share = shares.get(participantId);
+    const cents = share?.cents ?? 0;
+    const startDegrees = degreesAt(centsBefore);
+    centsBefore += cents;
+    return {
+      participantId,
+      consumed: share !== undefined,
+      cents,
+      basisPoints: share?.basisPoints ?? centsToBasisPoints(cents, totalCents),
+      startDegrees,
+      sweepDegrees: degreesAt(centsBefore) - startDegrees,
+    };
+  });
+}
+
+/** "50%", "33,4%", "12,35%": no trailing zeros after the comma. */
+export function sharePercentText(basisPoints: number): string {
+  const fraction = basisPoints % 100;
+  if (fraction === 0) return `${basisPoints / 100}%`;
+  const decimals = fraction % 10 === 0 ? String(fraction / 10) : String(fraction).padStart(2, "0");
+  return `${Math.floor(basisPoints / 100)},${decimals}%`;
+}
