@@ -1,9 +1,9 @@
 <p align="center">
-  <img src=".github/banner.svg" alt="dividimos.ai" width="600" />
+  <img src=".github/banner.svg" alt="Dividimos: quem divide, multiplica" width="100%" />
 </p>
 
 <p align="center">
-  Racha a conta com a galera e liquida via Pix em segundos.
+  Lê a nota, cada um marca o que comeu, e a galera paga no Pix pelo app do banco.
 </p>
 
 <p align="center">
@@ -13,418 +13,758 @@
 </p>
 
 <p align="center">
-  <img src="https://github.com/tprei/dividimos/actions/workflows/android.yml/badge.svg" alt="Android Build" />
+  <a href="https://github.com/tprei/dividimos/actions/workflows/ci.yml"><img src="https://github.com/tprei/dividimos/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/tprei/dividimos/actions/workflows/android.yml"><img src="https://github.com/tprei/dividimos/actions/workflows/android.yml/badge.svg" alt="Android Build" /></a>
   <a href="https://vercel.com/tprei/dividimos"><img src="https://vercelbadge.vercel.app/api/tprei/dividimos" alt="Vercel" /></a>
 </p>
 
 ---
 
-O Splitwise virou pago. E mesmo quando era grátis, nunca entendeu o Brasil: não gera Pix, não lê NFC-e, não sabe o que é couvert, e cobra em dólar. A gente queria algo que funcionasse do jeito que a galera realmente racha conta aqui &mdash; escaneia o cupom, distribui os itens, gera o QR Code Pix e pronto.
+O Splitwise virou pago. E mesmo quando era grátis, nunca entendeu o Brasil: não gera Pix, não lê cupom fiscal, não sabe o que é couvert, e cobra em dólar. A gente queria algo que funcionasse do jeito que a galera racha conta aqui: tira foto do cupom, cada um marca o que consumiu, o app gera o QR Code Pix e pronto.
 
 Dividimos é código aberto, feito por quem racha conta pra quem racha conta. Sem assinatura, sem paywall, sem monetização em cima do seu Pix.
 
-## Funcionalidades
+[Como funciona](#como-funciona) &middot; [Funcionalidades](#funcionalidades) &middot; [Como o saldo fecha](#como-o-saldo-fecha) &middot; [Arquitetura](#arquitetura) &middot; [Modelo de dados](#modelo-de-dados) &middot; [Desenvolvimento local](#desenvolvimento-local)
 
-```mermaid
-flowchart LR
-    A[Escaneia cupom / NFC-e] --> B[Distribui itens por pessoa] --> C[Liquida via Pix QR Code]
-```
+## Como funciona
+
+<p align="center">
+  <img src=".github/readme/how-it-works.svg" alt="Três passos: escaneie o cupom, cada um marca o que comeu, e cada pessoa paga sua parte com um QR Code Pix" width="100%" />
+</p>
+
+Não tem cupom? Dá pra falar a conta ou digitar do jeito que vier. A divisão pode ser feita por quem criou a conta, no wizard, ou por cada pessoa no próprio celular, numa sala de itens.
+
+## Funcionalidades
 
 ### Entrada de dados
 
-- **Leitura de NFC-e** &mdash; Escaneia o QR da nota fiscal eletrônica e extrai itens, valores e estabelecimento automaticamente
-- **OCR de cupom** &mdash; Tira foto do cupom térmico e interpreta abreviações de PDV, formatação brasileira e itens agrupados
-- **Entrada por linguagem natural (IA)** &mdash; Digita "jantar 120 dividido em 4" e a IA extrai valor, itens e participantes como rascunho editável
-- **Entrada por voz** &mdash; Fala a despesa no celular (reconhecimento nativo) e a IA monta o rascunho
-- **Dois modos de conta** &mdash; Itemizada (restaurante com itens por pessoa) ou valor único (Uber, Airbnb, etc.)
+- **Foto do cupom.** A IA lê a foto do cupom fiscal ou da NFC-e impressa: itens, quantidade, preço unitário, total da linha e a taxa de serviço, quando ela vem impressa em percentual. O app confere a soma em centavos antes de abrir a revisão.
+- **Por voz.** Em **Falar conta**, você diz "Uber com João, 25 reais" e recebe um rascunho editável. No Android usa o reconhecimento de fala nativo; no navegador, a Web Speech API.
+- **Por texto, no chat.** O modo IA da conversa entende "pizza 80 com João" e monta a conta.
+- **Dois tipos de conta.** **Valor único** (um total pra dividir: Uber, Airbnb, mercado) ou **Vários itens** (cada um paga o que consumiu).
+- **Contatos do celular.** Adicione gente direto da agenda no Android e nos navegadores com Contact Picker. Os contatos não saem do aparelho.
+
+| Tipo | Passos do wizard |
+|------|------------------|
+| Valor único | Participantes &rarr; Valor e divisão &rarr; Quem pagou |
+| Vários itens | Participantes &rarr; Itens &rarr; Quem consumiu &rarr; Quem pagou |
+
+Participantes junta nome da conta, data, grupo e quem participa. Depois de escanear, a revisão da nota oferece **Dividir manualmente** (vai pro wizard de vários itens) ou **Criar sala de divisão**.
+
+### Sala de itens
+
+A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O anfitrião escaneia, cria a sala e mostra o QR Code. Cada pessoa entra pelo próprio celular e marca o que consumiu.
+
+- **Entra quem tem o link.** Quem tem conta entra com o próprio nome. Quem não tem digita um nome e vincula a conta depois. Cabem até 50 pessoas.
+- **Frações de item.** Dá pra marcar o item inteiro, metade, um terço ou uma quantidade exata. Cada item mostra quanto ainda resta até a sala ficar com **Tudo com dono**.
+- **Ao vivo.** Cada marcação aparece pra todo mundo na hora.
+- **O anfitrião fecha e registra.** Ele fecha a sala, revisa, escolhe quem pagou e registra a conta num grupo existente ou num grupo novo. Quem entrou com conta recebe convite pro grupo. Quem entrou sem conta vira convidado e pode reivindicar a parte depois.
+- **A sala acompanha a conta.** Depois de registrada, a conta mostra a sala em **Por item**, **Por pessoa** e **Histórico**, e edições na conta chegam em quem está com a sala aberta.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> open: anfitrião cria a sala
+    open --> closed: tudo com dono
+    closed --> finalized: anfitrião registra a conta
+    open --> cancelled: anfitrião cancela
+    finalized --> [*]
+    cancelled --> [*]
+```
 
 ### Divisão
 
-- **Divisão flexível** &mdash; Igual, por porcentagem (com sliders visuais) ou valor fixo por pessoa
-- **Multi-pagador** &mdash; Registre quem pagou quanto quando mais de uma pessoa cobriu a conta
-- **Taxa de serviço** &mdash; Percentual ou valor fixo, distribuído proporcionalmente ao consumo
+- **Por item ou pela conta toda.** Igual, porcentagem (com sliders) ou valor fixo por pessoa.
+- **Ajuste que se resolve.** Mudou a parte de alguém, o resto se redistribui. O centavo que sobra vai pros primeiros da lista.
+- **Quantidade quebrada.** Até três casas decimais por item: 1,5 kg de picanha, meia pizza.
+- **Vários pagadores.** Registre quem pagou quanto quando mais de uma pessoa cobriu a conta.
+- **Taxa de serviço e couvert.** A taxa de serviço em percentual é distribuída na proporção do consumo. Taxas fixas, como couvert, são divididas igualmente.
 
 ### Liquidação
 
-- **QR Code Pix** &mdash; Geração de BR Code EMV com Copia e Cola para liquidação instantânea
-- **Simplificação de dívidas** &mdash; Minimiza o número de transferências com visualização passo a passo
-- **Liquidação direta** &mdash; Devedor ou credor registra o pagamento e o saldo atualiza na hora, com opção de desfazer
-- **Cobrar Rápido** &mdash; Gere uma cobrança Pix avulsa (sem grupo) e acompanhe o status no histórico
+- **QR Code Pix.** BR Code EMV com Copia e Cola, gerado no servidor com a chave de quem recebe. Dá pra pagar só uma parte.
+- **Poucas transferências.** **Quem paga quem** cruza o maior devedor com o maior credor até zerar o grupo, com no máximo uma transferência a menos que o número de pessoas com saldo. A demo mostra a simplificação passo a passo.
+- **Registrar pagamento.** Quem pagou ou quem recebeu registra, e o saldo atualiza na hora. Errou? **Desfazer** no feed, no chat ou no detalhe do pagamento.
+- **Lembrar.** Um toque manda um push pra quem te deve. Um lembrete por pessoa a cada 24h no grupo, e só se a dívida com você existir.
+- **Cobrar rápido.** Cobrança Pix avulsa, sem grupo: digita o valor, compartilha o QR e marca **Pagamento recebido** quando cair. O histórico fica em **Cobranças**.
 
-### Chat e cobrança
+### Grupos, convites e convidados
 
-- **Conversas 1-a-1** &mdash; Mensagens diretas entre usuários com saldo líquido no cabeçalho e cards de sistema para despesas e liquidações
-- **Criação inline** &mdash; Crie rachadinho, cobrança ou liquidação direto na conversa sem sair do chat
+- **Confirmação mútua.** Convide por `@handle`. A pessoa já pode entrar nas contas, mas só vê saldos e conversa do grupo depois de aceitar.
+- **Link e QR de convite.** Um link ativo por grupo, com validade e limite de usos opcionais. No Android, o link abre direto no app. Dá pra disparar o convite no WhatsApp pra vários contatos de uma vez.
+- **Convidados sem conta.** Coloque alguém na conta só pelo nome. Um link ou QR de claim guarda a parte até a pessoa criar conta, e aí o saldo passa pra ela.
+- **Leitor de convite.** **Entrar em sala** abre um leitor que reconhece QR de sala, de grupo, de perfil e de convidado.
+- **Página do grupo.** Avatar com emoji ou foto, **Gastos do grupo** com o total e a parte de cada um, e as abas **Saldos**, **Contas** e **Membros**.
+- **Sair e remover.** Só sai do grupo quem está com saldo zerado. O criador remove membros, e quem foi removido não volta sozinho por link.
 
-### Social
+### Conversas
 
-```mermaid
-flowchart LR
-    A[Criador do grupo] -->|link / QR Code| B[Convidado]
-    B -->|aceita convite| A
-```
+- **Conversas 1-a-1.** Mensagens diretas com o saldo entre vocês no topo e cards de sistema para contas e pagamentos. Conversa nova também precisa de aceite.
+- **Ações sem sair do chat.** **Nova cobrança** e **Dividir conta** (igual, % ou fixo) direto na conversa. O botão **Pagar** ou **Cobrar** abre o Pix com o saldo entre vocês e registra o pagamento.
+- **Perfil público.** `dividimos.ai/u/<handle>`, com QR Code pra compartilhar. Quem abre pode **Dividir uma conta** ou **Enviar mensagem**.
 
-- **Grupos com confirmação mútua** &mdash; Convide por @handle ou link de convite. O membro precisa aceitar
-- **Links de convite** &mdash; Gere um link ou QR Code pra compartilhar no WhatsApp, Telegram, etc. Deep link abre direto no app
-- **Claim links** &mdash; Adicione convidados sem conta no app. Eles recebem um link pra reivindicar sua parte e pagar via Pix
-- **Perfil público** &mdash; `dividimos.ai/u/@handle` é uma página compartilhável que permite iniciar uma conversa
-- **Sync em tempo real** &mdash; Broadcasts privados do Supabase Realtime (tópicos `group:` e `chat:`) mantêm todos os participantes atualizados
+### Atividade e notificações
 
-### App e notificações
+- **Feed de atividade.** Tudo que aconteceu nos seus grupos, agrupado por dia.
+- **Push.** Web Push e notificação nativa no Android para contas, pagamentos, lembretes e mudanças no grupo. Cada categoria liga e desliga nas configurações.
+- **Histórico de edições.** Cada edição de conta vira uma versão nova, com o resumo do que mudou. Excluir uma conta é reversível.
+- **Busca.** Grupos e contas são buscados no aparelho; pessoas, também pelo `@handle` exato no servidor.
 
-- **PWA instalável** &mdash; Instale no navegador com ícone, splash screen e modo offline básico
-- **Push notifications** &mdash; Notificações Web Push e nativas (Android) para cobranças, liquidações e convites
-- **Onboarding guiado** &mdash; Tour interativo na primeira sessão apresentando saldo, ações rápidas e liquidação
+### App
+
+- **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão.
+- **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
+- **Tema.** Claro, escuro ou o do sistema.
+- **Tour guiado.** Na primeira sessão, um tour apresenta **Seu saldo**, **Ações rápidas**, **Quem deve o quê** e a navegação.
+- **Demo pública.** `/demo` mostra uma conta completa com QR Codes Pix interativos, sem login.
+- **Bots verificados.** Contas de plataforma ganham o selo **Bot verificado**, e grupos só de bots ganham selo dourado. Só o servidor liga essa marca.
 
 ### Segurança
 
-- **Encryption at rest** &mdash; Chaves Pix criptografadas com AES-256-GCM, decriptadas apenas no servidor
-- **Acesso só via RPC** &mdash; RLS habilitado em todas as tabelas, sem políticas e sem grants para `anon`/`authenticated`; toda leitura e escrita passa por funções `SECURITY DEFINER` que checam membership no grupo
-- **Sem enumeração** &mdash; Descoberta de usuários apenas por @handle exato. Sem busca ou listagem
+- **Chave Pix cifrada.** AES-256-GCM em repouso, decifrada só no servidor. O cliente só vê a chave mascarada. As inscrições de push também ficam cifradas.
+- **Pix só pra quem tem a receber.** `/api/pix/generate` só usa a chave de outra pessoa se ela for credora de quem pede numa transferência do grupo, e até o valor devido. As recusas de autorização voltam todas com o mesmo 403, pra ninguém descobrir quem tem chave ou quem deve a quem.
+- **Acesso só via RPC.** RLS habilitado em todas as tabelas, sem políticas e sem grants para `anon`/`authenticated`. O navegador só chama funções `SECURITY DEFINER`, que checam membership (ou o token da sala, pra quem entrou sem conta). Só as rotas do servidor usam a service role.
+- **Sem enumeração.** Usuários são encontrados só por `@handle` exato, por uma rota do servidor com rate limit.
+- **Tokens guardados como hash.** Os tokens de claim, de entrada na sala e de membro da sala ficam no banco só como SHA-256. Claim e entrada valem 7 dias; o de membro vale 30 dias e renova com o uso.
+- **Rate limit que falha fechado.** Contadores no Postgres limitam IA, Pix, push e busca por usuário. Se o limitador cai, a rota responde 503 em vez de liberar.
+
+## Como o saldo fecha
+
+O banco guarda os fatos financeiros e um saldo por participante. Nunca transferências prontas.
+
+```mermaid
+flowchart LR
+    subgraph fatos[Fatos]
+        ev["expense_versions<br/>uma linha por edição"]
+        st["settlements<br/>pagamentos registrados"]
+    end
+    rc{{"recompute_group_balances<br/>mesma transação do RPC"}}
+    gb[("group_balances<br/>saldo por participante")]
+    gt{{"group_transfers<br/>na leitura, nunca guardado"}}
+    pix["Transferências Pix"]
+    ev --> rc
+    st --> rc
+    rc --> gb --> gt --> pix
+```
+
+- **Fatos.** `expense_versions` (uma linha por edição, com o `payload` completo e um `change_summary`) e `settlements` (pagamentos registrados). Nada mais é fato financeiro.
+- **Projeção.** `group_balances` tem uma linha por `(grupo, tipo, participante)` com o `net_cents` assinado: positivo recebe, negativo deve. Saldo zero não vira linha. Convidados sem conta entram com `kind = 'guest'` e carregam saldo até alguém reivindicar.
+- **A projeção nunca é escrita à mão.** Todo RPC que mexe no dinheiro (criar, editar, excluir ou restaurar conta, registrar ou desfazer pagamento, claim de convidado, recusar convite com contas no meio) chama `recompute_group_balances(group)` na mesma transação e refaz os saldos a partir dos fatos. Ou o fato e a projeção entram juntos, ou nada entra.
+- **Transferências saem na leitura.** `group_transfers(group)` em SQL e `transfersFromBalances` em TypeScript rodam o mesmo pareamento guloso de dois ponteiros sobre os saldos, com teste de paridade em 200 ledgers aleatórios.
+
+#### Exemplo
+
+Jantar de R$ 350. Carlos pagou R$ 200, Bia pagou R$ 150, e cinco pessoas consumiram.
+
+| Pessoa | Pagou | Consumiu | Saldo |
+|--------|------:|---------:|--------------------:|
+| Carlos | 200 | 50 | +150 (recebe) |
+| Bia | 150 | 70 | +80 (recebe) |
+| Dan | 0 | 90 | -90 (deve) |
+| Ana | 0 | 80 | -80 (deve) |
+| Eva | 0 | 60 | -60 (deve) |
+
+Sem simplificar, cada consumidor deve a cada pagador na proporção do que ele pagou (57% Carlos, 43% Bia). Isso dá 8 dívidas cruzadas, incluindo Carlos e Bia devendo um pro outro. O saldo de cada um é só o que pagou menos o que consumiu, então essas dívidas cruzadas nunca viram linha no banco.
+
+Na leitura, o pareamento ordena devedores e credores uma vez e cruza o maior devedor com o maior credor:
+
+1. Dan (-90) paga R$ 90 a Carlos (+150). Carlos fica com +60.
+2. Ana (-80) paga R$ 60 a Carlos. Carlos zera, Ana fica com -20.
+3. Ana paga R$ 20 a Bia (+80). Bia fica com +60.
+4. Eva (-60) paga R$ 60 a Bia. Todo mundo zera.
+
+```mermaid
+graph LR
+    D[Dan] -->|R$ 90| C[Carlos]
+    A[Ana] -->|R$ 60| C
+    A -->|R$ 20| B[Bia]
+    E[Eva] -->|R$ 60| B
+```
+
+**8 dívidas cruzadas viram 4 Pix.** Cada transferência abre um QR Code com o valor certo. A demo parte das dívidas proporcionais (`src/lib/simplify.ts`) e mostra, passo a passo, como elas somem. No banco, as transferências sempre saem dos saldos.
+
+## Arquitetura
+
+```mermaid
+flowchart TB
+    telas["Telas<br/>React"] -->|ações| sync["src/lib/sync<br/>bootstrap, refresh, mutations"]
+    telas -.->|lê| store[("Store local<br/>Zustand + IndexedDB")]
+    sync -->|grava| store
+    sync -->|fetch| api["Vercel: rotas de API<br/>Pix, IA, push, avatar, busca por handle"]
+    sync -->|"rpc()"| rpc["Supabase: RPCs SECURITY DEFINER<br/>checam membership"]
+    sync -.->|assina tópicos privados| rt["Supabase Realtime<br/>group: chat: user: assignment:"]
+    api -->|service role| pg[("Postgres<br/>fatos, group_balances, group_events")]
+    rpc --> pg
+    pg -->|realtime.send| rt
+    api --> ext["Gemini, Web Push e FCM"]
+```
+
+- **Local-first.** Telas leem o store (`src/stores/app-store.ts`) e nunca chamam o Supabase. Toda a rede mora em `src/lib/sync/`: um snapshot no login (`bootstrap_overview`), mutations otimistas que desfazem por entrada se o RPC falhar, e `refreshGroup` pra reconciliar.
+- **O banco decide.** Validação, membership, dinheiro e concorrência (`expected_version_no`, `stale_version`) ficam nos RPCs. As rotas de API do Next.js existem só pro que precisa de segredo: chave Pix, Gemini, push, avatar e busca por `@handle`.
+- **O banco avisa.** Os RPCs (e um trigger em `expenses`, pras salas) chamam `realtime.send` em tópicos privados. Nenhuma tabela está na publicação do Realtime.
+
+| Tópico | Eventos | Quem escuta e o que faz |
+|--------|---------|-------------------------|
+| `group:<id>` | `ledger`, `chat_activity` | Membros aceitos. Dispara um `refreshGroup`; no `ledger`, só se a `ledger_version` ou o evento for novo. |
+| `chat:<id>` | `message` | Quem está com a conversa aberta. A mensagem entra direto no store. |
+| `user:<id>` | `membership` | O próprio usuário. Convite ou DM novo dispara um novo bootstrap. |
+| `assignment:<sala>:<chave>` | `assignment`, `access_changed` | Quem tem o link da sala, com ou sem conta. A chave é aleatória e troca quando alguém é removido. Refaz a leitura da sala quando a `revision` sobe. |
+
+- **Notificações.** Todo RPC financeiro ou de membros grava uma linha em `group_events`. Ela alimenta o feed, os cards do chat e o push: o cliente que agiu manda o id pra `/api/notify`, que reivindica a linha uma vez (`notified_at`) e dispara Web Push (VAPID) e FCM respeitando as categorias de cada pessoa.
+- **IA.** `/api/receipt/ocr`, `/api/voice/parse` e `/api/chat/parse` chamam Gemini 2.5 Flash-Lite com saída em JSON Schema. O texto do usuário entra delimitado como dado, e o resultado passa pelos mesmos decoders de dinheiro do resto do app antes de virar rascunho.
+
+## Modelo de dados
+
+São 20 tabelas no schema `public`, todas com RLS e sem acesso direto. Os diagramas mostram as colunas que importam pra entender o domínio. O schema completo está em `supabase/migrations/` e os tipos gerados em `src/types/database.ts`.
+
+#### Pessoas, grupos e convites
+
+Conversas 1-a-1 são linhas de `groups` com `kind = 'dm'` e o par `(dm_user_a, dm_user_b)` único. Por isso chat, eventos e saldos funcionam igual em grupo e em DM.
+
+```mermaid
+erDiagram
+    users ||--o{ group_members : "participa"
+    groups ||--o{ group_members : "tem"
+    groups ||--o{ group_invite_links : "um link ativo"
+    groups ||--o{ group_member_exclusions : "removidos"
+
+    users {
+        uuid id PK "auth.users"
+        text handle UK "exato, sem busca"
+        pix_key_type pix_key_type
+        text pix_key_encrypted "AES-256-GCM"
+        text pix_key_hint "mascarada"
+        bool is_bot
+    }
+    groups {
+        uuid id PK
+        group_kind kind "group ou dm"
+        uuid creator_id FK
+        uuid dm_user_a FK "só em DM"
+        uuid dm_user_b FK "só em DM"
+        text avatar_emoji "ou avatar_photo_id"
+    }
+    group_members {
+        uuid group_id PK, FK
+        uuid user_id PK, FK
+        member_status status "invited ou accepted"
+    }
+    group_invite_links {
+        uuid id PK
+        uuid group_id FK
+        text token UK
+        bool is_active
+        timestamptz expires_at
+        int max_uses
+    }
+    group_member_exclusions {
+        uuid group_id PK, FK
+        uuid user_id PK, FK
+        uuid excluded_by FK
+    }
+```
+
+#### Núcleo financeiro
+
+```mermaid
+erDiagram
+    groups ||--o{ expenses : "contém"
+    expenses ||--|{ expense_versions : "versões"
+    expenses ||--o{ guests : "convidados"
+    groups ||--o{ settlements : "pagamentos"
+    groups ||--o{ group_balances : "projeção"
+
+    groups {
+        uuid id PK
+        group_kind kind "group ou dm"
+        bigint ledger_version "sobe a cada recompute"
+    }
+    expenses {
+        uuid id PK
+        uuid group_id FK
+        uuid client_id UK "idempotência"
+        expense_status status "active ou deleted"
+        int current_version_no FK
+    }
+    expense_versions {
+        uuid expense_id PK, FK
+        int version_no PK
+        expense_type expense_type "itemized ou single_amount"
+        int total_cents "1 a 99_999_999"
+        int service_fee_bps "0 a 10_000"
+        jsonb payload "itens, partes, pagadores"
+        jsonb change_summary "nulo na v1"
+    }
+    guests {
+        uuid id PK
+        uuid expense_id FK
+        text display_name
+        uuid claimed_by FK "nulo até o claim"
+    }
+    settlements {
+        uuid id PK
+        uuid group_id FK
+        uuid from_user_id FK
+        uuid to_user_id FK
+        int amount_cents
+        settlement_status status "confirmed ou voided"
+    }
+    group_balances {
+        uuid group_id PK, FK
+        participant_kind kind PK "user ou guest"
+        uuid participant_id PK "user ou guest"
+        bigint net_cents "nunca zero"
+    }
+```
+
+#### Conversas, eventos e push
+
+```mermaid
+erDiagram
+    groups ||--o{ group_events : "eventos"
+    groups ||--o{ chat_messages : "mensagens"
+    users ||--o{ chat_messages : "envia"
+    users ||--o{ push_subscriptions : "aparelhos"
+    users ||--o{ vendor_charges : "cobra"
+    chat_messages |o--o{ conversation_reads : "lido até"
+
+    group_events {
+        bigint id PK
+        uuid group_id FK
+        event_kind kind
+        uuid actor_id FK
+        jsonb payload
+        timestamptz notified_at "push enviado uma vez"
+    }
+    chat_messages {
+        uuid id PK
+        uuid group_id FK
+        uuid sender_id FK
+        uuid client_id UK "idempotência"
+        text content "até 2000"
+    }
+    conversation_reads {
+        uuid user_id PK, FK
+        uuid group_id PK, FK
+        uuid last_read_message_id FK
+    }
+    push_subscriptions {
+        uuid id PK
+        uuid user_id FK
+        text channel "web ou fcm"
+        bytea endpoint_digest UK "um dono por aparelho"
+        text subscription_encrypted
+    }
+    vendor_charges {
+        uuid id PK
+        uuid user_id FK
+        int amount_cents
+        text status "pending, received, cancelled"
+    }
+```
+
+#### Sala de itens
+
+```mermaid
+erDiagram
+    users ||--o{ assignment_rooms : "hospeda"
+    assignment_rooms ||--|{ assignment_room_items : "itens do cupom"
+    assignment_rooms ||--|{ assignment_room_participants : "pessoas"
+    assignment_room_items ||--o{ assignment_room_claims : "marcado por"
+    assignment_room_participants ||--o{ assignment_room_claims : "marca"
+    assignment_rooms |o--o| expenses : "vira"
+
+    assignment_rooms {
+        uuid id PK "vira o client_id da conta"
+        uuid host_user_id FK
+        text status "open, closed, finalized, cancelled"
+        bigint revision "concorrência otimista"
+        jsonb group_target "grupo existente ou novo"
+        jsonb header "título, data, taxas"
+        uuid expense_id FK "preenchido ao registrar"
+    }
+    assignment_room_items {
+        uuid room_id PK, FK
+        uuid id PK
+        int ordinal UK
+        text description
+        int quantity_milliunits
+        int total_price_cents
+    }
+    assignment_room_participants {
+        uuid room_id PK, FK
+        uuid id PK
+        int ordinal "0 é o host"
+        uuid user_id FK "nulo para quem entrou sem conta"
+        text display_name
+        timestamptz removed_at
+    }
+    assignment_room_claims {
+        uuid room_id PK, FK
+        uuid item_id PK, FK
+        uuid participant_id PK, FK
+        bigint ticks "120 por milésimo de unidade"
+    }
+```
+
+| Contexto | Tabela | Papel |
+|----------|--------|-------|
+| Pessoas | `users` | Perfil, `@handle`, chave Pix cifrada e mascarada, preferências de notificação, `is_bot` |
+| | `push_subscriptions` | Um dispositivo por linha (`web` ou `fcm`), inscrição cifrada |
+| Grupos | `groups` | Grupos e DMs, avatar (emoji ou foto), `ledger_version` |
+| | `group_members` | Convite e aceite (`invited`, `accepted`) |
+| | `group_member_exclusions` | Quem foi removido e não volta sozinho |
+| | `group_invite_links` | Link de convite: um ativo por grupo, validade e limite de usos |
+| Dinheiro | `expenses` | Identidade da conta, status, versão atual, chave de acesso do cupom contra duplicata |
+| | `expense_versions` | **Fato.** Uma linha por edição, com total, taxas e `payload` |
+| | `settlements` | **Fato.** Pagamentos registrados, `confirmed` ou `voided` |
+| | `group_balances` | **Projeção.** Saldo líquido por participante, refeito a cada RPC financeiro |
+| | `guests` | Convidados sem conta de uma conta, até o claim |
+| Sala de itens | `assignment_rooms` | Sala, status, alvo do grupo e revisão |
+| | `assignment_room_items` | Linhas do cupom, imutáveis depois de criadas |
+| | `assignment_room_participants` | Quem está na sala, com ou sem conta |
+| | `assignment_room_claims` | Quanto de cada item cada pessoa marcou |
+| Conversas e eventos | `chat_messages` | Mensagens de grupo e DM |
+| | `conversation_reads` | Até onde cada pessoa leu |
+| | `group_events` | Feed, cards do chat e fila de push |
+| Avulsos | `vendor_charges` | Cobrar rápido, fora do ledger de grupo |
+| | `rate_limit_counters` | Janelas fixas por bucket e usuário |
+
+Além das tabelas, a view `current_expense_participants` explode a versão atual de cada conta ativa em uma linha por participante; é dela que o recompute tira os saldos. O schema `guest_credentials` guarda os hashes dos tokens de claim e de sala, e o tópico de Realtime de cada sala. O bucket privado `group-avatars` guarda as fotos de grupo, com até 1 MB.
 
 ## Stack
 
 | Camada | Tecnologia |
 |--------|------------|
-| Framework | Next.js 16 (App Router) |
+| Framework | Next.js 16 (App Router), proxy em `src/proxy.ts` |
 | UI | React 19, Tailwind CSS v4, shadcn/ui, Framer Motion |
-| Estado | Zustand (local-first, persistido em IndexedDB) |
-| Backend | Supabase (PostgreSQL + Auth + Realtime; acesso exclusivo via RPCs `SECURITY DEFINER`) |
-| Auth | Google OAuth (web), Google Credential Manager (Android nativo) |
-| Deploy | Vercel (frontend), Supabase (banco de dados) |
-| Mobile | Capacitor 8 (Android; iOS em breve) |
-| IA | Parsing de linguagem natural, voz e OCR de cupom |
+| Estado | Zustand 5 (local-first, persistido em IndexedDB) |
+| Backend | Supabase: Postgres, Auth, Realtime e Storage, com acesso só via RPCs `SECURITY DEFINER` |
+| Auth | Google OAuth (web), Google Credential Manager via `@capgo/capacitor-social-login` (Android) |
+| IA | Gemini 2.5 Flash-Lite via `@google/genai`: cupom, voz e texto |
+| Push | Web Push (VAPID) e FCM HTTP v1 |
+| Mobile | Capacitor 8 (Android; iOS por enquanto como PWA) |
+| Testes | Vitest 4, React Testing Library, fast-check, Playwright |
+| Deploy | Vercel (frontend), Supabase em `sa-east-1` (banco) |
 | Linguagem | TypeScript 5 |
 
 ## Estrutura
 
 ```
 src/
-├── app/                    # Páginas (Next.js App Router)
-│   ├── page.tsx            # Landing page
-│   ├── demo/               # Demo pública (sem auth)
-│   ├── auth/               # Google OAuth + onboarding
-│   ├── app/                # Shell autenticado (pré-renderizado, servido cache-first pelo service worker)
-│   │   ├── bill/new/       # Wizard de criação de conta
-│   │   ├── bill/[id]/      # Detalhe + liquidação
-│   │   ├── groups/         # Gestão de grupos
-│   │   ├── conversations/  # Conversas 1-a-1
-│   │   └── profile/        # Configurações + chave Pix
+├── proxy.ts                    # Sessão Supabase, rotas públicas, /manutencao
+├── app/                        # Rotas (Next.js App Router)
+│   ├── page.tsx                # Landing
+│   ├── demo/                   # Demo pública (sem login)
+│   ├── auth/                   # Login Google, retorno do popup, onboarding (handle + chave Pix)
+│   ├── app/                    # Shell autenticado (pré-renderizado, servido cache-first pelo service worker)
+│   │   ├── page.tsx            # Início: saldo, ações rápidas, quem deve o quê
+│   │   ├── bill/new/           # Wizard de conta
+│   │   ├── bill/[id]/          # Detalhe da conta, versões, sala de itens
+│   │   ├── bills/              # Contas e cobranças
+│   │   ├── charges/            # Histórico do Cobrar rápido
+│   │   ├── groups/             # Grupos: saldos, contas, membros, conversa
+│   │   ├── conversations/      # Conversas 1-a-1
+│   │   ├── activity/           # Feed de atividade
+│   │   ├── search/             # Busca: grupos e contas no aparelho, pessoas por @handle
+│   │   ├── scan-invite/        # Leitor de QR: sala, grupo, perfil, convidado
+│   │   ├── profile/            # Perfil e chave Pix
+│   │   └── settings/           # Tema, push, categorias, confirmações
+│   ├── room/[roomId]/          # Sala de itens (pública, entra por link)
+│   ├── claim/                  # Claim de convidado
+│   ├── join/[token]/           # Link de convite de grupo
+│   ├── u/[handle]/             # Perfil público
+│   ├── manutencao/             # Aviso quando app e banco estão em versões incompatíveis
+│   ├── privacy/  terms/        # Páginas legais
 │   └── api/
-│       ├── pix/generate/   # Geração de QR Pix (server-side)
-│       ├── notify/         # Claim de eventos + fan-out de push
-│       └── users/lookup/   # Busca exata por @handle
-├── components/
-│   ├── bill/               # Steps do wizard + resumo
-│   ├── settlement/         # Modal QR, grafo de dívidas
-│   └── ui/                 # Primitivos shadcn/ui
+│       ├── pix/generate/       # Copia e Cola com a chave de outra pessoa (só em dívida real)
+│       ├── pix/generate-self/  # Copia e Cola com a própria chave (Cobrar rápido)
+│       ├── receipt/ocr/        # Foto do cupom → itens (Gemini)
+│       ├── voice/parse/        # Fala transcrita → rascunho (Gemini)
+│       ├── chat/parse/         # Texto do chat → rascunho (Gemini)
+│       ├── notify/             # Claim de group_events + fan-out de push
+│       ├── push/               # subscribe, unsubscribe, status
+│       ├── groups/[groupId]/avatar/  # Emoji ou foto do grupo
+│       ├── users/lookup/       # Busca exata por @handle
+│       └── dev/login/          # Login programático (só dev e test)
+├── components/                 # UI por domínio (bill, assignment-room, settlement, chat, group, …) + ui/ (shadcn)
 ├── stores/
-│   ├── app-store.ts        # Estado local-first (Zustand + persist/IndexedDB)
-│   └── bill-store.ts       # Estado do wizard de despesa
+│   ├── app-store.ts            # Estado local-first (Zustand + IndexedDB)
+│   ├── app-selectors.ts        # Derivados: transferências, dívidas, convites
+│   ├── bill-store.ts           # Rascunho do wizard
+│   └── assignment-room-store.ts  # Salas abertas e conexão (não persiste)
 ├── lib/
-│   ├── crypto.ts           # AES-256-GCM (server-only)
-│   ├── pix.ts              # EMV BR Code + CRC16-CCITT
-│   ├── currency.ts         # Formatação BRL (centavos inteiros)
-│   ├── expense-money.ts    # Dono único do cap e da fórmula de taxa
-│   ├── ledger/             # Decodificação do snapshot, saldos e minimização de transferências
-│   ├── sync/               # Toda a rede: bootstrap, mutations otimistas, refresh, realtime, auth
-│   ├── simplify.ts         # Preview de dívidas do wizard e da demo
-│   ├── capacitor/          # Bridge nativo (Android/iOS)
-│   └── supabase/           # Clientes browser/server/admin
-├── hooks/                  # React hooks
-└── types/                  # Tipos do domínio + banco
-android/                    # Projeto nativo Android (Capacitor)
-public/sw.js                # Service worker (shell /app cache-first)
+│   ├── sync/                   # Toda a rede: bootstrap, refresh, realtime, mutations, salas
+│   ├── ledger/                 # Decoders, saldos, transferências mínimas, suites de integração
+│   ├── push/                   # Web Push, FCM, fan-out por dispositivo
+│   ├── capacitor/              # Pontes nativas: login, câmera, fala, contatos, deep link
+│   ├── supabase/               # Clientes browser/server/admin e sessão do proxy
+│   ├── expense-money.ts        # Dono único do teto e da fórmula de taxa
+│   ├── assignment-room-*.ts    # Dinheiro, quantidade, QR e projeção da sala
+│   ├── receipt-ocr.ts          # Parser de cupom (voice- e chat-expense-parser.ts seguem o mesmo molde)
+│   ├── llm-prompt-safety.ts    # Texto do usuário tratado como dado
+│   ├── rate-limit.ts           # Buckets por usuário, falha fechado
+│   ├── crypto.ts               # AES-256-GCM (só servidor)
+│   ├── pix.ts                  # EMV BR Code + CRC16-CCITT
+│   ├── currency.ts             # BRL em centavos inteiros
+│   └── simplify.ts             # Simplificação passo a passo da demo
+├── hooks/                      # React hooks
+├── types/                      # Tipos do domínio e do banco
+└── test/                       # Setup e helpers dos testes de integração
+e2e/                            # Playwright: synthetic/ (jornadas), flows/, seed-helper.ts
 supabase/
-├── migrations/             # Ordered SQL migrations, the database source of truth
-├── config.toml              # Local Supabase project config
-└── seed.sql                 # Development seed data
-
-### Criação de conta
-
-1. Escolha o tipo &mdash; itemizada ou valor único
-2. Adicione título, estabelecimento, data
-3. Adicione participantes por @handle
-4. Entre os itens ou o valor total
-5. Distribua o consumo ou escolha um método de divisão
-6. Selecione quem pagou e quanto
-7. Revise e crie
-
-### Liquidação e minimização de transferências
-
-O banco guarda apenas os fatos financeiros e um saldo por participante &mdash; nunca transferências prontas.
-
-- **Fatos** &mdash; `expense_versions` (uma linha por edição, com o `payload` completo e um `change_summary`) e `settlements` (liquidações). Nada mais é fato financeiro.
-- **Projeção** &mdash; `group_balances` tem uma linha por `(grupo, tipo, participante)` com o `net_cents` assinado: positivo significa que o participante recebe, negativo que deve. Convidados sem conta participam com `kind = 'guest'` e podem carregar saldo até serem reclamados via claim link.
-- **Projeção nunca é escrita à mão** &mdash; todo RPC que altera o financeiro (criar, editar, excluir ou restaurar despesa, liquidação, claim de convidado) chama `recompute_group_balances(group)` dentro da mesma transação, reprocessando os fatos do zero. Tudo ou nada: ou o fato e a projeção caem juntos, ou nada cai.
-- **Transferências são calculadas na leitura** &mdash; `group_transfers(group)` em SQL e `transfersFromBalances` em TypeScript implementam o mesmo algoritmo guloso de dois ponteiros sobre os saldos (testado em paridade sobre 200 ledgers aleatórios). O conjunto mínimo de transferências Pix sai direto dos saldos, sem tabela intermediária.
-
----
-
-#### Exemplo completo
-
-Jantar de R$ 350. Carlos pagou R$ 200, Bia pagou R$ 150. Cinco pessoas consumiram:
-
-| Pessoa | Consumo | Deve pra Carlos (57%) | Deve pra Bia (43%) |
-|--------|---------|----------------------|-------------------|
-| Ana | R$ 80 | R$ 46 | R$ 34 |
-| Dan | R$ 90 | R$ 51 | R$ 39 |
-| Eva | R$ 60 | R$ 34 | R$ 26 |
-| Bia | R$ 70 | R$ 40 | &mdash; |
-| Carlos | R$ 50 | &mdash; | R$ 21 |
-
-Somando as dívidas brutas de cada um (o que deve menos o que tem a receber), a projeção fica:
-
-| Pessoa | Saldo |
-|--------|-------|
-| Dan | -90 (deve) |
-| Ana | -80 (deve) |
-| Eva | -60 (deve) |
-| Bia | +81 (recebe) |
-| Carlos | +149 (recebe) |
-
-Carlos e Bia são pagadores mas também consumiram, então aparecem dos dois lados &mdash; o saldo líquido já absorve isso. A essa altura existe um par reverso contábil entre os dois (Bia deve R$ 40 pro Carlos, Carlos deve R$ 21 pra Bia), mas ele nunca vira linha no banco: some no `net_cents` de cada um.
-
-Na leitura, o pareamento guloso cruza o maior devedor com o maior credor:
-
-1. Dan (-90) paga R$ 90 a Carlos (+149) &rarr; Carlos fica +59
-2. Ana (-80) paga R$ 59 a Carlos (+59) &rarr; Carlos zerado. Ana fica -21
-3. Ana (-21) paga R$ 21 a Bia (+81) &rarr; Ana zerada. Bia fica +60
-4. Eva (-60) paga R$ 60 a Bia (+60) &rarr; ambos zerados
-
-```mermaid
-graph LR
-    D[Dan] -->|R$ 90| C[Carlos]
-    A[Ana] -->|R$ 59| C
-    A -->|R$ 21| B[Bia]
-    E[Eva] -->|R$ 60| B
+├── migrations/                 # Migrations ordenadas, fonte da verdade do banco
+├── config.toml                 # Config do Supabase local
+├── seed.sql                    # Dados de desenvolvimento
+├── migrations-reset-manifest.json  # Autoriza a troca revisada da sequência inicial
+└── security-allowlist.json     # Exceções revisadas do verificador de segurança
+scripts/                        # dev-setup, cap-dev, verificadores de migration, repórter do ambient
+android/                        # Projeto nativo Android (Capacitor)
+public/sw.js                    # Service worker
+agent-guidance/                 # Guias para agentes: migrations, TypeScript, stacked diffs, mudanças visuais
 ```
 
-**Resultado: 8 dívidas brutas &rarr; 4 transferências Pix, calculadas na hora da leitura.**
+## Orientação rápida
 
-Cada transferência gera um QR Code Pix pra pagar a parte direto. No wizard e na demo, `src/lib/simplify.ts` roda o mesmo pareamento no cliente sobre arestas brutas para alimentar a visualização passo a passo; no banco, o resultado canônico é sempre recalculado a partir dos saldos.
+- `src/app/` é o App Router do Next.js 16. Fluxos principais: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), o shell autenticado (`app/`, pré-renderizado e servido cache-first pelo `public/sw.js`) e os destinos de link públicos `room/`, `claim/`, `join/` e `u/`.
+- `src/proxy.ts` é o proxy do Next 16. Renova a sessão do Supabase via `src/lib/supabase/middleware.ts`, libera as rotas públicas, responde 503 quando a verificação de auth está fora do ar e manda quem está logado pra `/manutencao` quando o banco e o app estão em versões financeiramente incompatíveis.
+- `src/app/auth/` faz login com um ID token do Google: redirect de página inteira na web (`popup/` é a página pra onde o Google volta) e `@capgo/capacitor-social-login` no Android. `continue/` decide se precisa de onboarding, e `onboard/` coleta o handle e a chave Pix. Sem telefone, sem 2FA.
+- `src/app/api/` guarda só o que precisa de segredo: chaves Pix (`pix/generate`, `pix/generate-self`), Gemini (`receipt/ocr`, `voice/parse`, `chat/parse`), push (`notify`, `push/*`), fotos de grupo (`groups/[groupId]/avatar`) e busca por handle (`users/lookup`), além do `dev/login`, que só existe em dev. As outras rotas checam a sessão, e a maioria aplica rate limit por usuário via `src/lib/rate-limit.ts`.
+- `src/stores/app-store.ts` é Zustand + `persist` sobre `src/lib/idb-storage.ts`. Guarda o snapshot do bootstrap, grupos, listas e detalhes de contas, pagamentos, atividade, cobranças e conversas. `app-selectors.ts` deriva transferências, dívidas e convites. As telas leem o store; nunca consultam o Supabase.
+- `src/lib/sync/` é todo o acesso à rede: `client` (chamada de RPC tipada e `LedgerError`), `bootstrap` (snapshot `bootstrap_overview`), `refresh` (`refreshGroup` e as outras leituras agrupadas), `realtime` (tópicos privados `group:`, `chat:` e `user:`), `auth` (listener de sessão), `mutations` (escritas otimistas de conta, pagamento e chat, com rollback por entrada e reconciliação via `refreshGroup`), `mutations-group` (grupos, convites, perfil, lembretes, claims de convidado, cobranças), `assignment-rooms` e `assignment-room-realtime` (salas e o tópico `assignment:`), mais transportes finos pra Pix, push, parsing com IA e avatar de grupo.
+- `src/lib/ledger/` tem a decodificação do que vem da rede (`decode*.ts`), os textos de atividade e chat (`describeEvent` em `event-copy.ts`), as linhas de dívida da UI (`debt-rows.ts`), a aplicação de deltas de saldo (`apply.ts`), as transferências (`transfers.ts`: `transfersFromBalances`, `netAndMinimize`) e a maior parte das suites `*.integration.test.ts` dos RPCs.
+- `src/lib/assignment-room-*.ts` é a matemática pura da sala: distribuição do dinheiro (`assignment-room-money.ts`), quantidades marcadas em ticks (`assignment-room-quantity.ts`), o QR de entrada (`assignment-room-qr.ts`) e a projeção da sala no cliente (`assignment-room-projection.ts`). `src/components/assignment-room/` desenha a tela de entrada, o quadro, os controles do anfitrião e a revisão.
+- `src/lib/receipt-ocr.ts`, `voice-expense-parser.ts` e `chat-expense-parser.ts` chamam o Gemini com JSON Schema. `llm-prompt-safety.ts` trata o texto do usuário como dado e remove caracteres invisíveis; `llm-errors.ts` troca as falhas do provedor por mensagens genéricas em PT-BR. `process-receipt-scan.ts` comprime a foto e confere o dinheiro antes da tela de revisão abrir.
+- `src/lib/push/` envia as notificações: `notify-user.ts` distribui por aparelho e limpa inscrições mortas, `web-push.ts` e `fcm.ts` são os dois canais, e `event-notification.ts` escolhe a categoria e o texto.
+- `src/lib/simplify.ts` alimenta o passo a passo da demo. `computeRawEdges` monta as dívidas proporcionais e `simplifyDebts` compensa dívidas opostas e encurta cadeias, registrando cada passo, e termina com `netAndMinimize`. As transferências oficiais do grupo vêm do banco, na leitura (`group_transfers`).
+- `src/lib/crypto.ts` é o AES-256-GCM só de servidor, pra chaves Pix e inscrições de push. Nunca importe em componente de cliente.
+- `src/lib/pix.ts` gera o BR Code EMV com CRC16-CCITT, além de validar e mascarar chaves.
+- `src/lib/currency.ts` mantém todo o dinheiro em centavos inteiros: `formatBRL` pra exibir, `parseSafeMinorUnitCents` pra entrada. `src/lib/expense-money.ts` é o único dono de `MAX_EXPENSE_CENTS` e da fórmula da taxa de serviço.
+- `src/components/bill/` é o wizard de conta (seletor de tipo, participantes, itens, editores de divisão, pagadores, revisão da nota). `src/components/settlement/` tem o modal de QR Pix, o grafo de dívidas e o visualizador da simplificação. `src/components/shared/user-avatar.tsx` é o avatar redondo com a foto do Google ou as iniciais.
+- `src/types/ledger.ts` tem os tipos que vêm dos RPCs (`Me`, `GroupSnapshot`, `GroupMember`, `BalanceRow`, `Transfer`, `ExpensePayload`, `ExpenseVersion`). `src/types/assignment-room.ts` tem os tipos da sala. `src/types/index.ts` tem os tipos de UI (`User`, `Expense`, `DebtEdge`); `User` carrega `pixKeyHint`, nunca a chave crua.
+- `supabase/migrations/` guarda as migrations SQL em ordem: tabelas, grants, RPCs, realtime, triggers e mudanças posteriores. `supabase/config.toml` tem a configuração do projeto local e `supabase/seed.sql`, os dados de desenvolvimento.
 
----
-
-## Quick orientation
-
-- `src/app/` — Next.js 16 App Router pages. Main flows: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), app shell (`app/`, prerendered and served cache-first by `public/sw.js`)
-- `src/app/auth/` — Google sign-in with an ID token: a full-page redirect to Google on web (`popup/` is the page Google redirects back to) and `@capgo/capacitor-social-login` on Android and iOS. Then `continue/` onboarding decision, onboarding (handle + Pix key). No phone or 2FA.
-- `src/app/app/groups/` — Groups with mutual confirmation (invite/accept flow)
-- `src/app/api/pix/generate/` — Server-side Pix Copia e Cola generation (decrypts key server-side)
-- `src/app/api/users/lookup/` — Exact @handle lookup for authenticated users
-- `src/app/api/notify/` — Claims a `group_events` row once (`notified_at`) and fans out push with `describeEvent` copy and per-user category preferences
-- `src/stores/app-store.ts` — Zustand + `persist` over `src/lib/idb-storage.ts`. Holds the bootstrap snapshot, expense lists and details, activity, and conversations. Screens read the store; they never query Supabase.
-- `src/lib/sync/` — All network access. `client` (typed RPC caller), `bootstrap` (initial snapshot), `refresh` (`refreshGroup`), `realtime` (private `group:`/`chat:` topics), `auth` (session listener), `mutations`/`mutations-group` (optimistic patch, per-entry rollback, reconcile with `refreshGroup`)
-- `src/lib/ledger/` — Wire decoding (`decode.ts`), activity/chat copy (`describeEvent` in `event-copy.ts`), debt rows for the UI (`debt-rows.ts`), balance delta application (`apply.ts`), minimized transfers (`transfers.ts`: `transfersFromBalances`, `netAndMinimize`), and the `*.integration.test.ts` RPC suites
-- `src/lib/simplify.ts` — Debt simplification for the wizard/demo preview. `computeRawEdges` generates proportional edges, `simplifyDebts` reduces them with step recording for visualization. Canonical group transfers come from the database at read time (`group_transfers`).
-- `src/lib/crypto.ts` — Server-only AES-256-GCM encryption for Pix keys. Never import from client components
-- `src/lib/pix.ts` — EMV BR Code generation with CRC16-CCITT, plus key validation and masking
-- `src/lib/currency.ts` — All money is integer centavos. `formatBRL` for display, `parseSafeMinorUnitCents` for input
-- `src/lib/expense-money.ts` — Sole owner of `MAX_EXPENSE_CENTS` and the service-fee formula
-- `src/hooks/use-auth.ts` — Client-side hook reading the signed-in user from the app store
-- `src/components/bill/` — Expense wizard components (type selector, item card, payer step, single amount step, summary, handle-based participant addition)
-- `src/components/settlement/` — Pix QR modal, debt graph SVG, simplification viewer and toggle
-- `src/components/shared/user-avatar.tsx` — Circular avatar with Google photo or initials fallback
-- `src/types/ledger.ts` — Wire/domain types from the RPCs: `Me`, `GroupSnapshot`, `BalanceRow`, `Transfer`, `ExpensePayload`, `ExpenseVersion`. `src/types/index.ts` — UI domain types: `User`, `Expense`, `GroupMember`, `DebtEdge`. `User` has handle, email, pixKeyHint (never raw key). `src/lib/sync/errors.ts` — `LedgerError` with typed codes (`stale_version`, `nudge_cooldown`)
-- `supabase/migrations/` — Ordered SQL migrations: tables, grants, RPCs, realtime, triggers, and forward changes. `supabase/config.toml` contains local project settings; `supabase/seed.sql` contains development seed data
-
-## Local development setup
+## Desenvolvimento local
 
 ```bash
-./scripts/dev-setup.sh       # auto-detects Docker → local Supabase, else remote
-npm run dev                  # start dev server
+./scripts/dev-setup.sh       # detecta Docker → Supabase local; sem Docker, remoto
+npm run dev                  # sobe o servidor de dev
 ```
 
-**With Docker** (full local Supabase): the script runs `supabase start` and writes `.env.local`.
+**Com Docker** (Supabase local completo): o script roda `supabase start` e escreve o `.env.local`.
 
-**Without Docker** (remote Supabase): set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` env vars before running the script, or it writes placeholder values (public pages only).
+**Sem Docker** (Supabase remoto): defina `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` antes de rodar o script; sem elas, ele escreve valores de exemplo e só as páginas públicas funcionam.
 
-**Encryption key**: `PIX_ENCRYPTION_KEY` is reused across runs. AES-GCM ciphertext already in the database, Pix keys and encrypted push payloads, can only be read with the key that wrote it, so the script never mints a new one over an existing `.env.local`. If the key there is missing or malformed the script stops; `--reset-encryption-key` mints a new one and abandons that ciphertext.
+**Chave de criptografia**: o `PIX_ENCRYPTION_KEY` é reaproveitado entre execuções. O que já está cifrado no banco (chaves Pix e inscrições de push) só abre com a chave que cifrou, então o script nunca gera uma nova por cima de um `.env.local` existente. Se a chave de lá estiver faltando ou malformada, o script para; `--reset-encryption-key` gera outra e abandona o que estava cifrado.
 
-**Supabase CLI**: pinned in `devDependencies` and run from `node_modules/.bin`, the same version CI installs. The script refuses to run on a mismatch, and each CI job asserts the version too, so local and CI never diverge.
-**Database migrations**: SQL in `supabase/migrations/` is the database source of truth. Never edit, rename, or delete a migration that has landed on `main` or was applied to a shared database. Add a new timestamped migration for every change, then run `supabase db reset --local` to replay the complete history locally. The old `supabase/schemas/` declarations and `supabase/schema.sql` snapshot are retired and are not inputs to development or CI.
+**Parsing com IA**: cupom, voz e chat precisam de `GEMINI_API_KEY`. Sem ela, essas rotas respondem 503 e o resto do app funciona.
 
-**Without any env vars**: the middleware gracefully degrades — `/` and `/demo` render, protected pages redirect to `/`.
+**Supabase CLI**: fixada em `devDependencies` e executada de `node_modules/.bin`, na mesma versão que a CI instala. O script se recusa a rodar se a versão não bater, e cada job da CI também confere, então local e CI nunca divergem.
 
-### Remote Supabase (no Docker)
+**Migrations**: o SQL em `supabase/migrations/` é a fonte da verdade do banco. Nunca edite, renomeie ou apague uma migration que já entrou na `main` ou foi aplicada num banco compartilhado. Crie uma migration nova com timestamp pra cada mudança e rode `supabase db reset --local` pra repetir o histórico inteiro localmente. As declarações antigas em `supabase/schemas/` e o snapshot `supabase/schema.sql` foram aposentados e não entram no desenvolvimento nem na CI.
 
-When Docker is not available, use a remote Supabase project. Set the required env vars before running the setup script:
+**Sem nenhuma variável de ambiente**: o proxy degrada sem quebrar. `/` e `/demo` abrem, e as páginas protegidas redirecionam pra `/`.
+
+### Supabase remoto (sem Docker)
+
+Sem Docker, use um projeto Supabase remoto. Defina as variáveis antes de rodar o script:
 
 ```bash
 export SUPABASE_URL=https://<project-ref>.supabase.co
-export SUPABASE_ANON_KEY=<your-anon-key>
-export SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+export SUPABASE_ANON_KEY=<sua-anon-key>
+export SUPABASE_SERVICE_ROLE_KEY=<sua-service-role-key>
 
-./scripts/dev-setup.sh       # detects env vars, writes .env.local
+./scripts/dev-setup.sh       # lê as variáveis e escreve o .env.local
 npm run dev
 ```
 
-These can also be provided as Fly secrets if running on Fly.io — the script reads them automatically.
+Em hosts que expõem secrets como variáveis de ambiente, como o Fly.io, o script lê do mesmo jeito.
 
-### Programmatic login (dev only)
+### Login programático (só em dev)
 
-Requires two conditions: `NODE_ENV=development` (or `test`) **and** `DEV_LOGIN_SECRET` set to a non-empty string. The caller must pass the same value in the `x-dev-login-secret` header.
+Precisa de duas condições: `NODE_ENV=development` (ou `test`) **e** `DEV_LOGIN_SECRET` com algum valor. Quem chama manda o mesmo valor no header `x-dev-login-secret`, e só e-mails `@test.dividimos.local` são aceitos.
 
 ```bash
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
-  -H 'x-dev-login-secret: your-local-secret' \
+  -H 'x-dev-login-secret: seu-segredo-local' \
   -d '{"email": "alice@test.dividimos.local"}'
 ```
 
-The endpoint auto-creates the user if not found. The response sets session cookies. Production never sets `DEV_LOGIN_SECRET`, so the route returns 404 even if `NODE_ENV` is somehow misconfigured.
+O endpoint cria o usuário se ele não existir, e a resposta seta os cookies de sessão. Produção nunca define `DEV_LOGIN_SECRET`, então a rota responde 404 mesmo se o `NODE_ENV` estiver errado.
 
-## Commands
-
-```bash
-npm run dev                  # Start dev server
-npm run build                # Production build (verifies types)
-npm run lint                 # ESLint (--max-warnings 0)
-npm run test                 # Run unit tests once
-npm run test:watch           # Run unit tests in watch mode
-npm run test:integration     # Run integration tests (requires supabase start)
-npm run test:all             # Run unit + integration tests
-npm run test:synthetic       # Run Playwright synthetic E2E tests
-npm run test:synthetic:mobile # Same synthetic suite on iPhone 13 (WebKit) + Pixel 5
-npm run test:soak            # Unit tests with the properties at 5,000 runs
-npm run test:soak:integration # Integration tests with the properties at 150 runs
-./scripts/dev-setup.sh       # One-command local setup
-supabase migration new <name>  # Create a new timestamped migration
-supabase db reset --local      # Replay every committed migration
-npm run db:assert-ref         # Fail unless Supabase is linked to the production ref
-```
-
-## Production configuration
-
-Everything needed to rebuild the production wiring, without secret values. Secret values live only in Vercel, GitHub, and the Supabase dashboard.
-
-- Supabase project `sfclcrjeckixhpjfmrox`, region `sa-east-1`. Auth: Google provider only, `site_url = https://www.dividimos.ai`; the redirect allow list lives in Dashboard > Authentication > URL Configuration. JWT signing: ES256 in use; the legacy HS256 key stays enabled because `e2e/seed-helper.ts` mints HS256 sessions for the synthetic tests (`mintAccessToken`).
-- Google OAuth web client id: `483045443985-tgldqmpqpg1467da1een2svcprvclmib.apps.googleusercontent.com` (GCP project `pixwise-491111`).
-- Firebase project `dividimos-7b394`, Android app id `1:570870283359:android:da3f10adf8f417f6b6afea`.
-- Vercel project `dividimos` (team `tpreis-projects`) env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`. `DEV_LOGIN_SECRET` is never set in production.
-- GitHub Actions secrets: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (CI synthetic only).
-
-### Deploying database changes
-
-After a reviewed migration reaches `main`, a human applies it from a checkout linked to production:
+## Comandos
 
 ```bash
-npm run db:assert-ref                  # fails unless supabase/.temp/project-ref is sfclcrjeckixhpjfmrox; its error explains how to link
-supabase db push --linked --dry-run    # read the plan
-supabase db push --linked              # apply
+npm run dev                     # Servidor de dev
+npm run build                   # Build de produção (confere os tipos)
+npm run lint                    # ESLint (--max-warnings 0)
+
+npm run test                    # Testes unitários uma vez
+npm run test:watch              # Testes unitários em watch
+npm run test:integration        # Testes de integração (precisa de supabase start)
+npm run test:all                # Unitários + integração
+npm run test:soak               # Unitários com as propriedades em 5.000 execuções
+npm run test:soak:integration   # Integração com as propriedades em 150 execuções
+
+npm run test:synthetic          # E2E sintético com Playwright (Desktop Chrome)
+npm run test:synthetic:mobile   # Mesma suite no iPhone 13 (WebKit) + Pixel 5
+npm run test:synthetic:ui       # Suite sintética no modo UI do Playwright (também :headed, :ios, :android)
+npm run test:e2e                # Todos os projetos do Playwright (também :ui, :headed, :debug)
+npm run test:ambient            # Sondas ambient contra um deploy (Vitest)
+npm run test:ambient:web        # Sondas ambient no navegador (Playwright)
+
+npm run check:migrations        # Checagens de segurança das migrations novas nos caminhos passados
+npm run db:assert-ref           # Falha se o Supabase não estiver linkado ao projeto de produção
+supabase migration new <nome>   # Cria uma migration nova com timestamp
+supabase db reset --local       # Repete todas as migrations commitadas
+
+npm run cap:dev:android         # Emulador Android apontando pro servidor de dev
+npm run cap:sync                # Copia os assets web e os plugins pro projeto nativo
+npm run cap:assets              # Regera ícones e splash nativos
+npm run icons                   # Regera os ícones do PWA
+./scripts/dev-setup.sh          # Setup local num comando
 ```
 
-`supabase db push` applies migrations that are not recorded in the target project's migration history. It does not replace an existing database with the reset sequence. For an intentional migration-epoch replacement, use a new or restored isolated Supabase project, replay the complete migration directory there, verify the catalog and integration suite, then switch the deployment to that project. Never run both the retired and replacement initial sequences against the same database. Agents never run these commands.
+## Configuração de produção
 
-### Ambient synthetic
+O que é preciso configurar pra remontar a produção, sem valores. Os valores ficam só na Vercel, no GitHub e no dashboard do Supabase.
 
-Scheduled synthetic validation against the production deployment (`.github/workflows/ambient.yml`).
+- **Supabase** (região `sa-east-1`). Auth só com o provedor Google, `site_url = https://www.dividimos.ai`; a lista de redirects fica em Dashboard > Authentication > URL Configuration. Assinatura de JWT: ES256 em uso; a chave HS256 legada continua ativa porque `e2e/seed-helper.ts` gera sessões HS256 pros testes sintéticos (`mintAccessToken`).
+- **Google OAuth**: um client id web no projeto do GCP, usado no login web e no Android.
+- **Firebase**: um app Android pro FCM.
+- **Variáveis de ambiente na Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`. `DEV_LOGIN_SECRET` nunca é definido em produção.
+- **Secrets do GitHub Actions**: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (só pro sintético da CI).
 
-- GitHub Actions repository secrets: `AMBIENT_SUPABASE_URL`, `AMBIENT_SUPABASE_ANON_KEY`, `AMBIENT_SUPABASE_SERVICE_ROLE_KEY`, `AMBIENT_SUPABASE_JWT_SECRET`.
-- GitHub Actions repository variables: `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID`.
-- The legacy HS256 JWT secret stays enabled because minted sessions depend on it.
+### Aplicando mudanças no banco
 
-- Optional GitHub Actions secrets: `ALERT_TELEGRAM_BOT_TOKEN` (bot token for the ambient failure alert; without it the Telegram sink is disabled and the reporter only maintains the `synthetic-prod` issue) and `ALERT_TELEGRAM_CHAT_ID` (chat that receives the alert when a run goes red or recovers).
+Depois que uma migration revisada chega na `main`, uma pessoa aplica a partir de um checkout linkado à produção:
+
+```bash
+npm run db:assert-ref                  # falha se o link não for o projeto de produção; o erro explica como linkar
+supabase db push --linked --dry-run    # leia o plano
+supabase db push --linked              # aplica
+```
+
+`supabase db push` aplica as migrations que ainda não estão no histórico do projeto de destino. Ele não troca um banco existente pela sequência do reset. Pra uma troca intencional de época de migrations, use um projeto Supabase novo ou restaurado e isolado, repita o diretório inteiro de migrations nele, confira o catálogo e a suite de integração, e só então aponte o deploy pra esse projeto. Nunca rode a sequência inicial aposentada e a nova no mesmo banco. Agentes nunca rodam esses comandos.
+
+### Monitoramento sintético
+
+Validação sintética agendada contra o deploy de produção, a cada 30 minutos (`.github/workflows/ambient.yml`).
+
+- Secrets do repositório no GitHub Actions: `AMBIENT_SUPABASE_URL`, `AMBIENT_SUPABASE_ANON_KEY`, `AMBIENT_SUPABASE_SERVICE_ROLE_KEY`, `AMBIENT_SUPABASE_JWT_SECRET`.
+- Variáveis do repositório no GitHub Actions: `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID`.
+- A chave JWT HS256 legada continua ativa porque as sessões geradas dependem dela.
+- Secrets opcionais: `ALERT_TELEGRAM_BOT_TOKEN` (token do bot que avisa quando o ambient falha; sem ele o aviso no Telegram fica desligado e o repórter só mantém a issue `synthetic-prod`) e `ALERT_TELEGRAM_CHAT_ID` (chat que recebe o aviso quando uma execução fica vermelha ou se recupera).
 
 ## CI
-CI runs on every pull request and on push to `main` across several workflows in `.github/workflows/`:
 
-- `ci.yml` — `npm test` (unit), `npx tsc --noEmit` (type check), `npm run lint`.
-- `integration.yml` — `npm run test:integration` against a fresh local Supabase instance.
-- `synthetic.yml` — Playwright synthetics against local Supabase + a production build, sharded across three projects: Desktop Chrome, iPhone 13 (WebKit), and Pixel 5 (mobile Chromium).
-- `migrations.yml` — replays the complete migration directory on an independent fresh database, verifies the reviewed migration epoch on two databases, runs the integration contract suite, checks database security invariants, and regenerates `src/types/database.ts` from the resulting catalog.
-- `soak.yml` — nightly, replays the property-based ledger tests at high run counts with a fresh seed and opens a `soak-failure` issue carrying the seed when they break.
-- `android.yml` — signed Android release AAB via Capacitor, on push to `main`.
+Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada checagem.
 
-### Android build secrets (`.github/workflows/android.yml`)
+| Workflow | Quando | O que checa |
+|----------|--------|-------------|
+| `ci.yml` | PR, push na `main` | Testes unitários, `tsc --noEmit`, lint, build de produção, testes dos scripts |
+| `integration.yml` | PR, push na `main` | `npm run test:integration` contra um Supabase local novo |
+| `synthetic.yml` | PR, push na `main` | Sintéticos Playwright contra Supabase local e um build de produção, no Desktop Chrome, iPhone 13 (WebKit) e Pixel 5 |
+| `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
+| `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
+| `android.yml` | PR, push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
+| `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
+| `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
+| `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |
 
-Triggers on push to `main`. Builds a signed release AAB using Capacitor's native Android project.
+### Secrets do build Android (`.github/workflows/android.yml`)
 
-**Required GitHub secrets**:
-- `ANDROID_KEYSTORE_BASE64` — Base64-encoded release keystore (`.jks`)
-- `KEYSTORE_STORE_PASSWORD` — Keystore password
-- `KEYSTORE_KEY_ALIAS` — Key alias name
-- `KEYSTORE_KEY_PASSWORD` — Key alias password
-- `GOOGLE_SERVICES_JSON` — *(optional)* Base64-encoded `google-services.json` for FCM/Google Sign-In
+Pull requests só compilam um build debug, sem secrets de assinatura. Pushes na `main` geram um AAB release assinado com o projeto Android nativo do Capacitor.
 
-**versionCode strategy**: Uses `github.run_number` (auto-incrementing). For Play Store releases, consider switching to tag-based versioning.
+**Secrets obrigatórios do job de release**:
+- `ANDROID_KEYSTORE_BASE64`: keystore de release (`.jks`) em Base64
+- `KEYSTORE_STORE_PASSWORD`: senha do keystore
+- `KEYSTORE_KEY_ALIAS`: alias da chave
+- `KEYSTORE_KEY_PASSWORD`: senha do alias
+- `GOOGLE_SERVICES_JSON`: `google-services.json` em Base64, pro FCM e o login Google. O job de release falha sem ele.
 
-**Build output**: Signed AAB uploaded as artifact (`app-release-<run_number>`), retained for 7 days.
+**versionCode**: usa `github.run_number` (sempre crescente), com `versionName` `1.0.<run_number>`. Pra publicar na Play Store, vale trocar por versionamento por tag.
 
-### Mobile development loop
+**Saída do build**: AAB assinado enviado como artefato (`app-release-<run_number>`), guardado por 7 dias.
 
-The Capacitor WebView loads the running dev server rather than a static export, so `npm run dev` must be up in another terminal.
+### Ciclo de desenvolvimento mobile
+
+A WebView do Capacitor carrega o servidor de dev rodando, não um export estático, então o `npm run dev` precisa estar de pé em outro terminal.
 
 ```bash
-npm run cap:dev:android                                  # emulator, host reachable at 10.0.2.2
-scripts/cap-dev.sh android --device --run                # USB device; forwards port 3000 with adb reverse
-LAN_IP=192.168.0.14 scripts/cap-dev.sh android --device  # device over Wi-Fi, opens Android Studio
+npm run cap:dev:android                                  # emulador, host em 10.0.2.2
+scripts/cap-dev.sh android --device --run                # aparelho via USB; redireciona a porta 3000 com adb reverse
+LAN_IP=192.168.0.14 scripts/cap-dev.sh android --device  # aparelho via Wi-Fi, abre o Android Studio
 ```
 
-Requires JDK 21 and the Android SDK platform-tools on `PATH`. Inspect the WebView from desktop Chrome at `chrome://inspect`. After changing `capacitor.config.ts` or the manifest, run `npx cap sync android` and rebuild; compiling is not proof that the keyboard behaves.
+Precisa do JDK 21 e do platform-tools do Android SDK no `PATH`. Inspecione a WebView pelo Chrome do desktop em `chrome://inspect`. Depois de mudar o `capacitor.config.ts` ou o manifest, rode `npx cap sync android` e recompile; compilar não prova que o teclado se comporta.
 
-Native iOS is not initialized in this repo: there is no `ios/` directory, and `scripts/cap-dev.sh ios` refuses with that message rather than generating an unverified project. iOS is covered as a PWA in Safari plus the WebKit synthetic project.
+O iOS nativo não está inicializado neste repositório: não existe diretório `ios/`, e `scripts/cap-dev.sh ios` se recusa com essa mensagem em vez de gerar um projeto não verificado. O iOS é coberto pelo PWA no Safari e pelo projeto sintético WebKit.
 
-## Testing
+## Testes
 
-Dividimos has three test layers: **unit**, **integration**, and **synthetic (E2E)**. `TESTING.md` is the detailed guide for all three. UI changes additionally require in-browser visual verification; agents follow `agent-guidance/VISUAL_CHANGES.md`. Summary of configuration and conventions:
+O Dividimos tem três camadas de teste: **unitários**, **integração** e **sintéticos (E2E)**. O `TESTING.md` é o guia detalhado das três. Mudanças de UI também exigem verificação visual no navegador; agentes seguem `agent-guidance/VISUAL_CHANGES.md`.
 
-Unit tests use Vitest with React Testing Library. Tests are colocated with source files using `.test.ts`/`.test.tsx` suffix.
+Os testes unitários usam Vitest com React Testing Library e ficam ao lado do código, com sufixo `.test.ts`/`.test.tsx`.
 
-- **Configuration**: `vitest.config.mts` with happy-dom environment and tsconfig paths.
-- **Test setup**: `src/test/setup.ts` provides jest-dom matchers and a Framer Motion mock.
+- **Configuração**: `vitest.config.mts` com ambiente happy-dom e os paths do tsconfig.
+- **Setup**: `src/test/setup.ts` traz os matchers do jest-dom e um mock do Framer Motion.
+- **Propriedades**: invariantes do ledger e do dinheiro rodam como propriedades do fast-check; `PROPERTY_RUNS` define o número de execuções.
 
-Integration tests run against a real local Supabase instance and cover the ledger RPC layer (`src/lib/ledger/*.integration.test.ts`, 131 tests).
+Os testes de integração rodam contra um Supabase local de verdade. As suites de RPC ficam em `src/lib/ledger/*.integration.test.ts`; rotas de API (`src/app/api/**`), o rate limiter (`src/lib/rate-limit*.integration.test.ts`) e invariantes gerais do ledger (`src/test/ledger-invariants.integration.test.ts`) têm as suas.
 
-- **Configuration**: `vitest.integration.config.mts` with node environment, 30s timeout, sequential execution.
-- **Test setup**: `src/test/integration-setup.ts` — connects with service role key, cleans up test users after each run.
-- **Helpers**: `src/test/integration-helpers.ts` — `createTestUser`, `createTestUsers`, `authenticateAs`, `createGroup`, `createGroupWithMembers`, `createExpense`, `withPg` (direct `pg` access), `expectRpcError`. `src/test/fixtures.ts` provides payload/object builders.
-- **Running locally**:
+- **Configuração**: `vitest.integration.config.mts` com ambiente node, timeout de 30s e execução sequencial.
+- **Setup**: `src/test/integration-setup.ts` conecta com a service role e apaga os usuários de teste depois de cada execução.
+- **Helpers**: `src/test/integration-helpers.ts` tem `createTestUser`, `createTestUsers`, `authenticateAs`, `createGroup`, `createGroupWithMembers`, `createExpense`, `withPg` (acesso direto via `pg`) e `expectRpcError`. `src/test/fixtures.ts` monta payloads e objetos.
+- **Rodando localmente**:
 
 ```bash
 supabase db reset
 npm run test:integration
 ```
 
-- **Writing integration tests**: use `.integration.test.ts` suffix, wrap in `describe.skipIf(!isIntegrationTestReady)` so they are skipped when env vars are absent. SQL behavior is covered entirely by these TypeScript suites.
+- **Escrevendo testes de integração**: use o sufixo `.integration.test.ts` e envolva em `describe.skipIf(!isIntegrationTestReady)` pra pular quando faltarem as variáveis. O comportamento do SQL é coberto inteiro por essas suites em TypeScript.
 
-**Migration changes with semantic logic must be covered by integration tests.** Any new or changed RPC, realtime topic, trigger, or constraint in `supabase/migrations/` needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards (locks, validation, membership checks). The fresh replay and security checks prove that the SQL applies and the effective permissions are safe; they do not replace behavior tests.
+**Mudança de migration com lógica precisa de teste de integração.** Todo RPC, tópico de realtime, trigger ou constraint novo ou alterado em `supabase/migrations/` precisa de cobertura de comportamento em `*.integration.test.ts`: caminho feliz, recusa pra quem não é membro e os casos de borda que o SQL protege (locks, validação, checagem de membership). O replay e as checagens de segurança provam que o SQL aplica e que as permissões são seguras; não substituem teste de comportamento.
 
-## Key concepts
+Os testes sintéticos (`e2e/synthetic/*.spec.ts`) percorrem jornadas reais pela UI, rotas de API, auth e banco, com dados semeados por teste via `SeedHelper`.
 
-**Authentication**: Google OAuth via Supabase Auth. No phone or 2FA. On first login, a trigger auto-creates a user profile with handle derived from email. Users complete onboarding by confirming handle and setting their Pix key.
+## Conceitos-chave
 
-**Pix key security**: Keys are encrypted with AES-256-GCM (`src/lib/crypto.ts`) before storage. Raw keys never reach the client. QR codes are generated server-side via `POST /api/pix/generate`. The `pix_key_hint` column stores a masked display version. Supported key types: `cpf`, `email`, `phone`, `random`.
+**Autenticação**: Google OAuth via Supabase Auth. Sem telefone, sem 2FA. No primeiro login, o trigger `on_auth_user_created` cria o perfil com um handle derivado do e-mail. O onboarding termina quando a pessoa confirma o handle e cadastra a chave Pix.
 
-**User discovery**: No search functionality. Users add others by exact @handle to prevent enumeration. The `lookup_user_by_handle` RPC matches the full handle exactly and exposes only id, handle, name and avatar.
+**Segurança da chave Pix**: as chaves são cifradas com AES-256-GCM (`src/lib/crypto.ts`) antes de gravar, e a chave crua nunca chega no cliente. O Copia e Cola é gerado no servidor por `POST /api/pix/generate` (chave de outra pessoa, só numa transferência real de `transfersFromBalances` e até o valor devido) e `POST /api/pix/generate-self` (a sua própria chave). A coluna `pix_key_hint` guarda a versão mascarada pra exibir. Tipos de chave: `cpf`, `email`, `phone`, `random`.
 
-**Groups**: Persisted in Supabase. Invite by @handle → member must accept (mutual confirmation). Only `accepted` members appear in expense creation and can view group data — enforced inside every RPC by membership checks.
+**Descoberta de usuários**: sem listagem. A pessoa é adicionada pelo `@handle` exato, pra evitar enumeração. `GET /api/users/lookup` chama o RPC `lookup_user_by_handle`, que só a service role executa, casa o handle completo de quem já fez onboarding e expõe só id, handle, nome, avatar e a marca de bot.
 
-**Local-first client**: Screens read the Zustand store (`src/stores/app-store.ts`, persisted to IndexedDB via `src/lib/idb-storage.ts`) and never query Supabase directly. All network lives in `src/lib/sync/`: a bootstrap snapshot on sign-in, optimistic mutations that roll back per entry on failure and reconcile with `refreshGroup`, and realtime broadcasts on private `group:`/`chat:` topics. `/app/**` is a prerendered static shell served cache-first by `public/sw.js`.
+**Grupos e DMs**: convite por `@handle`, e o membro precisa aceitar (confirmação mútua). Membros aceitos e convidados podem estar numa conta, mas só os aceitos leem saldos, contas e chat do grupo; quem está convidado recebe um snapshot reduzido. Todo RPC garante isso checando membership. Uma conversa 1-a-1 é uma linha de `groups` com `kind = 'dm'`, então chat, eventos e saldos funcionam igual nos dois.
 
-**Expense model (Splitwise-inspired)**: Every expense belongs to a group. Two types: `single_amount` (one total split among participants) and `itemized` (line items assigned per person). The wizard step array is computed dynamically from expense type.
+**Cliente local-first**: as telas leem o store Zustand (`src/stores/app-store.ts`, salvo em IndexedDB via `src/lib/idb-storage.ts`) e nunca consultam o Supabase direto. Toda a rede mora em `src/lib/sync/`: um snapshot de bootstrap no login, mutations otimistas que desfazem por entrada se falharem e reconciliam com `refreshGroup`, e broadcasts de realtime nos tópicos privados `group:`, `chat:`, `user:` e `assignment:`. `/app/**` é um shell estático pré-renderizado, servido cache-first pelo `public/sw.js`.
 
-**Expense lifecycle: Active ⇄ Deleted**:
-1. **Active**: `create_expense` inserts version 1; `edit_expense` appends a new `expense_versions` row (full `payload` + `change_summary`) and bumps `current_version_no`. Mutations send `expected_version_no`; a mismatch is rejected with `stale_version` instead of silently overwriting a concurrent edit (optimistic concurrency — the client surfaces a "reload and retry" error).
-2. **Deleted**: `delete_expense` soft-deletes (`status = 'deleted'`); `restore_expense` brings it back. Every version stays in the history — nothing is destroyed.
+**Modelo de conta (inspirado no Splitwise)**: toda conta pertence a um grupo. Dois tipos: `single_amount` (um total dividido entre os participantes) e `itemized` (itens atribuídos por pessoa). Os passos do wizard saem do tipo da conta.
 
-**Ledger facts and projection**: `expense_versions` (one row per edit) and `settlements` are the only financial facts. `group_balances` is a projection — one row per `(group, kind, participant)` with a signed `net_cents` (positive = the participant is owed; zero rows are never stored). Guests are participants with `kind = 'guest'` and can carry a balance until claimed. Balances are never written directly: every mutating RPC calls `recompute_group_balances(group)` inside the same transaction, and all access goes through `SECURITY DEFINER` RPCs that check membership first.
+**Ciclo de vida da conta: ativa ⇄ excluída**:
+1. **Ativa**: `create_expense` grava a versão 1; `edit_expense` acrescenta uma linha em `expense_versions` (`payload` completo + `change_summary`) e sobe o `current_version_no`. As mutations mandam `expected_version_no`; se não bater, o RPC recusa com `stale_version` em vez de sobrescrever uma edição concorrente, e o cliente mostra um erro de "recarregue e tente de novo".
+2. **Excluída**: `delete_expense` faz soft delete (`status = 'deleted'`); `restore_expense` traz de volta. Todas as versões continuam no histórico; nada é apagado.
 
-**Settlements**: Either party records a payment (`record_settlement`), which applies the delta to the balances toward zero immediately. Either party can void it (`void_settlement`), restoring the balances.
+**Fatos e projeção do ledger**: `expense_versions` e `settlements` são os únicos fatos financeiros. `group_balances` é uma projeção com uma linha por `(grupo, tipo, participante)` e `net_cents` assinado (positivo = a pessoa tem a receber; saldo zero não vira linha). Todo RPC que mexe no ledger chama `recompute_group_balances(group)` na mesma transação. Veja [Como o saldo fecha](#como-o-saldo-fecha).
 
-**Minimized transfers at read time**: `group_transfers(group)` in SQL and `transfersFromBalances` in TypeScript compute the minimum set of transfers from the balances with the same greedy two-pointer algorithm — largest debtor pays largest creditor — parity-tested over 200 random ledgers. `src/lib/simplify.ts` (`computeRawEdges`, `simplifyDebts`) powers the wizard/demo preview only.
+**Pagamentos**: quem pagou ou quem recebeu registra o pagamento (`record_settlement`), que leva os dois saldos em direção a zero na hora e é idempotente por `operation_id`. Qualquer um dos dois pode desfazer (`void_settlement`), e os saldos voltam.
 
-**Notifications (event-driven)**: Every financial or chat action writes a `group_events` row that drives the activity feed, chat system cards and push. Clients POST the event id to `/api/notify`, which claims it once (`notified_at`) and fans out per kind with `describeEvent` copy and per-user category preferences. Nudges go through `send_nudge`, which re-checks the actual debt and enforces a 24h cooldown per target (`nudge_cooldown`).
+**Transferências na leitura**: `group_transfers(group)` em SQL e `transfersFromBalances` em TypeScript tiram as transferências dos saldos com o mesmo algoritmo guloso de dois ponteiros (maior devedor paga maior credor), com teste de paridade em 200 ledgers aleatórios. Usa no máximo uma transferência a menos que o número de saldos diferentes de zero; é uma heurística, não um mínimo garantido. `src/lib/simplify.ts` (`computeRawEdges`, `simplifyDebts`) só alimenta o passo a passo da demo.
 
-**Money**: Always integer centavos in the store, types, and database, capped at `MAX_EXPENSE_CENTS = 99_999_999` per expense. Never floating point for arithmetic; `src/lib/expense-money.ts` is the sole owner of the product cap and fee formula. `formatBRL` converts to display strings. All item/share/payer/fee equality is exact (no cent tolerance).
+**Salas de itens**: uma sala prepara um cupom escaneado. O anfitrião cria a sala com os itens e um token de entrada; quem tem o link entra (`join_assignment_room`, logado ou como convidado com nome) e recebe um token de membro. As marcações ficam em ticks (120 por milésimo de unidade), então metade, um terço e quantidades exatas dividem sem arredondar. Cada marcação manda a `revision` esperada do item, e as ações do anfitrião mandam a da sala, então uma corrida falha com `stale_version`. `close_assignment_room` exige todos os itens com dono. `finalize_assignment_room` refaz o payload canônico a partir das marcações, exige que o payload do cliente seja idêntico, convida pro grupo de destino quem entrou com conta e cria a conta usando o id da sala como `client_id`. Quem entrou sem conta reivindica a parte depois com `claim_assignment_room_guest`.
 
-**Fee distribution**: Service fee is stored as integer basis points (`service_fee_bps` on the expense version, 0–10000), computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000` and distributed proportionally to item consumption. Fixed fees are cents, divided equally among all participants.
+**Notificações (por eventos)**: toda ação financeira ou de membros grava uma linha em `group_events`, que alimenta o feed de atividade, os cards de sistema do chat e o push. O cliente manda o id do evento pra `/api/notify`, que reivindica a linha uma vez (`notified_at`) e distribui por tipo, com o texto de `describeEvent` e as categorias de cada pessoa. Lembretes passam por `send_nudge`, que confere se o alvo deve pra quem lembra em `group_transfers` e aplica um intervalo de 24h por quem lembra e alvo no grupo (`nudge_cooldown`), contando só os lembretes entregues.
 
-**Demo page**: Public at `/demo`, no auth. Pre-computed settlement showcase with interactive QR codes.
+**Dinheiro**: sempre centavos inteiros no store, nos tipos e no banco, com teto de `MAX_EXPENSE_CENTS = 99_999_999` por conta. Nunca ponto flutuante em conta; `src/lib/expense-money.ts` é o único dono do teto e da fórmula da taxa. `formatBRL` converte pra exibição. Toda igualdade de item, parte, pagador e taxa é exata (sem tolerância de centavo).
 
-For contributor workflow and code-review rules, see `CONTRIBUTING.md`. For agent rules, see `AGENTS.md`.
+**Distribuição da taxa**: a taxa de serviço é guardada em pontos-base inteiros (`service_fee_bps` na versão da conta, de 0 a 10.000), calculada com arredondamento half-up não negativo de `subtotal * basisPoints / 10_000` e distribuída na proporção do consumo de itens. Taxas fixas são em centavos, divididas igualmente entre todos os participantes.
 
+**Demo**: pública em `/demo`, sem login. Uma conta pronta com o passo a passo da simplificação e QR Codes Pix interativos.
+
+Fluxo de contribuição e regras de revisão estão no `CONTRIBUTING.md`. Regras pra agentes, no `AGENTS.md`.
 
 ## Licença
 

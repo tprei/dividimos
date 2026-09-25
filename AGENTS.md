@@ -145,7 +145,7 @@ Rules:
 - `npm run db:assert-ref` is a precondition for the linked push/diff/dry-run path a human runs: it fails unless `supabase/.temp/project-ref` is `sfclcrjeckixhpjfmrox`. A passing check never authorizes `supabase db reset --linked`, `supabase migration repair`, or `supabase link` to another ref — those stay forbidden outright.
 - Do not store a Supabase personal access token on disk (`~/.supabase/access-token`) beyond the session that needs it. Revoke it at `https://supabase.com/dashboard/account/tokens` when done.
 - Migrations reach production only via a human running `npm run db:assert-ref && supabase db push --linked --dry-run`, reading the plan, then the same command without `--dry-run`. CI never pushes migrations.
-- Production configuration (names, ids, no secret values) is listed in `README.md` under "Production configuration".
+- Production configuration names (env vars and secrets, no values) are listed in `README.md` under "Configuração de produção". The production project identifiers are the ones named at the top of this section.
 
 ## Tests
 
