@@ -78,6 +78,11 @@ function byPerson(values: readonly number[]): Record<IntroPersonId, number> {
   return record;
 }
 
+/** Even split of one item among `count` sharers; leftover centavos go to the first ones. */
+export function splitIntroItem(item: IntroItem, count: number): readonly number[] {
+  return unwrap(allocateEvenly(item.totalCents, count));
+}
+
 /** Splits each item evenly among its sharers in `INTRO_PEOPLE` order, then the service by subtotal once every item has someone. */
 export function splitIntroBill(sharers: IntroSharers): IntroSplit {
   const subtotals = INTRO_PEOPLE.map(() => 0);
@@ -89,7 +94,7 @@ export function splitIntroBill(sharers: IntroSharers): IntroSplit {
       unassignedCents += item.totalCents;
       continue;
     }
-    const parts = unwrap(allocateEvenly(item.totalCents, indexes.length));
+    const parts = splitIntroItem(item, indexes.length);
     indexes.forEach((personIndex, k) => {
       subtotals[personIndex] += parts[k];
     });
