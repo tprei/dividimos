@@ -16,7 +16,7 @@ import { SplitEditor, type SplitPerson } from "@/components/bill/split/split-edi
 import { SplitSummary } from "@/components/bill/split/split-summary";
 import { usePayerSplit } from "@/components/bill/split/use-payer-split";
 import { useSplitDraft } from "@/components/bill/split/use-split-draft";
-import { DetailsStep } from "@/components/bill/wizard/details-step";
+import { DetailsStep, initialStartProgress } from "@/components/bill/wizard/details-step";
 import { WizardFooter } from "@/components/bill/wizard/wizard-footer";
 import { WizardSteps } from "@/components/bill/wizard/wizard-steps";
 import { Money } from "@/components/shared/money";
@@ -85,6 +85,9 @@ export function SingleBillForm({
     })),
   );
   const [step, setStep] = useState(0);
+  const [startProgress, setStartProgress] = useState(() =>
+    initialStartProgress(useBillStore.getState().expense?.title ?? ""),
+  );
   const [amountValid, setAmountValid] = useState(true);
   const {
     groupSelection,
@@ -273,6 +276,8 @@ export function SingleBillForm({
               ? `${inviteeNames.join(", ")} ${inviteeNames.length > 1 ? "serão convidados" : "será convidado"} ao grupo.`
               : null
           }
+          progress={startProgress}
+          onProgressChange={setStartProgress}
         />
       )}
 
@@ -353,17 +358,20 @@ export function SingleBillForm({
       )}
 
       <div ref={footerRef} className="mt-auto">
-        <WizardFooter
-          onBack={step > 0 ? goBack : null}
-          onContinue={() => {
-            if (lastStep) void handleSubmit();
-            else setStep(step + 1);
-          }}
-          continueLabel={lastStep ? (isEditing ? "Salvar alterações" : "Salvar conta") : "Continuar"}
-          disabled={blocker !== null}
-          reason={blocker}
-          loading={submitting}
-        />
+        {/* The start questions answer themselves; the footer waits for the people. */}
+        {(step > 0 || startProgress.phase === "people") && (
+          <WizardFooter
+            onBack={step > 0 ? goBack : null}
+            onContinue={() => {
+              if (lastStep) void handleSubmit();
+              else setStep(step + 1);
+            }}
+            continueLabel={lastStep ? (isEditing ? "Salvar alterações" : "Salvar conta") : "Continuar"}
+            disabled={blocker !== null}
+            reason={blocker}
+            loading={submitting}
+          />
+        )}
       </div>
       <ScrollHint targetRef={footerRef} />
     </div>

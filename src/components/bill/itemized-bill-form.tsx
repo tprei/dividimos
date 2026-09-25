@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ITEMIZED_SECTIONS, ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
 import type { SplitPerson } from "@/components/bill/split/split-editor";
 import { usePayerSplit } from "@/components/bill/split/use-payer-split";
+import { initialStartProgress } from "@/components/bill/wizard/details-step";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
@@ -96,6 +97,9 @@ export function ItemizedBillForm({
     })),
   );
   const [section, setSection] = useState<ItemizedSectionKey>(initialSection);
+  const [startProgress, setStartProgress] = useState(() =>
+    initialStartProgress(useBillStore.getState().expense?.title ?? ""),
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [serviceFeeInput, setServiceFeeInput] = useState(() =>
     serviceFeeText(store.expense?.serviceFeeBasisPoints ?? 0),
@@ -266,6 +270,8 @@ export function ItemizedBillForm({
             inviteeNames.length > 0
               ? `${inviteeNames.join(", ")} ${inviteeNames.length > 1 ? "serão convidados" : "será convidado"} ao grupo.`
               : null,
+          progress: startProgress,
+          onProgressChange: setStartProgress,
         }}
         participants={participantsStepProps}
         payment={{

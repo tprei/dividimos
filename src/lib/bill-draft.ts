@@ -21,7 +21,7 @@ export type DraftInspectionState = Pick<
  * Baselines (from selectDraftForType):
  * - single_amount: title "", serviceFeeBasisPoints 0, participants [me],
  *   no guests/items/payers/splits/billSplits, totalAmountInput 0, fixedFees 0.
- * - itemized: title "Nova conta", serviceFeeBasisPoints 1000, otherwise same empties.
+ * - itemized: title "", serviceFeeBasisPoints 1000, otherwise same empties.
  *
  * Any deviation, or occurredOn !== null, or receiptAccessKey !== null -> meaningful.
  */
@@ -74,7 +74,7 @@ export function hasMeaningfulDraft(
   }
 
   if (expense.expenseType === "itemized") {
-    if (expense.title !== "Nova conta" || expense.serviceFeeBasisPoints !== 1000) {
+    if (expense.title !== "" || expense.serviceFeeBasisPoints !== 1000) {
       return true;
     }
     return false;

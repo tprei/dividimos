@@ -276,6 +276,26 @@ describe("ParticipantsStep", () => {
     expect(onAddGuest).toHaveBeenCalledWith("Dan");
   });
 
+  it("closes the guest form after each add and offers one more from the choice row", async () => {
+    const onAddGuest = vi.fn();
+    const user = userEvent.setup();
+    render(<ParticipantsStep {...baseProps} onAddGuest={onAddGuest} />);
+
+    await user.click(screen.getByRole("button", { name: "Adicionar convidado" }));
+    await user.type(screen.getByRole("textbox", { name: "Nome do convidado" }), "Dan{Enter}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Nome do convidado" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Mais um convidado" }));
+    const input = screen.getByRole("textbox", { name: "Nome do convidado" });
+    expect(input).toHaveValue("");
+    await user.type(input, "Eva{Enter}");
+    expect(onAddGuest).toHaveBeenNthCalledWith(2, "Eva");
+  });
+
   it("shows contact picker button when supported", () => {
     render(<ParticipantsStep {...baseProps} hasContactPicker={true} />);
 

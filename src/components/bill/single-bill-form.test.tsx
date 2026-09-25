@@ -92,13 +92,19 @@ describe("SingleBillForm journey", () => {
     expect(hasMeaningfulDraft(useBillStore.getState(), me.id)).toBe(false);
   });
 
-  it("holds each step until it is complete and says why", () => {
+  it("holds each step until it is complete and says why", async () => {
     useBillStore.getState().updateExpense({ title: " " });
+    useBillStore.getState().removeParticipant(userBob.id);
     renderForm();
-    expect(screen.getByRole("status")).toHaveTextContent("Falta o nome da conta.");
-    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Continuar" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "Pizza" } });
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pular" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Falta alguém pra dividir com você.");
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeDisabled();
+    act(() => useBillStore.getState().addParticipant(userBob));
     next();
     expect(screen.getByLabelText("Valor total")).toBeInTheDocument();
   });
@@ -289,7 +295,7 @@ describe("SingleBillForm submit", () => {
     const { rerender } = render(<SingleBillForm {...props} initialGroupId={null} />);
     rerender(<SingleBillForm {...props} initialGroupId="g-late" />);
 
-    expect(screen.getByRole("combobox", { name: "Grupo" })).toHaveTextContent("Viagem");
+    expect(screen.getByRole("button", { name: "Grupo: Viagem" })).toBeInTheDocument();
     next();
     next();
     fireEvent.click(screen.getByRole("button", { name: "Salvar conta" }));

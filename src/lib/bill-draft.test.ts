@@ -26,7 +26,7 @@ function createBaselineItemized(): DraftInspectionState {
     id: "exp-itemized",
     groupId: "",
     creatorId: meId,
-    title: "Nova conta",
+    title: "",
     expenseType: "itemized",
     totalAmount: 0,
     serviceFeePercent: 10,

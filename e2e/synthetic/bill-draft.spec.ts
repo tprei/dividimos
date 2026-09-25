@@ -15,6 +15,8 @@ test.describe("Bill draft", () => {
     const titleInput = page.getByLabel("Nome da conta");
     await expect(titleInput).toBeVisible();
     await titleInput.fill("Aluguel da praia");
+    await titleInput.press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
     await page.getByRole("button", { name: "Adicionar convidado" }).click();
     await page.getByPlaceholder("Nome do convidado").fill("Bia");
     await page.getByPlaceholder("Nome do convidado").press("Enter");
@@ -84,6 +86,8 @@ test.describe("Bill draft", () => {
     const titleInput = page.getByLabel("Nome da conta");
     await expect(titleInput).toBeVisible();
     await titleInput.fill("Aluguel da praia");
+    await titleInput.press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
     await page.getByRole("button", { name: "Adicionar convidado" }).click();
     await page.getByPlaceholder("Nome do convidado").fill("Bia");
     await page.getByPlaceholder("Nome do convidado").press("Enter");

@@ -223,7 +223,7 @@ describe("Draft resume and discard behaviors", () => {
 
   it("switches type silently without dialog when current draft is baseline and empty", () => {
     const store = useBillStore.getState();
-    store.createExpense("Nova conta", "itemized");
+    store.createExpense("", "itemized");
 
     expect(hasMeaningfulDraft(store, me.id)).toBe(false);
 

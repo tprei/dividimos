@@ -6,6 +6,8 @@ test("resumes and edits a local draft without creating an expense", async ({ pag
   await page.goto("/app/bill/new");
   await page.getByRole("button", { name: /Valor único/ }).click();
   await page.getByLabel("Nome da conta").fill("Pizza de sexta");
+  await page.getByLabel("Nome da conta").press("Enter");
+  await page.getByRole("button", { name: "Pular" }).click();
   await page.getByRole("button", { name: "Adicionar convidado" }).click();
   await page.getByPlaceholder("Nome do convidado").fill("Carla");
   await page.getByPlaceholder("Nome do convidado").press("Enter");

@@ -16,6 +16,8 @@ test.describe("Expenses with a pending invitee", () => {
 
     await page.getByRole("button", { name: /Valor único/ }).click();
     await page.getByRole("textbox", { name: "Nome da conta" }).fill("Jantar pendente");
+    await page.getByRole("textbox", { name: "Nome da conta" }).press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
 
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
