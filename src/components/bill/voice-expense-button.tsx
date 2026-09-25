@@ -16,6 +16,19 @@ interface VoiceExpenseButtonProps {
   onError: (message: string) => void;
 }
 
+function statusLabel(
+  recording: boolean,
+  transcribing: boolean,
+  parsing: boolean,
+  attempted: boolean,
+): string {
+  if (recording) return "Ouvindo…";
+  if (transcribing) return "Entendendo…";
+  if (parsing) return "Entendendo sua conta…";
+  if (attempted) return "Tentar novamente";
+  return "Falar conta";
+}
+
 export function VoiceExpenseButton({
   members,
   onResult,
@@ -29,10 +42,15 @@ export function VoiceExpenseButton({
     startListening,
     stopListening,
     isSupported,
+    phase,
   } = useVoiceInput();
   const [parsing, setParsing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const wasListeningRef = useRef(false);
+
+  const transcribing = phase === "transcribing";
+  const recording = isListening && !transcribing;
+  const busy = parsing || transcribing;
 
   const parseTranscript = useCallback(
     async (text: string) => {
@@ -62,27 +80,30 @@ export function VoiceExpenseButton({
   }, [isListening, transcript, voiceError, parseTranscript, onError]);
 
   if (!isSupported) return null;
-  const message = isListening ? "Ouvindo…" : parsing ? "Entendendo sua conta…" : attempted ? "Tentar novamente" : "Falar conta";
-  const hint = isListening ? "Toque para parar e revisar" : "“Uber com João, 25 reais”";
+  let micAriaLabel = "Gravar conta";
+  if (attempted) micAriaLabel = "Tentar novamente";
+  if (recording) micAriaLabel = "Parar gravação";
+  const message = statusLabel(recording, transcribing, parsing, attempted);
+  const hint = recording ? "Toque para parar e revisar" : "“Uber com João, 25 reais”";
   return (
     <motion.div variants={popIn} initial="hidden" animate="visible" className="gradient-mesh space-y-3 overflow-hidden rounded-2xl border border-border bg-card p-4">
       <div className="flex items-center gap-4">
         <div className="relative flex size-16 shrink-0 items-center justify-center">
-          {isListening && (
+          {recording && (
             <>
               <span aria-hidden="true" className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-ping" />
               <span aria-hidden="true" className="absolute -inset-1.5 rounded-full border border-primary/40" />
             </>
           )}
-          <Button disabled={parsing}
-            aria-label={isListening ? "Parar gravação" : attempted ? "Tentar novamente" : "Gravar conta"}
+          <Button disabled={busy}
+            aria-label={micAriaLabel}
             onClick={() => {
               haptics.tap();
-              if (isListening) stopListening();
+              if (recording) stopListening();
               else { setAttempted(true); onError(""); startListening(); }
             }}
             className="relative size-14 rounded-full shadow-sm">
-            {parsing ? <Loader2 className="size-6 motion-safe:animate-spin" /> : isListening ? <Square className="size-5 fill-current" /> : <Mic className="size-6" />}
+            {busy ? <Loader2 className="size-6 motion-safe:animate-spin" /> : recording ? <Square className="size-5 fill-current" /> : <Mic className="size-6" />}
           </Button>
         </div>
         <div className="min-w-0">

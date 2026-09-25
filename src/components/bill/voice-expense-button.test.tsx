@@ -21,6 +21,9 @@ const mockVoiceInput = {
   startListening: vi.fn(),
   stopListening: vi.fn(),
   isSupported: true,
+  engine: "web-speech" as const,
+  phase: "idle" as const,
+  level: 0,
 };
 
 vi.mock("@/hooks/use-voice-input", () => ({
@@ -35,6 +38,8 @@ beforeEach(() => {
   mockVoiceInput.interimTranscript = "";
   mockVoiceInput.error = null;
   mockVoiceInput.isSupported = true;
+  mockVoiceInput.phase = "idle";
+  mockVoiceInput.level = 0;
 });
 
 describe("VoiceExpenseButton", () => {
