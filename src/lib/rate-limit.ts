@@ -7,6 +7,7 @@ export type RateLimitBucket =
   | "pix.generate"
   | "pix.generate-self"
   | "voice.parse"
+  | "voice.transcribe"
   | "chat.parse"
   | "receipt.ocr"
   | "push.send"
@@ -22,6 +23,7 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "pix.generate":       { limit: 60,  windowSeconds: 60 },
   "pix.generate-self":  { limit: 60,  windowSeconds: 60 },
   "voice.parse":        { limit: 30,  windowSeconds: 60 },
+  "voice.transcribe":   { limit: 30,  windowSeconds: 60 },
   "chat.parse":         { limit: 30,  windowSeconds: 60 },
   "receipt.ocr":        { limit: 30,  windowSeconds: 60 },
   "push.send":          { limit: 60,  windowSeconds: 60 },
