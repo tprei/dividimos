@@ -15,20 +15,18 @@ test.describe("Expenses with a pending invitee", () => {
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: /Valor único/ }).click();
-    await page.getByRole("textbox", { name: "Valor total" }).fill("80,00");
-    await page.getByRole("textbox", { name: "Nome" }).fill("Jantar pendente");
+    await page.getByRole("textbox", { name: "Nome da conta" }).fill("Jantar pendente");
 
-    await page.getByRole("button", { name: /Participantes/ }).click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
     await page.getByRole("button", { name: "Buscar handle" }).click();
     await page.getByRole("button", { name: "Adicionar" }).click();
-    await expect(page.getByText(bob.name).first()).toBeVisible({ timeout: 10000 });
-    await page.getByRole("button", { name: "Concluir" }).click();
+    await expect(page.getByRole("button", { name: `Remover ${bob.name}` })).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("textbox", { name: "Valor total" }).fill("80,00");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("button", { name: "Continuar" }).click();
-    await page.getByRole("button", { name: /Alice/ }).click();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
 
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{36}/, { timeout: 15000 });
     await expect(page.getByRole("heading", { name: "Jantar pendente" })).toBeVisible();

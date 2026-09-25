@@ -653,11 +653,13 @@ function NewBillPageContent() {
     setCreateGroupName("");
   };
 
+  const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
+  const closeHref = isDmMode && modes.dm ? `/app/conversations/${modes.dm.userId}` : isEditing && activeEditId ? `/app/bill/${activeEditId}` : "/app";
   const requestClose = () => {
     if (me && hasMeaningfulDraft(store, me.id)) setLeaveOpen(true);
-    else router.push("/app");
+    else router.push(closeHref);
   };
-  useBackHandler(!reviewingScan && (isTypeStep || isSingleFlow), requestClose);
+  useBackHandler(!reviewingScan && isTypeStep, requestClose);
   const leaveDialog = (
     <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
       <DialogContent showCloseButton={false}>
@@ -665,7 +667,7 @@ function NewBillPageContent() {
         <DialogDescription>O rascunho fica salvo pra continuar depois.</DialogDescription>
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={() => setLeaveOpen(false)}>Continuar editando</Button>
-          <Button className="flex-1" onClick={() => router.push("/app")}>Sair e guardar</Button>
+          <Button className="flex-1" onClick={() => router.push(closeHref)}>Sair e guardar</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -728,6 +730,7 @@ function NewBillPageContent() {
     return (
       <>
         <SingleBillForm
+        key={`${store.expense?.id}:${editBaseVersionNo}`}
         me={me}
         groups={groupSnapshots}
         initialGroupId={selectedGroupId}

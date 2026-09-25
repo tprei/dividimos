@@ -19,22 +19,19 @@ test.describe("DM first expense", () => {
     await expect(page.getByText(bob.name).first()).toBeVisible();
 
     // Open the form with the chat-edit URL shape (title + amount). The
-    // bill-new page consumes these params and lands on the Conta stage with
+    // bill-new page consumes these params and lands on the participants step with
     // title and totalAmountInput pre-filled, the same way ?dm= jumps straight
     // into the DM flow.
     await page.goto(`/app/bill/new?groupId=${dm.id}&title=Uber&amount=2500`);
     await page.waitForLoadState("networkidle");
 
-    // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: /Participantes/ }).click();
+    // Group members are auto-added to the participants step.
     await expect(page.getByText(bob.name).first()).toBeVisible({
       timeout: 5000,
     });
-    await page.getByRole("button", { name: "Concluir" }).click();
-    await page.getByRole("button", { name: "Continuar" }).click();
-
-    await page.getByRole("button", { name: /Alice/ }).click();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
 
     // Wait for navigation away from /new — the page only leaves /app/bill/new
     // after create_expense completes.

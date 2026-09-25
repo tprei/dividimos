@@ -2,7 +2,7 @@ import { test, expect } from "../fixtures";
 
 /**
  * Issue #495 checklist items 23-25: browser-driven proof that payer/guest
- * removal through the real two-stage form UI persists correctly through the real
+ * removal through the expense form persists correctly through the real
  * database, and that a stale concurrent view cannot silently overwrite a
  * winning removal.
  */
@@ -29,24 +29,17 @@ test.describe("Expense payer cleanup (browser)", () => {
     );
     await page.waitForLoadState("networkidle");
 
-    // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: /Participantes/ }).click();
-    await expect(page.getByText("Bob Cleanup").first()).toBeVisible({
-      timeout: 5000,
-    });
-    await expect(page.getByText("Carol Cleanup").first()).toBeVisible();
+    // Group members are auto-added to the participants step.
+    await expect(page.getByText("Bob Cleanup")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Carol Cleanup")).toBeVisible();
 
-    // Remove Bob -- his row leaves the sheet rather than unchecking.
-    await page.getByRole("button", { name: "Remover Bob Cleanup" }).click();
-    await expect(page.getByText("Bob Cleanup")).not.toBeVisible();
-    await page.getByRole("button", { name: "Concluir" }).click();
+    const bobToggle = page.getByRole("button", { name: "Bob Cleanup" });
+    await bobToggle.click();
+    await expect(bobToggle).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
-    await page.getByRole("button", { name: "Continuar" }).click();
-
-    // payer: Alice pays the full reviewed (Bob-excluded) total.
-    await expect(page.getByRole("heading", { name: "Quem pagou" })).toBeVisible({ timeout: 5000 });
-    await page.getByRole("button", { name: /Alice/ }).click();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
 
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, {
       timeout: 15000,
@@ -210,23 +203,19 @@ test.describe("Expense payer cleanup (browser)", () => {
       `/app/bill/new?groupId=${group.id}&title=Guest%20Dinner&amount=9000`,
     );
     await page.waitForLoadState("networkidle");
-    // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: /Participantes/ }).click();
-    await expect(page.getByText("Bob Guest Cleanup").first()).toBeVisible({
-      timeout: 5000,
-    });
+    // Group members are auto-added to the participants step.
+    await expect(page.getByText("Bob Guest Cleanup")).toBeVisible({ timeout: 5000 });
 
-    // Add a guest via the sheet's own UI.
+    // Add a guest from the same step.
     const guestName = "Temporary Guest";
     await page.getByRole("button", { name: /Adicionar convidado/i }).click();
     await page.getByPlaceholder("Nome do convidado").fill(guestName);
     await page.getByPlaceholder("Nome do convidado").press("Enter");
     await expect(page.getByText(guestName)).toBeVisible();
 
-    // Same sheet visit: the guest is added and removed in one pass.
+    // Same visit: the guest is added and removed in one pass.
     await page.getByLabel(`Remover ${guestName}`).click();
     await expect(page.getByText(guestName)).not.toBeVisible();
-    await page.getByRole("button", { name: "Concluir" }).click();
 
     // The form keeps the draft local: nothing is persisted before submit.
     const { data: beforeSubmit } = await adminClient
@@ -235,12 +224,12 @@ test.describe("Expense payer cleanup (browser)", () => {
       .eq("group_id", group.id);
     expect(beforeSubmit ?? []).toHaveLength(0);
 
-    await page.getByRole("button", { name: "Continuar" }).click();
-
-    // Bob (a real registered user, unaffected by the guest removal) pays.
-    await expect(page.getByRole("heading", { name: "Quem pagou" })).toBeVisible({ timeout: 5000 });
-    await page.getByRole("button", { name: /Bob/ }).click();
-    await page.getByRole("button", { name: "Criar conta" }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    const payers = page.getByRole("list", { name: "Quem pagou" });
+    await payers.getByRole("button", { name: "Bob" }).click();
+    await payers.getByRole("button", { name: "Você" }).click();
+    await page.getByRole("button", { name: "Salvar conta" }).click();
 
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 15000 });
 
