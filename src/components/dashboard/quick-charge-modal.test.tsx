@@ -56,12 +56,19 @@ import {
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 
+vi.mock("@/lib/sync/pix", () => ({
+  generateSelfPixCode: vi.fn(),
+}));
+
+import { generateSelfPixCode } from "@/lib/sync/pix";
+
 import { haptics } from "@/hooks/use-haptics";
 
 describe("QuickChargeModal", () => {
   beforeEach(() => {
     useAppStore.getState().reset();
     vi.clearAllMocks();
+    vi.mocked(generateSelfPixCode).mockResolvedValue("00020126580014br.gov.bcb.pix");
   });
 
   it("does not render when open is false", () => {
@@ -76,10 +83,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("generates QR code and upserts recorded charge into store", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     const descInput = screen.getByPlaceholderText("Descrição (opcional)");
@@ -106,10 +109,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("paints the code onto the canvas the QR phase mounts", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
@@ -127,10 +126,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("confirms charge and upserts confirmed charge into store", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     const onConfirmed = vi.fn();
     render(
       <QuickChargeModal
@@ -158,40 +153,35 @@ describe("QuickChargeModal", () => {
     expect(storeCharges[0].status).toBe("received");
   });
   it("does not insert when the modal closes before Pix generation resolves", async () => {
-    const { promise: jsonPromise, resolve: resolveJson } =
-      Promise.withResolvers<{ copiaECola: string }>();
-    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+    const { promise: codePromise, resolve: resolveCode } = Promise.withResolvers<string>();
+    vi.mocked(generateSelfPixCode).mockImplementationOnce(() => codePromise);
 
     const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(generateSelfPixCode).toHaveBeenCalledTimes(1));
 
     view.rerender(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
-    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+    resolveCode("00020126580014br.gov.bcb.pix");
 
     await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
   });
   it("does not insert when the component unmounts before Pix generation resolves", async () => {
-    const { promise: jsonPromise, resolve: resolveJson } =
-      Promise.withResolvers<{ copiaECola: string }>();
-    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+    const { promise: codePromise, resolve: resolveCode } = Promise.withResolvers<string>();
+    vi.mocked(generateSelfPixCode).mockImplementationOnce(() => codePromise);
 
     const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
     fireEvent.click(screen.getByText("Gerar QR Code"));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(generateSelfPixCode).toHaveBeenCalledTimes(1));
 
     view.unmount();
-    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+    resolveCode("00020126580014br.gov.bcb.pix");
 
     await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
   });
 
   it("cancels an insert that resolves after modal close", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -225,9 +215,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("cancels a deferred insert when the user changes the amount", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -261,9 +248,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("shows a visible error when deferred cancellation fails", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -298,9 +282,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("waits for the exact insert before confirming and does not duplicate it", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -333,9 +314,6 @@ describe("QuickChargeModal", () => {
     expect(recordVendorCharge).toHaveBeenCalledTimes(1);
   });
   it("allows retrying confirmation after a failed request", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     vi.mocked(confirmVendorCharge).mockRejectedValueOnce(new Error("offline"));
 
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
@@ -359,10 +337,6 @@ describe("QuickChargeModal", () => {
   it("falls back to a selectable code and keeps copy enabled when the clipboard rejects", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard blocked"));
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
@@ -389,10 +363,6 @@ describe("QuickChargeModal", () => {
   it("copies the code with success haptic when the clipboard resolves", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));

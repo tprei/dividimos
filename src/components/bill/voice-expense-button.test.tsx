@@ -296,7 +296,7 @@ describe("VoiceExpenseButton", () => {
         expect(onError).toHaveBeenCalledOnce();
       });
 
-      expect(onError).toHaveBeenCalledWith("Failed to fetch");
+      expect(onError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
     });
 
     it("calls onError when transcript is empty and no voiceError on stop", () => {

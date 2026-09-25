@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { parseChatExpenseMessage } from "@/lib/sync/chat-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type { ChatExpenseResult };
@@ -35,20 +36,12 @@ export function useAiExpenseParse(): UseAiExpenseParse {
       setResult(null);
 
       try {
-        const response = await fetch("/api/chat/parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, members }),
+        const result = await parseChatExpenseMessage({
+          text,
+          members,
           signal: controller.signal,
         });
-
-        if (!response.ok) {
-          const data = (await response.json()) as { error?: string };
-          throw new Error(data.error ?? "Erro ao processar mensagem");
-        }
-
-        const data = (await response.json()) as ChatExpenseResult;
-        setResult(data);
+        setResult(result);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         setError(

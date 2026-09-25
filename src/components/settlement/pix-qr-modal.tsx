@@ -37,6 +37,7 @@ import {
   getSnapStep,
 } from "@/lib/slider-snap";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { generatePixCode, PixRequestError } from "@/lib/sync/pix";
 import { cn } from "@/lib/utils";
 
 type PixQrModalSource =
@@ -55,6 +56,27 @@ type PixPayloadState =
       status: "error";
       reason: "session" | "denied" | "rate-limited" | "invalid" | "unavailable";
     };
+
+/** Maps a pix sync failure to the payload card the modal should show. */
+function payloadFailureFrom(error: unknown): PixPayloadState {
+  if (error instanceof PixRequestError) {
+    if (error.status === 400) return { status: "error", reason: "invalid" };
+    if (error.status === 401) return { status: "error", reason: "session" };
+    if (error.status === 403) return { status: "error", reason: "denied" };
+    if (error.status === 429) return { status: "error", reason: "rate-limited" };
+    if (error.status === 404) {
+      // The route reports the 404 reason only as prose, so match it
+      // accent/case-insensitively in one place.
+      const ownerMissing = /voce nao tem/i.test(
+        error.message.normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+      );
+      return ownerMissing
+        ? { status: "missing-key-owner" }
+        : { status: "missing-key-recipient" };
+    }
+  }
+  return { status: "error", reason: "unavailable" };
+}
 
 interface PixQrModalBaseProps {
   open: boolean;
@@ -201,48 +223,15 @@ export function PixQrModal({
 
     void (async () => {
       try {
-        const res = await fetch("/api/pix/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            recipientUserId,
-            amountCents: qrAmountCents,
-            groupId,
-          }),
+        const code = await generatePixCode({
+          recipientUserId,
+          amountCents: qrAmountCents,
+          groupId,
           signal: controller.signal,
         });
-        const data = (await res.json().catch(() => null)) as {
-          copiaECola?: string;
-          error?: string;
-        } | null;
-        if (res.status === 200 && data?.copiaECola) {
-          settle({ status: "ready", code: data.copiaECola });
-        } else if (res.status === 400) {
-          settle({ status: "error", reason: "invalid" });
-        } else if (res.status === 404) {
-          // The route (frozen for this stack) reports the 404 reason as prose,
-          // so match it accent/case-insensitively in one place.
-          const ownerMissing = /voce nao tem/i.test(
-            (data?.error ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
-          );
-          settle(
-            ownerMissing
-              ? { status: "missing-key-owner" }
-              : { status: "missing-key-recipient" },
-          );
-        } else if (res.status === 401) {
-          settle({ status: "error", reason: "session" });
-        } else if (res.status === 403) {
-          settle({ status: "error", reason: "denied" });
-        } else if (res.status === 429) {
-          settle({ status: "error", reason: "rate-limited" });
-        } else {
-          settle({ status: "error", reason: "unavailable" });
-        }
-      } catch {
-        if (!controller.signal.aborted) {
-          settle({ status: "error", reason: "unavailable" });
-        }
+        settle({ status: "ready", code });
+      } catch (error) {
+        settle(payloadFailureFrom(error));
       }
     })();
   }, [recipientUserId, groupId, qrAmountCents]);

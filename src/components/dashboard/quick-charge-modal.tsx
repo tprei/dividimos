@@ -20,6 +20,8 @@ import {
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 import { getAuthGeneration } from "@/lib/sync/client";
+import { LedgerError } from "@/lib/sync/errors";
+import { generateSelfPixCode } from "@/lib/sync/pix";
 import type { VendorCharge } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 
@@ -191,27 +193,24 @@ export function QuickChargeModal({
 
     let copia: string | null = null;
     try {
-      const res = await fetch("/api/pix/generate-self", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountCents }),
+      const code = await generateSelfPixCode({
+        amountCents,
         signal: controller.signal,
       });
-      const data = await res.json();
       if (!isCurrentOperation(operation)) return;
 
-      if (!data.copiaECola) {
-        setError(data.error || "Eita, deu ruim no Pix");
-        haptics.error();
-        return;
-      }
-
-      copia = data.copiaECola;
-      setCopiaECola(data.copiaECola);
+      copia = code;
+      setCopiaECola(code);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       if (!isCurrentOperation(operation)) return;
-      setError("Sem conexão. Tenta de novo.");
+      setError(
+        err instanceof LedgerError && err.code === "network"
+          ? "Sem conexão. Tenta de novo."
+          : err instanceof Error && err.message
+            ? err.message
+            : "Eita, deu ruim no Pix",
+      );
       haptics.error();
       return;
     } finally {
