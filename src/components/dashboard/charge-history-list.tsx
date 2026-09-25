@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Money } from "@/components/shared/money";
+import { AmountHeroCard } from "@/components/shared/amount-hero-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { loadVendorCharges } from "@/lib/sync/refresh";
@@ -111,13 +112,8 @@ export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps =
       )}
 
       {!isInitialLoad && total > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-4 rounded-2xl bg-success/10 p-4"
-        >
-          <p className="text-sm text-success-text">Recebido hoje</p>
-          <Money cents={total} size="lg" tone="positive" />
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4">
+          <AmountHeroCard label="Recebido hoje" cents={total} tone="positive" />
         </motion.div>
       )}
 

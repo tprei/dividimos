@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 import { RoomFinalBoard } from "@/components/assignment-room/room-final-board";
-import { Money } from "@/components/shared/money";
+import { AmountHeroCard, type AmountHeroDetail } from "@/components/shared/amount-hero-card";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { Button } from "@/components/ui/button";
 import type { AssignmentBillBreakdown } from "@/types/assignment-room";
@@ -40,6 +40,16 @@ export function RoomBreakdown({
     bill.participants.some((participant) => participant.participantIndex === selfParticipantIndex) &&
     bill.shares[selfParticipantIndex] !== undefined ? selfParticipantIndex : null;
   const selfItemCount = bill.itemAssignments?.filter((assignment) => assignment.participantIndex === selfIndex).length ?? 0;
+  const shareDetails: AmountHeroDetail[] = [{ label: "Itens", value: selfItemCount }];
+  if (bill.serviceFeeBasisPoints > 0) {
+    shareDetails.push({ label: "Serviço", value: `${serviceFeePercentText(bill.serviceFeeBasisPoints)}%` });
+  }
+  const payerIndexes = bill.payers.map((payer) => payer.participantIndex);
+  if (payerIndexes.length > 1) shareDetails.push({ label: "Quem pagou", value: `${payerIndexes.length} pessoas` });
+  else if (payerIndexes.length === 1) {
+    const payer = bill.participants.find((person) => person.participantIndex === payerIndexes[0]);
+    shareDetails.push({ label: "Quem pagou", value: payerIndexes[0] === selfIndex ? "Você" : (payer?.displayName ?? "—") });
+  }
 
   return (
     <section className="flex min-h-full flex-1 flex-col" aria-label={heading}>
@@ -51,14 +61,7 @@ export function RoomBreakdown({
       <div className="flex-1 space-y-6 px-4 py-3">
 
         {selfIndex !== null && (
-          <section aria-label="Sua parte" className="gradient-primary rounded-2xl p-5 text-primary-foreground">
-            <p className="text-sm font-medium opacity-90">Sua parte</p>
-            <Money cents={bill.shares[selfIndex]} className="mt-1 block text-4xl font-bold tracking-tight" />
-            <p className="mt-3 text-sm opacity-90">{selfItemCount} {selfItemCount === 1 ? "item" : "itens"}</p>
-            {bill.serviceFeeBasisPoints > 0 && (
-              <p className="mt-1 text-xs opacity-90">inclui taxa de serviço de {serviceFeePercentText(bill.serviceFeeBasisPoints)}%</p>
-            )}
-          </section>
+          <AmountHeroCard role="region" aria-label="Sua parte" label="Sua parte" cents={bill.shares[selfIndex]} details={shareDetails} />
         )}
 
         <section className="space-y-3" aria-labelledby="room-final-board-heading">

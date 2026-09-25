@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Money } from "@/components/shared/money";
+import { AmountHeroCard } from "@/components/shared/amount-hero-card";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
 import { createClient } from "@/lib/supabase/client";
 import { claimGuest } from "@/lib/sync/mutations-group";
@@ -247,14 +247,11 @@ export function ClaimPageClient() {
         </div>
       ) : (
         <>
-          <div className="rounded-2xl border border-primary/25 bg-primary/10 p-5 text-foreground">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Receipt className="h-4 w-4" />
-              <p className="text-sm">{preview.expenseTitle}</p>
-            </div>
-            <div className="mt-2"><Money cents={preview.shareCents} size="hero" /></div>
-            <p className="mt-1 text-sm text-muted-foreground">Sua parte na conta</p>
-          </div>
+          <AmountHeroCard
+            label="Sua parte na conta"
+            cents={preview.shareCents}
+            eyebrow={<><Receipt className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{preview.expenseTitle}</span></>}
+          />
 
           <div className="mt-6 rounded-2xl border border-border bg-card p-5">
             <div className="flex min-w-0 items-center gap-3">
