@@ -1,10 +1,12 @@
 import { Suspense } from "react";
-import { AuthPanel } from "./auth-panel";
+import { LoginSlide } from "@/components/auth-intro/login-slide";
 
 export default function AuthPage() {
   return (
     <Suspense>
-      <AuthPanel />
+      <div className="intro-vp flex min-h-0 flex-1 flex-col">
+        <LoginSlide stage="play" />
+      </div>
     </Suspense>
   );
 }
