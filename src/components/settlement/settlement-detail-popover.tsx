@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowRight, Loader2, RefreshCw, X } from "lucide-react";
+import { ArrowRight, Loader2, RefreshCw, Undo2 } from "lucide-react";
 import { useCallback, useEffect } from "react";
-import { AnchoredPopover } from "@/components/shared/anchored-popover";
+import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { settlementReadKey, useAppStore } from "@/stores/app-store";
 import type { SettlementStatus } from "@/types/ledger";
 
 const STATUS_CONFIG: Record<SettlementStatus, { label: string; className: string }> = {
-  confirmed: { label: "Confirmado", className: "bg-success/15 text-success" },
+  confirmed: { label: "Confirmado", className: "bg-success/15 text-success-text" },
   voided: { label: "Desfeito", className: "bg-muted text-muted-foreground" },
 };
 
@@ -37,11 +37,17 @@ export function SettlementDetailPopover({
   groupId,
   open,
   onOpenChange,
+  anchor,
+  onUndo,
+  busy = false,
 }: {
   settlementId: string;
   groupId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  anchor: HTMLElement | null;
+  onUndo?: () => void;
+  busy?: boolean;
 }) {
   const settlement = useAppStore((s) => s.settlementDetails[settlementId]);
   const read = useAppStore((s) => s.reads[settlementReadKey(settlementId)]);
@@ -80,29 +86,9 @@ export function SettlementDetailPopover({
   const failed = readError !== null && !denied;
 
   return (
-    <AnchoredPopover
-      open={open}
-      onOpenChange={onOpenChange}
-      ariaLabel="Detalhes do pagamento"
-      className="right-0 top-full mt-2 w-[min(22rem,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl p-4"
-    >
-      <div data-testid="settlement-detail-popover">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">Pagamento</h2>
-            <p className="text-xs text-muted-foreground">Registro deste pagamento no grupo.</p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-9 shrink-0 rounded-full"
-            aria-label="Fechar pagamento"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverContent anchor={anchor} data-testid="settlement-detail-popover">
+        <PopoverTitle>Pagamento</PopoverTitle>
 
         {settlement && payer && recipient && cfg ? (
           <div className="space-y-3">
@@ -110,14 +96,14 @@ export function SettlementDetailPopover({
               <div className="flex items-center gap-2">
                 <UserAvatar id={settlement.fromUserId} name={payer.name} avatarUrl={payer.avatarUrl} size="sm" isBot={payer.isBot} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium" data-testid="settlement-detail-payer">
+                  <p title={payer.name} className="truncate text-sm font-semibold" data-testid="settlement-detail-payer">
                     {payer.name}
                   </p>
                   <p className="text-xs text-muted-foreground">Quem pagou</p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1 text-right">
-                  <p className="truncate text-sm font-medium" data-testid="settlement-detail-recipient">
+                  <p title={recipient.name} className="truncate text-sm font-semibold" data-testid="settlement-detail-recipient">
                     {recipient.name}
                   </p>
                   <p className="text-xs text-muted-foreground">Quem recebeu</p>
@@ -162,7 +148,7 @@ export function SettlementDetailPopover({
             )}
             {failed && (
               <div className="space-y-2 text-center" data-testid="settlement-detail-stale">
-                <p className="text-xs text-warning">
+                <p className="text-xs text-warning-text">
                   Não deu para atualizar agora — mostrando o último valor salvo.
                 </p>
                 <Button
@@ -177,9 +163,12 @@ export function SettlementDetailPopover({
                 </Button>
               </div>
             )}
-            <p className="text-center text-xs text-muted-foreground">
-              Registro do grupo. Não é comprovante bancário.
-            </p>
+            {onUndo && settlement.status === "confirmed" && (
+              <Button variant="outline" disabled={busy} onClick={onUndo} className="w-full text-destructive-text">
+                <Undo2 aria-hidden="true" />
+                Desfazer pagamento
+              </Button>
+            )}
           </div>
         ) : denied ? (
           <div className="space-y-1 py-4 text-center" data-testid="settlement-detail-unavailable">
@@ -215,7 +204,7 @@ export function SettlementDetailPopover({
             Carregando pagamento…
           </div>
         )}
-      </div>
-    </AnchoredPopover>
+      </PopoverContent>
+    </Popover>
   );
 }

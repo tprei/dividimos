@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
+import { haptics } from "@/hooks/use-haptics";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
 
 const EXPENSE_VERBS: Record<string, string> = {
@@ -94,6 +95,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [settlementAnchor, setSettlementAnchor] = useState<HTMLElement | null>(null);
   const [preferences, updatePreferences] = useConfirmationPreferences(meId);
   const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "");
   const copy = describeEvent(event, {
@@ -193,9 +195,11 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
     try {
       await voidSettlement(groupId, settlementId);
       toast.success("Pagamento desfeito");
+      haptics.success();
       setConfirmOpen(false);
     } catch (error) {
       toast.error(ledgerErrorMessage(error));
+      haptics.error();
     } finally {
       setBusy(false);
     }
@@ -232,7 +236,8 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
               size="sm"
               variant="ghost"
               className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={() => {
+              onClick={(e) => {
+                setSettlementAnchor(e.currentTarget);
                 if (preferences.confirmVoidSettlement) setConfirmOpen(true);
                 else void handleVoid();
               }}
@@ -247,7 +252,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
               size="sm"
               variant="ghost"
               className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={() => setDetailOpen(true)}
+              onClick={(e) => { setSettlementAnchor(e.currentTarget); setDetailOpen(true); }}
               data-testid="event-view-settlement"
             >
               Detalhes
@@ -261,6 +266,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
       {canUndo && (
         <VoidSettlementDialog
           open={confirmOpen && canUndo}
+          anchor={settlementAnchor}
           amountCents={amountCents}
           payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
           recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
@@ -278,6 +284,13 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           groupId={groupId}
           open={detailOpen}
           onOpenChange={setDetailOpen}
+          anchor={settlementAnchor}
+          busy={busy}
+          onUndo={canUndo ? () => {
+            setDetailOpen(false);
+            if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+            else void handleVoid();
+          } : undefined}
         />
       )}
     </div>

@@ -103,6 +103,7 @@ export function GroupSettlementView({
     [people]
   );
   const labels = displayNames(people, { style: "short", viewerId: meId });
+  const fullNames = displayNames(people, { style: "full" });
   const myBalance =
     snapshot.balances.find(
       (balance) => balance.kind === "user" && balance.participantId === meId
@@ -347,7 +348,9 @@ export function GroupSettlementView({
         <PixQrModal
           open
           onClose={() => setPixTarget(null)}
-          recipientName={pixTarget.recipientName}
+          recipientName={fullNames.get(pixTarget.counterpartyId) ?? pixTarget.recipientName}
+          counterpartyId={pixTarget.counterpartyId}
+          counterpartyAvatarUrl={peopleById.get(pixTarget.counterpartyId)?.avatarUrl}
           amountCents={pixTarget.amountCents}
           recipientUserId={
             pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId

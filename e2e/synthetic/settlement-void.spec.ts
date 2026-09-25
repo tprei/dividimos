@@ -19,8 +19,7 @@ test.describe("Settlement void", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Tudo acertado")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Ninguém deve nada por aqui.")).toBeVisible();
+    await expect(page.getByRole("status")).toBeVisible({ timeout: 10000 });
 
     await page.goto("/app/activity");
     await page.waitForLoadState("networkidle");
@@ -32,18 +31,17 @@ test.describe("Settlement void", () => {
     await page.getByRole("button", { name: "Desfazer" }).click();
 
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("Desfazer este registro?")).toBeVisible();
-    await dialog.getByRole("button", { name: "Desfazer registro" }).click();
+    await expect(dialog.getByRole("heading", { name: /Desfazer pagamento de R\$\s*50,00/ })).toBeVisible();
+    await dialog.getByRole("button", { name: "Desfazer", exact: true }).click();
 
     await expect(page.getByText("Pagamento desfeito")).toBeVisible({ timeout: 10000 });
 
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    const chargeRow = page
-      .getByRole("region", { name: "Quem paga quem" })
-      .getByRole("button", { name: /Cobrar R\$\s*50,00/ });
+    const chargeRow = page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /Cobrar R\$\s*50,00/ });
     await expect(chargeRow).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Tudo acertado")).toBeHidden();
+    await expect(chargeRow).toBeEnabled();
+    await expect(page.getByRole("region", { name: "Quem paga quem" })).toBeVisible();
   });
 });

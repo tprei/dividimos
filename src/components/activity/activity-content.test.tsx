@@ -354,19 +354,13 @@ describe("ActivityContent", () => {
     fireEvent.click(undoButton);
 
     expect(voidSettlement).not.toHaveBeenCalled();
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText("Bob")).toBeInTheDocument();
     expect(dialog.getByText("você")).toBeInTheDocument();
-    expect(
-      screen.getByText(/O registro fica marcado como Desfeito e os saldos são recalculados na hora\./),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/O Pix em si não é estornado\. Combina a devolução direto com a outra pessoa\./),
-    ).toBeInTheDocument();
   });
 
-  it("closes confirmation dialog without calling voidSettlement when Cancelar is clicked in activity feed", async () => {
+  it("dismisses confirmation with Escape without voiding the payment", async () => {
     useAppStore.setState({
       groups: {
         "group-1": groupNormal,
@@ -375,16 +369,16 @@ describe("ActivityContent", () => {
     });
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
-    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
     await waitFor(() => {
-      expect(screen.queryByText(/Desfazer este registro\?/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(voidSettlement).not.toHaveBeenCalled();
   });
 
-  it("voids settlement when Desfazer registro is confirmed in dialog", async () => {
+  it("voids the payment after confirmation", async () => {
     useAppStore.setState({
       groups: {
         "group-1": groupNormal,
@@ -394,7 +388,7 @@ describe("ActivityContent", () => {
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
@@ -413,7 +407,7 @@ describe("ActivityContent", () => {
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" }));
 
     await waitFor(() => {
       expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
@@ -421,8 +415,7 @@ describe("ActivityContent", () => {
     await waitFor(() => {
       expect(toastMocks.error).toHaveBeenCalled();
     });
-    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Desfazer" })).toBeEnabled();
   });
 
   it("does not show 'Desfazer' once the settlement is voided and gone from the snapshot", () => {

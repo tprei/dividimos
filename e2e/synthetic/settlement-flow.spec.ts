@@ -178,7 +178,7 @@ test.describe("Settlement Flow", () => {
     await expect(page.getByText("R$ 50,00").first()).toBeVisible();
 
     await transfers.getByRole("button", { name: /Cobrar/ }).click();
-    await page.getByRole("button", { name: /Já recebi/i }).click();
+    await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
     await expect(page.getByRole("status")).toBeVisible({ timeout: 15000 });
   });

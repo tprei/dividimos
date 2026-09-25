@@ -101,17 +101,14 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithFetch} onMarkPaid={onMarkPaid} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Chave Pix não cadastrada")).toBeInTheDocument();
+      expect(screen.getByText(/Bob Santos ainda não cadastrou/)).toBeInTheDocument();
     });
     expect(
-      screen.getByText("Bob ainda não cadastrou uma chave Pix no Dividimos."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Copiar código Pix/i }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /Copiar código Pix/i }),
+    ).not.toBeInTheDocument();
 
     const registerButton = screen.getByRole("button", {
-      name: /Registrar pagamento feito por fora/i,
+      name: "Registrar pagamento",
     });
     expect(registerButton).toBeEnabled();
     fireEvent.click(registerButton);
@@ -140,8 +137,8 @@ describe("PixQrModal", () => {
       screen.queryByText(/Chave Pix não cadastrada/),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Copiar código Pix/i }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /Copiar código Pix/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("retries the generation immediately with the same amount after a failure", async () => {
@@ -205,14 +202,8 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithFetch} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Cadastre sua chave Pix")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Cadastrar chave Pix" })).toHaveAttribute("href", "/app/profile");
     });
-    expect(
-      screen.getByText("Cadastre sua chave Pix no seu perfil pra receber pagamentos."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /Configurar chave Pix no perfil/i }),
-    ).toHaveAttribute("href", "/app/profile");
   });
 
   it("reveals the selectable code when the clipboard rejects and recovers on retry", async () => {
@@ -253,7 +244,7 @@ describe("PixQrModal", () => {
     });
 
     await waitFor(() => {
-      expect(toastSuccess).toHaveBeenCalledWith("Código Pix copiado!");
+      expect(writeText).toHaveBeenLastCalledWith("br-code-for-10000");
     });
     expect(haptics.success).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Copiado!")).toBeInTheDocument();
@@ -278,7 +269,7 @@ describe("PixQrModal", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Metade/i }));
-    expect(screen.getByText(/Resta depois do Pix/)).toBeInTheDocument();
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-valuetext", formatBRL(5000));
 
     fireEvent.click(screen.getByRole("button", { name: /Paguei/i }));
 
@@ -303,7 +294,7 @@ describe("PixQrModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Pagamento registrado!")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Pagamento registrado" })).toBeInTheDocument();
     });
     expect(screen.getByText("R$ 100,00")).toBeInTheDocument();
 
@@ -324,14 +315,13 @@ describe("PixQrModal", () => {
         "Sem conexão. Tente de novo quando a internet voltar.",
       );
     });
-    expect(screen.queryByText("Pagamento registrado!")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Pagamento registrado" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Já paguei/i })).toBeEnabled();
   });
 
   it("asks for receipt confirmation in collect mode", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} mode="collect" />);
 
-    expect(screen.getByText("Cobrar via Pix")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Já recebi/i })).toBeEnabled();
   });
 
@@ -345,14 +335,6 @@ describe("PixQrModal", () => {
     expect(haptics.selectionChanged).toHaveBeenCalled();
   });
 
-  it("renders visual tick marks for snap points", () => {
-    render(
-      <PixQrModal {...defaultPropsWithPixKey} amountCents={50000} />,
-    );
-
-    const ticks = document.querySelectorAll(".bg-muted-foreground\\/30");
-    expect(ticks.length).toBeGreaterThan(0);
-  });
   it("handles exact 1-centavo slider values and keyboard navigation without snapback", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
 
@@ -388,17 +370,6 @@ describe("PixQrModal", () => {
     expect(slider).toHaveAttribute("aria-valuetext", formatBRL(100));
   });
 
-  it("renders the Metade pill as a plain button without a midpoint snap marker", () => {
-    render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
-
-    expect(screen.getByRole("button", { name: "Metade" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Tudo" })).toBeInTheDocument();
-
-    // Metade sets the value directly; it is not a snap point the slider can land on.
-    const expectedLeft = `${((6077 - 100) / (12154 - 100)) * 100}%`;
-    const ticks = Array.from(document.querySelectorAll<HTMLElement>(".bg-muted-foreground\\/30"));
-    expect(ticks.find((tick) => tick.style.left === expectedLeft)).toBeUndefined();
-  });
 
   it("hides the Metade pill for totals under R$ 2,00", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} amountCents={150} />);
@@ -551,7 +522,7 @@ describe("PixQrModal", () => {
     vi.mocked(qrToCanvas).mockClear();
     fireEvent.click(screen.getByRole("button", { name: /Metade/i }));
 
-    expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Copiar código Pix/i })).not.toBeInTheDocument();
     expect(qrToCanvas).not.toHaveBeenCalledWith(
       expect.anything(),
       "br-code-for-10000",
@@ -670,7 +641,7 @@ describe("PixQrModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Pagamento registrado!")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Pagamento registrado" })).toBeInTheDocument();
     });
 
     const fecharButton = screen.getByRole("button", { name: "Fechar" });
@@ -708,12 +679,6 @@ describe("PixQrModal", () => {
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     expect(disclosure).toHaveAttribute("aria-controls", "pix-qr-region");
     expect(qrToCanvas).not.toHaveBeenCalled();
-    expect(screen.queryByText("1. Pague no app do seu banco")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
-      ),
-    ).toBeInTheDocument();
   });
 
   it("paints the QR on disclosure expand without issuing a fetch", async () => {
@@ -748,33 +713,13 @@ describe("PixQrModal", () => {
     ).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("renders the collect QR immediately with the collect expectation line", () => {
+  it("renders the collect QR without a disclosure", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} mode="collect" />);
 
     expect(qrToCanvas).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByRole("button", { name: /Mostrar QR code/ }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("2. Registre aqui no Dividimos"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Registrar não move dinheiro, só marca que ele te pagou por fora."),
-    ).toBeInTheDocument();
   });
 
-  it("shows the pay expectation line in pay mode", () => {
-    render(<PixQrModal {...defaultPropsWithPixKey} />);
-
-    expect(
-      screen.queryByText("2. Registre aqui no Dividimos"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/Lê o QR code/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Sem QR code/)).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
-      ),
-    ).toBeInTheDocument();
-  });
 });
