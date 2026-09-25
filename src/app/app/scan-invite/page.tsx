@@ -3,7 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { useQrScannerPreload } from "@/hooks/use-qr-preload";
@@ -26,6 +26,8 @@ export default function ScanInvitePage() {
   const [paused, setPaused] = useState(false);
   const [scannedProfile, setScannedProfile] = useState<UserProfile | null>(null);
   const [manualCode, setManualCode] = useState("");
+  const [typing, setTyping] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   const handleDecode = useCallback(
     (data: string) => {
@@ -82,8 +84,13 @@ export default function ScanInvitePage() {
     setPaused(false);
   }, []);
 
+  const showCamera = useCallback(() => {
+    codeInputRef.current?.blur();
+    setTyping(false);
+  }, []);
+
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg px-4 py-6 keyboard:py-3">
       <div className="flex items-center gap-3">
         <Link
           href="/app"
@@ -93,14 +100,14 @@ export default function ScanInvitePage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">Escanear</h1>
-          <p className="text-xs text-muted-foreground">
+          <h1 className="text-2xl font-bold keyboard:text-xl">Escanear</h1>
+          <p className="text-xs text-muted-foreground keyboard:hidden">
             Convite de grupo, perfil ou conta
           </p>
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 keyboard:mt-3">
         {scannedProfile ? (
           <div className="grid gap-4 rounded-2xl border bg-card p-5 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -129,16 +136,24 @@ export default function ScanInvitePage() {
           </div>
         ) : (
           <>
-            <QrScannerView onDecode={handleDecode} paused={paused} />
+            <QrScannerView onDecode={handleDecode} paused={paused} collapsed={typing} onExpand={showCamera} />
             {hint && <p role="status" className="mt-3 text-center text-sm text-muted-foreground">{hint}</p>}
-            <form className="mt-6 space-y-3 rounded-2xl border border-border bg-card p-4" onSubmit={(event) => {
-              event.preventDefault();
-              const code = manualCode.trim();
-              handleDecode(INVITE_TOKEN_RE.test(code) ? `/join/${code}` : code);
-            }}>
+            <form
+              className="mt-6 space-y-3 rounded-2xl border border-border bg-card p-4 keyboard:mt-3"
+              onFocus={() => setTyping(true)}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setTyping(false);
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const code = manualCode.trim();
+                handleDecode(INVITE_TOKEN_RE.test(code) ? `/join/${code}` : code);
+              }}
+            >
               <label htmlFor="invite-code" className="block text-sm font-semibold">Link ou código</label>
-              <Input id="invite-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Convite do Dividimos" autoCapitalize="none" autoCorrect="off" />
-              <Button type="submit" variant="outline" className="w-full" disabled={!manualCode.trim() || paused}>Abrir convite</Button>
+              <Input ref={codeInputRef} id="invite-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Convite do Dividimos" autoCapitalize="none" autoCorrect="off" enterKeyHint="go" />
+              {/* Keeping focus in the field on press stops the camera from re-expanding under the finger before the click lands. */}
+              <Button type="submit" variant={manualCode.trim() ? "default" : "outline"} className="w-full" disabled={!manualCode.trim() || paused} onMouseDown={(event) => event.preventDefault()}>Abrir convite</Button>
             </form>
           </>
         )}
