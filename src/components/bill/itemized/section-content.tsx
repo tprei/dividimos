@@ -9,6 +9,7 @@ import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { ExpenseItem, User } from "@/types";
 
 export interface SectionContentProps {
+  viewerId: string;
   section: ItemizedSectionKey;
   details: DetailsStepProps;
   payment: PaymentSectionProps;
@@ -30,11 +31,13 @@ export interface SectionContentProps {
   onAddItem: ItemsSectionProps["onAddItem"];
   onToggleItem: SplitSectionProps["onToggleItem"];
   onSaveDivision: SplitSectionProps["onSaveDivision"];
+  onUnassign: SplitSectionProps["onUnassign"];
   onCloseDivision: SplitSectionProps["onCloseDivision"];
   onAssignSelected: SplitSectionProps["onAssignSelected"];
 }
 
 export function SectionContent({
+  viewerId,
   section,
   details,
   payment,
@@ -56,6 +59,7 @@ export function SectionContent({
   onAddItem,
   onToggleItem,
   onSaveDivision,
+  onUnassign,
   onCloseDivision,
   onAssignSelected,
 }: SectionContentProps) {
@@ -69,6 +73,7 @@ export function SectionContent({
         amountTexts={amountTexts}
         invalidAmountIds={invalidAmountIds}
         serviceFeeText={serviceFeeText}
+        serviceFeeCents={serviceFeeCents}
         fixedFees={fixedFees}
         grandTotal={grandTotal}
         onDescriptionChange={onDescriptionChange}
@@ -82,6 +87,7 @@ export function SectionContent({
   if (section === "split") {
     return (
       <SplitSection
+        viewerId={viewerId}
         items={items}
         participants={participants}
         guests={guests}
@@ -92,6 +98,7 @@ export function SectionContent({
         expandedId={expandedId}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
+        onUnassign={onUnassign}
         onCloseDivision={onCloseDivision}
         onAssignSelected={onAssignSelected}
       />

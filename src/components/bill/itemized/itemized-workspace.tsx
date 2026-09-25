@@ -18,7 +18,7 @@ const STEP_LABELS = ["Participantes", "Itens", "Quem consumiu", "Quem pagou"] as
 export interface ItemizedWorkspaceProps {
   store: Pick<
     ExpenseState,
-    "items" | "participants" | "guests" | "splits" | "payers" | "updateItem" | "removeItem" | "addItem"
+    "items" | "participants" | "guests" | "splits" | "payers" | "updateItem" | "removeItem" | "addItem" | "unassignItem"
   >;
   section: ItemizedSectionKey;
   onSectionChange: (section: ItemizedSectionKey) => void;
@@ -109,6 +109,7 @@ export function ItemizedWorkspace({
     <>
       <WizardSteps steps={STEP_LABELS} current={current} />
       <SectionContent
+        viewerId={participants.me.id}
         section={section}
         details={{ ...details, participants }}
         payment={payment}
@@ -130,6 +131,7 @@ export function ItemizedWorkspace({
         onAddItem={store.addItem}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
+        onUnassign={store.unassignItem}
         onCloseDivision={onCloseDivision}
         onAssignSelected={onAssignSelected}
       />

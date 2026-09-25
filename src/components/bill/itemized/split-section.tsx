@@ -1,21 +1,24 @@
 "use client";
 
-import { Fragment, useState } from "react";
-import { ChevronDown, Equal } from "lucide-react";
-import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
-import { Money } from "@/components/shared/money";
-import { Chip } from "@/components/ui/chip";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { Equal } from "lucide-react";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
-import { divisionForItem, equalDivision, isItemAssigned, type ItemDivisionValue } from "@/lib/item-division";
-import { cn } from "@/lib/utils";
+import { PersonToggle } from "@/components/bill/person-toggle";
+import { Money } from "@/components/shared/money";
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
+import { divisionForItem, equalDivision, isItemAssigned, percentText, type ItemDivisionValue } from "@/lib/item-division";
+import { displayNames } from "@/lib/people";
 import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { ExpenseItem, User } from "@/types";
 
 /** Above this many items, tapping every row is the slow way. */
 const DENSE_ITEM_THRESHOLD = 6;
 export interface SplitSectionProps {
+  viewerId: string;
   items: ExpenseItem[];
   participants: User[];
   guests: Guest[];
@@ -26,6 +29,7 @@ export interface SplitSectionProps {
   expandedId: string | null;
   onToggleItem: (itemId: string) => void;
   onSaveDivision: (itemId: string, value: ItemDivisionValue) => void;
+  onUnassign: (itemId: string, personId: string) => void;
   onCloseDivision: () => void;
   onAssignSelected: (itemIds: string[], personIds: string[]) => void;
 }
@@ -49,19 +53,8 @@ function participantEntries(participants: User[], guests: Guest[]): ItemDivision
   ];
 }
 
-function assigneePeople(
-  item: ExpenseItem,
-  splits: ExpenseSplit[],
-  people: ItemDivisionParticipant[],
-): AvatarStackPerson[] {
-  const personById = new Map(people.map((person) => [person.id, person]));
-  return splits
-    .filter((split) => split.itemId === item.id)
-    .map((split) => personById.get(split.userId))
-    .filter((person): person is ItemDivisionParticipant => person !== undefined);
-}
-
 export function SplitSection({
+  viewerId,
   items,
   participants,
   guests,
@@ -72,17 +65,18 @@ export function SplitSection({
   expandedId,
   onToggleItem,
   onSaveDivision,
+  onUnassign,
   onCloseDivision,
   onAssignSelected,
 }: SplitSectionProps) {
   const people = participantEntries(participants, guests);
   const peopleIds = new Set(people.map((person) => person.id));
+  const labels = displayNames(people, { style: "short", viewerId });
   const unassignedCount = items.filter((item) => !isItemAssigned(item, splits, peopleIds)).length;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchPeopleIds, setBatchPeopleIds] = useState<string[]>([]);
 
   const selected = new Set(selectedIds);
-  const batchPeople = new Set(batchPeopleIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
 
   function divideAllEqually(): void {
@@ -92,16 +86,16 @@ export function SplitSection({
     }
   }
 
-  function toggleSelected(itemId: string): void {
-    setSelectedIds((prev) =>
-      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
-    );
-  }
-
-  function togglePerson(personId: string): void {
-    setBatchPeopleIds((prev) =>
-      prev.includes(personId) ? prev.filter((id) => id !== personId) : [...prev, personId],
-    );
+  function toggleConsumer(item: ExpenseItem, current: readonly string[], personId: string): void {
+    const next = current.includes(personId)
+      ? current.filter((id) => id !== personId)
+      : people.map((person) => person.id).filter((id) => id === personId || current.includes(id));
+    if (next.length === 0) {
+      onUnassign(item.id, personId);
+      return;
+    }
+    const division = equalDivision(next, item.totalPriceCents);
+    if (division) onSaveDivision(item.id, division);
   }
 
   function applyBatch(): void {
@@ -116,24 +110,28 @@ export function SplitSection({
 
   return (
     <div className="space-y-3 px-4 py-3">
-      <h2 className="text-sm leading-5 font-semibold">Quem consumiu</h2>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={divideAllEqually}
-        disabled={people.length === 0 || items.length === 0}
-        className="mt-2 min-h-11 w-full"
-      >
-        <Equal className="size-4 shrink-0" aria-hidden="true" />
-        Dividir tudo igualmente
-      </Button>
-      {unassignedCount > 0 && (
-        <p className="mt-2 text-xs leading-4 text-muted-foreground">
-          {unassignedCount === 1 ? "1 item sem divisão" : `${unassignedCount} de ${items.length} itens sem divisão`}
+      <div className="flex min-h-9 items-center justify-between gap-3 px-1">
+        <p className="min-w-0 text-xs text-muted-foreground">
+          {unassignedCount === 0
+            ? null
+            : unassignedCount === 1
+              ? "1 item sem divisão"
+              : `${unassignedCount} de ${items.length} itens sem divisão`}
         </p>
-      )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={divideAllEqually}
+          disabled={people.length === 0 || items.length === 0}
+          className="shrink-0"
+        >
+          <Equal aria-hidden="true" />
+          Dividir tudo igualmente
+        </Button>
+      </div>
       {dense && (
-        <div className="rounded-2xl border bg-card p-3">
+        <div className="space-y-2 rounded-[0.75rem] border bg-card px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
               <input
@@ -144,54 +142,35 @@ export function SplitSection({
               />
               Selecionar todos
             </label>
-            <span className="text-xs text-muted-foreground" aria-live="polite">
+            <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
               {selectedIds.length} de {items.length} selecionados
             </span>
           </div>
-
           {selectedIds.length > 0 && (
-            <div className="mt-3 space-y-3 border-t pt-3">
-              <div
-                className="flex flex-wrap gap-2"
-                role="group"
-                aria-label="Dividir itens selecionados entre"
-              >
-                {people.map((person) => {
-                  const active = batchPeople.has(person.id);
-                  return (
-                    <button
-                      key={person.id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => togglePerson(person.id)}
-                      className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
-                        active
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input bg-transparent text-foreground"
-                      }`}
-                    >
-                      {person.name}
-                      {person.isGuest ? " (convidado)" : ""}
-                    </button>
-                  );
-                })}
+            <div className="space-y-2 border-t pt-2">
+              <div className="flex flex-wrap gap-3 py-1" role="group" aria-label="Dividir itens selecionados entre">
+                {people.map((person) => (
+                  <PersonToggle
+                    key={person.id}
+                    id={person.id}
+                    label={labels.get(person.id) ?? person.name}
+                    name={person.name}
+                    avatarUrl={person.avatarUrl}
+                    isGuest={person.isGuest}
+                    selected={batchPeopleIds.includes(person.id)}
+                    onToggle={() =>
+                      setBatchPeopleIds((prev) =>
+                        prev.includes(person.id) ? prev.filter((id) => id !== person.id) : [...prev, person.id],
+                      )
+                    }
+                  />
+                ))}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={applyBatch}
-                  disabled={batchPeopleIds.length === 0}
-                >
-                  Dividir {selectedIds.length}{" "}
-                  {selectedIds.length === 1 ? "item" : "itens"} igualmente
+                <Button type="button" size="sm" onClick={applyBatch} disabled={batchPeopleIds.length === 0}>
+                  Dividir {selectedIds.length} {selectedIds.length === 1 ? "item" : "itens"} igualmente
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setSelectedIds([])}
-                >
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
                   Limpar seleção
                 </Button>
               </div>
@@ -199,54 +178,86 @@ export function SplitSection({
           )}
         </div>
       )}
-      <div className="divide-y divide-border rounded-2xl border bg-card">
+      <ul className="divide-y divide-border overflow-hidden rounded-[0.75rem] border bg-card">
         {items.map((item) => {
           const expanded = expandedId === item.id;
           const division = divisionForItem(item, splits);
-          const assignees = assigneePeople(item, splits, people);
+          const assigned = isItemAssigned(item, splits, peopleIds);
+          const consumers = (division?.shares ?? [])
+            .map((share) => share.participantId)
+            .filter((id) => peopleIds.has(id));
+          const custom = assigned && division !== null && division.mode !== "equal";
           const name = item.description || "Item sem nome";
           return (
-            <Fragment key={item.id}>
-              <div className="flex min-h-14 w-full min-w-0 items-center gap-2 px-4 py-2">
-                {dense && (
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={() => toggleSelected(item.id)}
-                    aria-label={`Selecionar ${name}`}
-                    className="size-4 shrink-0 accent-primary"
-                  />
-                )}
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  onClick={() => onToggleItem(item.id)}
-                  className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left"
-                >
-                  <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">
-                    {name}
-                  </span>
-                  <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
-                  {isItemAssigned(item, splits, peopleIds) ? (
-                    <>
-                      <AvatarStack people={assignees} />
-                      <span className="sr-only">
-                        Dividido entre {assignees.map((person) => person.name).join(", ")}
-                      </span>
-                    </>
-                  ) : (
-                    <Chip tone="warning" className="shrink-0">
-                      Pendente
-                    </Chip>
+            <li key={item.id}>
+              <div className="space-y-2 px-3 py-2.5">
+                <div className="flex min-h-8 min-w-0 items-center gap-2">
+                  {dense && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(item.id)}
+                      onChange={() =>
+                        setSelectedIds((prev) =>
+                          prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                        )
+                      }
+                      aria-label={`Selecionar ${name}`}
+                      className="size-4 shrink-0 accent-primary"
+                    />
                   )}
-                  <ChevronDown
-                    aria-hidden="true"
-                    className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform",
-                      expanded && "rotate-180",
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold" title={name}>{name}</p>
+                    {item.quantity !== 1000 && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {formatExpenseQuantity(item.quantity as ExpenseQuantity)} × {formatBRL(item.unitPriceCents)}
+                      </p>
                     )}
-                  />
-                </button>
+                  </div>
+                  {!assigned && <Chip tone="warning">Pendente</Chip>}
+                  <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-expanded={expanded}
+                    aria-label={`Ajustar divisão de ${name}`}
+                    onClick={() => onToggleItem(item.id)}
+                    className="shrink-0 px-2"
+                  >
+                    {expanded ? "Fechar" : "Ajustar"}
+                  </Button>
+                </div>
+                {!expanded && custom && division && (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {division.shares
+                      .map((share) =>
+                        `${labels.get(share.participantId) ?? ""} ${
+                          division.mode !== "percent" || share.basisPoints === undefined
+                            ? formatBRL(share.cents)
+                            : share.basisPoints % 100 === 0
+                              ? `${share.basisPoints / 100}%`
+                              : `${percentText(share.basisPoints)}%`
+                        }`,
+                      )
+                      .join(" · ")}
+                  </p>
+                )}
+                {!expanded && !custom && (
+                  <div role="group" aria-label={`Quem consumiu ${name}`} className="flex flex-wrap gap-3 py-1">
+                    {people.map((person) => (
+                      <PersonToggle
+                        key={person.id}
+                        id={person.id}
+                        label={labels.get(person.id) ?? person.name}
+                        name={person.name}
+                        avatarUrl={person.avatarUrl}
+                        isGuest={person.isGuest}
+                        selected={consumers.includes(person.id)}
+                        onToggle={() => toggleConsumer(item, consumers, person.id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
               {expanded && (
                 <ItemDivisionEditor
@@ -259,25 +270,26 @@ export function SplitSection({
                   onClose={onCloseDivision}
                 />
               )}
-            </Fragment>
+            </li>
           );
         })}
-        <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
-          <span className="text-sm text-muted-foreground">Taxa de serviço</span>
-          <Money cents={serviceFeeCents} className="text-sm" />
+      </ul>
+      <dl className="space-y-1 px-1 text-sm">
+        <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
+          <dt>Taxa de serviço</dt>
+          <dd><Money cents={serviceFeeCents} className="text-sm" /></dd>
         </div>
         {fixedFees > 0 && (
-          <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
-            <span className="text-sm text-muted-foreground">Taxas fixas</span>
-            <Money cents={fixedFees} className="text-sm" />
+          <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
+            <dt>Taxas fixas</dt>
+            <dd><Money cents={fixedFees} className="text-sm" /></dd>
           </div>
         )}
-        <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
-          <span className="text-sm font-bold">Total</span>
-          <Money cents={grandTotal} className="text-sm font-bold" />
+        <div className="flex items-baseline justify-between gap-3 font-bold">
+          <dt>Total</dt>
+          <dd><Money cents={grandTotal} className="text-sm font-bold" /></dd>
         </div>
-      </div>
+      </dl>
     </div>
   );
 }
-

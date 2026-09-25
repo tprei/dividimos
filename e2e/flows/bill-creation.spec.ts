@@ -46,7 +46,6 @@ test.describe("Bill Creation Flow", () => {
     await page.getByRole("button", { name: "Buscar handle" }).click();
     await page.getByRole("button", { name: "Adicionar", exact: true }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
-    await page.getByRole("button", { name: "Adicionar item" }).click();
     await page.getByRole("textbox", { name: "Descrição (ex: Picanha 400g)" }).fill("Pizza Margherita");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("80");
     await page.getByRole("button", { name: "Adicionar", exact: true }).click();
