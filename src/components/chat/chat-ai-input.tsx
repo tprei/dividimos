@@ -68,7 +68,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Bumped on every edit: a success only clears text the user has not touched
-  // since submitting.
+  // since submitting, or text that is still exactly what was sent (an IME that
+  // commits its marked text after the send bumps this without a real edit).
   const editGenerationRef = useRef(0);
 
   const handleSubmit = useCallback(async () => {
@@ -98,8 +99,9 @@ export function ChatAiInput(props: ChatAiInputProps) {
         setSendError(outcome.message);
         return;
       }
+      const fieldHoldsSent = (inputRef.current?.value ?? "").trim() === trimmed;
       if (
-        editGenerationRef.current === submittedGeneration &&
+        (editGenerationRef.current === submittedGeneration || fieldHoldsSent) &&
         submittedGroupId === groupId
       ) {
         setText("");

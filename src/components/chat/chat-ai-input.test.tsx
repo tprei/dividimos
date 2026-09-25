@@ -410,6 +410,24 @@ describe("send acknowledgement", () => {
     expect(input.value).toBe("primeira e segunda");
   });
 
+  it("clears the sent text when the IME commits it after the send", async () => {
+    const gate = Promise.withResolvers<{ ok: true }>();
+    const onSend = vi.fn().mockReturnValue(gate.promise);
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId<HTMLInputElement>("chat-input");
+    await user.type(input, "Ol");
+    fireEvent.compositionStart(input);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Ola");
+    fireEvent.click(screen.getByTestId("send-button"));
+    fireEvent.compositionEnd(input);
+    fireEvent.change(input, { target: { value: "Ola" } });
+
+    gate.resolve({ ok: true });
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(onSend).toHaveBeenCalledWith("Ola");
+  });
+
   it("treats a thrown send as failure and keeps the text", async () => {
     const onSend = vi.fn().mockRejectedValue(new Error("boom"));
     const { user } = setup({ onSend });
