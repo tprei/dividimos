@@ -42,16 +42,15 @@ test.describe("Voice expense", () => {
         value: FakeSpeechRecognition,
       });
 
-      if (!navigator.mediaDevices) {
-        Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
-      }
-      // WebKit's Linux build behind Playwright has no MediaStream constructor,
-      // so the stream is a plain object with the one method the hook calls.
+      // WebKit's Linux build behind Playwright has no MediaStream constructor
+      // and ignores a getUserMedia override on the MediaDevices instance, so
+      // the whole mediaDevices object is replaced through the prototype.
       const track = { kind: "audio", enabled: true, stop() {} };
       const fakeStream = { getTracks: () => [track], getAudioTracks: () => [track] };
-      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      const fakeMediaDevices = { getUserMedia: async () => fakeStream };
+      Object.defineProperty(Navigator.prototype, "mediaDevices", {
         configurable: true,
-        value: async () => fakeStream,
+        get: () => fakeMediaDevices,
       });
 
       class FakeMediaRecorder {
