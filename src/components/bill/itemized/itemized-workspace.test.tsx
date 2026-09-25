@@ -44,10 +44,8 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
         onSplitEvenly: null,
         remainderCents: 0,
         summary: [],
-        itemsCents: grandTotal,
-        serviceFeeCents: 0,
-        fixedFeesCents: 0,
-        grandTotal,
+        totalCents: grandTotal,
+        totalNote: null,
         hasGuests: false,
       }}
       amountInputs={{}}

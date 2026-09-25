@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { evenSplitBalance } from "@/lib/split-balance";
 import type { ExpensePayer } from "@/types";
 import { useSplitDraft, type SplitDraftSeed } from "./use-split-draft";
@@ -34,6 +34,8 @@ export interface PayerStoreActions {
  * Who paid, edited with the same balancing as the consumption split and
  * written to the bill store as exact centavos on every change. Percentages
  * reach the store through the same basis-point allocation the store uses.
+ * With a single account holder there is nothing to choose: `soleId` is set,
+ * they pay the whole total, and the draft reads as that alone.
  */
 export function usePayerSplit({
   participantIds,
@@ -56,9 +58,15 @@ export function usePayerSplit({
   });
   const { draft, centsById } = editor;
   const { setPayerFull, splitPaymentEqually, setPayerAmount, removePayerEntry } = actions;
+  const soleId = participantIds.length === 1 ? participantIds[0] : null;
 
   useEffect(() => {
-    if (totalCents <= 0 || draft.included.length === 0) return;
+    if (totalCents <= 0) return;
+    if (soleId !== null) {
+      setPayerFull(soleId);
+      return;
+    }
+    if (draft.included.length === 0) return;
     if (draft.mode === "equal") {
       if (draft.included.length === 1) setPayerFull(draft.included[0]);
       else splitPaymentEqually([...draft.included]);
@@ -69,7 +77,19 @@ export function usePayerSplit({
       if (cents > 0) setPayerAmount(id, cents);
       else removePayerEntry(id);
     }
-  }, [centsById, draft, participantIds, removePayerEntry, setPayerAmount, setPayerFull, splitPaymentEqually, totalCents]);
+  }, [centsById, draft, participantIds, removePayerEntry, setPayerAmount, setPayerFull, soleId, splitPaymentEqually, totalCents]);
 
-  return editor;
+  const sole = useMemo(
+    () =>
+      soleId === null
+        ? null
+        : {
+            draft: { ...draft, mode: "equal" as const, included: [soleId] },
+            centsById: { [soleId]: totalCents },
+          },
+    [draft, soleId, totalCents],
+  );
+
+  if (sole === null) return { ...editor, soleId };
+  return { ...editor, ...sole, soleId, remainderCents: 0, completable: {}, canSplitEvenly: false };
 }

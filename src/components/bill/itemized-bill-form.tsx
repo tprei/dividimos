@@ -185,6 +185,7 @@ export function ItemizedBillForm({
         .filter((participant) => !selectedGroup.members.some((member) => member.userId === participant.id))
         .map((participant) => labels.get(participant.id))
     : [];
+  const totalExtras = [...(serviceFeeCents > 0 ? ["serviço"] : []), ...(fixedFees > 0 ? ["taxas"] : [])];
 
   const handleGroupSelect = (value: string | null) => {
     if (value === "create" || value === "dm") {
@@ -300,10 +301,8 @@ export function ItemizedBillForm({
             consumedCents: store.getParticipantTotal(person.id),
             paidCents: payers.centsById[person.id] ?? 0,
           })),
-          itemsCents: itemsTotal,
-          serviceFeeCents,
-          fixedFeesCents: fixedFees,
-          grandTotal,
+          totalCents: grandTotal,
+          totalNote: totalExtras.length > 0 ? `com ${totalExtras.join(" e ")}` : null,
           hasGuests: store.guests.length > 0,
         }}
         amountInputs={amountInputs}

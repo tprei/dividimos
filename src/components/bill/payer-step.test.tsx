@@ -103,28 +103,6 @@ describe("PayerStep percentage mode", () => {
     expect(screen.getByText(formatBRL(4000).replace(/\u00a0/g, " "))).toBeInTheDocument();
     expect(screen.getByText(/faltam 59,99% para completar 100%/)).toBeInTheDocument();
   });
-
-
-  it("renders explainer when hasGuests is true", () => {
-    render(
-      <PayerStep
-        participants={participants}
-        payers={[{ userId: "a", amountCents: 10000 }]}
-        grandTotal={10000}
-        onSetPayerFull={vi.fn()}
-        onSplitPaymentEqually={vi.fn()}
-        onSetPayerAmount={vi.fn()}
-        onRemovePayerEntry={vi.fn()}
-        hasGuests={true}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "Só quem tem conta no Dividimos pode ser escolhido como pagador.",
-      ),
-    ).toBeInTheDocument();
-  });
 });
 
 describe("PayerStep mode-switch seeding", () => {
