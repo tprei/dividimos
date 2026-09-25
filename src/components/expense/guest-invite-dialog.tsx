@@ -20,9 +20,11 @@ import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutatio
 import { refreshExpense } from "@/lib/sync/refresh";
 import { copyText } from "@/lib/platform/clipboard";
 import { isShareSupported, shareLink } from "@/lib/platform/share";
-import { qrToCanvas } from "@/lib/qr";
+import { QrCanvas } from "@/components/shared/qr-canvas";
 import type { GuestParticipant } from "@/types/ledger";
 import { haptics } from "@/hooks/use-haptics";
+
+const CLAIM_QR_OPTIONS = { width: 200, margin: 1, color: { dark: "#1a1d2e", light: "#ffffff" } };
 
 interface GuestInviteDialogProps {
   open: boolean;
@@ -110,23 +112,6 @@ export function GuestInviteDialog({
   }, [open, guest.id, guest.claimedBy]);
 
   const claimUrl = token ? buildClaimUrl(token) : null;
-  const paintQr = useCallback(
-    (node: HTMLCanvasElement | null) => {
-      if (!node || !claimUrl) return;
-      // The library pins the drawn size with inline styles, which would
-      // outrank the class that shrinks the code in a short popover.
-      const unpinSize = () => {
-        node.style.removeProperty("width");
-        node.style.removeProperty("height");
-      };
-      void qrToCanvas(node, claimUrl, {
-        width: 200,
-        margin: 1,
-        color: { dark: "#1a1d2e", light: "#ffffff" },
-      }).then(unpinSize, unpinSize);
-    },
-    [claimUrl],
-  );
   const canReplace = guest.claimedBy === null;
 
   const shareText = `Participe da conta "${expenseTitle}" no Dividimos! Sua parte: ${formatBRL(shareCents)}`;
@@ -167,7 +152,12 @@ export function GuestInviteDialog({
               {qrOpen && (
                 <div id="guest-claim-qr" className="flex flex-col items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 p-4">
                   <div className="rounded-xl bg-paper p-2.5 shadow-xs">
-                    <canvas ref={paintQr} className="size-[160px]" role="img" aria-label={`QR code do convite de ${guest.displayName}`} />
+                    <QrCanvas
+                      value={claimUrl}
+                      label={`QR code do convite de ${guest.displayName}`}
+                      options={CLAIM_QR_OPTIONS}
+                      className="size-[160px]"
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Convite de {guest.displayName}

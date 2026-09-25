@@ -1,3 +1,5 @@
+import { isNativePlatform } from "@/lib/capacitor";
+
 export type ThemePreference = "system" | "light" | "dark";
 
 export type ResolvedTheme = "light" | "dark";
@@ -33,6 +35,7 @@ export function applyTheme(resolved: ResolvedTheme): void {
   for (const meta of metas) {
     meta.setAttribute("content", THEME_COLORS[resolved]);
   }
+  if (!isNativePlatform()) return;
   import("@/lib/capacitor/status-bar")
     .then(({ configureStatusBar }) => configureStatusBar(resolved))
     .catch((error: unknown) => {

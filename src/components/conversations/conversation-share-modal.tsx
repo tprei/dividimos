@@ -26,8 +26,10 @@ import {
 } from "@/lib/contacts";
 import { copyText } from "@/lib/platform/clipboard";
 import { isShareSupported, shareLink } from "@/lib/platform/share";
-import { qrToCanvas } from "@/lib/qr";
+import { QrCanvas } from "@/components/shared/qr-canvas";
 import { haptics } from "@/hooks/use-haptics";
+
+const PROFILE_QR_OPTIONS = { width: 200, margin: 2 };
 
 interface ConversationShareModalProps {
   open: boolean;
@@ -146,9 +148,7 @@ export function ConversationShareModal({
         <DialogTitle>Compartilhar convite</DialogTitle>
         <DialogDescription>@{handle}</DialogDescription>
         <div className="mx-auto rounded-2xl bg-paper p-3">
-          <canvas aria-label={`QR code do perfil de @${handle}`} role="img" ref={(canvas) => {
-            if (canvas) void qrToCanvas(canvas, appUrl, { width: 200, margin: 2 }).catch(() => toast.error("Não deu pra gerar o QR code"));
-          }} />
+          <QrCanvas value={appUrl} label={`QR code do perfil de @${handle}`} options={PROFILE_QR_OPTIONS} />
         </div>
 
         {contacts.length > 0 && (
