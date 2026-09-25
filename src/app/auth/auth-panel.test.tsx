@@ -32,7 +32,7 @@ vi.mock("@/components/bill/qr-scanner-view", () => ({
   ),
 }));
 
-import AuthPage from "./page";
+import { AuthPanel } from "./auth-panel";
 
 describe("sign-in destination", () => {
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe("sign-in destination", () => {
 
   it("keeps a failed Google sign-in inline and allows retry", async () => {
     mockGoogleSignIn.mockResolvedValueOnce(false);
-    render(<AuthPage />);
+    render(<AuthPanel />);
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
     expect(await screen.findByRole("alert")).toBeVisible();
     expect(screen.getByRole("button", { name: /google/i })).toBeEnabled();
@@ -55,7 +55,7 @@ describe("sign-in destination", () => {
   });
 
   it("routes a sign-in through the onboarding decision, keeping the destination", async () => {
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
 
@@ -71,7 +71,7 @@ describe("sign-in destination", () => {
 
   it("refuses an external destination before redirecting", async () => {
     searchParams.set("next", "https://evil.example.com/steal");
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
 
@@ -86,7 +86,7 @@ describe("sign-in destination", () => {
   it("hands the sanitized destination to the web redirect instead of navigating itself", async () => {
     mockIsNativePlatform.mockReturnValue(false);
     searchParams.set("next", "https://evil.example.com/steal");
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
 
@@ -109,7 +109,7 @@ describe("callback failure alert", () => {
   it("dismisses the alert and keeps next while dropping error", () => {
     searchParams.set("error", "callback_failed");
     searchParams.set("next", "/join/test");
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: "Dispensar aviso" }));
 
@@ -119,7 +119,7 @@ describe("callback failure alert", () => {
 
   it("renders nothing for an unrecognized error value", () => {
     searchParams.set("error", "random_error");
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -137,7 +137,7 @@ describe("auth invitation scanner", () => {
     const roomId = "00000000-0000-4000-8000-000000000001";
     const token = `armj1_${"A".repeat(43)}`;
     decodeHolder.payload = `https://www.dividimos.ai/room/${roomId}#${token}`;
-    render(<AuthPage />);
+    render(<AuthPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: "Ler um convite" }));
     fireEvent.click(screen.getByRole("button", { name: "decodificar" }));
