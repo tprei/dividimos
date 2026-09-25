@@ -4,7 +4,11 @@ import { Loader2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -12,13 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import {
   claimOptionsFor,
   claimQuantityLabel,
   formatRoomTicks,
 } from "@/lib/assignment-room-quantity";
-import { cn } from "@/lib/utils";
 import type {
   AssignmentRoomClaim,
   AssignmentRoomItem,
@@ -31,6 +35,7 @@ interface RoomItemClaimProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   getReturnFocus: () => HTMLElement | null;
+  selfParticipantId: string;
   item: AssignmentRoomItem;
   claims: AssignmentRoomClaim[];
   availableTicks: number;
@@ -53,6 +58,7 @@ export function RoomItemClaim({
   open,
   onOpenChange,
   getReturnFocus,
+  selfParticipantId,
   item,
   claims,
   availableTicks,
@@ -73,9 +79,7 @@ export function RoomItemClaim({
       (participant) => participant.id === targetParticipantId,
     ) ?? null;
   const targetActive = target !== null && !target.removed;
-  const selfParticipantId = participants.find(
-    (participant) => participant.ordinal === 0,
-  )?.id;
+  const labels = displayNames(participants.filter((person) => !person.removed).map((person) => ({ ...person, name: person.displayName })), { style: "short", viewerId: selfParticipantId, selfLabel: "você" });
   const savedTicks = useMemo(
     () =>
       claims.find((claim) => claim.participantId === targetParticipantId)
@@ -88,6 +92,7 @@ export function RoomItemClaim({
     [item.quantityMilliunits, maximumTicks],
   );
   const [draftTicks, setDraftTicks] = useState<number | null>(null);
+  const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [collision, setCollision] = useState<string | null>(null);
@@ -112,6 +117,7 @@ export function RoomItemClaim({
             ? UNIT_TICKS
             : null;
       setDraftTicks(initialTicks);
+      setTouched(false);
       setDraftItemRevision(item.revision);
       setSaveError(null);
       setCollision(null);
@@ -129,6 +135,14 @@ export function RoomItemClaim({
         : "Alguém pegou antes de você.",
     );
   }, [availableTicks, draftTicks, maximumTicks, open]);
+
+  const unsaved = touched && draftTicks !== null && draftTicks !== savedTicks;
+  useEffect(() => {
+    if (!open || !unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, unsaved]);
 
   const stale =
     draftItemRevision !== null && item.revision !== draftItemRevision;
@@ -156,6 +170,8 @@ export function RoomItemClaim({
 
   function chooseTicks(ticks: number) {
     if (stale || !targetActive) return;
+    haptics.selectionChanged();
+    setTouched(true);
     setDraftTicks(ticks);
     setCollision(null);
     setSaveError(null);
@@ -170,6 +186,7 @@ export function RoomItemClaim({
           ? UNIT_TICKS
           : null;
     setDraftTicks(refreshedTicks);
+    setTouched(false);
     setDraftItemRevision(item.revision);
     setCollision(null);
     setSaveError(null);
@@ -194,15 +211,18 @@ export function RoomItemClaim({
         draftItemRevision,
       );
       if (saved) {
+        haptics.success();
         onOpenChange(false);
         return;
       }
+      haptics.error();
       setSaveError(
         error?.participantId === targetParticipantId
           ? error.message
           : "Não foi possível salvar. Tente novamente.",
       );
     } catch {
+      haptics.error();
       setSaveError("Não foi possível salvar. Tente novamente.");
     } finally {
       savingRef.current = false;
@@ -210,10 +230,7 @@ export function RoomItemClaim({
     }
   }
 
-  const targetLabel = target?.displayName ?? "pessoa removida";
-  const targetFirstName = targetLabel.trim().split(/\s+/)[0] || targetLabel;
-  const hostTargetLabel =
-    targetParticipantId === selfParticipantId ? "mim" : targetFirstName;
+  const hostTargetLabel = labels.get(targetParticipantId) ?? "pessoa removida";
   const question = canSelectParticipant
     ? multiUnit
       ? "Quantos?"
@@ -229,32 +246,37 @@ export function RoomItemClaim({
   const actionQuantityLabel = draftTicks === null
     ? null
     : claimQuantityLabel(item.quantityMilliunits, draftTicks);
+  const Surface = canSelectParticipant ? Popover : Dialog;
+  const Content = canSelectParticipant ? PopoverContent : DialogContent;
+  const Title = canSelectParticipant ? PopoverTitle : DialogTitle;
+  const Description = canSelectParticipant ? PopoverDescription : DialogDescription;
 
   return (
-    <Dialog
+    <Surface
       open={open}
       dismissable={!saving}
       onOpenChange={(next) => {
         if (saving) return;
+        if (!next && unsaved && !window.confirm("Descartar esta escolha não salva?")) return;
         onOpenChange(next);
       }}
     >
-      <DialogContent
+      <Content
         finalFocus={getReturnFocus}
-        variant="sheet"
-        className="gap-5 sm:px-6 sm:pt-5 sm:pb-6"
+        {...(canSelectParticipant ? { anchor: getReturnFocus() } : {})}
+        className="gap-3 sm:px-5 sm:py-4"
       >
-        <DialogHeader className="gap-0">
+        <DialogHeader className="gap-0.5">
           <div className="flex items-baseline justify-between gap-3">
-            <DialogTitle className="min-w-0 truncate pr-1 text-lg leading-7 font-semibold tracking-tight">
+            <Title className="min-w-0 break-words pr-1 text-base leading-6 font-semibold tracking-tight">
               {item.description}
-            </DialogTitle>
+            </Title>
             <Money
               cents={item.totalPriceCents}
-              className="shrink-0 text-base"
+              className="shrink-0 text-sm font-semibold"
             />
           </div>
-          <DialogDescription className="leading-5">
+          <Description className="text-xs text-muted-foreground leading-4">
             {multiUnit ? (
               <>
                 Restam {formatRoomTicks(availableTicks)} de{" "}
@@ -268,16 +290,15 @@ export function RoomItemClaim({
             ) : (
               "Inteira"
             )}
-          </DialogDescription>
+          </Description>
         </DialogHeader>
-
         {canSelectParticipant && (
           <section aria-labelledby="claim-target-label">
-            <p id="claim-target-label" className="mb-2 font-semibold">
+            <p id="claim-target-label" className="mb-1.5 text-xs font-medium text-muted-foreground">
               Pra quem?
             </p>
             <div
-              className="flex gap-2 overflow-x-auto pb-1"
+              className="flex flex-wrap gap-1.5"
               role="radiogroup"
               aria-label="Pra quem?"
             >
@@ -285,33 +306,34 @@ export function RoomItemClaim({
                 .filter((participant) => !participant.removed)
                 .map((participant) => {
                   const selected = participant.id === targetParticipantId;
-                  const first =
-                    participant.displayName.trim().split(/\s+/)[0] ||
-                    participant.displayName;
-                  const label =
-                    participant.id === selfParticipantId ? "Você" : first;
+                  const label = participant.id === selfParticipantId ? "Você" : labels.get(participant.id);
                   return (
                     <Button
                       key={participant.id}
                       type="button"
                       variant="outline"
+                      size="sm"
                       role="radio"
                       aria-label={label}
                       aria-checked={selected}
                       className={cn(
-                        "min-h-11 shrink-0 gap-1.5 rounded-full py-1 pr-3 pl-1.5",
-                        selected &&
-                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                        "h-8 shrink-0 gap-1.5 rounded-[0.5rem] px-2.5 text-xs font-medium transition-colors",
+                        selected
+                          ? "border-primary/30 bg-primary/15 text-primary-text hover:bg-primary/20"
+                          : "border-border bg-card text-foreground hover:bg-muted",
                       )}
                       disabled={saving}
-                      onClick={() => onTargetChange(participant.id)}
+                      onClick={() => {
+                        if (participant.id === targetParticipantId) return;
+                        if (unsaved && !window.confirm("Descartar esta escolha não salva?")) return;
+                        haptics.selectionChanged();
+                        onTargetChange(participant.id);
+                      }}
                     >
-                      <UserAvatar
-                        name={participant.displayName}
-                        avatarUrl={participant.avatarUrl}
-                        size="xs"
-                      />
-                      <span className="max-w-28 truncate">{label}</span>
+                      {participant.isGuest
+                        ? <GuestAvatar id={participant.id} name={participant.displayName} size="xs" />
+                        : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />}
+                      <span title={participant.displayName} className="max-w-28 truncate">{label}</span>
                     </Button>
                   );
                 })}
@@ -322,13 +344,13 @@ export function RoomItemClaim({
         <section aria-labelledby="claim-quantity-label">
           <p
             id="claim-quantity-label"
-            className="mb-3 text-base font-semibold"
+            className="mb-1.5 text-xs font-medium text-muted-foreground"
           >
             {question}
           </p>
 
           {claimOptions.kind === "whole" && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {claimOptions.options
                 .filter((option) => !option.label.startsWith("O resto"))
                 .map((option) => {
@@ -338,11 +360,13 @@ export function RoomItemClaim({
                       key={option.ticks}
                       type="button"
                       variant="outline"
+                      size="sm"
                       aria-pressed={selected}
                       className={cn(
-                        "size-12 rounded-full p-0 text-base font-semibold",
-                        selected &&
-                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                        "h-8 min-w-8 shrink-0 rounded-[0.5rem] px-2.5 text-xs font-semibold",
+                        selected
+                          ? "border-primary/30 bg-primary/15 text-primary-text hover:bg-primary/20"
+                          : "border-border bg-card text-foreground hover:bg-muted",
                       )}
                       disabled={saving || stale || !targetActive}
                       onClick={() => chooseTicks(option.ticks)}
@@ -351,7 +375,7 @@ export function RoomItemClaim({
                     </Button>
                   );
                 })}
-              <span className="px-1 text-base text-muted-foreground">
+              <span className="px-1 text-xs text-muted-foreground">
                 de {formatRoomTicks(claimOptions.total * UNIT_TICKS)}
               </span>
               {claimOptions.options
@@ -363,11 +387,13 @@ export function RoomItemClaim({
                       key={option.ticks}
                       type="button"
                       variant="outline"
+                      size="sm"
                       aria-pressed={selected}
                       className={cn(
-                        "min-h-11 rounded-full px-4 font-semibold",
-                        selected &&
-                          "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                        "h-8 shrink-0 rounded-[0.5rem] px-2.5 text-xs font-semibold",
+                        selected
+                          ? "border-primary/30 bg-primary/15 text-primary-text hover:bg-primary/20"
+                          : "border-border bg-card text-foreground hover:bg-muted",
                       )}
                       disabled={saving || stale || !targetActive}
                       onClick={() => chooseTicks(option.ticks)}
@@ -381,31 +407,31 @@ export function RoomItemClaim({
 
           {claimOptions.kind === "stepper" && (
             <div
-              className="flex items-center gap-3"
+              className="flex items-center gap-2"
               role="group"
               aria-label="Quantidade"
             >
               <Button
                 type="button"
-                size="icon-lg"
+                size="sm"
                 variant="outline"
-                className="rounded-full"
+                className="size-8 rounded-[0.5rem] p-0"
                 aria-label="Diminuir uma unidade"
                 disabled={
                   saving || stale || !targetActive || stepperUnits <= 1
                 }
                 onClick={() => chooseTicks((stepperUnits - 1) * UNIT_TICKS)}
               >
-                <Minus aria-hidden="true" />
+                <Minus aria-hidden="true" className="size-3.5" />
               </Button>
-              <span className="min-w-10 text-center text-lg font-semibold tabular-nums">
+              <span className="min-w-8 text-center text-sm font-semibold tabular-nums">
                 {stepperUnits}
               </span>
               <Button
                 type="button"
-                size="icon-lg"
+                size="sm"
                 variant="outline"
-                className="rounded-full"
+                className="size-8 rounded-[0.5rem] p-0"
                 aria-label="Aumentar uma unidade"
                 disabled={
                   saving ||
@@ -415,16 +441,16 @@ export function RoomItemClaim({
                 }
                 onClick={() => chooseTicks((stepperUnits + 1) * UNIT_TICKS)}
               >
-                <Plus aria-hidden="true" />
+                <Plus aria-hidden="true" className="size-3.5" />
               </Button>
-              <span className="text-base text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 de {formatRoomTicks(claimOptions.total * UNIT_TICKS)}
               </span>
             </div>
           )}
 
           {claimOptions.kind === "fractions" && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {claimOptions.options.map((option) => {
                 const selected = draftTicks === option.ticks;
                 return (
@@ -432,11 +458,13 @@ export function RoomItemClaim({
                     key={option.ticks}
                     type="button"
                     variant="outline"
+                    size="sm"
                     aria-pressed={selected}
                     className={cn(
-                      "min-h-11 rounded-full px-4 font-semibold",
-                      selected &&
-                        "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                      "h-8 min-w-8 shrink-0 rounded-[0.5rem] px-2.5 text-xs font-semibold",
+                      selected
+                        ? "border-primary/30 bg-primary/15 text-primary-text hover:bg-primary/20"
+                        : "border-border bg-card text-foreground hover:bg-muted",
                     )}
                     disabled={saving || stale || !targetActive}
                     onClick={() => chooseTicks(option.ticks)}
@@ -472,7 +500,7 @@ export function RoomItemClaim({
         <div className="space-y-1">
           <Button
             type="button"
-            className="min-h-12 w-full rounded-lg text-base font-bold"
+            className="h-10 w-full text-sm font-semibold"
             disabled={!canSave}
             onClick={confirm}
           >
@@ -499,22 +527,23 @@ export function RoomItemClaim({
             <Button
               type="button"
               variant="ghost"
-              className="min-h-11 w-full text-sm font-semibold text-destructive-text hover:text-destructive-text"
+              size="sm"
+              className="h-8 w-full text-xs font-semibold text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
               aria-label={
                 canSelectParticipant
-                  ? `Remover escolha de ${targetLabel}`
+                  ? `Remover escolha de ${target?.displayName}`
                   : "Remover minha escolha"
               }
               disabled={saving || stale || !targetActive}
               onClick={() => chooseTicks(0)}
             >
               {canSelectParticipant
-                ? `Tirar de ${targetFirstName}`
+                ? targetParticipantId === selfParticipantId ? "Tirar da minha parte" : `Tirar de ${hostTargetLabel}`
                 : "Tirar da minha parte"}
             </Button>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Content>
+    </Surface>
   );
 }

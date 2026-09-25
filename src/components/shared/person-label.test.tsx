@@ -31,4 +31,10 @@ describe("PersonLabel", () => {
     expect(screen.getByText("Dave Lima")).toBeInTheDocument();
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
   });
+
+  it("keeps the full identity available when a short label is shown", () => {
+    render(<PersonLabel name="Maria Eduarda dos Santos Albuquerque" overrideName="Maria" secondary="Convidado" />);
+    expect(screen.getByText("Maria")).toHaveAttribute("title", "Maria Eduarda dos Santos Albuquerque");
+    expect(screen.getByText("Convidado")).toBeInTheDocument();
+  });
 });

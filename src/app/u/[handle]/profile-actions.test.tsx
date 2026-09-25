@@ -22,21 +22,10 @@ describe("SendMessageButton", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the button with the target name", () => {
-    render(
-      <SendMessageButton targetUserId="user-123" targetName="João" />,
-    );
-    expect(
-      screen.getByText("Enviar mensagem para João"),
-    ).toBeInTheDocument();
-  });
-
   it("creates a DM group and navigates on click", async () => {
     getOrCreateDmMock.mockResolvedValue({ groupId: "group-abc", created: true });
 
-    render(
-      <SendMessageButton targetUserId="user-123" targetName="João" />,
-    );
+    render(<SendMessageButton targetUserId="user-123" />);
 
     fireEvent.click(screen.getByRole("button"));
 
@@ -52,9 +41,7 @@ describe("SendMessageButton", () => {
   it("shows error toast on failure", async () => {
     getOrCreateDmMock.mockRejectedValue(new Error("unauthenticated"));
 
-    render(
-      <SendMessageButton targetUserId="user-123" targetName="João" />,
-    );
+    render(<SendMessageButton targetUserId="user-123" />);
 
     fireEvent.click(screen.getByRole("button"));
 
@@ -67,9 +54,7 @@ describe("SendMessageButton", () => {
     const { promise, resolve } = Promise.withResolvers<unknown>();
     getOrCreateDmMock.mockReturnValue(promise);
 
-    render(
-      <SendMessageButton targetUserId="user-123" targetName="João" />,
-    );
+    render(<SendMessageButton targetUserId="user-123" />);
 
     fireEvent.click(screen.getByRole("button"));
 

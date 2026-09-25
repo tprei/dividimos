@@ -2,7 +2,7 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { allocateEvenly } from "@/lib/expense-money";
 import type { ExpenseHeader, ExpensePayload, Me, UserProfile } from "@/types/ledger";
 
-export function todayIso(): string {
+function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -41,7 +41,7 @@ export function dmExpensePayload(
   };
 }
 
-export function normalizeHandle(handle: string): string {
+function normalizeHandle(handle: string): string {
   return handle.trim().replace(/^@/, "").toLowerCase();
 }
 
@@ -94,7 +94,7 @@ function validateExplicitActors(
     !isImplicitCurrentUserOnly &&
     (ids.length !== 2 || !ids.includes(me.id) || !ids.includes(counterparty.id))
   ) {
-    return actorResolutionError("A despesa precisa ter exatamente as duas pessoas da conversa.");
+    return actorResolutionError("A conta precisa ter exatamente as duas pessoas da conversa.");
   }
   return {
     kind: "resolved",
@@ -202,7 +202,7 @@ export function resolveDraftExpense(
       if (actorId === counterparty.id) otherShare = allocation.shareAmountCents;
     }
     if (myShare === null || otherShare === null) {
-      return { kind: "error", message: "Não consegui resolver as partes da despesa." };
+      return { kind: "error", message: "Não consegui resolver as partes da conta." };
     }
     shares = [myShare, otherShare];
   } else if (result.splitType === "equal") {
@@ -210,7 +210,7 @@ export function resolveDraftExpense(
     if (!amounts.ok) return { kind: "error", message: "Não foi possível dividir o valor." };
     shares = [amounts.value[0], amounts.value[1]];
   } else {
-    return { kind: "error", message: "Não consegui resolver a divisão da despesa." };
+    return { kind: "error", message: "Não consegui resolver a divisão da conta." };
   }
 
   const header = dmExpenseHeader(result.title || "Conta", totalCents, result.merchantName);

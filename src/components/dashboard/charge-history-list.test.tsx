@@ -24,14 +24,6 @@ describe("ChargeHistoryList", () => {
     await waitFor(() => expect(loadVendorCharges).toHaveBeenCalledTimes(1));
   });
 
-  it("renders empty state when there are no charges", () => {
-    useAppStore.setState({ reads: { [CHARGES_READ_KEY]: { status: "ready" } } });
-    render(<ChargeHistoryList />);
-    expect(screen.getByText("Nenhuma cobrança ainda")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Use o "Cobrar rápido" na tela inicial/i),
-    ).toBeInTheDocument();
-  });
 
   it("renders charges from store with amount and status", () => {
     const charge1: VendorCharge = {

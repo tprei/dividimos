@@ -1,6 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { popIn } from "@/lib/animations";
+import { haptics } from "@/hooks/use-haptics";
 import {
   Bell,
   BellOff,
@@ -28,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { SelectField } from "@/components/ui/select-field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import type { NotificationCategory } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,8 +44,8 @@ interface CategoryConfig {
 const CATEGORIES: CategoryConfig[] = [
   {
     key: "expenses",
-    label: "Despesas",
-    description: "Novas despesas, edições e exclusões",
+    label: "Contas",
+    description: "Contas novas, editadas ou excluídas",
     icon: Receipt,
   },
   {
@@ -93,13 +96,14 @@ export default function SettingsPage() {
   const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
 
   const handleSignOut = async () => {
+    if (!signOutError && !window.confirm("Sair da conta?")) return;
     const result = await signOut();
     if (result.ok) router.replace("/auth");
   };
 
   if (!me) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
+      <div role="status" aria-label="Carregando" className="mx-auto max-w-lg px-4 py-6 space-y-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 rounded-2xl" />
         <Skeleton className="h-48 rounded-2xl" />
@@ -108,31 +112,21 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <motion.h1
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="text-2xl font-bold"
-      >
-        Configurações
-      </motion.h1>
-
+    <div className="mx-auto max-w-lg px-4 pb-6 md:max-w-2xl">
+      <div className="-mx-4"><ScreenHeader back title="Configurações" /></div>
       {permission !== "unsupported" && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-          className="mt-8"
+          variants={popIn} initial="hidden" animate="visible"
+          className="mt-6"
         >
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="mb-3 text-lg font-bold">
             Notificações
           </h2>
 
           <div className="rounded-2xl border bg-card p-4">
             <div className="flex items-center gap-3">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${
                   isSubscribed
                     ? "bg-primary/10 text-primary"
                     : "bg-muted text-muted-foreground"
@@ -145,55 +139,27 @@ export default function SettingsPage() {
                 )}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {isSubscribed
-                    ? "Notificações ativadas"
-                    : "Notificações desativadas"}
+                <p className="text-base font-semibold">
+                  Notificações push
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   {permission === "denied"
-                    ? "Bloqueado pelo navegador — altere nas configurações do site"
-                    : isSubscribed
-                      ? "Você receberá alertas de contas e pagamentos"
-                      : "Receba alertas quando adicionarem contas ou confirmarem pagamentos"}
+                    ? "Permita notificações nas configurações do navegador."
+                    : pushLoading ? "Atualizando..." : "Alertas de contas e pagamentos"}
                 </p>
               </div>
+              <Switch aria-label="Notificações push" checked={isSubscribed} disabled={pushLoading || permission === "denied"} onCheckedChange={(enabled) => {
+                haptics.selectionChanged();
+                if (enabled) void subscribe(); else void unsubscribe();
+              }} />
             </div>
 
             <div className="mt-4">
-              {permission === "denied" ? (
-                <p className="text-xs text-muted-foreground">
-                  Para reativar, abra as configurações do navegador e permita notificações para este site.
-                </p>
-              ) : isSubscribed ? (
-                <Button
-                  variant="outline"
-                  className="w-full text-destructive hover:text-destructive"
-                  onClick={unsubscribe}
-                  disabled={pushLoading}
-                >
-                  {pushLoading ? "Desativando..." : "Desativar notificações"}
-                </Button>
-              ) : (
-                <Button
-                  className="w-full"
-                  onClick={subscribe}
-                  disabled={pushLoading}
-                >
-                  {pushLoading ? "Ativando..." : "Ativar notificações"}
-                </Button>
-              )}
               {pushError !== null && (
-                <p role="alert" className="mt-2 text-xs text-destructive">
+                <p role="alert" className="mt-2 text-sm text-destructive-text">
                   {pushFailureMessage(pushError)}
                   {pushError.retryable && (
-                    <button
-                      type="button"
-                      onClick={() => void pushRetry()}
-                      className="ml-1 underline"
-                    >
-                      Tentar novamente
-                    </button>
+                    <Button variant="ghost" onClick={() => void pushRetry()}>Tentar novamente</Button>
                   )}
                 </p>
               )}
@@ -204,7 +170,7 @@ export default function SettingsPage() {
 
       {permission !== "unsupported" && isSubscribed && (
         <div className="mt-4">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="mb-3 text-lg font-bold">
             Categorias
           </h2>
           <NotificationPreferencesSection key={me.id} />
@@ -212,12 +178,10 @@ export default function SettingsPage() {
       )}
 
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.4 }}
-        className="mt-8"
+        variants={popIn} initial="hidden" animate="visible"
+        className="mt-6"
       >
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2 className="mb-3 text-lg font-bold">
           Confirmações
         </h2>
         <div className="divide-y rounded-2xl border bg-card">
@@ -230,7 +194,7 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={confirmations.confirmVoidSettlement}
-              onCheckedChange={(checked) => updateConfirmations({ confirmVoidSettlement: checked })}
+              onCheckedChange={(checked) => { haptics.selectionChanged(); updateConfirmations({ confirmVoidSettlement: checked }); }}
               aria-label="Confirmar antes de desfazer um pagamento"
             />
           </div>
@@ -255,10 +219,8 @@ export default function SettingsPage() {
       </motion.div>
 
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.4 }}
-        className="mt-8"
+        variants={popIn} initial="hidden" animate="visible"
+        className="mt-6"
       >
         {signOutError && (
           <div role="alert" className="mb-3 flex items-center justify-between gap-3 text-sm text-destructive">
@@ -275,12 +237,12 @@ export default function SettingsPage() {
         )}
         <Button
           variant="outline"
-          className="w-full gap-2 text-destructive"
+          className="w-full gap-2 text-destructive-text"
           onClick={() => void handleSignOut()}
           disabled={signOutPending}
         >
           <LogOut className="h-4 w-4" />
-          {signOutPending ? "Saindo..." : "Sair"}
+          {signOutPending ? "Saindo..." : "Sair da conta"}
         </Button>
       </motion.div>
     </div>
@@ -326,6 +288,7 @@ function NotificationPreferencesSection() {
   );
 
   const toggleCategory = (category: NotificationCategory) => {
+    haptics.selectionChanged();
     const currentMe = useAppStore.getState().me;
     if (!currentMe) return;
 

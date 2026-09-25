@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "./room-host-controls";
 import { RoomJoin } from "./room-join";
 import { RoomShare } from "./room-share";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
 
 const { toCanvas } = vi.hoisted(() => ({
   toCanvas: vi.fn(() => Promise.resolve()),
@@ -60,7 +63,7 @@ describe("RoomJoin", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Digite um nome");
+    expect(screen.getByRole("alert")).toHaveTextContent("O nome precisa ter de 1 a 80 caracteres.");
 
     await user.type(screen.getByLabelText("Seu nome"), "  Bia  ");
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
@@ -114,13 +117,13 @@ describe("RoomJoin", () => {
 
     rerender(
       <RoomJoin
-        identity={{ status: "error", message: "Deu ruim aqui. Tente de novo em instantes." }}
+        identity={{ status: "error", message: ledgerErrorMessage(new Error()) }}
         onRetryIdentity={onRetryIdentity}
         pending={false}
         onJoin={vi.fn()}
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Deu ruim aqui");
+    expect(screen.getByRole("alert")).toHaveTextContent(ledgerErrorMessage(new Error()));
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(onRetryIdentity).toHaveBeenCalledOnce();
   });
@@ -202,10 +205,10 @@ describe("Host controls", () => {
   it("removes through the anchored person confirmation and blocks pending removal", async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    const { rerender } = render(<RoomHostPerson participant={participants[1]} disabled removable onRemove={onRemove} />);
+    const { rerender } = render(<RoomHostPerson participant={participants[1]} label="Caio" disabled removable onRemove={onRemove} />);
     await user.click(screen.getByRole("button", { name: "Caio" }));
     expect(screen.getByRole("button", { name: "Remover da sala" })).toBeDisabled();
-    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable onRemove={onRemove} />);
+    rerender(<RoomHostPerson participant={participants[1]} label="Caio" disabled={false} removable onRemove={onRemove} />);
     await user.click(screen.getByRole("button", { name: "Remover da sala" }));
     expect(onRemove).toHaveBeenCalledWith("person-2");
     expect(screen.queryByRole("button", { name: "Remover da sala" })).not.toBeInTheDocument();
@@ -213,10 +216,10 @@ describe("Host controls", () => {
 
   it("keeps the host non-removable and closed-room people read-only", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<RoomHostPerson participant={participants[0]} disabled={false} removable onRemove={vi.fn()} />);
+    const { rerender } = render(<RoomHostPerson participant={participants[0]} label="Você" disabled={false} removable onRemove={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Bia" }));
     expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
-    rerender(<RoomHostPerson participant={participants[1]} disabled={false} removable={false} onRemove={vi.fn()} />);
+    rerender(<RoomHostPerson participant={participants[1]} label="Caio" disabled={false} removable={false} onRemove={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /Remover/ })).not.toBeInTheDocument();
   });
 

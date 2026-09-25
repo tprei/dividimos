@@ -81,14 +81,13 @@ describe("GroupExpensesSection", () => {
 
     expect(screen.getByText("Jantar")).toBeInTheDocument();
     expect(screen.getByText("Mercado")).toBeInTheDocument();
-    expect(screen.getAllByText(/Sua parte/)[0]).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Jantar/ })[0]).toHaveAttribute(
       "href",
       `/app/bill/e1`,
     );
   });
 
-  it("hides deleted bills", () => {
+  it("keeps deleted bills reachable for reviewing their history", () => {
     seed(
       [
         expense("e1", "Jantar"),
@@ -100,7 +99,7 @@ describe("GroupExpensesSection", () => {
     render(<GroupExpensesSection groupId={groupId} members={[]} />);
 
     expect(screen.getByText("Jantar")).toBeInTheDocument();
-    expect(screen.queryByText("Cancelada")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Cancelada/ })).toHaveAttribute("href", "/app/bill/e2");
   });
 
   it("hides Load more when the list is complete", () => {
@@ -113,16 +112,12 @@ describe("GroupExpensesSection", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("loads more expenses when the button is clicked", async () => {
-    vi.mocked(loadMoreExpenses).mockResolvedValue(undefined);
-    seed(
-      [
-        expense("e1", "Jantar"),
-        expense("e2", "Mercado"),
-        expense("e3", "Uber"),
-      ],
-      false,
-    );
+  it("can load older expenses even when the current page contains only deleted bills", async () => {
+    const deleted = expense("e1", "Cancelada", { status: "deleted" });
+    seed([deleted], false);
+    vi.mocked(loadMoreExpenses).mockImplementationOnce(async () => {
+      seed([deleted, expense("e2", "Mercado")], true);
+    });
 
     render(<GroupExpensesSection groupId={groupId} members={[]} />);
 
@@ -130,9 +125,8 @@ describe("GroupExpensesSection", () => {
       screen.getByRole("button", { name: /Carregar mais/ }),
     );
 
-    await waitFor(() => {
-      expect(loadMoreExpenses).toHaveBeenCalledWith(groupId);
-    });
+    expect(await screen.findByRole("link", { name: /Mercado/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Carregar mais/ })).not.toBeInTheDocument();
   });
 
   it("shows an error when loading more fails", async () => {

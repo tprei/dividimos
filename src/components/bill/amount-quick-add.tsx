@@ -99,9 +99,9 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
         <Button
           key={inc}
           type="button"
-          variant="outline"
+          variant="secondary"
           size="sm"
-          className="h-7 px-2 text-xs tabular-nums"
+          className="h-8 rounded-[0.5rem] px-2.5 text-xs font-semibold tabular-nums"
           onClick={() => handleAdd(inc)}
           disabled={disabled}
           aria-label={`Adicionar R$${inc}`}
@@ -114,7 +114,7 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-1.5 text-xs text-muted-foreground"
+          className="h-8 rounded-[0.5rem] px-2 text-xs text-muted-foreground"
           onClick={handleUndo}
           disabled={disabled}
           aria-label="Desfazer"

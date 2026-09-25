@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { Logo } from "@/components/shared/logo";
+import { type FormEvent, useEffect, useState } from "react";
+import { ScreenHeader } from "@/components/shared/screen-header";
+import { haptics } from "@/hooks/use-haptics";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -32,33 +34,41 @@ export function RoomJoin({
   pending,
   errorMessage,
   onJoin,
+  onBack,
 }: RoomJoinProps) {
   const [displayName, setDisplayName] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const dirty = displayName.trim().length > 0;
+  const leave = () => {
+    if (pending || (dirty && !window.confirm("Sair sem entrar na sala?"))) return;
+    onBack?.();
+  };
+  useBackHandler(Boolean(onBack) && dirty, leave);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   function handleGuestSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = displayName.trim();
     if (normalized.length === 0 || normalized.length > 80) {
-      setLocalError("Digite um nome com até 80 caracteres.");
+      setLocalError("O nome precisa ter de 1 a 80 caracteres.");
       return;
     }
     setLocalError(null);
+    haptics.tap();
     onJoin(normalized);
   }
 
   const firstName = identity.status === "account" ? identity.name?.trim().split(/\s+/)[0] : null;
 
   return (
-    <section className="mx-auto w-full max-w-md space-y-6">
-      <header className="flex min-h-11 items-center">
-        <Logo />
-      </header>
-      <div className="gradient-primary rounded-2xl p-6 text-primary-foreground">
-        <p className="text-sm font-medium">Sala de itens</p>
-        <h1 className="mt-3 font-heading text-3xl font-bold leading-tight tracking-tight">
-          Entre pra marcar o que consumiu
-        </h1>
+    <section className="mx-auto w-full max-w-md space-y-6 rounded-2xl border bg-card p-4">
+      <div className="-mx-4 -mt-4">
+        <ScreenHeader title="Sala de itens" subtitle="Cada um escolhe sua parte" back={Boolean(onBack)} onBack={leave} />
       </div>
 
       {identity.status === "loading" && (
@@ -69,7 +79,7 @@ export function RoomJoin({
 
       {identity.status === "error" && (
         <div className="flex flex-wrap items-center justify-between gap-x-3">
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             {identity.message}
           </p>
           <Button
@@ -107,7 +117,7 @@ export function RoomJoin({
               />
               <Button
                 type="submit"
-                variant="outline"
+                variant="default"
                 className="min-h-12 px-4 motion-reduce:transform-none motion-reduce:transition-none"
                 aria-label="Entrar na sala"
                 disabled={pending}
@@ -117,7 +127,7 @@ export function RoomJoin({
             </div>
           </div>
           {(localError || errorMessage) && (
-            <p id="room-join-error" role="alert" className="text-sm text-destructive">
+            <p id="room-join-error" role="alert" className="text-sm text-destructive-text">
               {localError || errorMessage}
             </p>
           )}
@@ -130,7 +140,7 @@ export function RoomJoin({
       {identity.status === "account" && (
         <div className="space-y-4">
           {errorMessage && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-destructive-text">
               {errorMessage}
             </p>
           )}
@@ -139,7 +149,7 @@ export function RoomJoin({
             className="min-h-12 w-full font-semibold motion-reduce:transform-none motion-reduce:transition-none"
             aria-label="Entrar na sala"
             disabled={pending}
-            onClick={() => onJoin("")}
+            onClick={() => { haptics.tap(); onJoin(""); }}
           >
             {pending ? "Entrando..." : firstName ? `Entrar como ${firstName}` : "Entrar"}
           </Button>

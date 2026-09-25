@@ -192,7 +192,7 @@ describe("ParticipantsStep", () => {
     expect(screen.getByText("Churrasco")).toBeInTheDocument();
     expect(screen.getByText("Bob")).toBeInTheDocument();
     expect(screen.getByText("Carol")).toBeInTheDocument();
-    expect(screen.getByText("convite pendente")).toBeInTheDocument();
+    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
     expect(screen.getByText("Quem participou desta conta?")).toBeInTheDocument();
   });
 

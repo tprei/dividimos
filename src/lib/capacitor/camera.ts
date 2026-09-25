@@ -8,7 +8,7 @@ export type PhotoOutcome =
   | { kind: "error"; message: string };
 
 export function isNativeCameraAvailable(): boolean {
-  return Capacitor.getPlatform() === "android";
+  return Capacitor.isNativePlatform();
 }
 
 /** Plugin messages for a user backing out, which is not a failure. */

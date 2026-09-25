@@ -8,7 +8,7 @@ import {
   equalSplitPayload,
   type TestUser,
 } from "@/test/integration-helpers";
-import { netAndMinimize, transfersFromBalances } from "./transfers";
+import { transfersFromBalances } from "./transfers";
 import type { BalanceRow, Transfer } from "@/types/ledger";
 
 interface SnapshotSlice {
@@ -75,20 +75,12 @@ describe.skipIf(!isIntegrationTestReady)("group_pairwise_edges", () => {
     for (const row of balances) {
       expect(nets[row.participantId] ?? 0).toBe(row.netCents);
     }
-    const minimized = netAndMinimize(
-      pairwiseEdges.map((edge) => ({
-        fromUserId: edge.fromId,
-        toUserId: edge.toId,
-        amountCents: edge.amountCents,
-      })),
-    );
-    expect(minimized).toEqual(
-      transfersFromBalances(balances).map((transfer) => ({
-        fromUserId: transfer.fromId,
-        toUserId: transfer.toId,
-        amountCents: transfer.amountCents,
-      })),
-    );
+    const netRows: BalanceRow[] = Object.entries(nets).map(([participantId, netCents]) => ({
+      kind: "user",
+      participantId,
+      netCents,
+    }));
+    expect(transfersFromBalances(netRows)).toEqual(transfersFromBalances(balances));
   });
 
   it("applies confirmed settlements to the pair they touch and drops settled pairs", async () => {

@@ -16,7 +16,7 @@ test.describe("Pix key dialog", () => {
     await page.getByRole("button", { name: "Alterar chave" }).click();
     const dialog = page.getByRole("dialog", { name: "Chave Pix" });
     await expect(dialog).toBeVisible();
-    await expect(page.getByRole("radio", { name: "E-mail" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("radio", { name: "E-mail" })).toBeChecked();
 
     const rect = () =>
       dialog.evaluate((node) => {
@@ -42,7 +42,7 @@ test.describe("Pix key dialog", () => {
     const before = await rect();
 
     await page.getByRole("radio", { name: "Telefone" }).click();
-    await expect(page.getByRole("radio", { name: "Telefone" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("radio", { name: "Telefone" })).toBeChecked();
     expect(await rect()).toEqual(before);
     await expect(page.getByRole("combobox")).toHaveCount(0);
     await expect(page.getByRole("listbox")).toHaveCount(0);

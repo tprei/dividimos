@@ -1,10 +1,10 @@
 "use client";
 
-import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { AvatarStack } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatBRL } from "@/lib/currency";
 import { attributeItem, type PayerAttribution } from "@/lib/expense-attribution";
+import { displayNames } from "@/lib/people";
 import {
   formatExpenseQuantity,
   type ExpenseQuantity,
@@ -19,33 +19,50 @@ interface ExpenseItemsProps {
   itemAssignments: ExpenseItemAssignmentPayload[] | null;
   payers: PayerAttribution[];
   participantName: (participantIndex: number) => string;
+  participantId: (participantIndex: number) => string;
   participantAvatarUrl: (participantIndex: number) => string | null;
   participantIsGuest: (participantIndex: number) => boolean;
   showHeading?: boolean;
 }
+function buildBreakdownLabel(
+  consumers: Array<{ name: string; amountCents: number }>,
+): string {
+  if (consumers.length === 0) return "";
+  if (consumers.length === 1) {
+    return `Para ${consumers[0].name}, ${formatBRL(consumers[0].amountCents)}`;
+  }
+  const allEqual = consumers.every((c) => c.amountCents === consumers[0].amountCents);
+  const names = consumers.map((c) => c.name);
+  const namesText =
+    names.length === 2
+      ? `${names[0]} e ${names[1]}`
+      : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+  if (allEqual) {
+    return `Dividido entre ${namesText}, ${formatBRL(consumers[0].amountCents)} cada`;
+  }
+  return `Dividido entre ${namesText}: ${consumers.map((c) => `${c.name} ${formatBRL(c.amountCents)}`).join(", ")}`;
+}
+
 
 export function ExpenseItems({
   items,
   itemAssignments,
   payers,
   participantName,
+  participantId,
   participantAvatarUrl,
   participantIsGuest,
   showHeading = true,
 }: ExpenseItemsProps) {
   const solePayerName =
     payers.length === 1 ? participantName(payers[0].participantIndex) : null;
+  const names = displayNames([...new Set(itemAssignments?.map((assignment) => assignment.participantIndex))].map((index) => ({
+    id: participantId(index), name: participantName(index), isGuest: participantIsGuest(index),
+  })), { style: "short" });
 
   return (
-    <section className={showHeading ? "mt-5" : undefined}>
-      {showHeading && (
-        <>
-          <h2 className="mb-1 text-sm font-semibold">Itens</h2>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Quanto cada pessoa consumiu de cada item.
-          </p>
-        </>
-      )}
+    <section className={showHeading ? "mt-6" : undefined}>
+      {showHeading && <h2 className="mb-3 text-lg font-semibold">Itens</h2>}
       <div className="space-y-2">
         {items.map((item, itemIndex) => {
           const attribution = attributeItem(
@@ -56,65 +73,49 @@ export function ExpenseItems({
           return (
             <div
               key={`${item.description}-${itemIndex}`}
-              className="rounded-xl border bg-card px-4 py-3"
+              className="rounded-xl border bg-card px-3 py-2.5"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">{item.description}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.quantityMilliunits > 1000
-                      ? `${formatExpenseQuantity(item.quantityMilliunits as ExpenseQuantity)}x `
-                      : ""}
-                    {formatBRL(item.unitPriceCents)}/un
-                    {solePayerName !== null && ` · Pago por ${solePayerName}`}
-                  </p>
-                </div>
-                <span className="text-sm font-semibold tabular-nums">
-                  {formatBRL(item.totalPriceCents)}
-                </span>
+              <div className="flex items-baseline justify-between gap-3">
+                <p title={item.description} className="min-w-0 truncate text-base font-semibold leading-5 text-foreground">
+                  {item.description}
+                </p>
+                <Money cents={item.totalPriceCents} size="sm" className="shrink-0 font-semibold" />
               </div>
-              {attribution.consumers.length > 0 && (
-                <ul className="mt-2 space-y-2 border-t border-dashed border-border pt-2">
-                  {attribution.consumers.map((consumer) => {
-                    const name = participantName(consumer.participantIndex);
-                    return (
-                      <li
-                        key={consumer.participantIndex}
-                        className="flex items-center gap-2"
-                      >
-                        {participantIsGuest(consumer.participantIndex) ? (
-                          <GuestAvatar size="xs" />
-                        ) : (
-                          <UserAvatar
-                            name={name}
-                            avatarUrl={participantAvatarUrl(consumer.participantIndex)}
-                            size="xs"
-                          />
-                        )}
-                        <span className="min-w-0 flex-1 text-xs font-medium">{name}</span>
-                        <span
-                          aria-hidden="true"
-                          className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-muted"
-                        >
-                          <span
-                            className="block h-full rounded-full bg-primary"
-                            style={{ width: `${consumer.basisPoints / 100}%` }}
-                          />
-                        </span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-                          {Math.round(consumer.basisPoints / 100)}%
-                        </span>
-                        <Money
-                          cents={consumer.amountCents}
-                          className="shrink-0 text-xs font-semibold"
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-xs leading-4 text-muted-foreground">
+                  {item.quantityMilliunits > 1000
+                    ? `${formatExpenseQuantity(item.quantityMilliunits as ExpenseQuantity)}× `
+                    : ""}
+                  {formatBRL(item.unitPriceCents)}
+                  {solePayerName !== null && ` · Pago por ${solePayerName}`}
+                </p>
+                {attribution.consumers.length > 0 && (
+                  <div className="shrink-0">
+                    <AvatarStack
+                      people={attribution.consumers.map((consumer) => {
+                        const id = participantId(consumer.participantIndex);
+                        const name = names.get(id) ?? participantName(consumer.participantIndex);
+                        return {
+                          id,
+                          name,
+                          avatarUrl: participantAvatarUrl(consumer.participantIndex),
+                          isGuest: participantIsGuest(consumer.participantIndex),
+                        };
+                      })}
+                      size="xs"
+                      label={buildBreakdownLabel(
+                        attribution.consumers.map((consumer) => {
+                          const id = participantId(consumer.participantIndex);
+                          const name = names.get(id) ?? participantName(consumer.participantIndex);
+                          return { name, amountCents: consumer.amountCents };
+                        }),
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
               {attribution.unassignedCents !== 0 && (
-                <p className="mt-1.5 text-xs font-semibold text-destructive">
+                <p className="mt-1.5 text-xs font-semibold text-destructive-text">
                   {attribution.unassignedCents > 0
                     ? `Sem divisão: ${formatBRL(attribution.unassignedCents)}`
                     : `Divisão acima do item: ${formatBRL(-attribution.unassignedCents)}`}

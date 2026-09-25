@@ -4,19 +4,15 @@ import { StrictMode } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PhotoOutcome } from "@/lib/capacitor/camera";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 
 const mockGetPlatform = vi.fn(() => "web");
-
-vi.mock("@capacitor/core", () => ({
-  Capacitor: {
-    getPlatform: () => mockGetPlatform(),
-  },
-}));
 
 const mockTakeNativePhoto = vi.fn();
 const mockPickNativeGalleryPhoto = vi.fn();
 
 vi.mock("@/lib/capacitor/camera", () => ({
+  isNativeCameraAvailable: () => mockGetPlatform() !== "web",
   takeNativePhoto: () => mockTakeNativePhoto(),
   pickNativeGalleryPhoto: () => mockPickNativeGalleryPhoto(),
 }));
@@ -278,21 +274,6 @@ describe("ReceiptScanner", () => {
       expect(screen.queryByText("Camera")).not.toBeInTheDocument();
     });
 
-    it("attaches the stream to the video element", async () => {
-      const { stream } = createFakeStream();
-      stubMediaDevices(vi.fn<GetUserMedia>(() => Promise.resolve(stream)));
-
-      render(
-        <ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />,
-      );
-      await flushMicrotasks();
-
-      const video = screen.getByTestId(
-        "receipt-camera-video",
-      ) as HTMLVideoElement;
-      expect(video.srcObject).toBe(stream);
-      expect(screen.getByText("Iniciando câmera...")).toBeInTheDocument();
-    });
 
     it("enables the shutter on metadata and feeds the capture into Processar", async () => {
       const onProcess = vi.fn();
@@ -374,6 +355,23 @@ describe("ReceiptScanner", () => {
       }
       expect(onBack).toHaveBeenCalledOnce();
     });
+    it("stops all tracks and leaves the scanner on hardware Back", async () => {
+      const { stream, stops } = createFakeStream(2);
+      stubMediaDevices(vi.fn<GetUserMedia>(() => Promise.resolve(stream)));
+      const onBack = vi.fn();
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={onBack} />);
+      await flushMicrotasks();
+
+      expect(runBackHandlers()).toBe(true);
+      await flushMicrotasks();
+
+      for (const stop of stops) {
+        expect(stop).toHaveBeenCalledOnce();
+      }
+      expect(onBack).toHaveBeenCalledOnce();
+    });
+
 
     it("hands off to the gallery picker inside the same user gesture", async () => {
       const { stream, stops } = createFakeStream();
@@ -461,7 +459,7 @@ describe("ReceiptScanner", () => {
 
       expect(getUserMedia).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.getByText("Iniciando câmera...")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Capturar foto" })).toBeDisabled();
     });
 
     it("leaves the scanner from the camera error card", async () => {

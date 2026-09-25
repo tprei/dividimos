@@ -99,7 +99,7 @@ function byCreatedAtAsc<T extends { createdAt: string }>(a: T, b: T): number {
  * id until the server acknowledges it, so rows are keyed by clientId and the
  * authoritative server row always replaces the provisional one.
  */
-export function mergeMessages(
+function mergeMessages(
   existing: readonly ChatMessage[],
   incoming: readonly ChatMessage[],
 ): ChatMessage[] {
@@ -141,7 +141,7 @@ function incomingMessages(messages: readonly ChatMessage[], meId: string | null)
  * contiguous history the boundary stays null, so acknowledgement cannot claim
  * messages that were never loaded.
  */
-export function readableThrough(
+function readableThrough(
   state: Pick<ConversationState, "messages" | "messagesComplete">,
   meId: string | null,
 ): string | null {

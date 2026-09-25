@@ -5,7 +5,7 @@ import {
   validateWebSubscription,
 } from "./validate-endpoint";
 
-export const PUSH_SEND_TIMEOUT_MS = 10_000;
+const PUSH_SEND_TIMEOUT_MS = 10_000;
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;

@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState, useDeferredValue } from "react";
+import { ListRow } from "@/components/ui/list-row";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { Money } from "@/components/shared/money";
 import { Receipt, Search, Users, X } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { formatBRL } from "@/lib/currency";
 import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 
 export function SearchContent() {
   const [query, setQuery] = useState("");
-  // The query travels with its outcome, and a failed lookup is recorded as a
-  // failure: "we could not ask" is not "this person does not exist".
   const [remoteResult, setRemoteResult] = useState<{
     query: string;
     user: UserProfile | null;
@@ -22,37 +22,40 @@ export function SearchContent() {
   const groups = useAppStore((state) => state.groups);
   const groupOrder = useAppStore((state) => state.groupOrder);
   const expenses = useAppStore((state) => state.expenses);
-  const me = useAppStore((state) => state.me);
+  const meId = useAppStore((state) => state.me?.id ?? null);
 
-  const trimmed = query.trim();
+  const deferredQuery = useDeferredValue(query);
+  const trimmed = deferredQuery.trim();
   const q = trimmed.toLowerCase();
 
-  const handleQuery = q.startsWith("@") ? q.slice(1) : q;
+  const typedTrimmed = query.trim();
+  const typedQ = typedTrimmed.toLowerCase();
+  const handleQuery = typedQ.startsWith("@") ? typedQ.slice(1) : typedQ;
   const isHandleQuery =
-    (q.startsWith("@") && handleQuery.length >= 3) || /^[a-z0-9_]{3,30}$/.test(q);
-  const current = isHandleQuery && remoteResult?.query === q ? remoteResult : null;
+    (typedQ.startsWith("@") && handleQuery.length >= 3) ||
+    /^[a-z0-9_]{3,30}$/.test(typedQ);
+  const current = isHandleQuery && remoteResult?.query === typedQ ? remoteResult : null;
   const remoteUser = current && !current.failed ? current.user : null;
   const remoteFailed = current?.failed ?? false;
 
   useEffect(() => {
     if (!isHandleQuery) return;
-    let cancelled = false;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const user = await lookupUserByHandle(handleQuery);
-        if (!cancelled) setRemoteResult({ query: q, user, failed: false });
+        if (!controller.signal.aborted) setRemoteResult({ query: typedQ, user, failed: false });
       } catch {
-        if (!cancelled) setRemoteResult({ query: q, user: null, failed: true });
+        if (!controller.signal.aborted) setRemoteResult({ query: typedQ, user: null, failed: true });
       }
     }, 500);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, [q, handleQuery, isHandleQuery]);
+  }, [typedQ, handleQuery, isHandleQuery]);
 
   const matchedGroups = useMemo(() => {
-    if (!q) return [];
     return groupOrder
       .map((id) => groups[id])
       .filter((s): s is GroupSnapshot => Boolean(s))
@@ -74,7 +77,7 @@ export function SearchContent() {
     const list: UserProfile[] = [];
     for (const snapshot of Object.values(groups)) {
       for (const m of snapshot.members) {
-        if (m.userId === me?.id || seen.has(m.userId)) continue;
+        if (m.userId === meId || seen.has(m.userId)) continue;
         seen.add(m.userId);
         const nameMatch = m.user.name.toLowerCase().includes(q);
         const handleMatch = m.user.handle.toLowerCase().includes(q);
@@ -84,20 +87,16 @@ export function SearchContent() {
       }
     }
     return list;
-  }, [groups, me?.id, q]);
+  }, [groups, meId, q]);
 
   const matchedPeople = useMemo(() => {
     if (!q) return [];
     const result = [...localMembers];
-    if (
-      remoteUser &&
-      remoteUser.id !== me?.id &&
-      !result.some((u) => u.id === remoteUser.id)
-    ) {
+    if (remoteUser && remoteUser.id !== meId && !result.some((u) => u.id === remoteUser.id)) {
       result.push(remoteUser);
     }
     return result;
-  }, [localMembers, remoteUser, me?.id, q]);
+  }, [localMembers, remoteUser, meId, q]);
 
   const matchedExpenses = useMemo(() => {
     if (!q) return [];
@@ -123,43 +122,36 @@ export function SearchContent() {
     matchedExpenses.length > 0;
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg px-4 py-6 md:max-w-2xl">
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
+        <Input
+          type="search"
+          aria-label="Buscar grupos, contas ou pessoas"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar grupos, contas, pessoas..."
           autoFocus
-          className="w-full rounded-2xl border bg-muted/40 py-3 pl-10 pr-10 text-base text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all md:text-sm"
+          className="h-12 rounded-2xl bg-card pl-10 pr-12 [&::-webkit-search-cancel-button]:appearance-none"
         />
         {query && (
-          <button
-            type="button"
+          <IconButton
             onClick={() => setQuery("")}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            className="absolute right-1 top-1/2 -translate-y-1/2"
             aria-label="Limpar busca"
           >
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         )}
       </div>
 
-      {!trimmed ? (
-        <div className="mt-12 flex flex-col items-center justify-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-            <Search className="h-6 w-6" />
-          </div>
-          <p className="mt-3 text-sm font-medium text-muted-foreground">
-            Digite para buscar grupos, contas ou pessoas
-          </p>
-        </div>
+      {!trimmed && matchedGroups.length === 0 ? (
+        <p className="mt-12 text-center text-sm text-muted-foreground">Grupos, contas ou @usuário</p>
       ) : !hasResults ? (
         <div className="mt-12 text-center">
           {remoteFailed ? (
             <>
-              {/* The local matches are real; only the handle lookup failed. */}
+              <p role="status" className="sr-only">Busca indisponível</p>
               <p className="text-sm font-semibold text-foreground">
                 Não foi possível buscar esse @handle
               </p>
@@ -168,12 +160,9 @@ export function SearchContent() {
               </p>
             </>
           ) : (
-            <>
+            isHandleQuery && !current ? <p role="status" className="text-sm text-muted-foreground">Buscando pessoa...</p> : <>
               <p className="text-sm font-semibold text-foreground">
-                Nenhum resultado encontrado
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Não encontramos nada para &quot;{query}&quot;
+                Nada encontrado
               </p>
             </>
           )}
@@ -182,29 +171,12 @@ export function SearchContent() {
         <div className="mt-6 space-y-6">
           {matchedGroups.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Grupos
+              <h2 className="text-lg font-bold">
+                {trimmed ? "Grupos" : "Grupos recentes"}
               </h2>
-              <div className="mt-2 space-y-2">
-                {matchedGroups.map((group) => (
-                  <Link
-                    key={group.id}
-                    href={`/app/groups/${group.id}`}
-                    className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate text-foreground">
-                        {group.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {group.memberCount} membro
-                        {group.memberCount !== 1 ? "s" : ""}
-                      </p>
-                    </div>
-                  </Link>
+              <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card divide-y">
+                {matchedGroups.slice(0, trimmed ? undefined : 5).map((group) => (
+                  <ListRow key={group.id} href={`/app/groups/${group.id}`} title={group.name} subtitle={`${group.memberCount} ${group.memberCount === 1 ? "membro" : "membros"}`} leading={<Users className="size-5 text-primary" />} />
                 ))}
               </div>
             </div>
@@ -212,31 +184,12 @@ export function SearchContent() {
 
           {matchedPeople.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <h2 className="text-lg font-bold">
                 Pessoas
               </h2>
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card divide-y">
                 {matchedPeople.map((person) => (
-                  <Link
-                    key={person.id}
-                    href={`/app/conversations/${person.id}`}
-                    className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/40"
-                  >
-                    <UserAvatar
-                      name={person.name}
-                      avatarUrl={person.avatarUrl}
-                      size="sm"
-                      isBot={person.isBot}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate text-foreground">
-                        {person.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        @{person.handle}
-                      </p>
-                    </div>
-                  </Link>
+                  <ListRow key={person.id} href={`/app/conversations/${person.id}`} title={person.name} subtitle={`@${person.handle}`} leading={<UserAvatar id={person.id} name={person.name} avatarUrl={person.avatarUrl} size="sm" isBot={person.isBot} />} />
                 ))}
               </div>
             </div>
@@ -244,33 +197,12 @@ export function SearchContent() {
 
           {matchedExpenses.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <h2 className="text-lg font-bold">
                 Contas
               </h2>
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card divide-y">
                 {matchedExpenses.map((exp) => (
-                  <Link
-                    key={exp.id}
-                    href={`/app/bill/${exp.id}`}
-                    className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                      <Receipt className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate text-foreground">
-                        {exp.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {exp.merchantName
-                          ? `${exp.merchantName} • ${exp.groupName}`
-                          : exp.groupName}
-                      </p>
-                    </div>
-                    <p className="text-sm font-semibold tabular-nums text-foreground">
-                      {formatBRL(exp.totalCents)}
-                    </p>
-                  </Link>
+                  <ListRow key={exp.id} href={`/app/bill/${exp.id}`} title={exp.title} subtitle={exp.merchantName ? `${exp.merchantName} · ${exp.groupName}` : exp.groupName} leading={<Receipt className="size-5 text-muted-foreground" />} trailing={<Money cents={exp.totalCents} className="text-sm font-semibold" />} />
                 ))}
               </div>
             </div>

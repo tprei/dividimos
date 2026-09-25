@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { InstallPrompt } from "./install-prompt";
 
+type InstallPromptEvent = NonNullable<Window["__pwaInstallPrompt"]>;
+
+function makeInstallPromptEvent(
+  prompt: () => Promise<void>,
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>,
+): InstallPromptEvent {
+  return Object.assign(new Event("beforeinstallprompt"), {
+    prompt,
+    userChoice,
+  });
+}
+
 function setUserAgent(ua: string) {
   Object.defineProperty(navigator, "userAgent", {
     value: ua,
@@ -41,8 +53,7 @@ describe("InstallPrompt", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setStandaloneMode(false);
-    // Clear any captured prompt from previous tests
-    (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
+    window.__pwaInstallPrompt = null;
   });
 
   afterEach(() => {
@@ -94,11 +105,7 @@ describe("InstallPrompt", () => {
         outcome: "accepted" as const,
       });
 
-      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
-        prompt: mockPrompt,
-        userChoice: mockChoice,
-        preventDefault: vi.fn(),
-      };
+      window.__pwaInstallPrompt = makeInstallPromptEvent(mockPrompt, mockChoice);
 
       render(<InstallPrompt />);
 
@@ -150,6 +157,16 @@ describe("InstallPrompt", () => {
   });
 
   describe("install button behavior", () => {
+    it("keeps a dismissed card hidden when returning to the page", () => {
+      setUserAgent(ANDROID_UA);
+      render(<InstallPrompt variant="card" />);
+      fireEvent.click(screen.getByRole("button", { name: "Dispensar instalação" }));
+      act(() => {
+        window.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(screen.queryByRole("button", { name: "Instalar no celular" })).not.toBeInTheDocument();
+    });
+
     it("keeps prompt visible when outcome is dismissed", async () => {
       setUserAgent(ANDROID_UA);
 
@@ -158,11 +175,7 @@ describe("InstallPrompt", () => {
         outcome: "dismissed" as const,
       });
 
-      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
-        prompt: mockPrompt,
-        userChoice: mockChoice,
-        preventDefault: vi.fn(),
-      };
+      window.__pwaInstallPrompt = makeInstallPromptEvent(mockPrompt, mockChoice);
 
       render(<InstallPrompt />);
 
@@ -178,11 +191,10 @@ describe("InstallPrompt", () => {
       setUserAgent(ANDROID_UA);
 
       const mockPrompt = vi.fn().mockResolvedValue(undefined);
-      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
-        prompt: mockPrompt,
-        userChoice: Promise.resolve({ outcome: "dismissed" as const }),
-        preventDefault: vi.fn(),
-      };
+      window.__pwaInstallPrompt = makeInstallPromptEvent(
+        mockPrompt,
+        Promise.resolve({ outcome: "dismissed" as const }),
+      );
 
       render(<InstallPrompt />);
 
@@ -200,11 +212,10 @@ describe("InstallPrompt", () => {
     it("survives a browser that refuses the prompt", async () => {
       setUserAgent(ANDROID_UA);
 
-      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
-        prompt: vi.fn().mockRejectedValue(new Error("already used")),
-        userChoice: Promise.resolve({ outcome: "dismissed" as const }),
-        preventDefault: vi.fn(),
-      };
+      window.__pwaInstallPrompt = makeInstallPromptEvent(
+        vi.fn().mockRejectedValue(new Error("already used")),
+        Promise.resolve({ outcome: "dismissed" as const }),
+      );
 
       render(<InstallPrompt />);
 

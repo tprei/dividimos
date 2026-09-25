@@ -1,16 +1,18 @@
 "use client";
 
-import { AccountSection, type AccountSectionProps } from "@/components/bill/itemized/account-section";
 import { ItemsSection, type ItemsSectionProps } from "@/components/bill/itemized/items-section";
 import { PaymentSection, type PaymentSectionProps } from "@/components/bill/itemized/payment-section";
-import { ReviewSection, type ReviewSectionProps } from "@/components/bill/itemized/review-section";
 import { SplitSection, type SplitSectionProps } from "@/components/bill/itemized/split-section";
+import { DetailsStep, type DetailsStepProps } from "@/components/bill/wizard/details-step";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import type { ExpenseSplit, Guest } from "@/stores/bill-store";
-import type { Expense, ExpenseItem, ExpensePayer, User } from "@/types";
+import type { ExpenseItem, User } from "@/types";
 
 export interface SectionContentProps {
+  viewerId: string;
   section: ItemizedSectionKey;
+  details: DetailsStepProps;
+  payment: PaymentSectionProps;
   items: ExpenseItem[];
   amountTexts: Record<string, string>;
   invalidAmountIds: string[];
@@ -21,13 +23,7 @@ export interface SectionContentProps {
   participants: User[];
   guests: Guest[];
   splits: ExpenseSplit[];
-  payers: ExpensePayer[];
-  expense: Expense | null;
-  partial: boolean;
-  remainingCents: number;
-  issues: ReviewSectionProps["issues"];
   expandedId: SplitSectionProps["expandedId"];
-  account: AccountSectionProps;
   onDescriptionChange: ItemsSectionProps["onDescriptionChange"];
   onAmountChange: ItemsSectionProps["onAmountChange"];
   onServiceFeeChange: ItemsSectionProps["onServiceFeeChange"];
@@ -35,16 +31,16 @@ export interface SectionContentProps {
   onAddItem: ItemsSectionProps["onAddItem"];
   onToggleItem: SplitSectionProps["onToggleItem"];
   onSaveDivision: SplitSectionProps["onSaveDivision"];
+  onUnassign: SplitSectionProps["onUnassign"];
   onCloseDivision: SplitSectionProps["onCloseDivision"];
   onAssignSelected: SplitSectionProps["onAssignSelected"];
-  onSetPayerFull: PaymentSectionProps["onSetPayerFull"];
-  onSplitPaymentEqually: PaymentSectionProps["onSplitPaymentEqually"];
-  onSetPayerAmount: PaymentSectionProps["onSetPayerAmount"];
-  onRemovePayerEntry: PaymentSectionProps["onRemovePayerEntry"];
 }
 
 export function SectionContent({
+  viewerId,
   section,
+  details,
+  payment,
   items,
   amountTexts,
   invalidAmountIds,
@@ -55,13 +51,7 @@ export function SectionContent({
   participants,
   guests,
   splits,
-  payers,
-  expense,
-  partial,
-  remainingCents,
-  issues,
   expandedId,
-  account,
   onDescriptionChange,
   onAmountChange,
   onServiceFeeChange,
@@ -69,15 +59,12 @@ export function SectionContent({
   onAddItem,
   onToggleItem,
   onSaveDivision,
+  onUnassign,
   onCloseDivision,
   onAssignSelected,
-  onSetPayerFull,
-  onSplitPaymentEqually,
-  onSetPayerAmount,
-  onRemovePayerEntry,
 }: SectionContentProps) {
   if (section === "account") {
-    return <AccountSection {...account} />;
+    return <DetailsStep {...details} />;
   }
   if (section === "items") {
     return (
@@ -86,6 +73,7 @@ export function SectionContent({
         amountTexts={amountTexts}
         invalidAmountIds={invalidAmountIds}
         serviceFeeText={serviceFeeText}
+        serviceFeeCents={serviceFeeCents}
         fixedFees={fixedFees}
         grandTotal={grandTotal}
         onDescriptionChange={onDescriptionChange}
@@ -99,6 +87,7 @@ export function SectionContent({
   if (section === "split") {
     return (
       <SplitSection
+        viewerId={viewerId}
         items={items}
         participants={participants}
         guests={guests}
@@ -109,36 +98,11 @@ export function SectionContent({
         expandedId={expandedId}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
+        onUnassign={onUnassign}
         onCloseDivision={onCloseDivision}
         onAssignSelected={onAssignSelected}
       />
     );
   }
-  if (section === "payment") {
-    return (
-      <PaymentSection
-        participants={participants}
-        payers={payers}
-        grandTotal={grandTotal}
-        onSetPayerFull={onSetPayerFull}
-        onSplitPaymentEqually={onSplitPaymentEqually}
-        onSetPayerAmount={onSetPayerAmount}
-        onRemovePayerEntry={onRemovePayerEntry}
-        hasGuests={guests.length > 0}
-      />
-    );
-  }
-  return (
-    <ReviewSection
-      expense={expense}
-      items={items}
-      splits={splits}
-      participants={participants}
-      guests={guests}
-      payers={payers}
-      partial={partial}
-      remainingCents={remainingCents}
-      issues={issues}
-    />
-  );
+  return <PaymentSection {...payment} />;
 }

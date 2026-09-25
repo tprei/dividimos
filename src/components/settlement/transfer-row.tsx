@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowRight, ChevronRight } from "lucide-react";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { ArrowRight } from "lucide-react";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type { Transfer } from "@/types/ledger";
@@ -15,6 +16,8 @@ interface TransferRowProps {
   transfer: Transfer;
   from: SettlementPerson;
   to: SettlementPerson;
+  fromLabel: string;
+  toLabel: string;
   meId: string;
   highlighted: boolean;
   onPay: () => void;
@@ -25,85 +28,96 @@ export function TransferRow({
   transfer,
   from,
   to,
+  fromLabel,
+  toLabel,
   meId,
   highlighted,
   onPay,
   onCollect,
 }: TransferRowProps) {
   const pendingCounterparty =
-    (transfer.fromId === meId && to.isPending) || (transfer.toId === meId && from.isPending);
+    (transfer.fromId === meId && to.isPending) ||
+    (transfer.toId === meId && from.isPending);
   const guestInvolved = from.isGuest || to.isGuest;
   const iPay = transfer.fromId === meId && !to.isPending && !guestInvolved;
-  const iReceive = transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
+  const iReceive =
+    transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
   const actionable = iPay || iReceive;
-  let statusLabel = "Outro acerto";
-  if (iPay) statusLabel = "Você paga";
+  let statusLabel = "Outro pagamento";
+  if (iPay) statusLabel = "Pagar";
   else if (iReceive) statusLabel = "Cobrar";
-  else if (guestInvolved && (transfer.fromId === meId || transfer.toId === meId))
+  else if (
+    guestInvolved &&
+    (transfer.fromId === meId || transfer.toId === meId)
+  )
     statusLabel = "Combinar fora do app";
   else if (pendingCounterparty) statusLabel = "Aguardando o convite";
-  const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(transfer.amountCents)} para ${to.name}`;
-  const content = (
-    <>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1.5">
-          {from.isGuest ? (
-            <GuestAvatar size="xs" />
-          ) : (
-            <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="xs" />
-          )}
-          <PersonLabel name={from.name} handle={from.handle} nameClassName="min-w-0 text-[15px]" />
-        </span>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-          {to.isGuest ? (
-            <GuestAvatar size="xs" />
-          ) : (
-            <UserAvatar name={to.name} avatarUrl={to.avatarUrl} size="xs" />
-          )}
-          <PersonLabel name={to.name} handle={to.handle} nameClassName="min-w-0 text-[15px]" />
-        </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {(from.isGuest || to.isGuest) && <GuestBadge />}
-          {(from.isPending || to.isPending) && (
-            <Badge variant="secondary" className="shrink-0">
-              Convite pendente
-            </Badge>
-          )}
-        </span>
-        <span className="block text-xs text-muted-foreground">{statusLabel}</span>
-      </span>
-      <Money
-        cents={transfer.amountCents}
-        className={cn("mt-1 shrink-0 self-start text-sm font-semibold", iPay && "text-destructive")}
-      />
-      {actionable && <ChevronRight className="mt-1 size-4 shrink-0 self-start text-muted-foreground" aria-hidden="true" />}
-    </>
-  );
-  const rowClass = cn(
-    "flex min-h-14 w-full items-start gap-3 px-4 py-2 text-left",
-    highlighted && "bg-primary/5",
-  );
-  if (!actionable) {
-    return (
-      <div
-        id={`transfer-${transfer.fromId}-${transfer.toId}`}
-        className={rowClass}
-        aria-label={rowLabel}
-      >
-        {content}
-      </div>
-    );
-  }
+  const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(
+    transfer.amountCents
+  )} para ${to.name}`;
+  const actionLabel = iPay
+    ? `Pagar ${formatBRL(transfer.amountCents)} para ${to.name}`
+    : `Cobrar ${formatBRL(transfer.amountCents)} de ${from.name}`;
+  let amountTone: "negative" | "positive" | "neutral" = "neutral";
+  if (iPay) amountTone = "negative";
+  else if (iReceive) amountTone = "positive";
   return (
-    <button
-      type="button"
+    <div
       id={`transfer-${transfer.fromId}-${transfer.toId}`}
-      className={cn(rowClass, "cursor-pointer transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none")}
-      aria-label={rowLabel}
-      onClick={iPay ? onPay : onCollect}
+      aria-label={actionable ? undefined : rowLabel}
+      className={cn(
+        "flex min-h-11 items-center gap-2 px-3 py-2",
+        !actionable && "text-muted-foreground",
+        highlighted && "bg-primary/5"
+      )}
     >
-      {content}
-    </button>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        {from.isGuest ? (
+          <GuestAvatar id={from.id} name={from.name} size="xs" />
+        ) : (
+          <UserAvatar
+            id={from.id}
+            name={from.name}
+            avatarUrl={from.avatarUrl}
+            size="xs"
+          />
+        )}
+        <PersonLabel
+          name={from.name}
+          overrideName={fromLabel}
+          nameClassName="text-sm"
+        />
+        <ArrowRight
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <PersonLabel
+          name={to.name}
+          overrideName={toLabel}
+          nameClassName="text-sm"
+        />
+      </div>
+      <Money cents={transfer.amountCents} size="sm" tone={amountTone} />
+      {actionable && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-mr-1 px-2 text-primary-text"
+          aria-label={actionLabel}
+          title={actionLabel}
+          onClick={() => {
+            haptics.tap();
+            (iPay ? onPay : onCollect)();
+          }}
+        >
+          {iPay ? "Pagar" : "Cobrar"}
+        </Button>
+      )}
+      {!actionable && (guestInvolved || pendingCounterparty) && (
+        <span className="max-w-24 shrink-0 text-right text-xs leading-tight">
+          {statusLabel}
+        </span>
+      )}
+    </div>
   );
 }

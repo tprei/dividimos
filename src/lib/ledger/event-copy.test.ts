@@ -308,4 +308,61 @@ describe("describeEvent", () => {
       );
     });
   });
+
+  describe("self-name casing", () => {
+    it("capitalizes the viewer as actor at the start of a sentence", () => {
+      const event = makeEvent({
+        kind: "expense_created",
+        expenseTitle: "Almoço",
+        payload: { totalCents: 1000 },
+      });
+      const viewerCtx: EventCopyContext = { ...baseCtx, actorName: "você" };
+      expect(describeEvent(event, viewerCtx)).toBe(
+        "Você adicionou Almoço (R$\u00A010,00)",
+      );
+    });
+
+    it("capitalizes the viewer as subject of join, leave and claim sentences", () => {
+      expect(
+        describeEvent(
+          makeEvent({ kind: "member_joined", subjectUserId: "viewer-id" }),
+          baseCtx,
+        ),
+      ).toBe("Você entrou no grupo");
+      expect(
+        describeEvent(
+          makeEvent({ kind: "member_left", subjectUserId: "viewer-id" }),
+          baseCtx,
+        ),
+      ).toBe("Você saiu do grupo");
+      expect(
+        describeEvent(
+          makeEvent({
+            kind: "guest_claimed",
+            subjectUserId: "viewer-id",
+            payload: { displayName: "Convidado" },
+          }),
+          baseCtx,
+        ),
+      ).toBe("Você entrou como Convidado");
+    });
+
+    it("keeps 'você' lowercase mid-sentence", () => {
+      expect(
+        describeEvent(
+          makeEvent({ kind: "nudge", subjectUserId: "viewer-id" }),
+          baseCtx,
+        ),
+      ).toBe("Alice lembrou você de acertar as contas");
+      expect(
+        describeEvent(
+          makeEvent({
+            kind: "settlement_recorded",
+            payload: { amountCents: 3000, fromUserId: "u1", toUserId: "viewer-id" },
+          }),
+          baseCtx,
+        ),
+      ).toBe("Alice pagou R$\u00A030,00 pra você");
+    });
+  });
 });

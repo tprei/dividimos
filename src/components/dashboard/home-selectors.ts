@@ -1,8 +1,70 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
+import {
+  formatOccurredOn,
+  groupNameOf,
+  selectHomeRecentBills as selectHistoryBills,
+  type RecentBillItem,
+} from "@/stores/app-selectors";
 import type { AppState } from "@/stores/app-store";
-import type { GroupSnapshot } from "@/types/ledger";
 
 type HomeMode = "first-use" | "outstanding" | "settled";
+let recentCache: {
+  groups: AppState["groups"];
+  expenses: AppState["expenses"];
+  history: AppState["myExpenses"];
+  me: AppState["me"];
+  rows: RecentBillItem[];
+} | null = null;
+
+export function selectHomeRecentBills(state: AppState): RecentBillItem[] {
+  const previous = recentCache;
+  if (
+    previous &&
+    previous.groups === state.groups &&
+    previous.expenses === state.expenses &&
+    previous.history === state.myExpenses &&
+    previous.me === state.me
+  )
+    return previous.rows;
+
+  const rows: RecentBillItem[] = [];
+  const seen = new Set<string>();
+  if (state.me) {
+    const recent = Object.values(state.groups).flatMap(
+      (group) =>
+        group?.recentExpenses.map((expense) => ({ expense, group })) ?? []
+    );
+    recent.sort((a, b) =>
+      b.expense.createdAt.localeCompare(a.expense.createdAt)
+    );
+    for (const { expense, group } of recent) {
+      if (rows.length === 3) break;
+      if (expense.status === "deleted" || seen.has(expense.id)) continue;
+      seen.add(expense.id);
+      rows.push({
+        id: expense.id,
+        title: expense.title,
+        totalCents: expense.totalCents,
+        occurredOn: formatOccurredOn(expense.occurredOn),
+        groupName: groupNameOf(group, state.me.id),
+      });
+    }
+  }
+  if (rows.length < 3) {
+    for (const bill of selectHistoryBills(state)) {
+      if (rows.length === 3) break;
+      if (!seen.has(bill.id)) rows.push(bill);
+    }
+  }
+  recentCache = {
+    groups: state.groups,
+    expenses: state.expenses,
+    history: state.myExpenses,
+    me: state.me,
+    rows,
+  };
+  return rows;
+}
 
 export function selectHomeMode(state: AppState): HomeMode {
   const rows = selectDebtRows(state);
@@ -29,48 +91,4 @@ export function selectHomeMode(state: AppState): HomeMode {
   }
 
   return "settled";
-}
-
-export function formatOccurredOn(occurredOn: string): string {
-  const [year, month, day] = occurredOn.split("-");
-  if (!year || !month || !day) return occurredOn;
-  return `${day}/${month}/${year}`;
-}
-
-export function groupNameOf(snapshot: GroupSnapshot | undefined, meId: string): string {
-  if (!snapshot) return "";
-  if (snapshot.group.kind === "dm") {
-    const other = snapshot.members.find((m) => m.userId !== meId);
-    if (other) return other.user.name;
-  }
-  return snapshot.group.name;
-}
-
-export interface RecentBillItem {
-  id: string;
-  title: string;
-  totalCents: number;
-  occurredOn: string;
-  groupName: string;
-}
-
-type RecentBillsState = Pick<AppState, "expenses" | "groups" | "me" | "myExpenses">;
-
-export function selectRecentBills(state: RecentBillsState, limit = 3): RecentBillItem[] {
-  const me = state.me;
-  if (!me) return [];
-  const result: RecentBillItem[] = [];
-  for (const id of state.myExpenses.ids) {
-    if (result.length >= limit) break;
-    const exp = state.expenses[id];
-    if (!exp || exp.status === "deleted") continue;
-    result.push({
-      id: exp.id,
-      title: exp.title,
-      totalCents: exp.totalCents,
-      occurredOn: formatOccurredOn(exp.occurredOn),
-      groupName: groupNameOf(state.groups[exp.groupId], me.id),
-    });
-  }
-  return result;
 }

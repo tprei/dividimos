@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
 
 interface ChatInputProps {
   onSend: (content: string) => Promise<void>;
   onError?: (error: unknown) => void;
   disabled?: boolean;
+  actions?: ReactNode;
 }
 
-export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps) {
 
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -30,6 +33,7 @@ export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
     if (!trimmed || sending || disabled) return;
 
     setSending(true);
+    haptics.tap();
     try {
       await onSend(trimmed);
       setValue("");
@@ -55,8 +59,8 @@ export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
   );
 
   return (
-    <div className="border-t border-border/50 bg-background px-3 py-2">
-      <div className="flex items-end gap-2">
+    <div className="shrink-0 bg-background px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="flex items-end gap-1 rounded-[0.75rem] border border-border bg-card p-1 focus-within:ring-3 focus-within:ring-ring/50">
         <textarea
           ref={textareaRef}
           value={value}
@@ -68,17 +72,19 @@ export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
           placeholder="Mensagem..."
           disabled={disabled || sending}
           rows={1}
-          className="max-h-[120px] min-h-[36px] flex-1 resize-none rounded-xl bg-muted px-3 py-2 text-base outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-sm"
+          aria-label="Mensagem"
+          className="max-h-[120px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-sm"
         />
-        <button
+        {actions && value.length === 0 && <div className="flex shrink-0 items-center">{actions}</div>}
+        <Button
           type="button"
+          size="icon"
           onClick={handleSend}
           disabled={!canSend}
           aria-label="Enviar mensagem"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
         >
-          <Send className="h-4 w-4" />
-        </button>
+          <Send />
+        </Button>
       </div>
     </div>
   );

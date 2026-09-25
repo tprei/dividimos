@@ -11,13 +11,15 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
 import { createClient } from "@/lib/supabase/client";
 import { claimGuest } from "@/lib/sync/mutations-group";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { previewGuestClaim, type ClaimPreview } from "./claim-preview-actions";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { haptics } from "@/hooks/use-haptics";
 
 const HANDOFF_KEY = "dividimos.claim.handoff";
 const HANDOFF_MAX_AGE_MS = 30 * 60 * 1000;
@@ -164,14 +166,18 @@ export function ClaimPageClient() {
 
     try {
       const ack = await claimGuest(token);
+      haptics.success();
       await refreshGroup(ack.groupId);
       setState((prev) => ({ token: null, preview: prev.preview }));
       router.replace(`/app/bill/${ack.expenseId}`);
     } catch (err) {
+      haptics.error();
       setClaimError(ledgerErrorMessage(err));
       setClaiming(false);
     }
   }, [handleSignIn, router, state.preview, state.token]);
+
+  const retryPreview = useCallback(() => capture(state.token), [capture, state.token]);
 
   const { preview } = state;
 
@@ -193,6 +199,19 @@ export function ClaimPageClient() {
           <p className="mt-2 text-sm text-muted-foreground">
             O link do convite é inválido ou expirou.
           </p>
+        </div>
+      ) : preview.kind === "unavailable" ? (
+        <div className="flex flex-col items-center rounded-2xl border bg-card p-8 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <AlertCircle className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h1 className="mt-4 text-lg font-bold">Não deu pra abrir o convite</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Tente de novo em alguns instantes.
+          </p>
+          <Button className="mt-5 w-full" size="lg" onClick={retryPreview}>
+            Tentar de novo
+          </Button>
         </div>
       ) : preview.kind === "sign_in_required" ? (
         <div className="flex flex-col items-center rounded-2xl border bg-card p-8 text-center">
@@ -228,36 +247,24 @@ export function ClaimPageClient() {
         </div>
       ) : (
         <>
-          <div className="rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
-            <div className="flex items-center gap-2 text-gradient-foreground/80">
+          <div className="rounded-2xl border border-primary/25 bg-primary/10 p-5 text-foreground">
+            <div className="flex items-center gap-2 text-muted-foreground">
               <Receipt className="h-4 w-4" />
               <p className="text-sm">{preview.expenseTitle}</p>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums">
-              {formatBRL(preview.shareCents)}
-            </p>
-            <p className="mt-1 text-sm text-gradient-foreground/80">Sua parte na conta</p>
+            <div className="mt-2"><Money cents={preview.shareCents} size="hero" /></div>
+            <p className="mt-1 text-sm text-muted-foreground">Sua parte na conta</p>
           </div>
 
-          <div className="mt-5 rounded-2xl border bg-card p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary-text">
-                {preview.groupName.charAt(0) || "G"}
-              </div>
-              <div>
-                <p className="text-sm font-medium">{preview.groupName}</p>
-                <p className="text-xs text-muted-foreground">grupo desta conta</p>
+          <div className="mt-6 rounded-2xl border border-border bg-card p-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <GuestAvatar id={preview.guestId} name={preview.displayName} />
+              <div className="min-w-0">
+                <h1 className="break-words text-xl font-bold">{preview.displayName}</h1>
+                <p className="truncate text-sm text-muted-foreground" title={preview.groupName}>{preview.groupName}</p>
               </div>
             </div>
-            <div className="mt-4 rounded-xl bg-muted/50 p-3">
-              <p className="text-sm">
-                <span className="font-medium">{preview.displayName}</span>, você
-                foi convidado(a) pra participar desta conta.
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Ao confirmar, você entra no grupo e sua parte fica registrada.
-              </p>
-            </div>
+            <p className="mt-4 text-base text-muted-foreground">Essa parte da conta vai ficar no seu perfil.</p>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -272,10 +279,10 @@ export function ClaimPageClient() {
               ) : (
                 <UserCheck className="h-4 w-4" />
               )}
-              Participar
+              {claiming ? "Confirmando…" : "Confirmar participação"}
             </Button>
             {claimError && (
-              <p className="text-center text-xs text-destructive">{claimError}</p>
+              <p role="alert" className="text-center text-sm text-destructive-text">{claimError}</p>
             )}
           </div>
         </>

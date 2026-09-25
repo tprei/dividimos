@@ -11,6 +11,11 @@ import { PushFailure } from "@/lib/push/failures";
 import { hasNativePushConsent, setNativePushConsent } from "@/lib/push/native-consent";
 import { serviceWorkerReady } from "@/lib/push/service-worker";
 import { retryPendingPushDetaches } from "@/lib/push/detach";
+import {
+  detachPushSubscription,
+  fetchPushSubscriptionStatus,
+  uploadPushSubscription,
+} from "@/lib/sync/push";
 import { useAppStore } from "@/stores/app-store";
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
@@ -88,27 +93,6 @@ function matchesConfiguredKey(subscription: PushSubscription): boolean {
   return a.every((byte, i) => byte === b[i]);
 }
 
-async function serverOwnsSubscription(endpoint: string): Promise<boolean> {
-  const response = await fetch("/api/push/status", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint }),
-  });
-  if (!response.ok) throw new PushFailure("server");
-  const body = (await response.json()) as { subscribed?: unknown };
-  return body.subscribed === true;
-}
-
-/** Uploads the subscription, reporting whether the server accepted it. */
-async function uploadSubscription(subscription: PushSubscription): Promise<boolean> {
-  const response = await fetch("/api/push/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ subscription: subscription.toJSON() }),
-  });
-  if (!response.ok) throw new PushFailure("server");
-  return true;
-}
 type PushAttempt = {
   id: number;
   accountId: string | null;
@@ -233,13 +217,13 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       // Server state decides: a row owned by another account, or no row at
       // all, means this account is not subscribed on this device.
       if (!isCurrentAttempt(attempt)) return;
-      if (await serverOwnsSubscription(subscription.endpoint)) {
+      if (await fetchPushSubscriptionStatus(subscription.endpoint)) {
         if (isCurrentAttempt(attempt)) setIsSubscribed(true);
         return;
       }
 
       if (!isCurrentAttempt(attempt)) return;
-      const uploaded = await uploadSubscription(subscription);
+      const uploaded = await uploadPushSubscription(subscription);
       if (isCurrentAttempt(attempt)) setIsSubscribed(uploaded);
     } catch (cause) {
       if (!isCurrentAttempt(attempt)) return;
@@ -322,7 +306,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (!isCurrentAttempt(attempt)) return;
 
       try {
-        const uploaded = await uploadSubscription(subscription);
+        const uploaded = await uploadPushSubscription(subscription);
         if (isCurrentAttempt(attempt)) setIsSubscribed(uploaded);
       } catch (cause) {
         if (isCurrentAttempt(attempt)) await subscription.unsubscribe();
@@ -372,17 +356,13 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (!isCurrentAttempt(attempt)) return;
 
       if (subscription !== null) {
-        const response = await fetch("/api/push/unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
+        const detached = await detachPushSubscription(subscription.endpoint);
         if (!isCurrentAttempt(attempt)) return;
 
         // Dropping it locally stops delivery here regardless, but a server
         // row left behind is a real failure the user can retry.
         await subscription.unsubscribe();
-        if (!response.ok) throw new PushFailure("server");
+        if (!detached) throw new PushFailure("server");
       }
 
       if (isCurrentAttempt(attempt)) setIsSubscribed(false);

@@ -66,6 +66,9 @@
   --color-overdue-foreground: var(--overdue-foreground);
   --color-gradient-foreground: var(--gradient-foreground);
   --color-surface: var(--surface);
+  --color-paper: var(--paper);
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -76,6 +79,8 @@
 }
 
 :root {
+  color-scheme: light;
+
   /* Pre-hydration fallbacks; useAppViewport replaces these with measured
      visual-viewport pixels as soon as the shell mounts. */
   --app-viewport-height: 100dvh;
@@ -99,7 +104,7 @@
   --secondary-foreground: oklch(0.25 0.05 75);
 
   --muted: oklch(0.96 0.005 80);
-  --muted-foreground: oklch(0.50 0.02 250);
+  --muted-foreground: oklch(0.46 0.02 250);
 
   --accent: oklch(0.87 0.14 195);
   --accent-foreground: oklch(0.25 0.08 195);
@@ -135,6 +140,9 @@
 
   --surface: oklch(0.975 0.005 80);
 
+  /* Always-white surface so QR codes keep scanning on dark mode. */
+  --paper: oklch(1 0 0);
+
   --border: oklch(0.91 0.005 250);
   --input: oklch(0.91 0.005 250);
   --ring: oklch(0.78 0.16 75);
@@ -155,9 +163,21 @@
   --sidebar-accent-foreground: oklch(0.25 0.08 195);
   --sidebar-border: oklch(0.91 0.005 250);
   --sidebar-ring: oklch(0.78 0.16 75);
+
+  --avatar-tone-0: oklch(0.88 0.06 75);
+  --avatar-tone-1: oklch(0.88 0.06 35);
+  --avatar-tone-2: oklch(0.88 0.06 350);
+  --avatar-tone-3: oklch(0.88 0.06 305);
+  --avatar-tone-4: oklch(0.88 0.06 265);
+  --avatar-tone-5: oklch(0.88 0.06 225);
+  --avatar-tone-6: oklch(0.88 0.06 185);
+  --avatar-tone-7: oklch(0.88 0.06 135);
+  --avatar-foreground: oklch(0.25 0.025 250);
 }
 
 .dark {
+  color-scheme: dark;
+
   --background: oklch(0.22 0.05 250);
   --foreground: oklch(0.96 0.005 195);
 
@@ -175,20 +195,20 @@
   --secondary-foreground: oklch(0.90 0.005 195);
 
   --muted: oklch(0.28 0.03 250);
-  --muted-foreground: oklch(0.65 0.01 250);
+  --muted-foreground: oklch(0.74 0.012 250);
 
   --accent: oklch(0.30 0.06 195);
   --accent-foreground: oklch(0.80 0.12 195);
 
   --destructive: oklch(0.62 0.24 350);
-  --destructive-text: oklch(0.66 0.22 350);
+  --destructive-text: oklch(0.68 0.22 350);
 
   --success: oklch(0.72 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
   --success-text: var(--success);
 
   --warning: oklch(0.78 0.15 75);
-  --warning-foreground: oklch(0.88 0.09 75);
+  --warning-foreground: oklch(0.20 0.05 75);
 
   --gold: oklch(0.82 0.13 88);
   --gold-foreground: oklch(0.22 0.05 88);
@@ -201,8 +221,8 @@
 
   --surface: oklch(0.24 0.03 250);
 
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
+  --border: oklch(1 0 0 / 14%);
+  --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.80 0.16 75);
 
   --chart-1: oklch(0.80 0.16 75);
@@ -217,8 +237,18 @@
   --sidebar-primary-foreground: oklch(0.18 0.04 75);
   --sidebar-accent: oklch(0.30 0.06 195);
   --sidebar-accent-foreground: oklch(0.80 0.12 195);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(1 0 0 / 14%);
   --sidebar-ring: oklch(0.80 0.16 75);
+
+  --avatar-tone-0: oklch(0.35 0.055 75);
+  --avatar-tone-1: oklch(0.35 0.055 35);
+  --avatar-tone-2: oklch(0.35 0.055 350);
+  --avatar-tone-3: oklch(0.35 0.055 305);
+  --avatar-tone-4: oklch(0.35 0.055 265);
+  --avatar-tone-5: oklch(0.35 0.055 225);
+  --avatar-tone-6: oklch(0.35 0.055 185);
+  --avatar-tone-7: oklch(0.35 0.055 135);
+  --avatar-foreground: oklch(0.96 0.008 80);
 }
 
 @keyframes shimmer {
@@ -239,6 +269,16 @@
   }
   html {
     @apply font-sans;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 

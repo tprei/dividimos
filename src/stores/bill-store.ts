@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import { allocateByBasisPoints, allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
-import { divisionForItem, recomputeDivisionShares } from "@/lib/item-division";
+import { recomputeDivisionShares } from "@/lib/item-division";
 import type { ItemDivisionValue } from "@/lib/item-division";
 import type {
   DebtEdge,
@@ -157,13 +157,6 @@ function getGrandTotalFor(
   const itemsTotal = items.reduce((sum, item) => sum + item.totalPriceCents, 0);
   const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
   return itemsTotal + (feeResult.ok ? feeResult.value : 0) + expense.fixedFees;
-}
-export function selectItemDivision(
-  state: Pick<ExpenseState, "items" | "splits">,
-  itemId: string,
-): ItemDivisionValue | null {
-  const item = state.items.find((candidate) => candidate.id === itemId);
-  return item ? divisionForItem(item, state.splits) : null;
 }
 
 

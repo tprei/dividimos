@@ -20,7 +20,13 @@ import type {
   VendorCharge,
   WireIssue,
 } from "@/types/ledger";
-import { dispatchNotification, notify, type NotifyOutcome } from "./mutations";
+import {
+  dispatchNotification,
+  notify,
+  rollbackAndReconcile,
+  type NotifyOutcome,
+  type RollbackStep,
+} from "./mutations";
 
 export interface GuestClaimToken {
   token: string;
@@ -179,10 +185,37 @@ export async function declineInvitation(groupId: string): Promise<MutationAck> {
 }
 
 export async function leaveGroup(groupId: string): Promise<MutationAck> {
-  const ack = await rpc("leave_group", { p_group_id: groupId }, decodeMutationAck);
-  useAppStore.getState().removeGroup(groupId);
-  notify(ack.eventId);
-  return ack;
+  const generation = getAuthGeneration();
+  const priorGroup = useAppStore.getState().groups[groupId];
+  const rollback: RollbackStep[] = [];
+  if (priorGroup) {
+    useAppStore.getState().patch((s) => {
+      const groups = { ...s.groups };
+      delete groups[groupId];
+      return { groups, groupOrder: s.groupOrder.filter((id) => id !== groupId) };
+    });
+    rollback.push(() => {
+      const state = useAppStore.getState();
+      if (state.groups[groupId]) return;
+      state.patch((s) => ({
+        groups: { ...s.groups, [groupId]: priorGroup },
+        groupOrder: s.groupOrder.includes(groupId) ? s.groupOrder : [...s.groupOrder, groupId],
+      }));
+    });
+  }
+
+  try {
+    const ack = await rpc("leave_group", { p_group_id: groupId }, decodeMutationAck);
+    if (getAuthGeneration() !== generation) return ack;
+    useAppStore.getState().removeGroup(groupId);
+    notify(ack.eventId);
+    return ack;
+  } catch (error) {
+    // A sign-out or account switch reset the store while this was in flight;
+    // restoring the snapshot would hand the old account's group to the new one.
+    if (getAuthGeneration() !== generation) throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
+  }
 }
 
 export async function removeMember(groupId: string, userId: string): Promise<MutationAck> {
@@ -253,6 +286,9 @@ export async function deactivateInviteLink(groupId: string): Promise<void> {
 
 export async function joinViaLink(token: string): Promise<MutationAck> {
   const ack = await rpc("join_via_link", { p_token: token }, decodeMutationAck);
+  // /join renders outside the app shell, so the persisted store may not be
+  // loaded yet; writing a refresh into it would overwrite the saved cache.
+  if (!useAppStore.getState().hydrated) await useAppStore.persist.rehydrate();
   await refreshGroup(ack.groupId);
   notify(ack.eventId);
   return ack;
@@ -263,23 +299,60 @@ export async function updateProfile(input: {
   handle?: string;
   notificationPreferences?: NotificationPreferences;
 }): Promise<Me> {
-  const me = await rpc(
-    "update_profile",
-    {
-      p_name: input.name,
-      p_handle: input.handle,
-      p_notification_preferences: input.notificationPreferences,
-    },
-    decodeMe,
-  );
-  useAppStore.getState().patch(() => ({ me }));
-  return me;
+  const priorMe = useAppStore.getState().me;
+  if (!priorMe) throw new LedgerError("unauthenticated");
+  const generation = getAuthGeneration();
+
+  const optimisticMe: Me = {
+    ...priorMe,
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.handle !== undefined ? { handle: input.handle } : {}),
+    ...(input.notificationPreferences !== undefined
+      ? {
+          notificationPreferences: {
+            ...priorMe.notificationPreferences,
+            ...input.notificationPreferences,
+          },
+        }
+      : {}),
+  };
+  useAppStore.getState().patch(() => ({ me: optimisticMe }));
+
+  try {
+    const me = await rpc(
+      "update_profile",
+      {
+        p_name: input.name,
+        p_handle: input.handle,
+        p_notification_preferences: input.notificationPreferences,
+      },
+      decodeMe,
+    );
+    if (getAuthGeneration() !== generation) return me;
+    useAppStore.getState().patch(() => ({ me }));
+    return me;
+  } catch (error) {
+    if (getAuthGeneration() !== generation) throw error;
+    rollbackAndReconcile(
+      [
+        () => {
+          const state = useAppStore.getState();
+          if (state.me !== optimisticMe) return;
+          state.patch(() => ({ me: priorMe }));
+        },
+      ],
+      undefined,
+      error,
+      refreshGroup,
+    );
+  }
 }
 
-export async function lookupUserByHandle(handle: string): Promise<UserProfile | null> {
+export async function lookupUserByHandle(handle: string, signal?: AbortSignal): Promise<UserProfile | null> {
   let response: Response;
   try {
-    response = await fetch(`/api/users/lookup?handle=${encodeURIComponent(handle)}`);
+    const url = `/api/users/lookup?handle=${encodeURIComponent(handle)}`;
+    response = signal ? await fetch(url, { signal }) : await fetch(url);
   } catch (error) {
     throw new LedgerError("network", { cause: error });
   }

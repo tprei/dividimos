@@ -1,14 +1,13 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Loader2, QrCode, Shield, Zap } from "lucide-react";
+import { Check, Copy, Loader2, QrCode, Share2, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBackHandler } from "@/hooks/use-back-handler";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Popover, PopoverContent } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { formatBRL } from "@/lib/currency";
 import { haptics } from "@/hooks/use-haptics";
@@ -20,8 +19,17 @@ import {
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 import { getAuthGeneration } from "@/lib/sync/client";
+import { LedgerError } from "@/lib/sync/errors";
+import { generateSelfPixCode } from "@/lib/sync/pix";
+import { copyText } from "@/lib/platform/clipboard";
+import { QrCanvas } from "@/components/shared/qr-canvas";
 import type { VendorCharge } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
+import { Money } from "@/components/shared/money";
+import { shareLink } from "@/lib/platform/share";
+import { popIn } from "@/lib/animations";
+
+const CHARGE_QR_OPTIONS = { width: 200, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
 
 interface ChargeOperation {
   generation: number;
@@ -69,7 +77,6 @@ export function QuickChargeModal({
   const [error, setError] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmedAmount, setConfirmedAmount] = useState(0);
-  useBackHandler(open && !isConfirming && phase !== "success", onClose);
 
   const requestCancellation = useCallback((operation: ChargeOperation, id: string) => {
     if (
@@ -162,8 +169,16 @@ export function QuickChargeModal({
     };
   }, [abandonGeneration]);
 
+  useEffect(() => {
+    if (!open || phase === "success" || (amountCents === 0 && !description)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, phase, amountCents, description]);
+
   const generateQr = useCallback(async () => {
     if (!activeRef.current || amountCents <= 0) return;
+    haptics.tap();
 
     abandonGeneration();
     setPhase("qr");
@@ -191,27 +206,24 @@ export function QuickChargeModal({
 
     let copia: string | null = null;
     try {
-      const res = await fetch("/api/pix/generate-self", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountCents }),
+      const code = await generateSelfPixCode({
+        amountCents,
         signal: controller.signal,
       });
-      const data = await res.json();
       if (!isCurrentOperation(operation)) return;
 
-      if (!data.copiaECola) {
-        setError(data.error || "Eita, deu ruim no Pix");
-        haptics.error();
-        return;
-      }
-
-      copia = data.copiaECola;
-      setCopiaECola(data.copiaECola);
+      copia = code;
+      setCopiaECola(code);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       if (!isCurrentOperation(operation)) return;
-      setError("Sem conexão. Tenta de novo.");
+      setError(
+        err instanceof LedgerError && err.code === "network"
+          ? "Sem conexão. Tente de novo."
+          : err instanceof Error && err.message
+            ? err.message
+            : "Não deu para gerar o Pix",
+      );
       haptics.error();
       return;
     } finally {
@@ -249,43 +261,32 @@ export function QuickChargeModal({
     requestCancellation,
   ]);
 
-  // A callback ref, not an effect: the canvas only mounts when the QR phase
-  // renders, and an effect keyed on the payload would have already run by then
-  // and left an empty box.
-  const paintQr = useCallback(
-    (node: HTMLCanvasElement | null) => {
-      if (!node || !copiaECola) return;
-      QRCode.toCanvas(
-        node,
-        copiaECola,
-        { width: 200, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } },
-        () => {
-          // The library pins the drawn size inline, which would outrank the
-          // class that shrinks the code when the popover has little height.
-          node.style.removeProperty("width");
-          node.style.removeProperty("height");
-        },
-      );
-    },
-    [copiaECola],
-  );
-
   const handleCopy = async () => {
     if (!copiaECola) return;
-    try {
-      await navigator.clipboard.writeText(copiaECola);
+    if (await copyText(copiaECola)) {
       haptics.success();
       setCopied(true);
       setCopyFailed(false);
-      toast.success("Código Pix copiado!");
+      toast.success("Código copiado");
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       toast.error(
         "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
       );
       haptics.error();
       setCopyFailed(true);
     }
+  };
+
+  const handleShare = async () => {
+    haptics.tap();
+    const result = await shareLink({
+      title: "Cobrança Pix",
+      text: `${description ? `${description}\n` : ""}${formatBRL(amountCents)}\n${copiaECola}`,
+      url: window.location.origin,
+    });
+    if (result === "shared") haptics.success();
+    else if (result === "unsupported") await handleCopy();
   };
 
   const closeModal = useCallback(() => {
@@ -369,18 +370,18 @@ export function QuickChargeModal({
       handleSuccessClose();
       return;
     }
+    if ((amountCents > 0 || description) && !window.confirm("Descartar esta cobrança?")) return;
     closeModal();
-  }, [closeModal, handleSuccessClose, isConfirming, phase]);
+  }, [closeModal, handleSuccessClose, isConfirming, phase, amountCents, description]);
 
   if (!open) return null;
 
   return (
     <Popover
       open={open}
+      dismissable={!isConfirming}
       onOpenChange={(next) => {
         if (next) return;
-        // Same guard the old backdrop click used: a confirming charge and the
-        // success screen own their own exit.
         handleBackdropDismiss();
       }}
     >
@@ -390,37 +391,16 @@ export function QuickChargeModal({
             {phase === "success" ? (
               <motion.div
                 key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                variants={popIn} initial="hidden" animate="visible" exit="exit"
                 className="relative flex flex-col items-center py-8"
               >
                 <ConfettiBurst />
                 <AnimatedCheckmark size={72} className="text-success" />
 
-                <motion.h2
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="mt-5 text-xl font-bold text-foreground"
-                >
-                  Pagamento recebido!
-                </motion.h2>
+                <PopoverTitle className="mt-5 text-xl">Pagamento recebido</PopoverTitle>
+                <Money cents={confirmedAmount} size="lg" tone="positive" className="mt-2" />
 
-                <motion.p
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.55 }}
-                  className="mt-2 text-2xl font-bold tabular-nums text-success"
-                >
-                  {formatBRL(confirmedAmount)}
-                </motion.p>
-
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1 }}
+                <div
                   className="mt-6"
                 >
                   <Button
@@ -431,45 +411,38 @@ export function QuickChargeModal({
                   >
                     Fechar
                   </Button>
-                </motion.div>
+                </div>
               </motion.div>
             ) : phase === "qr" ? (
               <motion.div
                 key="qr"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                variants={popIn} initial="hidden" animate="visible" exit="exit"
               >
                 <div className="compact:flex compact:items-center compact:gap-3">
                 <div className="text-center compact:order-2 compact:min-w-0 compact:flex-1 compact:text-left">
-                  <h2 className="flex items-center justify-center gap-2 text-base font-bold compact:justify-start">
+                  <PopoverTitle className="flex items-center justify-center gap-2 compact:justify-start">
                     <QrCode className="size-4 text-primary-text" aria-hidden="true" />
                     Cobrar via Pix
-                  </h2>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-primary-text">
-                    {formatBRL(amountCents)}
-                  </p>
+                  </PopoverTitle>
+                  <Money cents={amountCents} size="lg" tone="positive" className="mt-1 block" />
                   {description && (
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mt-1 break-words text-sm text-muted-foreground">
                       {description}
                     </p>
                   )}
                 </div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="mt-3 flex justify-center rounded-2xl border bg-white p-3 shadow-sm compact:order-1 compact:mt-0 compact:shrink-0 compact:p-2"
+                <div
+                  className={`mt-3 flex justify-center rounded-2xl border border-border p-3 compact:order-1 compact:mt-0 compact:shrink-0 compact:p-2 ${loading || error ? "bg-muted/30" : "bg-paper"}`}
                 >
                   {loading ? (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center compact:size-[112px]">
+                    <div role="status" aria-label="Gerando código Pix" className="flex h-[200px] w-[200px] items-center justify-center compact:size-[112px]">
                       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
                   ) : error ? (
                     <div className="flex h-[200px] w-[200px] flex-col items-center justify-center gap-3 text-center compact:size-[112px] compact:gap-1">
                       <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                      <p className="text-sm text-destructive">{error}</p>
+                      <p role="alert" className="text-sm text-destructive-text">{error}</p>
                       <Button
                         variant="outline"
                         size="sm"
@@ -479,12 +452,19 @@ export function QuickChargeModal({
                       </Button>
                     </div>
                   ) : (
-                    <canvas ref={paintQr} className="compact:size-[112px]" />
+                    copiaECola && (
+                      <QrCanvas
+                        value={copiaECola}
+                        label={`QR Pix de ${formatBRL(amountCents)}`}
+                        options={CHARGE_QR_OPTIONS}
+                        className="compact:size-[112px]"
+                      />
+                    )
                   )}
-                </motion.div>
+                </div>
                 </div>
 
-                <div className="mt-5 space-y-2.5 compact:mt-3 compact:flex compact:gap-2 compact:space-y-0 compact:[&>button]:flex-1">
+                <div className="mt-3 grid gap-2 compact:grid-cols-2">
                   <Button
                     onClick={handleCopy}
                     variant="outline"
@@ -494,17 +474,7 @@ export function QuickChargeModal({
                   >
                     {copied ? (
                       <>
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 500,
-                            damping: 15,
-                          }}
-                        >
-                          <Check className="h-4 w-4 text-success" />
-                        </motion.span>
+                        <Check className="h-4 w-4 text-success-text" />
                         Copiado!
                       </>
                     ) : (
@@ -514,6 +484,10 @@ export function QuickChargeModal({
                       </>
                     )}
                   </Button>
+                  <Button onClick={handleShare} variant="outline" disabled={!copiaECola || isConfirming} className="min-h-11 gap-2">
+                    <Share2 className="size-4" aria-hidden="true" />
+                    Compartilhar Pix
+                  </Button>
                   {copyFailed && copiaECola && (
                     <p className="break-all rounded-lg border border-border bg-muted/60 p-2.5 font-mono text-xs select-all">
                       {copiaECola}
@@ -521,7 +495,7 @@ export function QuickChargeModal({
                   )}
                   <Button
                     onClick={handleConfirm}
-                    className="w-full gap-2"
+                    className="w-full gap-2 compact:col-span-2"
                     size="lg"
                     disabled={!copiaECola || isConfirming}
                   >
@@ -533,13 +507,13 @@ export function QuickChargeModal({
                     ) : (
                       <>
                         <Check className="h-4 w-4" />
-                        Já recebi {formatBRL(amountCents)}
+                        Já recebi
                       </>
                     )}
                   </Button>
                   <Button
                     variant="ghost"
-                    className="w-full compact:hidden"
+                    className="w-full min-h-11 compact:col-span-2"
                     size="sm"
                     onClick={handleBackToInput}
                     disabled={isConfirming}
@@ -548,77 +522,56 @@ export function QuickChargeModal({
                   </Button>
                 </div>
 
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground compact:hidden">
-                  <Shield className="h-3 w-3" />
-                  <span>
-                    Lê o QR code ou copia o código e cola no app do banco.
-                  </span>
-                </div>
               </motion.div>
             ) : (
               <motion.div
                 key="input"
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0, x: -20 }}
+                variants={popIn} initial="hidden" animate="visible" exit="exit"
               >
-                <div className="text-center">
-                  <h2 className="flex items-center justify-center gap-2 text-lg font-bold compact:text-base">
-                    <Zap className="size-5 text-success" aria-hidden="true" />
-                    Cobrar rápido
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground compact:hidden">
-                    Gere um QR Pix para qualquer pessoa te pagar
-                  </p>
-                </div>
+                <PopoverTitle className="flex items-center gap-1.5 text-base">
+                  <Zap className="size-4 text-success-text" aria-hidden="true" />
+                  Cobrar rápido
+                </PopoverTitle>
 
-                <div className="mt-4 flex flex-col items-center compact:mt-2">
-                  <div className="flex w-full flex-col items-center gap-3 compact:flex-row compact:justify-center compact:gap-2">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-medium text-muted-foreground">
-                        R$
-                      </span>
-                      <CurrencyInput
-                        valueCents={amountCents}
-                        onChangeCents={setAmountCents}
-                        autoFocus
-                        className="text-4xl font-bold text-foreground w-48 compact:text-2xl compact:w-32"
-                        aria-label="Valor da cobrança"
-                      />
-                    </div>
-
-                    <div className="compact:mt-0">
-                      <AmountQuickAdd
-                        valueCents={amountCents}
-                        onChangeCents={setAmountCents}
-                        increments={[5, 10, 20, 50]}
-                      />
-                    </div>
-                  </div>
-
-                  <input
+                <div className="mt-2 flex flex-col gap-2">
+                  <label className="flex h-11 items-center gap-1.5 rounded-[0.75rem] border border-input bg-card px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                    <span className="text-lg leading-6 font-semibold text-muted-foreground">
+                      R$
+                    </span>
+                    <CurrencyInput
+                      valueCents={amountCents}
+                      onChangeCents={setAmountCents}
+                      autoFocus
+                      className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-2xl font-bold text-foreground shadow-none focus-visible:ring-0 md:text-2xl"
+                      aria-label="Valor da cobrança"
+                    />
+                  </label>
+                  <AmountQuickAdd
+                    valueCents={amountCents}
+                    onChangeCents={(cents) => { setAmountCents(cents); haptics.selectionChanged(); }}
+                    increments={[5, 10, 20, 50]}
+                  />
+                  <Input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Descrição (opcional)"
+                    aria-label="Descrição (opcional)"
                     maxLength={100}
-                    className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors md:text-sm compact:hidden"
                   />
                   {error && (
-                    <p className="mt-2 text-center text-sm text-destructive">{error}</p>
+                    <p role="alert" className="text-sm text-destructive-text">{error}</p>
                   )}
                 </div>
 
-                <div className="mt-4 compact:mt-2">
-                  <Button
-                    onClick={generateQr}
-                    className="w-full gap-2 compact:h-10"
-                    size="lg"
-                    disabled={amountCents <= 0}
-                  >
-                    <QrCode className="h-4 w-4" />
-                    Gerar QR Code
-                  </Button>
-                </div>
+                <Button
+                  onClick={generateQr}
+                  className="mt-3 w-full gap-2"
+                  disabled={amountCents <= 0}
+                >
+                  <QrCode className="h-4 w-4" />
+                  Gerar QR
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>

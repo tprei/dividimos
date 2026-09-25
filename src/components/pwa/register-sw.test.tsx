@@ -40,7 +40,7 @@ function installServiceWorkerMock(options: {
 }
 
 function makeNative() {
-  (window as unknown as Record<string, unknown>).androidBridge = {};
+  window.androidBridge = {};
 }
 
 describe("RegisterSW on a native install", () => {
@@ -61,7 +61,7 @@ describe("RegisterSW on a native install", () => {
   });
 
   afterEach(() => {
-    delete (window as unknown as Record<string, unknown>).androidBridge;
+    delete window.androidBridge;
     vi.restoreAllMocks();
   });
 

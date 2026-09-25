@@ -32,24 +32,21 @@ test.describe("Settlement Flow", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Saldo consolidado")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Cobrar/ })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Saldos" })).toBeChecked({ timeout: 10000 });
+    await expect(page.getByRole("region", { name: "Saldos", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /Cobrar/ })).toBeVisible();
     await expect(page.getByText(/R\$\s/).first()).toBeVisible();
 
-    // Bob is the intermediary: he paid R$ 60 and owes R$ 60, so he nets to
-    // zero. The settled state only renders when every balance is zero, so he
-    // still sees the transfer list; his row is marked Outro acerto.
+    // A viewer with zero balance still sees the group's outstanding transfers.
     const { context: bobCtx, page: bobPage } = await newSession(bob);
 
     await bobPage.goto(`/app/groups/${group.id}`);
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Transferências")).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(bobPage.getByText("Outro acerto")).toBeVisible();
-    await expect(bobPage.getByText("Tudo liquidado!")).toHaveCount(0);
+    const bobTransfers = bobPage.getByRole("region", { name: "Quem paga quem" });
+    await expect(bobTransfers).toBeVisible({ timeout: 10000 });
+    await expect(bobTransfers.getByRole("button")).toHaveCount(0);
+    await expect(bobPage.getByRole("status")).toHaveCount(0);
 
     // Carol paid nothing, so she owes her whole share
     const { context: carolCtx, page: carolPage } = await newSession(carol);
@@ -57,9 +54,7 @@ test.describe("Settlement Flow", () => {
     await carolPage.goto(`/app/groups/${group.id}`);
     await carolPage.waitForLoadState("networkidle");
 
-    await expect(carolPage.getByText("Você paga")).toBeVisible({
-      timeout: 10000,
-    });
+    await expect(carolPage.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ })).toBeVisible({ timeout: 10000 });
 
     // Settle all remaining debts. With the normalized ledger the payable
     // edges are derived from the group's net balances, so the debtor could
@@ -122,12 +117,8 @@ test.describe("Settlement Flow", () => {
     await settledPage.goto(`/app/groups/${group.id}`);
     await settledPage.waitForLoadState("networkidle");
 
-    await expect(settledPage.getByText("Tudo liquidado!")).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(
-      settledPage.getByText("Nenhuma dívida pendente no grupo"),
-    ).toBeVisible();
+    await expect(settledPage.getByRole("status")).toBeVisible({ timeout: 10000 });
+    await expect(settledPage.getByRole("region", { name: "Quem paga quem" })).toHaveCount(0);
 
     await settledCtx.close();
     await bobCtx.close();
@@ -153,10 +144,10 @@ test.describe("Settlement Flow", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("radio", { name: "Saldos" })).toBeChecked({ timeout: 10000 });
 
     await expect(
-      page.getByRole("button", { name: /Você paga/i }),
+      page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/i }),
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("R$ 100,00").first()).toBeVisible();
@@ -181,14 +172,14 @@ test.describe("Settlement Flow", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
-
-    await expect(page.getByRole("button", { name: /Cobrar/ })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Saldos" })).toBeChecked({ timeout: 10000 });
+    const transfers = page.getByRole("region", { name: "Quem paga quem" });
+    await expect(transfers.getByRole("button", { name: /Cobrar/ })).toBeVisible();
     await expect(page.getByText("R$ 50,00").first()).toBeVisible();
 
-    await page.getByRole("button", { name: /Cobrar/ }).click();
-    await page.getByRole("button", { name: /Já recebi/i }).click();
+    await transfers.getByRole("button", { name: /Cobrar/ }).click();
+    await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
-    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("status")).toBeVisible({ timeout: 15000 });
   });
 });

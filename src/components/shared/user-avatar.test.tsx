@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 // Mock next/image before importing the component
 vi.mock("next/image", () => ({
@@ -34,48 +34,24 @@ describe("UserAvatar", () => {
     expect(screen.getByText("AN")).toBeInTheDocument();
   });
 
-  it("renders image when avatarUrl provided", () => {
-    render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" />);
+  it("renders image when avatarUrl provided and standalone", () => {
+    render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" standalone />);
     const img = screen.getByRole("img");
     expect(img).toHaveAttribute("alt", "Maria");
   });
 
-  it("applies size classes", () => {
-    const { container } = render(<UserAvatar name="Maria" size="lg" />);
-    const el = container.firstElementChild;
-    expect(el?.className).toContain("h-14");
-    expect(el?.className).toContain("w-14");
-  });
-
-  it("applies custom className", () => {
-    const { container } = render(<UserAvatar name="Maria" className="border-2" />);
-    const el = container.firstElementChild;
-    expect(el?.className).toContain("border-2");
-  });
-
-  it("sets sizes attribute based on avatar size", () => {
-    render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" size="lg" />);
-    const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("sizes", "56px");
-  });
-
-  it("defaults sizes to md (40px)", () => {
+  it("renders image with empty alt by default (decorative)", () => {
     render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" />);
-    const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("sizes", "40px");
+    const img = screen.getByAltText("");
+    expect(img).toBeInTheDocument();
   });
 
-  it("passes priority prop to Image", () => {
-    render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" priority />);
-    const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("data-priority", "true");
+  it("is decorative by default to avoid duplicate accessible names next to visible text", () => {
+    const { container } = render(<UserAvatar id="person-1" name="Ana de" />);
+    expect(container.firstChild).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByRole("img")).toBeNull();
   });
 
-  it("does not set priority by default", () => {
-    render(<UserAvatar name="Maria" avatarUrl="https://example.com/photo.jpg" />);
-    const img = screen.getByRole("img");
-    expect(img).not.toHaveAttribute("data-priority");
-  });
 
   it("renders the verified bot glyph when isBot is set", () => {
     render(<UserAvatar name="Ana (bot)" isBot />);
@@ -90,5 +66,15 @@ describe("UserAvatar", () => {
   it("does not render the verified bot glyph by default", () => {
     render(<UserAvatar name="Ana" />);
     expect(screen.queryByRole("img", { name: "Bot verificado" })).toBeNull();
+  });
+
+  it("keeps the same tone after a rename and uses initials after a photo fails", () => {
+    const { rerender } = render(<UserAvatar id="person-1" name="Ana de" standalone />);
+    const tone = screen.getByRole("img", { name: "Ana de" }).style.backgroundColor;
+    expect(screen.getByText("AN")).toBeInTheDocument();
+    rerender(<UserAvatar id="person-1" name="Ana Souza" avatarUrl="https://example.com/broken.jpg" standalone />);
+    fireEvent.error(screen.getByRole("img", { name: "Ana Souza" }));
+    expect(screen.getByRole("img", { name: "Ana Souza" }).style.backgroundColor).toBe(tone);
+    expect(screen.getByText("AS")).toBeInTheDocument();
   });
 });

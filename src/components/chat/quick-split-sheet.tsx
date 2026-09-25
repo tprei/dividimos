@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -9,14 +9,15 @@ import {
   Loader2,
   Percent,
   Receipt,
-  X,
 } from "lucide-react";
 import { Money } from "@/components/shared/money";
 import { PersonLabel } from "@/components/shared/person-label";
+import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { formatBRL } from "@/lib/currency";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { popIn } from "@/lib/animations";
 import { allocateByWeights, allocateEvenly, parseAllocationPercentText } from "@/lib/expense-money";
 import { FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
 import type { SplitType } from "@/types";
@@ -74,17 +75,22 @@ export function QuickSplitSheet({
     if (open) setPayerId(currentUserId);
   }
 
-  const participants = useMemo(
-    () => [
-      { id: currentUserId, name: "Você" },
-      { id: counterparty.id, name: counterparty.name.split(" ")[0] },
-    ],
-    [currentUserId, counterparty],
-  );
+  const participants = useMemo(() => {
+    const people = [{ id: currentUserId, name: "Você", handle: currentUserHandle }, counterparty];
+    const labels = displayNames(people, { style: "short", viewerId: currentUserId });
+    return people.map((person) => ({ id: person.id, name: labels.get(person.id) ?? person.name }));
+  }, [currentUserId, currentUserHandle, counterparty]);
 
   const isConfirming = status === "confirming";
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed;
+  const dirty = open && !isConfirmed && (title.trim().length > 0 || totalCents > 0);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const percentageBasisPoints = useMemo((): number | null => {
     if (splitMethod !== "percentage") return null;
@@ -169,67 +175,29 @@ export function QuickSplitSheet({
 
   const handleClose = () => {
     if (isDisabled) return;
+    if ((title.trim() || totalCents > 0) && !window.confirm("Descartar esta conta?")) return;
     onClose();
   };
+
 
   if (!open) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
-        onClick={handleClose}
-        data-testid="quick-split-backdrop"
-      >
-        <motion.div
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          drag="y"
-          dragConstraints={{ top: 0 }}
-          dragElastic={0.2}
-          onDragEnd={(_, info) => {
-            if (info.offset.y > 100 || info.velocity.y > 500) {
-              handleClose();
-            }
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-card p-6 pb-8 sm:pb-6 sm:rounded-3xl"
-          data-testid="quick-split-sheet"
-        >
-          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
-
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <Receipt className="h-4 w-4 text-primary" />
-              </div>
-              <h2 className="text-lg font-bold">Dividir conta</h2>
-            </div>
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={isDisabled}
-              className="rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors"
-              data-testid="quick-split-close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+    <Dialog open={open} dismissable={!isDisabled} onOpenChange={(next) => { if (!next) handleClose(); }}>
+      <DialogContent showCloseButton={false} data-testid="quick-split-sheet">
+        <DialogTitle>Dividir conta</DialogTitle>
+        <div className="min-h-0 overflow-y-auto">
 
           <div className="space-y-4">
             <div>
               <Input
                 type="text"
                 placeholder="O que estão dividindo?"
+                aria-label="Nome da conta"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 disabled={isDisabled}
-                className="text-sm"
+                className="text-base md:text-sm"
                 data-testid="quick-split-title"
               />
             </div>
@@ -238,20 +206,20 @@ export function QuickSplitSheet({
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
                 Valor total
               </label>
-              <div className="flex items-center justify-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[input[aria-invalid]]:border-destructive has-[input[aria-invalid]]:ring-3 has-[input[aria-invalid]]:ring-destructive/20 h-14">
-                <span className="pl-3 text-lg font-bold text-muted-foreground">R$</span>
+              <div className="flex h-11 items-center rounded-[0.75rem] border border-input bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[input[aria-invalid]]:border-destructive has-[input[aria-invalid]]:ring-3 has-[input[aria-invalid]]:ring-destructive/20">
+                <span className="pl-3 text-base leading-6 font-bold text-muted-foreground">R$</span>
                 <CurrencyInput
                   valueCents={totalCents}
                   onChangeCents={setTotalCents}
                   onValidityChange={setIsAmountValid}
                   aria-label="Valor total"
                   disabled={isDisabled}
-                  className="min-w-0 flex-1 text-2xl font-bold h-14"
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent pl-1.5 text-left text-lg font-bold focus-visible:ring-0 md:text-lg"
                   data-testid="quick-split-amount"
                 />
               </div>
               {!isAmountValid && (
-                <p className="mt-1 text-xs text-destructive">
+                <p className="mt-1 text-xs text-destructive-text">
                   Valor inválido. Escreva assim: 10,50
                 </p>
               )}
@@ -266,14 +234,14 @@ export function QuickSplitSheet({
                   aria-checked={payerId === currentUserId}
                   onClick={() => setPayerId(currentUserId)}
                   disabled={isDisabled}
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                  className={`min-h-11 min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                     payerId === currentUserId
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "border-primary bg-primary/10 text-primary-text"
                       : "border-border bg-background text-muted-foreground hover:border-primary/30"
                   }`}
                   data-testid="quick-split-payer-self"
                 >
-                  <PersonLabel name="Você" handle={currentUserHandle} nameClassName="text-sm truncate" />
+                  <PersonLabel name="Você" nameClassName="text-sm truncate" />
                 </button>
                 <button
                   type="button"
@@ -281,14 +249,14 @@ export function QuickSplitSheet({
                   aria-checked={payerId === counterparty.id}
                   onClick={() => setPayerId(counterparty.id)}
                   disabled={isDisabled}
-                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                  className={`min-h-11 min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                     payerId === counterparty.id
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "border-primary bg-primary/10 text-primary-text"
                       : "border-border bg-background text-muted-foreground hover:border-primary/30"
                   }`}
                   data-testid="quick-split-payer-other"
                 >
-                  <PersonLabel name={participants[1].name} handle={counterparty.handle} nameClassName="text-sm truncate" />
+                  <PersonLabel name={participants[1].name} nameClassName="text-sm truncate" />
                 </button>
               </div>
             </div>
@@ -320,8 +288,7 @@ export function QuickSplitSheet({
 
             {(totalCents > 0 || !isAmountValid) && (
               <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
+                variants={popIn} initial="hidden" animate="visible"
                 className="space-y-2"
                 data-testid="quick-split-preview"
               >
@@ -331,13 +298,11 @@ export function QuickSplitSheet({
                       participants.map((p, i) => (
                         <div key={p.id} className="flex items-center justify-between py-1 text-sm">
                           <span>{p.name}</span>
-                          <span className="font-semibold tabular-nums">
-                            {formatBRL(shares[i].shareAmountCents)}
-                          </span>
+                          <Money cents={shares[i].shareAmountCents} size="sm" />
                         </div>
                       ))
                     ) : (
-                      <p className="text-center text-xs text-destructive">
+                      <p className="text-center text-xs text-destructive-text">
                         Valor inválido. Escreva assim: 10,50
                       </p>
                     )}
@@ -353,6 +318,7 @@ export function QuickSplitSheet({
                           type="text"
                           inputMode="decimal"
                           placeholder="50"
+                          aria-label="Sua porcentagem"
                           value={myPercentage}
                           onChange={(e) => setMyPercentage(e.target.value)}
                           disabled={isDisabled}
@@ -364,9 +330,7 @@ export function QuickSplitSheet({
                         <span className="text-sm text-muted-foreground">%</span>
                       </div>
                       {shares && isAmountValid && (
-                        <span className="text-sm font-semibold tabular-nums w-20 text-right">
-                          {formatBRL(shares[0].shareAmountCents)}
-                        </span>
+                        <Money cents={shares[0].shareAmountCents} size="sm" className="w-20 text-right" />
                       )}
                     </div>
                     <div className="flex items-center gap-3">
@@ -380,18 +344,16 @@ export function QuickSplitSheet({
                         <span className="text-sm text-muted-foreground">%</span>
                       </div>
                       {shares && isAmountValid && (
-                        <span className="text-sm font-semibold tabular-nums w-20 text-right">
-                          {formatBRL(shares[1].shareAmountCents)}
-                        </span>
+                        <Money cents={shares[1].shareAmountCents} size="sm" className="w-20 text-right" />
                       )}
                     </div>
                     {!isAmountValid && (
-                      <p className="text-xs text-destructive">
+                      <p className="text-xs text-destructive-text">
                         Valor inválido. Escreva assim: 10,50
                       </p>
                     )}
                     {percentageWarning && (
-                      <p className="text-xs text-destructive" id="quick-split-percent-error">
+                      <p className="text-xs text-destructive-text" id="quick-split-percent-error">
                         {percentageWarning}
                       </p>
                     )}
@@ -409,16 +371,14 @@ export function QuickSplitSheet({
                           onChangeCents={setMyFixedCents}
                           disabled={isDisabled}
                           aria-label="Seu valor fixo"
-                          className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                          className="h-11 w-full text-right text-base rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                           data-testid="quick-split-my-fixed"
                         />
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">{participants[1].name}</span>
-                      <span className="text-sm font-semibold tabular-nums">
-                        {formatBRL(Math.max(0, totalCents - myFixedCents))}
-                      </span>
+                      <Money cents={Math.max(0, totalCents - myFixedCents)} size="sm" />
                     </div>
                     {fixedWarning && (
                       <p className="text-xs text-warning-foreground">{fixedWarning}</p>
@@ -432,10 +392,8 @@ export function QuickSplitSheet({
               {status === "error" && errorMessage && (
                 <motion.p
                   key="error"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+                  variants={popIn} initial="hidden" animate="visible" exit="exit"
+                  className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-text"
                   data-testid="quick-split-error"
                 >
                   {errorMessage}
@@ -486,8 +444,8 @@ export function QuickSplitSheet({
               </Button>
             </div>
           </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

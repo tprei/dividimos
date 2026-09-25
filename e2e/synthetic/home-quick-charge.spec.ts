@@ -33,7 +33,7 @@ test.describe("Home quick charge and Pix amount editing", () => {
     await page.getByRole("button", { name: /^Bob Deve, .*Grupo Pix$/ }).click();
     await page.getByRole("button", { name: "Cobrar via Pix" }).click();
 
-    const dialog = page.getByRole("dialog", { name: "Cobrar via Pix" });
+    const dialog = page.getByRole("dialog", { name: "Cobrar Bob Deve" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: /^Editar valor/ }).click();
     const amountInput = dialog.getByRole("textbox", { name: "Editar valor" });

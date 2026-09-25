@@ -51,7 +51,7 @@ export function SelectField({
         aria-label={hideLabel ? label : undefined}
         data-slot="select-field-trigger"
         className={cn(
-          "flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-input bg-card px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-open:border-ring data-open:ring-3 data-open:ring-ring/50",
+          "flex h-11 w-full min-w-0 items-center justify-between gap-2 rounded-[0.75rem] border border-input bg-card px-3 text-base md:text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-open:border-ring data-open:ring-3 data-open:ring-ring/50",
           value === "" && "text-muted-foreground",
         )}
       >

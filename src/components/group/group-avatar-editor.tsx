@@ -1,13 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { GroupAvatar } from "@/components/shared/group-avatar";
-import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
-import { AnchoredPopover } from "@/components/shared/anchored-popover";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
+import { haptics } from "@/hooks/use-haptics";
+import { cn } from "@/lib/utils";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { updateGroupAvatar, type GroupAvatarUpdate } from "@/lib/sync/group-avatar";
 import { useAppStore } from "@/stores/app-store";
@@ -35,47 +34,41 @@ function selectionFromAvatar(avatar: GroupAvatarData | undefined): Selection {
   return { kind: "initials" };
 }
 
-function selectionPreview(groupId: string, name: string, selection: Selection): ReactNode {
-  if (selection.kind === "photo" && selection.previewUrl !== "") {
-    return (
-      <Image
-        src={selection.previewUrl}
-        alt={name}
-        width={80}
-        height={80}
-        unoptimized
-        className="size-20 rounded-full object-cover"
-      />
-    );
-  }
-  if (selection.kind === "photo" && selection.photoId !== null) {
-    return <GroupAvatar name={name} groupId={groupId} avatar={{ kind: "photo", photoId: selection.photoId }} size="lg" />;
-  }
-  if (selection.kind === "emoji") {
-    return <GroupAvatar name={name} groupId={groupId} avatar={selection} size="lg" />;
-  }
-  return <GroupAvatar name={name} groupId={groupId} avatar={{ kind: "initials" }} size="lg" />;
-}
 
 export function GroupAvatarEditor({
   groupId,
   open,
   onOpenChange,
+  anchor,
 }: {
   groupId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  anchor?: HTMLElement | null;
 }) {
   const group = useAppStore((state) => state.groups[groupId]);
   const [selection, setSelection] = useState<Selection>({ kind: "initials" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const previousPreview = useRef<string | null>(null);
 
+  const current = group?.overview?.avatar ?? { kind: "initials" };
+  const dirty = selection.kind !== current.kind ||
+    (selection.kind === "emoji" && current.kind === "emoji" && selection.emoji !== current.emoji) ||
+    (selection.kind === "photo" && selection.file !== null);
+
+  useEffect(() => {
+    if (!open || !dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, dirty]);
   useEffect(() => {
     if (!open) return;
     setSelection(selectionFromAvatar(group?.overview?.avatar));
     setError(null);
+    setDiscardOpen(false);
   }, [open, group?.overview?.avatar]);
 
   useEffect(() => {
@@ -124,8 +117,10 @@ export function GroupAvatarEditor({
           ? { kind: "photo", file: selection.file! }
           : selection;
       await updateGroupAvatar(groupId, update);
+      haptics.success();
       onOpenChange(false);
     } catch (cause) {
+      haptics.error();
       const message = ledgerErrorMessage(cause);
       setError(message);
       toast.error(message);
@@ -137,62 +132,55 @@ export function GroupAvatarEditor({
   const name = group?.group.name ?? "Grupo";
 
   return (
-    <AnchoredPopover
+    <Popover
       open={open}
-      onOpenChange={onOpenChange}
-      ariaLabel="Editar imagem do grupo"
-      className="left-0 top-[calc(100%+0.5rem)] w-[min(20rem,calc(100vw-2rem))] rounded-2xl p-4"
+      dismissable={!saving}
+      onOpenChange={(next) => {
+        if (!next && dirty) setDiscardOpen(true);
+        else onOpenChange(next);
+      }}
     >
-      <div data-testid="group-avatar-editor">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">Imagem do grupo</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Escolha um emoji ou uma foto para reconhecer o grupo.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-9 shrink-0 rounded-full"
-            aria-label="Fechar editor de imagem"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+      <PopoverContent anchor={anchor}>
+      {discardOpen ? (
+        <>
+          <PopoverTitle>Descartar alterações?</PopoverTitle>
+          <Button variant="outline" onClick={() => setDiscardOpen(false)}>Continuar editando</Button>
+          <Button variant="destructive" onClick={() => onOpenChange(false)}>Descartar</Button>
+        </>
+      ) : <div data-testid="group-avatar-editor">
+        <PopoverTitle>Foto do grupo</PopoverTitle>
 
-        <div className="mt-5 grid gap-5">
-          <div className="flex justify-center">{selectionPreview(groupId, name, selection)}</div>
+        <div className="mt-3 grid gap-3">
+          {selection.kind === "photo" && selection.previewUrl !== "" && (
+            <Image src={selection.previewUrl} alt={name} width={64} height={64} unoptimized className="mx-auto size-16 rounded-full object-cover" />
+          )}
 
-          <div>
-            <p className="mb-2 text-sm font-medium">Emoji</p>
             <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Emoji do grupo">
               {AVATAR_EMOJI.map(({ emoji, label }) => {
                 const selected = selection.kind === "emoji" && selection.emoji === emoji;
                 return (
-                  <button
-                    key={emoji}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    aria-label={label}
-                    className={`flex min-h-12 items-center justify-center rounded-xl border text-2xl ${selected ? "border-primary bg-primary/10" : "border-border"}`}
-                    onClick={() => {
-                      setSelection({ kind: "emoji", emoji });
-                      setError(null);
-                    }}
-                  >
+                  <label key={emoji} className={cn(buttonVariants({ variant: "outline" }), "cursor-pointer text-2xl focus-within:ring-2 focus-within:ring-ring", selected && "border-primary bg-primary/10")}>
+                    <input
+                      type="radio"
+                      name="group-avatar-emoji"
+                      className="absolute inset-0 m-0 size-full cursor-pointer opacity-0"
+                      aria-label={label}
+                      checked={selected}
+                      disabled={saving}
+                      onChange={() => {
+                        haptics.selectionChanged();
+                        setSelection({ kind: "emoji", emoji });
+                        setError(null);
+                      }}
+                    />
                     {emoji}
-                  </button>
+                  </label>
                 );
               })}
             </div>
-          </div>
 
-          <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-dashed px-3 text-sm font-medium">
-            Escolher foto
+          <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-dashed px-3 text-sm font-semibold focus-within:ring-2 focus-within:ring-ring">
+            Trocar foto
             <input
               type="file"
               accept="image/*"
@@ -202,30 +190,32 @@ export function GroupAvatarEditor({
           </label>
 
           {error && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-text" role="alert">
               {error}
             </p>
           )}
         </div>
 
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-3 flex gap-2">
           <Button
             type="button"
             variant="outline"
             className="min-h-11 flex-1"
             onClick={() => {
+              haptics.selectionChanged();
               setSelection({ kind: "initials" });
               setError(null);
             }}
             disabled={saving}
           >
-            Usar iniciais
+            Remover
           </Button>
           <Button type="button" className="min-h-11 flex-1" onClick={() => void handleSave()} disabled={saving}>
             {saving ? "Salvando…" : "Salvar"}
           </Button>
         </div>
-      </div>
-    </AnchoredPopover>
+      </div>}
+      </PopoverContent>
+    </Popover>
   );
 }

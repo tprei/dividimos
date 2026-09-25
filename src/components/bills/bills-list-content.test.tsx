@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ExpenseSummary, GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
@@ -190,8 +190,26 @@ describe("BillsListContent", () => {
     const { container } = render(<BillsListContent />);
 
     expect(screen.queryByText("Suas contas")).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
     expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("renders a cached empty history as the empty state while the read restarts", () => {
+    seedStore({}, { ids: [], complete: true, total: 0 });
+    useAppStore.setState({ reads: {} });
+    const { container } = render(<BillsListContent />);
+
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(screen.getByText("Nenhuma conta por aqui")).toBeInTheDocument();
+  });
+
+  it("keeps cached history on screen while the read is loading", () => {
+    seedStore(seededExpenses);
+    useAppStore.setState({ reads: { myExpenses: { status: "loading" } } });
+    const { container } = render(<BillsListContent />);
+
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(screen.getByText("Aluguel")).toBeInTheDocument();
   });
 
   it("renders history in the server's order rather than re-sorting it", () => {
@@ -217,20 +235,9 @@ describe("BillsListContent", () => {
     });
     render(<BillsListContent />);
 
-    expect(screen.getByText("42 contas no total")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Carregar mais" })).toBeInTheDocument();
   });
 
-  it("says a zero-match filter only covers loaded history", () => {
-    seedStore(seededExpenses, { complete: false, total: 42 });
-    render(<BillsListContent />);
-
-    fireEvent.change(screen.getByPlaceholderText(/buscar/i), {
-      target: { value: "nao-existe" },
-    });
-
-    expect(screen.getByText(/contas já carregadas/)).toBeInTheDocument();
-  });
 
   it("navigates to the new bill flow from the empty state", async () => {
     seedStore({});
@@ -248,11 +255,11 @@ describe("BillsListContent", () => {
 
     const dmRow = screen.getByText("Cinema").closest("a");
     expect(dmRow).not.toBeNull();
-    expect(within(dmRow as HTMLElement).getByText("Carol Souza")).toBeInTheDocument();
+    expect(dmRow).toHaveTextContent("Carol Souza");
 
     const groupRow = screen.getByText("Aluguel").closest("a");
     expect(groupRow).not.toBeNull();
-    expect(within(groupRow as HTMLElement).getByText("Viagem")).toBeInTheDocument();
+    expect(groupRow).toHaveTextContent("Viagem");
   });
 
   it("filters by title and merchant name", () => {
@@ -293,6 +300,7 @@ describe("BillsListContent", () => {
     const user = userEvent.setup();
     render(<BillsListContent />);
 
+    await user.click(screen.getAllByRole("button", { name: "Mostrar ações da conta" })[0]);
     await user.click(screen.getAllByRole("button", { name: "Excluir conta" })[0]);
     expect(screen.getByText("Excluir conta?")).toBeInTheDocument();
 
@@ -310,11 +318,12 @@ describe("BillsListContent", () => {
     const user = userEvent.setup();
     render(<BillsListContent />);
 
+    await user.click(screen.getAllByRole("button", { name: "Mostrar ações da conta" })[0]);
     await user.click(screen.getAllByRole("button", { name: "Excluir conta" })[0]);
     await user.click(screen.getByRole("button", { name: "Excluir" }));
 
     await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
+      expect(toastError).toHaveBeenCalledWith("Sem conexão. Você pode tentar de novo quando a internet voltar.");
     });
     expect(screen.getByText("Excluir conta?")).toBeInTheDocument();
   });

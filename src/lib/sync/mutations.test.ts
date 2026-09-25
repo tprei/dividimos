@@ -1228,7 +1228,130 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1).toBeUndefined();
     });
 
+    it("removes the group optimistically and restores it when leaving fails", async () => {
+      const snapshot = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: snapshot },
+        groupOrder: ["g1"],
+      });
+
+      const pending = Promise.withResolvers<MutationAck>();
+      vi.mocked(rpc).mockImplementationOnce(() => pending.promise);
+      const leaving = leaveGroup("g1");
+
+      // The group disappears before the server answers.
+      expect(useAppStore.getState().groups.g1).toBeUndefined();
+      expect(useAppStore.getState().groupOrder).toEqual([]);
+
+      pending.resolve({ groupId: "g1", ledgerVersion: 2, eventId: 106 });
+      await leaving;
+      expect(useAppStore.getState().groups.g1).toBeUndefined();
+
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+
+      const failing = Promise.withResolvers<MutationAck>();
+      vi.mocked(rpc).mockImplementationOnce(() => failing.promise);
+      const rollback = leaveGroup("g1");
+      expect(useAppStore.getState().groups.g1).toBeUndefined();
+
+      failing.reject(new LedgerError("outstanding_balance"));
+      await expect(rollback).rejects.toThrow();
+      expect(useAppStore.getState().groups.g1).toEqual(snapshot);
+      expect(useAppStore.getState().groupOrder).toEqual(["g1"]);
+    });
+
+    it("does not hand a left group back after the account changed mid-request", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+      const failing = Promise.withResolvers<MutationAck>();
+      vi.mocked(rpc).mockImplementationOnce(() => failing.promise);
+      const leaving = leaveGroup("g1");
+
+      authState.generation += 1;
+      useAppStore.getState().reset();
+      failing.reject(new LedgerError("unauthenticated"));
+
+      await expect(leaving).rejects.toThrow();
+      expect(useAppStore.getState().groups).toEqual({});
+      expect(refreshGroup).not.toHaveBeenCalled();
+    });
+
+    it("keeps the previous account's profile out of the store after a switch", async () => {
+      useAppStore.setState({ me: ME });
+      const pending = Promise.withResolvers<Me>();
+      vi.mocked(rpc).mockImplementationOnce(() => pending.promise);
+      const saving = updateProfile({ name: "Nome Antigo" });
+
+      authState.generation += 1;
+      useAppStore.getState().reset();
+      pending.resolve({ ...ME, name: "Nome Antigo" });
+
+      await saving;
+      expect(useAppStore.getState().me).toBeNull();
+    });
+
+    it("loads the saved store before a join from outside the app writes into it", async () => {
+      useAppStore.setState({ hydrated: false, me: null });
+      const order: string[] = [];
+      const rehydrate = vi.spyOn(useAppStore.persist, "rehydrate").mockImplementation(async () => {
+        order.push("rehydrate");
+      });
+      vi.mocked(refreshGroup).mockImplementationOnce(async () => {
+        order.push("refresh");
+      });
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 7 });
+
+      await joinViaLink("tok123");
+
+      expect(order).toEqual(["rehydrate", "refresh"]);
+      rehydrate.mockRestore();
+    });
+
+    it("patches me optimistically for updateProfile and rolls back on failure", async () => {
+      useAppStore.setState({ me: ME });
+
+      const pending = Promise.withResolvers<Me>();
+      vi.mocked(rpc).mockImplementationOnce(() => pending.promise);
+      const saving = updateProfile({
+        name: "Nome Novo",
+        notificationPreferences: { nudges: false },
+      });
+
+      // The caller's edits are visible before the server answers, and a
+      // partial preference payload merges instead of replacing.
+      expect(useAppStore.getState().me).toMatchObject({
+        name: "Nome Novo",
+        notificationPreferences: { expenses: true, settlements: true, nudges: false },
+      });
+
+      pending.resolve({ ...ME, name: "Nome Novo" });
+      await expect(saving).resolves.toMatchObject({ name: "Nome Novo" });
+      expect(useAppStore.getState().me?.name).toBe("Nome Novo");
+
+      const failing = Promise.withResolvers<Me>();
+      vi.mocked(rpc).mockImplementationOnce(() => failing.promise);
+      const rejected = updateProfile({ handle: "novo_handle" });
+      expect(useAppStore.getState().me?.handle).toBe("novo_handle");
+
+      failing.reject(new LedgerError("handle_taken"));
+      await expect(rejected).rejects.toThrow();
+      expect(useAppStore.getState().me).toEqual({ ...ME, name: "Nome Novo" });
+    });
+
     it("creates DM, links, and updates profile", async () => {
+      useAppStore.setState({ me: ME });
+
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: null, created: true });
       const dm = await getOrCreateDm(USER_2.id);
       expect(dm).toEqual({ groupId: "dm-1", created: true });
@@ -1252,14 +1375,14 @@ describe("mutations", () => {
     });
 
     it("looks up user through the route boundary, issues and claims guest token, and manages vendor charges", async () => {
-      const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+      const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
       fetchMock.mockResolvedValueOnce(
         new Response(JSON.stringify({ profile: USER_2 }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
       );
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = fetchMock;
       const user = await lookupUserByHandle("amigo");
       expect(user).toEqual(USER_2);
       expect(fetchMock).toHaveBeenCalledWith("/api/users/lookup?handle=amigo");
@@ -1350,9 +1473,9 @@ describe("mutations", () => {
       });
     }
 
-    function stubRoute(response: Response): Mock {
-      const fetchMock = vi.fn().mockResolvedValue(response);
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+    function stubRoute(response: Response): Mock<typeof fetch> {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response);
+      globalThis.fetch = fetchMock;
       return fetchMock;
     }
 
@@ -1361,6 +1484,19 @@ describe("mutations", () => {
 
       await expect(lookupUserByHandle("  Amigo  ")).resolves.toEqual(USER_2);
       expect(globalThis.fetch).toHaveBeenCalledWith("/api/users/lookup?handle=%20%20Amigo%20%20");
+    });
+
+    it("cancels a pending lookup without returning an available handle", async () => {
+      globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const pending = Promise.withResolvers<Response>();
+        init?.signal?.addEventListener("abort", () => pending.reject(new DOMException("Aborted", "AbortError")), { once: true });
+        return pending.promise;
+      });
+      const controller = new AbortController();
+      const result = lookupUserByHandle("amigo", controller.signal);
+      const rejected = expect(result).rejects.toMatchObject({ code: "network" });
+      controller.abort();
+      await rejected;
     });
 
     it("maps the route's 404 to null, keeping not-found distinct from failure", async () => {
@@ -1384,7 +1520,7 @@ describe("mutations", () => {
     });
 
     it("throws a transport failure when the route is unreachable", async () => {
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+      globalThis.fetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"));
 
       await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({ code: "network" });
     });

@@ -11,7 +11,7 @@ function formatDateLabel(dateStr: string): string {
 
   return date.toLocaleDateString("pt-BR", {
     day: "numeric",
-    month: "long",
+    month: "short",
     year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
   });
 }
@@ -23,7 +23,7 @@ interface ChatDateSeparatorProps {
 export function ChatDateSeparator({ date }: ChatDateSeparatorProps) {
   return (
     <div className="flex items-center justify-center py-3">
-      <span className="rounded-full bg-muted px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <span className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
         {formatDateLabel(date)}
       </span>
     </div>

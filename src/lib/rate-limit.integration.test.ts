@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import {
   adminClient,
   isIntegrationTestReady,
@@ -11,18 +12,19 @@ function makeSubject(): string {
 }
 
 async function callRpc(
-  client: SupabaseClient,
+  client: SupabaseClient<Database>,
   bucket: string,
   subject: string,
   limit: number,
   windowSeconds: number,
 ): Promise<{ data: boolean | null; error: { message: string; code?: string } | null }> {
-  return client.rpc("increment_rate_limit", {
-    p_bucket:         bucket,
-    p_subject:        subject,
-    p_limit:          limit,
+  const { data, error } = await client.rpc("increment_rate_limit", {
+    p_bucket: bucket,
+    p_subject: subject,
+    p_limit: limit,
     p_window_seconds: windowSeconds,
-  }) as unknown as { data: boolean | null; error: { message: string; code?: string } | null };
+  });
+  return { data, error };
 }
 
 describe.skipIf(!isIntegrationTestReady)(
@@ -340,11 +342,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
 describe.skipIf(!isIntegrationTestReady)("rate_limit_counters — ACL boundary", () => {
   let admin: NonNullable<typeof adminClient>;
-  let anonClient: SupabaseClient;
+  let anonClient: SupabaseClient<Database>;
 
   beforeAll(() => {
     admin = adminClient!;
-    anonClient = createClient(
+    anonClient = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } },
@@ -494,7 +496,7 @@ describe.skipIf(!isIntegrationTestReady)(
       // Call the cleanup RPC.
       const { data: deletedCount, error: rpcError } = await admin.rpc(
         "cleanup_expired_rate_limit_counters",
-      ) as unknown as { data: number; error: { message: string } | null };
+      );
 
       expect(rpcError).toBeNull();
       // At least 1 row deleted (the stale one); may be more if prior test

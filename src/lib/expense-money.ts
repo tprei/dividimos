@@ -110,7 +110,6 @@ function brandAllocationBasisPoints(value: number): AllocationBasisPoints {
 
 export const ZERO_EXPENSE_CENTS = brandExpenseCents(0);
 export const ZERO_SERVICE_FEE_BASIS_POINTS = brandServiceFeeBasisPoints(0);
-export const ZERO_ALLOCATION_BASIS_POINTS = brandAllocationBasisPoints(0);
 
 export const MAX_EXPENSE_CENTS = brandExpenseCents(99_999_999);
 export const MAX_SERVICE_FEE_BASIS_POINTS = brandServiceFeeBasisPoints(10_000);
@@ -119,7 +118,6 @@ export const MAX_ALLOCATION_BASIS_POINTS = brandAllocationBasisPoints(10_000);
 
 export type ZeroExpenseCents = typeof ZERO_EXPENSE_CENTS;
 export type ZeroServiceFeeBasisPoints = typeof ZERO_SERVICE_FEE_BASIS_POINTS;
-export type ZeroAllocationBasisPoints = typeof ZERO_ALLOCATION_BASIS_POINTS;
 
 // ---------------------------------------------------------------------------
 // Validation results and issues.

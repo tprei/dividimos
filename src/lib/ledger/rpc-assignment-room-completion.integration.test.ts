@@ -8,8 +8,13 @@ import {
   authenticateAs,
   createTestUsers,
   expectRpcError,
+  rpcDecoded,
   type TestUser,
 } from "@/test/integration-helpers";
+import {
+  decodeAssignmentRoomView,
+  decodeFinalizeAssignmentRoomResult,
+} from "@/lib/ledger/decode-assignment-room";
 
 
 type Client = SupabaseClient<Database>;
@@ -71,7 +76,12 @@ async function rpc<T>(
 }
 
 async function createRoom(client: Client, args: CreateArgs): Promise<RoomView> {
-  return rpc<RoomView>(client, "create_assignment_room", args);
+  return rpcDecoded(
+    client,
+    "create_assignment_room",
+    args,
+    decodeAssignmentRoomView,
+  );
 }
 
 async function joinRoom(
@@ -118,16 +128,23 @@ async function closeRoom(
 }
 
 async function finalizeRoom(client: Client, view: RoomView) {
-  const built = buildAssignmentExpense(
-    view as unknown as Extract<AssignmentRoomView, { role: "host" }>,
-    [{ participantIndex: 0, amountCents: 4_000 }],
-  );
+  if (view.role !== "host") {
+    throw new Error("finalizeRoom expects a host view");
+  }
+  const built = buildAssignmentExpense(view, [
+    { participantIndex: 0, amountCents: 4_000 },
+  ]);
   if (!built.ok) throw new Error(JSON.stringify(built.issue));
-  return rpc<{ room: RoomView }>(client, "finalize_assignment_room", {
-    p_room_id: view.room.id,
-    p_expected_revision: view.room.revision,
-    p_payload: built.value,
-  });
+  return rpcDecoded(
+    client,
+    "finalize_assignment_room",
+    {
+      p_room_id: view.room.id,
+      p_expected_revision: view.room.revision,
+      p_payload: built.value,
+    },
+    decodeFinalizeAssignmentRoomResult,
+  );
 }
 
 async function readCompletion(
@@ -137,7 +154,7 @@ async function readCompletion(
 ): Promise<Completion> {
   return rpc<Completion>(client, "get_assignment_room_completion", {
     p_room_id: roomId,
-    p_member_token: member as string,
+    p_member_token: member,
   });
 }
 
@@ -266,7 +283,6 @@ describe.skipIf(!isIntegrationTestReady)("assignment room completion RPCs", () =
       await expectRpcError(
         hostClient.rpc("get_assignment_room_completion", {
           p_room_id: args.p_room_id,
-          p_member_token: null as unknown as string,
         }),
       ),
     ).toContain("room_incomplete");

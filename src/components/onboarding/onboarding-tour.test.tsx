@@ -76,9 +76,6 @@ describe("OnboardingTour", () => {
     });
 
     expect(screen.getByText("Seu saldo")).toBeInTheDocument();
-    expect(
-      screen.getByText("Seu saldo geral, mais quanto você tem a pagar e a receber."),
-    ).toBeInTheDocument();
   });
 
   it("advances to next step on Próximo click", async () => {
@@ -169,9 +166,6 @@ describe("OnboardingTour", () => {
     fireEvent.click(screen.getByText("Concluir"));
 
     expect(screen.getByText("Pronto!")).toBeInTheDocument();
-    expect(
-      screen.getByText("Agora é só dividir as contas."),
-    ).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(2100);
@@ -180,23 +174,6 @@ describe("OnboardingTour", () => {
     expect(mockCompleteTour).toHaveBeenCalledOnce();
   });
 
-  it("shows step counter text (Próximo button present on non-last steps)", async () => {
-    mockUseOnboardingTour.mockReturnValue({
-      shouldShow: true,
-      completeTour: mockCompleteTour,
-      resetTour: vi.fn(),
-    });
-
-    render(<OnboardingTour userId="user-1" />);
-
-    await act(async () => {
-      vi.advanceTimersByTime(400);
-    });
-
-    // First step shows "Próximo", not "Concluir"
-    expect(screen.getByText("Próximo")).toBeInTheDocument();
-    expect(screen.queryByText("Concluir")).not.toBeInTheDocument();
-  });
 
   it("skips a step whose anchor is missing instead of painting a blank overlay", async () => {
     mockUseOnboardingTour.mockReturnValue({

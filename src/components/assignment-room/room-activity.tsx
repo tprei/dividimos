@@ -2,9 +2,10 @@
 
 import { Activity } from "lucide-react";
 import { useEffect, useState } from "react";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { AvatarStack } from "@/components/shared/avatar-stack";
 import { claimQuantityLabel, formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
+import { displayNames } from "@/lib/people";
 import type {
   AssignmentRoomActivity,
   AssignmentRoomItem,
@@ -76,7 +77,8 @@ function observationLabel(observedAt: number): string {
 
 
 function tickerSummary(activity: AssignmentRoomActivity, participants: AssignmentRoomParticipant[], items: AssignmentRoomItem[]) {
-  const first = (id: string) => participantName(id, participants).trim().split(/\s+/)[0];
+  const labels = displayNames(participants.map((person) => ({ ...person, name: person.displayName })), { style: "short" });
+  const first = (id: string) => labels.get(id) ?? "Alguém";
   if (activity.kind === "joined" || activity.kind === "removed") {
     const names = activity.participantIds.map(first);
     const people = names.length < 3 ? names.join(" e ") : `${names[0]}, ${names[1]} e mais ${names.length - 2}`;
@@ -129,7 +131,7 @@ export function RoomActivity({
           {ticker.name && <strong className="font-semibold">{ticker.name}</strong>}{ticker.text}
           {"quantity" in ticker && <span className="text-muted-foreground">{ticker.quantity}</span>}
         </span>
-        <time className="shrink-0 text-[11px] text-muted-foreground" dateTime={observedAt.toISOString()} title={observationLabel(activity.observedAt)}>
+        <time className="shrink-0 text-xs text-muted-foreground" dateTime={observedAt.toISOString()} title={observationLabel(activity.observedAt)}>
           {now - activity.observedAt < 60_000 ? "agora" : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(observedAt)}
         </time>
       </div>
@@ -144,30 +146,22 @@ export function RoomActivity({
       : [];
 
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex min-w-0 items-center gap-3 border-l-2 border-primary py-2 pl-3 text-sm text-muted-foreground">
       {joinParticipants.length > 0 ? (
-        <span className="flex shrink-0" aria-hidden="true">
-          {joinParticipants.slice(0, 3).map((participant, index) => (
-            <span key={participant.id} className={index > 0 ? "-ml-1" : undefined}>
-              <UserAvatar
-                name={participant.displayName}
-                avatarUrl={participant.avatarUrl}
-                size="xs"
-              />
-            </span>
-          ))}
+        <span aria-hidden="true">
+          <AvatarStack people={joinParticipants.map((person) => ({ ...person, name: person.displayName }))} surface="muted" />
         </span>
       ) : (
         <Activity className="size-4 shrink-0 text-primary" aria-hidden="true" />
       )}
       <span
-        className="min-w-0 flex-1 truncate font-medium text-foreground"
+        className="min-w-0 flex-1 break-words font-medium text-foreground"
         aria-live={live ? "polite" : "off"}
       >
         {summary}
       </span>
       <time
-        className="shrink-0 whitespace-nowrap text-[11px]"
+        className="shrink-0 whitespace-nowrap text-xs tabular-nums"
         dateTime={observedAt.toISOString()}
         title={observationLabel(activity.observedAt)}
       >

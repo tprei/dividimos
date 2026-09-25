@@ -1,4 +1,4 @@
-import type { Expense, ExpenseItem, User } from "@/types";
+import type { Expense, User } from "@/types";
 import type {
   ExpenseDetail,
   ExpenseRecord,
@@ -53,36 +53,6 @@ export function makeExpense(overrides: Partial<Expense> = {}): Expense {
     fixedFees: 0,
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-export function makeSingleAmountExpense(overrides: Partial<Expense> = {}): Expense {
-  return {
-    id: "expense-1",
-    groupId: "group-1",
-    creatorId: "user-alice",
-    expenseType: "single_amount",
-    title: "Aluguel",
-    totalAmount: 0,
-    serviceFeePercent: 0,
-    serviceFeeBasisPoints: 0,
-    fixedFees: 0,
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-export function makeExpenseItem(overrides: Partial<ExpenseItem> = {}): ExpenseItem {
-  return {
-    id: "item-1",
-    expenseId: "expense-1",
-    description: "Pizza",
-    quantity: 1000,
-    unitPriceCents: 5000,
-    totalPriceCents: 5000,
-    createdAt: "2024-01-01T00:00:00Z",
     ...overrides,
   };
 }

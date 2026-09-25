@@ -14,21 +14,21 @@ import {
   runPendingSteps,
   type Trip,
   type TripContext,
+  type TripModelContext,
   verifyAgainstProduction,
 } from "./trips";
 
 const MAX_TRIP_FACTS = 12;
 
-function simulate(trip: Trip): TripContext {
+function simulate(trip: Trip): TripModelContext {
   const members = Array.from({ length: trip.memberCount }, (_, index) => ({
     id: `0000000${index}-0000-4000-8000-00000000000${index}`,
   }));
-  const ctx = {
+  const ctx: TripModelContext = {
     groupId: "sim",
-    tripIndex: 0,
     members,
     state: { facts: [], expenses: [], settlements: [] },
-  } as unknown as TripContext;
+  };
 
   const rowsOf = (payload: ExpensePayload) =>
     payload.participants.map((participant, index) => ({

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { completeGoogleRedirect } from "@/lib/capacitor/auth";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/shared/logo";
 
 export default function AuthPopupPage() {
   const router = useRouter();
@@ -27,8 +28,11 @@ export default function AuthPopupPage() {
   }, [router]);
 
   return (
-    <div className="flex h-dvh items-center justify-center bg-background">
-      <Loader2 className="size-6 animate-spin text-muted-foreground" />
+    <div role="status" className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-8">
+      <Logo size="md" />
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 aria-hidden="true" className="size-5 animate-spin" /> Entrando…
+      </p>
     </div>
   );
 }

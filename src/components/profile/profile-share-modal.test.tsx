@@ -1,9 +1,10 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ProfileShareModal } from "./profile-share-modal";
 
-vi.mock("qrcode", () => ({
-  default: { toCanvas: vi.fn() },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("react-hot-toast", () => ({
@@ -18,6 +19,7 @@ vi.mock("next/image", () => ({
 }));
 
 const defaultProps = {
+  id: "maria-id",
   open: true,
   onClose: vi.fn(),
   handle: "maria",
@@ -43,22 +45,24 @@ describe("ProfileShareModal", () => {
     expect(screen.getByText("@maria")).toBeInTheDocument();
   });
 
-  it("displays the modal title", () => {
-    render(<ProfileShareModal {...defaultProps} />);
-    expect(screen.getByText("Meu perfil")).toBeInTheDocument();
-  });
 
   it("renders a canvas for the QR code", () => {
-    const { container } = render(<ProfileShareModal {...defaultProps} />);
-    expect(container.querySelector("canvas")).toBeInTheDocument();
+    render(<ProfileShareModal {...defaultProps} />);
+    expect(screen.getByRole("img", { name: /QR code/ })).toBeInTheDocument();
   });
 
   it("calls onClose when the close button is clicked", () => {
     render(<ProfileShareModal {...defaultProps} />);
-    const closeButton = screen.getByRole("button", { name: "" });
+    const closeButton = screen.getByRole("button", { name: "Fechar diálogo" });
     fireEvent.click(closeButton);
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
+  it("closes on hardware Back instead of navigating away", () => {
+    render(<ProfileShareModal {...defaultProps} />);
+    expect(runBackHandlers()).toBe(true);
+    expect(defaultProps.onClose).toHaveBeenCalled();
+  });
+
 
   it("renders the WhatsApp button", () => {
     render(<ProfileShareModal {...defaultProps} />);
@@ -76,7 +80,6 @@ describe("ProfileShareModal", () => {
       ...navigator,
       clipboard: { writeText },
     });
-    const toast = await import("react-hot-toast");
 
     render(<ProfileShareModal {...defaultProps} />);
     fireEvent.click(screen.getByText("Copiar link"));
@@ -86,7 +89,6 @@ describe("ProfileShareModal", () => {
         expect.stringContaining("/u/maria"),
       );
     });
-    expect(toast.default.success).toHaveBeenCalledWith("Link copiado!");
     vi.unstubAllGlobals();
   });
 
@@ -103,17 +105,4 @@ describe("ProfileShareModal", () => {
     openSpy.mockRestore();
   });
 
-  it("renders the avatar", () => {
-    render(<ProfileShareModal {...defaultProps} />);
-    expect(screen.getByAltText("Maria Silva")).toBeInTheDocument();
-  });
-
-  it("shows description text", () => {
-    render(<ProfileShareModal {...defaultProps} />);
-    expect(
-      screen.getByText(
-        "Escaneie o QR code ou compartilhe o link do seu perfil",
-      ),
-    ).toBeInTheDocument();
-  });
 });

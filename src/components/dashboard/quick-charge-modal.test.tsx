@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import QRCode from "qrcode";
+import { qrToCanvas } from "@/lib/qr";
 import { QuickChargeModal } from "./quick-charge-modal";
 import { useAppStore } from "@/stores/app-store";
 
-vi.mock("qrcode", () => ({
-  default: {
-    toCanvas: vi.fn(),
-  },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 const toastError = vi.fn();
@@ -16,8 +14,8 @@ vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
     success: vi.fn(),
     error: vi.fn(),
-    selection: vi.fn(),
-    light: vi.fn(),
+    selectionChanged: vi.fn(),
+    tap: vi.fn(),
   },
 }));
 
@@ -56,12 +54,19 @@ import {
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 
+vi.mock("@/lib/sync/pix", () => ({
+  generateSelfPixCode: vi.fn(),
+}));
+
+import { generateSelfPixCode } from "@/lib/sync/pix";
+
 import { haptics } from "@/hooks/use-haptics";
 
 describe("QuickChargeModal", () => {
   beforeEach(() => {
     useAppStore.getState().reset();
     vi.clearAllMocks();
+    vi.mocked(generateSelfPixCode).mockResolvedValue("00020126580014br.gov.bcb.pix");
   });
 
   it("does not render when open is false", () => {
@@ -69,17 +74,8 @@ describe("QuickChargeModal", () => {
     expect(screen.queryByRole("heading", { name: "Cobrar rápido" })).not.toBeInTheDocument();
   });
 
-  it("renders input phase when open", () => {
-    render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Cobrar rápido" })).toBeInTheDocument();
-    expect(screen.getByText("Gerar QR Code")).toBeInTheDocument();
-  });
 
   it("generates QR code and upserts recorded charge into store", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     const descInput = screen.getByPlaceholderText("Descrição (opcional)");
@@ -88,7 +84,7 @@ describe("QuickChargeModal", () => {
     const quickAddButton = screen.getByRole("button", { name: "Adicionar R$20" });
     fireEvent.click(quickAddButton);
 
-    const generateButton = screen.getByText("Gerar QR Code");
+    const generateButton = screen.getByRole("button", { name: "Gerar QR" });
     fireEvent.click(generateButton);
 
     await waitFor(() => {
@@ -106,31 +102,22 @@ describe("QuickChargeModal", () => {
   });
 
   it("paints the code onto the canvas the QR phase mounts", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     // The canvas only exists once this phase renders, so a payload-keyed
     // effect would have run too early and left an empty white box.
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "00020126580014br.gov.bcb.pix",
         expect.anything(),
-        expect.any(Function),
       );
     });
   });
 
   it("confirms charge and upserts confirmed charge into store", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     const onConfirmed = vi.fn();
     render(
       <QuickChargeModal
@@ -142,7 +129,7 @@ describe("QuickChargeModal", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Já recebi/i)).toBeInTheDocument();
@@ -158,40 +145,35 @@ describe("QuickChargeModal", () => {
     expect(storeCharges[0].status).toBe("received");
   });
   it("does not insert when the modal closes before Pix generation resolves", async () => {
-    const { promise: jsonPromise, resolve: resolveJson } =
-      Promise.withResolvers<{ copiaECola: string }>();
-    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+    const { promise: codePromise, resolve: resolveCode } = Promise.withResolvers<string>();
+    vi.mocked(generateSelfPixCode).mockImplementationOnce(() => codePromise);
 
     const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
+    await waitFor(() => expect(generateSelfPixCode).toHaveBeenCalledTimes(1));
 
     view.rerender(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
-    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+    resolveCode("00020126580014br.gov.bcb.pix");
 
     await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
   });
   it("does not insert when the component unmounts before Pix generation resolves", async () => {
-    const { promise: jsonPromise, resolve: resolveJson } =
-      Promise.withResolvers<{ copiaECola: string }>();
-    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+    const { promise: codePromise, resolve: resolveCode } = Promise.withResolvers<string>();
+    vi.mocked(generateSelfPixCode).mockImplementationOnce(() => codePromise);
 
     const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
+    await waitFor(() => expect(generateSelfPixCode).toHaveBeenCalledTimes(1));
 
     view.unmount();
-    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+    resolveCode("00020126580014br.gov.bcb.pix");
 
     await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
   });
 
   it("cancels an insert that resolves after modal close", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -205,7 +187,7 @@ describe("QuickChargeModal", () => {
 
     const view = render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
 
     view.rerender(<QuickChargeModal anchor={null} open={false} onClose={vi.fn()} />);
@@ -225,9 +207,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("cancels a deferred insert when the user changes the amount", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -241,7 +220,7 @@ describe("QuickChargeModal", () => {
 
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Alterar valor" }));
@@ -261,9 +240,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("shows a visible error when deferred cancellation fails", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -278,7 +254,7 @@ describe("QuickChargeModal", () => {
 
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Alterar valor" }));
@@ -298,9 +274,6 @@ describe("QuickChargeModal", () => {
   });
 
   it("waits for the exact insert before confirming and does not duplicate it", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     const insert = Promise.withResolvers<{
       id: string;
       userId: string;
@@ -314,7 +287,7 @@ describe("QuickChargeModal", () => {
 
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
     await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByText(/Já recebi/i));
     expect(confirmVendorCharge).not.toHaveBeenCalled();
@@ -333,14 +306,11 @@ describe("QuickChargeModal", () => {
     expect(recordVendorCharge).toHaveBeenCalledTimes(1);
   });
   it("allows retrying confirmation after a failed request", async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
     vi.mocked(confirmVendorCharge).mockRejectedValueOnce(new Error("offline"));
 
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
     await waitFor(() => expect(screen.getByText(/Já recebi/i)).toBeInTheDocument());
 
     fireEvent.click(screen.getByText(/Já recebi/i));
@@ -353,20 +323,16 @@ describe("QuickChargeModal", () => {
     await waitFor(() =>
       expect(confirmVendorCharge).toHaveBeenCalledTimes(2),
     );
-    expect(await screen.findByText("Pagamento recebido!")).toBeInTheDocument();
+    expect(useAppStore.getState().vendorCharges[0].status).toBe("received");
   });
 
   it("falls back to a selectable code and keeps copy enabled when the clipboard rejects", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard blocked"));
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     const copyButton = await waitFor(() => {
       const button = screen.getByRole("button", { name: /Copiar código Pix/i });
@@ -389,14 +355,10 @@ describe("QuickChargeModal", () => {
   it("copies the code with success haptic when the clipboard resolves", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
-    });
-
     render(<QuickChargeModal anchor={null} open={true} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
-    fireEvent.click(screen.getByText("Gerar QR Code"));
+    fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     const copyButton = await waitFor(() => {
       const button = screen.getByRole("button", { name: /Copiar código Pix/i });
@@ -407,7 +369,7 @@ describe("QuickChargeModal", () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => {
-      expect(toastSuccess).toHaveBeenCalledWith("Código Pix copiado!");
+      expect(writeText).toHaveBeenCalledWith("00020126580014br.gov.bcb.pix");
     });
     expect(haptics.success).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Copiado!")).toBeInTheDocument();

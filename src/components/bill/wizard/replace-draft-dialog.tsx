@@ -48,7 +48,7 @@ export function ReplaceDraftDialog({
   };
 
   return (
-    <Dialog open={open} dismissable={false}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onKeep(); }}>
       <DialogContent
         showCloseButton={false}
         className="rounded-2xl bg-card p-5"
@@ -90,7 +90,7 @@ export function ReplaceDraftDialog({
           </Button>
           <Button
             variant="destructive"
-            className="w-full rounded-lg min-h-11 bg-destructive/10 text-destructive hover:bg-destructive/20"
+            className="w-full rounded-lg min-h-11"
             onClick={() => decide("replace")}
           >
             Substituir rascunho

@@ -1,5 +1,5 @@
 /** Brazil's primary commercial timezone (UTC-3, no DST since 2019). */
-export const BR_TIME_ZONE = "America/Sao_Paulo";
+const BR_TIME_ZONE = "America/Sao_Paulo";
 
 /**
  * Format an ISO timestamp as a pt-BR date in Brazil's timezone, independent of

@@ -200,7 +200,7 @@ export function ScannedItemsReview({
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-      <ScreenHeader back onBack={onCancel} eyebrow="Leitura" title="Recibo" />
+      <ScreenHeader back onBack={onCancel} subtitle="Leitura" title="Recibo" />
       <div>
         <div className="overflow-hidden rounded-2xl border bg-card">
           <div className="px-4 pb-4 pt-6 text-center">

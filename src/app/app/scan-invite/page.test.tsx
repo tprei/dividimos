@@ -57,6 +57,21 @@ beforeEach(() => {
 });
 
 describe("ScanInvitePage router", () => {
+  it("opens a pasted invitation without a camera and rejects unrelated text", async () => {
+    const user = userEvent.setup();
+    mocks.joinViaLink.mockResolvedValueOnce({ groupId: "g-manual", ledgerVersion: 1, eventId: 1 });
+    render(<ScanInvitePage />);
+    const field = screen.getByLabelText("Link ou código");
+    await user.type(field, "texto qualquer");
+    await user.click(screen.getByRole("button", { name: "Abrir convite" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Esse código não é um convite do Dividimos.");
+    expect(mocks.push).not.toHaveBeenCalled();
+    await user.clear(field);
+    await user.type(field, TOKEN);
+    await user.click(screen.getByRole("button", { name: "Abrir convite" }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/app/groups/g-manual"));
+  });
+
   it("joins the group and navigates to it when a group invite is scanned", async () => {
     mocks.joinViaLink.mockResolvedValueOnce({ groupId: "g-42", ledgerVersion: 3, eventId: 9 });
     render(<ScanInvitePage />);

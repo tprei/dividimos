@@ -25,14 +25,14 @@ import { firstName, note } from "./diary";
  * and accept_invitation from time to time.
  */
 
-export const JOURNEY_GROUP_PREFIX = "Jornada dos bots";
-export const JOURNEY_POOL_SIZE = 4;
+const JOURNEY_GROUP_PREFIX = "Jornada dos bots";
+const JOURNEY_POOL_SIZE = 4;
 export const JOURNEY_MEMBER_COUNT = 4;
 export const JOURNEY_STEPS = 8;
 // Episodes never remove what they wrote, so a reused group is trimmed back
 // before each one. That keeps every projection the group has to compute, and
 // the model that mirrors it, a fixed size.
-export const JOURNEY_ACTIVE_EXPENSE_CAP = 24;
+const JOURNEY_ACTIVE_EXPENSE_CAP = 24;
 
 export interface Journey {
   groupId: string;
@@ -161,7 +161,7 @@ async function acceptJourneyMembers(
  * with no outstanding balance, and creating a new one while the pool is
  * still short.
  */
-export async function findOrCreateJourneyGroup(
+async function findOrCreateJourneyGroup(
   troupe: Troupe,
   members: SeededUser[],
 ): Promise<{ groupId: string; groupName: string }> {
@@ -229,7 +229,7 @@ async function snapshotOf(troupe: Troupe, journey: Journey) {
  * only reason there is anything to clear, and it has to be cleared before a
  * planned journey can be trusted: the plan assumes it starts from zero.
  */
-export async function clearOutstanding(troupe: Troupe, journey: Journey): Promise<number> {
+async function clearOutstanding(troupe: Troupe, journey: Journey): Promise<number> {
   let cleared = 0;
   for (let round = 0; round < JOURNEY_MEMBER_COUNT * 4; round++) {
     const snapshot = await snapshotOf(troupe, journey);
@@ -349,7 +349,7 @@ export async function runJourney(
  * Trims the group back to the active-expense cap, deleting the oldest through
  * the same RPC a person would use, as the bot who created them.
  */
-export async function pruneJourneyGroup(troupe: Troupe, groupId: string): Promise<number> {
+async function pruneJourneyGroup(troupe: Troupe, groupId: string): Promise<number> {
   const { data, error } = await troupe.admin
     .from("expenses")
     .select("id,creator_id,created_at")

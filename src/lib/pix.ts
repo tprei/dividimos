@@ -73,7 +73,7 @@ export function generatePixCopiaECola(payload: PixPayload): string {
 }
 
 /** Mod-11 check digits, plus the repdigit rejection every CPF validator needs. */
-export function isValidCpf(digits: string): boolean {
+function isValidCpf(digits: string): boolean {
   if (!/^\d{11}$/.test(digits)) return false;
   if (/^(\d)\1{10}$/.test(digits)) return false;
   for (const [length, position] of [

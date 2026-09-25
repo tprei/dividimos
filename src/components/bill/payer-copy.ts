@@ -1,2 +1,2 @@
 export const GUEST_PAYER_NOTICE =
-  "Convidados não podem pagar a conta. Escolhe alguém com conta no Dividimos.";
+  "Só quem tem conta no Dividimos pode ser escolhido como pagador.";

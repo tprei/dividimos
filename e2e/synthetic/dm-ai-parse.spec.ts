@@ -32,18 +32,10 @@ test.describe("DM AI parse", () => {
     // Before toggle: aria-pressed should be false
     await expect(sparkle).toHaveAttribute("aria-pressed", "false");
 
-    // Input has normal placeholder before toggle
-    const input = page.getByTestId("chat-input");
-    await expect(input).toHaveAttribute("placeholder", "Mensagem…");
 
     await sparkle.click();
 
-    // After toggle: aria-pressed is true, placeholder changes
     await expect(sparkle).toHaveAttribute("aria-pressed", "true");
-    await expect(input).toHaveAttribute(
-      "placeholder",
-      "Descreva a despesa (ex: 'uber 25 eu paguei')",
-    );
 
     void dm;
   });

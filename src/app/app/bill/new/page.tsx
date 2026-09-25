@@ -2,7 +2,10 @@
 
 import { X } from "lucide-react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import { ScreenHeader } from "@/components/shared/screen-header";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
@@ -30,7 +33,7 @@ import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useBillStore } from "@/stores/bill-store";
-import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import { expenseReadKey, IDLE_READ, useAppStore, type ResourceReadState } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
@@ -41,8 +44,6 @@ import type { ExpenseDetail, GroupSnapshot } from "@/types/ledger";
 import { ExpenseConflictPanel } from "@/components/bill/wizard/expense-conflict-panel";
 import type { ExpenseType, User } from "@/types";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
-import {
-} from "@/lib/bill-draft-isolation";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 import { buildScanDraftCandidate, type ScanDraftCandidate } from "./scan-replacement";
@@ -61,13 +62,24 @@ const TypeStep = dynamic(
 type ExpenseConflict =
   | { status: "none" }
   | { status: "loading" }
-  | { status: "ready"; detail: ExpenseDetail }
+  | { status: "ready"; staleVersionNo: number | null }
   | { status: "error" };
+
+function conflictPanelStatus(
+  conflict: ExpenseConflict,
+  latestDetail: ExpenseDetail | null,
+  read: ResourceReadState,
+): "loading" | "ready" | "error" {
+  if (conflict.status === "error") return "error";
+  if (latestDetail) return "ready";
+  if (read.status === "error") return "error";
+  return "loading";
+}
+
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
-  if (step === "payer") return "payment";
-  if (step === "summary") return "review";
+  if (step === "payer" || step === "summary") return "payment";
   return "account";
 }
 
@@ -130,6 +142,7 @@ function NewBillPageContent() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [discardDialogMode, setDiscardDialogMode] = useState<DiscardDraftMode>("type-switch");
   const [pendingType, setPendingType] = useState<ExpenseType | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [pendingVoice, setPendingVoice] = useState<{
     result: VoiceExpenseResult;
     resolvedParticipants: ResolvedParticipant[];
@@ -539,6 +552,7 @@ function NewBillPageContent() {
   const handleStaleVersion = useCallback(async () => {
     const editId = modes.editExpenseId ?? resumedEditExpenseId;
     if (!editId) return;
+    const staleVersionNo = effectiveBaseVersionNo;
     setConflict({ status: "loading" });
     try {
       await refreshExpense(editId);
@@ -547,18 +561,32 @@ function NewBillPageContent() {
       setConflict({ status: "error" });
       return;
     }
-    const detail = useAppStore.getState().expenseDetails[editId];
-    if (!detail) {
+    if (!useAppStore.getState().expenseDetails[editId]) {
       setConflict({ status: "error" });
       return;
     }
-    setConflict({ status: "ready", detail });
-  }, [modes.editExpenseId, resumedEditExpenseId]);
+    setConflict({ status: "ready", staleVersionNo });
+  }, [modes.editExpenseId, resumedEditExpenseId, effectiveBaseVersionNo]);
+
+  const conflictExpenseId = modes.editExpenseId ?? resumedEditExpenseId;
+  const conflictDetail = useAppStore((s) =>
+    conflictExpenseId ? s.expenseDetails[conflictExpenseId] ?? null : null,
+  );
+  const conflictRead = useAppStore((s) =>
+    conflictExpenseId ? (s.reads[expenseReadKey(conflictExpenseId)] ?? IDLE_READ) : IDLE_READ,
+  );
+  const latestConflictDetail =
+    conflict.status === "ready" &&
+    conflictDetail !== null &&
+    (conflict.staleVersionNo === null ||
+      conflictDetail.expense.currentVersionNo > conflict.staleVersionNo)
+      ? conflictDetail
+      : null;
 
   const handleAcceptConflict = useCallback(() => {
     const editId = modes.editExpenseId ?? resumedEditExpenseId;
-    if (!editId || conflict.status !== "ready") return;
-    const candidate = conflict.detail;
+    if (!editId || !latestConflictDetail) return;
+    const candidate = latestConflictDetail;
     if (candidate.expense.id !== editId) return;
     const snapshot = useAppStore.getState().groups[candidate.expense.groupId];
     useBillStore.getState().hydrateFromDetail(candidate, snapshot?.members ?? []);
@@ -574,13 +602,13 @@ function NewBillPageContent() {
     }
     setConflict({ status: "none" });
     toast.success("Conta atualizada.");
-  }, [modes.editExpenseId, resumedEditExpenseId, conflict]);
+  }, [modes.editExpenseId, resumedEditExpenseId, latestConflictDetail]);
 
   const conflictPanel = conflict.status !== "none" ? (
     <div className="px-4 pt-4">
       <ExpenseConflictPanel
-        status={conflict.status}
-        detail={conflict.status === "ready" ? conflict.detail : null}
+        status={conflictPanelStatus(conflict, latestConflictDetail, conflictRead)}
+        detail={latestConflictDetail}
         onRetry={handleStaleVersion}
         onAccept={handleAcceptConflict}
       />
@@ -588,7 +616,7 @@ function NewBillPageContent() {
   ) : null;
   const conflictBlockedReason =
     conflict.status !== "none"
-      ? "Carregue a versão mais recente pra salvar."
+      ? "Tem uma versão mais recente desta conta."
       : null;
 
   const { submitting, submit } = useWizardSubmit({
@@ -608,21 +636,25 @@ function NewBillPageContent() {
     }));
   }, [me, submit, createGroupEnabled, createGroupName, defaultGroupName]);
 
-  const goBack = () => {
-    if (isDmMode && modes.dm) {
-      router.push(`/app/conversations/${modes.dm.userId}`);
-      return;
-    }
-    const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
-    if (isEditing && activeEditId) {
-      router.push(`/app/bill/${activeEditId}`);
-      return;
-    }
-    setStep("type");
-    setBillType(null);
-    setCreateGroupEnabled(true);
-    setCreateGroupName("");
+  const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
+  const closeHref = isDmMode && modes.dm ? `/app/conversations/${modes.dm.userId}` : isEditing && activeEditId ? `/app/bill/${activeEditId}` : "/app";
+  const requestClose = () => {
+    if (me && hasMeaningfulDraft(store, me.id)) setLeaveOpen(true);
+    else router.push(closeHref);
   };
+  useBackHandler(!reviewingScan && isTypeStep, requestClose);
+  const leaveDialog = (
+    <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+      <DialogContent showCloseButton={false}>
+        <DialogTitle>Sair desta conta?</DialogTitle>
+        <DialogDescription>O rascunho fica salvo pra continuar depois.</DialogDescription>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => setLeaveOpen(false)}>Continuar editando</Button>
+          <Button className="flex-1" onClick={() => router.push(closeHref)}>Sair e guardar</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   if (!mounted || !me) {
     return (
@@ -651,6 +683,7 @@ function NewBillPageContent() {
     return (
       <>
         <ItemizedBillForm
+        key={`${store.expense?.id}:${editBaseVersionNo}`}
         me={me}
         groups={groupSnapshots}
         selectedGroupId={selectedGroupId}
@@ -666,13 +699,14 @@ function NewBillPageContent() {
         onRemoveGuest={(id) => useBillStore.getState().removeGuest(id)}
         onPickContacts={handlePickContacts}
         onSubmit={submitItemized}
-        onBack={goBack}
+        onBack={requestClose}
         isEditing={isEditing}
         submitting={submitting}
         initialSection={itemizedSectionFor(step)}
         conflictPanel={conflictPanel}
         conflictBlocked={conflictBlockedReason !== null}
       />
+        {leaveDialog}
       </>
     );
   }
@@ -681,6 +715,7 @@ function NewBillPageContent() {
     return (
       <>
         <SingleBillForm
+        key={`${store.expense?.id}:${editBaseVersionNo}`}
         me={me}
         groups={groupSnapshots}
         initialGroupId={selectedGroupId}
@@ -688,35 +723,30 @@ function NewBillPageContent() {
         isEditing={isEditing}
         hasContactPicker={hasContactPicker}
         onPickContacts={handlePickContacts}
-        onBack={goBack}
+        onBack={requestClose}
         submit={submit}
         submitting={submitting}
         conflictPanel={conflictPanel}
         submitBlockedReason={conflictBlockedReason}
       />
+        {leaveDialog}
       </>
     );
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] md:max-w-2xl">
       {!reviewingScan && (
-        <div className="flex items-center gap-3">
-          <Link
-            href="/app"
-            aria-label="Fechar"
-            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
-          >
-            <X className="h-5 w-5" />
-          </Link>
-          <h1 className="text-[22px] leading-tight font-bold tracking-tight">
-            {isDmMode ? "Cobrar" : "Nova conta"}
-          </h1>
-        </div>
+        <ScreenHeader title="Nova conta" action={
+          <Button variant="ghost" size="icon-lg" aria-label="Fechar" onClick={requestClose}>
+            <X className="size-5" />
+          </Button>
+        } />
       )}
+      {leaveDialog}
 
       {isTypeStep && mounted && me && store.expense && hasMeaningfulDraft(store, me.id) && !dismissedThisMount && !reviewingScan && (
-        <div className="mt-4">
+        <div className="mt-3 px-4">
           <DraftResumeBanner
             title={draftSummary.title}
             itemCount={draftSummary.itemCount}
@@ -727,7 +757,7 @@ function NewBillPageContent() {
         </div>
       )}
 
-      <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
+      <div className={reviewingScan ? "px-4" : "px-4 pt-3"}>
         <TypeStep
           accountId={me?.id ?? null}
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({
@@ -755,8 +785,8 @@ function NewBillPageContent() {
           onOpenChange={setScanParticipantsOpen}
           description={
             reviewingScan
-              ? "Adicione quem vai participar da divisão manual."
-              : "Escolha quem divide esta conta."
+              ? "Quem entra na divisão manual."
+              : "Quem divide esta conta."
           }
           participants={{
             me,

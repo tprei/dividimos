@@ -11,47 +11,23 @@ import {
   createGroupWithMembers,
   createTestUser,
   createTestUsers,
+  decodeRpcData,
   expectRpcError,
+  rpcDecoded,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
 import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+import { decodeMutationAck } from "@/lib/ledger/decode";
+import { decodeAssignmentRoomView } from "@/lib/ledger/decode-assignment-room";
+import type { AssignmentRoomView } from "@/types/assignment-room";
 
 assertLedgerInvariantsAfterEach();
 
 type Client = SupabaseClient<Database>;
 type CreateRoomArgs =
   Database["public"]["Functions"]["create_assignment_room"]["Args"];
-
-interface RoomView {
-  role: "host" | "participant";
-  room: {
-    id: string;
-    revision: number;
-    status: string;
-    title: string;
-    totalCents: number;
-    selfParticipantId: string;
-    topic: string;
-    currentBill: null;
-    items: Array<{
-      id: string;
-      ordinal: number;
-      revision: number;
-      totalPriceCents: number;
-    }>;
-    participants: Array<
-      Record<string, Json | undefined> & {
-        id: string;
-        ordinal: number;
-        displayName: string;
-      }
-    >;
-    claims: unknown[];
-  };
-  groupTarget: Json;
-  participantRefs: Json[];
-}
+type RoomView = AssignmentRoomView;
 
 const header = {
   title: "Almoço",
@@ -97,22 +73,14 @@ function roomArgs(
 
 async function createRoom(
   client: Client,
-  args: CreateRoomArgs
+  args: CreateRoomArgs,
 ): Promise<RoomView> {
-  const { data, error } = await client.rpc("create_assignment_room", args);
-  if (error) throw new Error(error.message);
-  return data as unknown as RoomView;
-}
-function readGroupId(value: Json): string {
-  if (
-    value === null ||
-    Array.isArray(value) ||
-    typeof value !== "object" ||
-    typeof value.groupId !== "string"
-  ) {
-    throw new Error("RPC returned an invalid group id");
-  }
-  return value.groupId;
+  return rpcDecoded(
+    client,
+    "create_assignment_room",
+    args,
+    decodeAssignmentRoomView,
+  );
 }
 
 describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
@@ -199,7 +167,6 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       isGuest: false,
       removed: false,
     });
-    expect(view.room.participants[0]).not.toHaveProperty("userId");
 
     const after = await withPg(async (db) => {
       const result = await db.query(
@@ -333,6 +300,9 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       ]),
     });
     const view = await createRoom(hostClient, groupArgs);
+    if (view.role !== "host") {
+      throw new Error("expected the creator to receive a host view");
+    }
     expect(view.groupTarget).toEqual({ kind: "existing", groupId });
 
     const foreign = roomArgs(outsider, {
@@ -349,7 +319,7 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       { p_user_id: selected.id }
     );
     if (dmError) throw new Error(dmError.message);
-    const dmId = readGroupId(dm);
+    const dmId = decodeRpcData("get_or_create_dm", dm, decodeMutationAck).groupId;
     const dmArgs = roomArgs(host, {
       p_group_target: { kind: "existing", groupId: dmId },
     });
@@ -387,7 +357,11 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       }
     );
     if (error) throw new Error(error.message);
-    const rotated = data as unknown as RoomView;
+    const rotated = decodeRpcData(
+      "rotate_assignment_room_join",
+      data,
+      decodeAssignmentRoomView,
+    );
     expect(rotated.room.revision).toBe(first.room.revision + 1);
     expect(rotated.room.topic).toBe(before?.topic);
 

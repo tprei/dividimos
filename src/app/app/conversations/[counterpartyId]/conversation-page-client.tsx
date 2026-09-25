@@ -19,8 +19,11 @@ import {
   type QuickSplitStatus,
 } from "@/components/chat/quick-split-sheet";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
-import { Money } from "@/components/shared/money";
+import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { firstNameOf } from "@/lib/people";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { haptics } from "@/hooks/use-haptics";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { getAuthGeneration } from "@/lib/sync/client";
@@ -71,7 +74,7 @@ function resolveQuickSplitActors(
     return { kind: "error", message: "Não consegui identificar quem pagou." };
   }
   if (result.shares.length !== 2) {
-    return { kind: "error", message: "Não consegui resolver as partes da despesa." };
+    return { kind: "error", message: "Não consegui resolver as partes da conta." };
   }
   const seen = new Set<string>();
   for (const share of result.shares) {
@@ -365,6 +368,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         }
         await createDmExpense(chargeKey.current, header, payload);
         setChargeStatus("confirmed");
+        haptics.success();
         chargeKey.current = crypto.randomUUID();
         chargeResetTimer.current = window.setTimeout(() => {
           setChargeSheetOpen(false);
@@ -406,6 +410,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         }
         await createDmExpense(splitKey.current, header, payload);
         setSplitStatus("confirmed");
+        haptics.success();
         splitKey.current = crypto.randomUUID();
         splitResetTimer.current = window.setTimeout(() => {
           setSplitSheetOpen(false);
@@ -483,8 +488,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   if (activeResolveError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{activeResolveError}</p>
-        <button onClick={handleRetryResolve} className="text-sm text-primary underline">
+        <p className="text-sm text-destructive-text">{activeResolveError}</p>
+        <button onClick={handleRetryResolve} className="min-h-11 text-sm text-primary-text underline">
           Tentar novamente
         </button>
       </div>
@@ -539,13 +544,24 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col md:max-w-2xl">
       <ScreenHeader
         back
         title={counterparty.name}
-        eyebrow={`@${counterparty.handle}`}
-        action={
-          !isCounterpartyPending ? (
+        subtitle={`@${counterparty.handle}`}
+        leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
+      />
+      {isCounterpartyPending ? (
+        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
+          <p className="text-center text-xs text-muted-foreground">
+            Aguardando @{counterparty.handle} aceitar o convite
+          </p>
+        </div>
+      ) : (
+        <ChatBalanceStrip
+          netCents={netCents}
+          owedLabel={`${firstNameOf(counterparty.name)} te deve`}
+          action={
             <ConversationPayButton
               groupId={dm.group.id}
               meId={me.id}
@@ -553,31 +569,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
               counterpartyName={counterparty.name}
               rows={debtRows}
             />
-          ) : undefined
-        }
-      />
-      {isCounterpartyPending && (
-        <div className="border-b bg-muted/50 px-4 py-2.5">
-          <p className="text-center text-xs text-muted-foreground">
-            Aguardando @{counterparty.handle} aceitar o convite
-          </p>
-        </div>
-      )}
-      {netCents !== 0 && (
-        <div className="border-b bg-muted/30 px-4 py-1.5 text-center">
-          <p
-            className={`flex items-center justify-center gap-1 text-xs font-medium ${
-              netCents > 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {netCents > 0
-              ? `${counterparty.name.split(" ")[0]} te deve`
-              : "Você deve"}
-            <Money cents={netCents} />
-          </p>
-        </div>
+          }
+        />
       )}
       {conversationRead.status === "error" &&
       (conversation?.messages.length ?? 0) === 0 &&
@@ -596,7 +589,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           messages={conversation?.messages ?? []}
           events={conversation?.events ?? []}
           settlements={dm.settlements}
+          expenses={dm.recentExpenses}
           nameOf={nameOf}
+          showSenderNames={false}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}
           onRenderedThrough={handleRenderedThrough}
@@ -634,23 +629,6 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             status={splitStatus}
             errorMessage={splitError}
           />
-          <ConversationQuickActions
-            onCharge={(trigger) => {
-              if (chargeStatus === "confirming") return;
-              setSplitSheetOpen(false);
-              setChargeStatus("idle");
-              setChargeError(undefined);
-              setChargeAnchor(trigger);
-              setChargeSheetOpen((prev) => !prev);
-            }}
-            onSplit={() => {
-              if (chargeStatus === "confirming") return;
-              setChargeSheetOpen(false);
-              setSplitStatus("idle");
-              setSplitError(undefined);
-              setSplitSheetOpen((prev) => !prev);
-            }}
-          />
           <ChatAiInput
             groupId={dm.group.id}
             members={[
@@ -660,6 +638,25 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             onSend={handleSend}
             onConfirmDraft={handleConfirmDraft}
             onEditDraft={handleEditDraft}
+            actions={
+              <ConversationQuickActions
+                onCharge={(trigger) => {
+                  if (chargeStatus === "confirming") return;
+                  setSplitSheetOpen(false);
+                  setChargeStatus("idle");
+                  setChargeError(undefined);
+                  setChargeAnchor(trigger);
+                  setChargeSheetOpen((prev) => !prev);
+                }}
+                onSplit={() => {
+                  if (chargeStatus === "confirming") return;
+                  setChargeSheetOpen(false);
+                  setSplitStatus("idle");
+                  setSplitError(undefined);
+                  setSplitSheetOpen((prev) => !prev);
+                }}
+              />
+            }
           />
         </>
       )}

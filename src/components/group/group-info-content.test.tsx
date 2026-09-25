@@ -129,7 +129,7 @@ describe("GroupInfoContent", () => {
     render(<GroupInfoContent groupId={groupId} />);
 
     expect(screen.getByRole("heading", { name: "Viagem", level: 2 })).toBeInTheDocument();
-    expect(screen.getByText(/2 membros · desde/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", "/app/groups/g1?tab=membros");
     const spending = screen.getByTestId("group-spending");
     expect(spending).toHaveTextContent("120,00");
   });
@@ -162,14 +162,14 @@ describe("GroupInfoContent", () => {
     expect(inHero.getByRole("button", { name: "Voltar" })).toBeInTheDocument();
   });
 
-  it("opens the avatar editor from the image action", async () => {
+  it("opens the avatar editor from the group avatar", async () => {
     seedLoaded();
     const user = userEvent.setup();
 
     render(<GroupInfoContent groupId={groupId} />);
 
-    await user.click(screen.getByRole("button", { name: "Imagem" }));
+    await user.click(screen.getByRole("button", { name: "Foto do grupo" }));
 
-    expect(screen.getByRole("dialog", { name: "Editar imagem do grupo" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Foto do grupo" })).toBeInTheDocument();
   });
 });

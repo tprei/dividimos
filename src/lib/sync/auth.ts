@@ -19,6 +19,35 @@ import {
 } from "./assignment-rooms";
 import { stopAllAssignmentRoomRealtime } from "./assignment-room-realtime";
 
+function waitForAppStoreHydration(): Promise<void> {
+  if (useAppStore.getState().hydrated) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      unsubFinish();
+      unsubStore();
+      resolve();
+    };
+    const unsubFinish = useAppStore.persist.onFinishHydration(() => {
+      finish();
+    });
+    const unsubStore = useAppStore.subscribe((state) => {
+      if (state.hydrated) {
+        finish();
+      }
+    });
+    if (useAppStore.getState().hydrated) {
+      finish();
+    }
+  });
+}
+
+type IdentityEvent = "SIGNED_IN" | "SIGNED_OUT";
+
 export function attachAuthListener(
   onSignedOut: () => void,
   onError: (error: unknown) => void,
@@ -30,12 +59,18 @@ export function attachAuthListener(
    */
   let observedUserId: string | null | undefined;
   let disposed = false;
+  /**
+   * Events that arrived before the app store hydrated. Supabase runs this
+   * callback while holding its auth lock, and every getSession/RPC waits on
+   * that lock, so the callback never awaits: it queues until hydration and
+   * replays in arrival order.
+   */
+  let pending: Array<{ event: IdentityEvent; userId: string | null }> | null = null;
 
   const priorUserId = (): string | null =>
     observedUserId === undefined ? useAppStore.getState().me?.id ?? null : observedUserId;
 
-  const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
-    if (disposed) return;
+  const handle = (event: IdentityEvent, nextUserId: string | null) => {
     if (event === "SIGNED_OUT") {
       const signedOutUserId = priorUserId();
       archiveCurrentDraft(signedOutUserId);
@@ -54,11 +89,6 @@ export function attachAuthListener(
       return;
     }
 
-    // TOKEN_REFRESHED and INITIAL_SESSION fire often without changing who is
-    // signed in; invalidating on them would cancel healthy in-flight work.
-    if (event !== "SIGNED_IN") return;
-
-    const nextUserId = session?.user.id ?? null;
     if (nextUserId === null) return;
 
     // Comparing against the remembered identity catches A -> B -> A, where the
@@ -86,6 +116,32 @@ export function attachAuthListener(
     void useBillStore.persist.rehydrate();
     useAppStore.getState().reset();
     runBootstrap().catch(onError);
+  };
+
+  const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+    if (disposed) return;
+    // TOKEN_REFRESHED and INITIAL_SESSION fire often without changing who is
+    // signed in; invalidating on them would cancel healthy in-flight work.
+    if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
+    const userId = session?.user.id ?? null;
+
+    if (pending) {
+      pending.push({ event, userId });
+      return;
+    }
+    if (observedUserId === undefined && !useAppStore.getState().hydrated) {
+      pending = [{ event, userId }];
+      void waitForAppStoreHydration().then(() => {
+        const queued = pending ?? [];
+        pending = null;
+        for (const entry of queued) {
+          if (disposed) return;
+          handle(entry.event, entry.userId);
+        }
+      });
+      return;
+    }
+    handle(event, userId);
   });
 
   return () => {

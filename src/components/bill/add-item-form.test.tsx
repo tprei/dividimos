@@ -22,9 +22,23 @@ describe("AddItemForm", () => {
   it("renders form fields", () => {
     render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByText("Adicionar item")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Descrição/)).toBeInTheDocument();
-    expect(screen.getByText("Preço unitário (R$)")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Preço unitário" })).toBeInTheDocument();
+  });
+
+  it("adds the line total and stays ready for the next item", async () => {
+    const onAdd = vi.fn();
+    const user = userEvent.setup();
+    render(<AddItemForm onAdd={onAdd} onCancel={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText(/Descrição/), "Chopp");
+    await user.click(screen.getByLabelText("Aumentar quantidade"));
+    fireEvent.change(screen.getByRole("textbox", { name: "Preço unitário" }), { target: { value: "12,50" } });
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(onAdd).toHaveBeenCalledWith({ description: "Chopp", quantity: 2000, unitPriceCents: 1250, totalPriceCents: 2500 });
+    expect(screen.getByPlaceholderText(/Descrição/)).toHaveValue("");
+    expect(screen.getByPlaceholderText(/Descrição/)).toHaveFocus();
   });
 
   it("renders quantity with default value of 1", () => {
@@ -41,17 +55,12 @@ describe("AddItemForm", () => {
     expect(submitBtn!.hasAttribute("disabled") || submitBtn!.hasAttribute("data-disabled")).toBe(true);
   });
 
-  it("calls onCancel when cancel button clicked", async () => {
+  it("calls onCancel when the composer is closed", async () => {
     const onCancel = vi.fn();
     const user = userEvent.setup();
     render(<AddItemForm onAdd={vi.fn()} onCancel={onCancel} />);
 
-    const buttons = screen.getAllByRole("button");
-    const cancelBtn = buttons.find(
-      (b) => b.getAttribute("type") === "button",
-    );
-    expect(cancelBtn).toBeDefined();
-    await user.click(cancelBtn!);
+    await user.click(screen.getByRole("button", { name: "Fechar inclusão de item" }));
 
     expect(onCancel).toHaveBeenCalled();
   });

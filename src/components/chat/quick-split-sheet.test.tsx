@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { QuickSplitSheet } from "./quick-split-sheet";
 import type { UserProfile } from "@/types/ledger";
 
@@ -44,6 +45,23 @@ function fillForm(title: string, amount: string) {
 }
 
 describe("QuickSplitSheet", () => {
+  it("preserves a dirty split unless discard is confirmed", async () => {
+    const confirmation = vi.fn().mockReturnValue(false);
+    vi.stubGlobal("confirm", confirmation);
+    try {
+      const { user, onClose } = renderSheet();
+      fillForm("Pizza", "80,00");
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("textbox", { name: "Nome da conta" })).toHaveValue("Pizza");
+      confirmation.mockReturnValue(true);
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+      expect(onClose).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("renders nothing when closed", () => {
     render(
       <QuickSplitSheet
@@ -159,7 +177,7 @@ describe("QuickSplitSheet", () => {
 
   it("calls onClose when close button is clicked", async () => {
     const { user, onClose } = renderSheet();
-    await user.click(screen.getByTestId("quick-split-close"));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -182,7 +200,22 @@ describe("QuickSplitSheet", () => {
 
   it("prevents closing during confirming state", async () => {
     const { user, onClose } = renderSheet({ status: "confirming" });
-    await user.click(screen.getByTestId("quick-split-backdrop"));
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes on hardware Back instead of navigating away", () => {
+    const { onClose } = renderSheet();
+
+    // true means the app consumed Back; false would let it navigate.
+    expect(runBackHandlers()).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the sheet open on hardware Back while a confirm is in flight", () => {
+    const { onClose } = renderSheet({ status: "confirming" });
+
+    expect(runBackHandlers()).toBe(true);
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -374,9 +407,4 @@ describe("QuickSplitSheet", () => {
     expect(screen.getByTestId("quick-split-payer-other")).not.toBeChecked();
   });
 
-  it("renders handles when provided", () => {
-    renderSheet({ currentUserHandle: "usuario" });
-    expect(screen.getByText("@usuario")).toBeInTheDocument();
-    expect(screen.getByText("@maria")).toBeInTheDocument();
-  });
 });

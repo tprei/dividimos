@@ -12,13 +12,6 @@ vi.mock("next/link", () => ({
 }));
 
 const meId = "user-1";
-const me: UserProfile = {
-  id: meId,
-  handle: "alice",
-  name: "Alice Souza",
-  avatarUrl: null,
-  isBot: false,
-};
 const bob: UserProfile = {
   id: "user-2",
   handle: "bob",
@@ -98,20 +91,20 @@ describe("ChatThread", () => {
     expect(screen.getByText("Oi tudo bem?")).toBeDefined();
     expect(screen.getByText("Bob Silva entrou no grupo")).toBeDefined();
   });
-
-  it("renders the rail time column for each entry", () => {
-    const msg = makeMessage({ createdAt: "2026-01-01T12:00:00Z" });
-    const ev = makeEvent({ id: 2, createdAt: "2026-01-01T09:30:00Z" });
-    renderThread({ messages: [msg], events: [ev] });
-    expect(screen.getByText("12:00")).toBeDefined();
-    expect(screen.getByText("09:30")).toBeDefined();
+  it("shows each message time once, inside its bubble", () => {
+    const first = makeMessage({ id: "m1", createdAt: "2026-01-01T12:00:00Z" });
+    const second = makeMessage({ id: "m2", content: "Tudo certo", createdAt: "2026-01-01T12:01:00Z" });
+    renderThread({ messages: [first, second] });
+    expect(screen.getAllByText("12:00")).toHaveLength(1);
+    expect(screen.getAllByText("12:01")).toHaveLength(1);
   });
 
-  it("shows the sender avatar on the first message of a run and a dot on consecutive ones", () => {
+  it("marks the start of a sender's run with their avatar and name once", () => {
     const first = makeMessage({ id: "m1", createdAt: "2026-01-01T12:00:00Z" });
     const second = makeMessage({ id: "m2", createdAt: "2026-01-01T12:01:00Z" });
     renderThread({ messages: [first, second] });
     expect(screen.getAllByText("BS")).toHaveLength(1);
+    expect(screen.getAllByText("Bob")).toHaveLength(1);
   });
 
   it("shows the avatar again when messages are more than 5 minutes apart", () => {
@@ -121,16 +114,10 @@ describe("ChatThread", () => {
     expect(screen.getAllByText("BS")).toHaveLength(2);
   });
 
-  it("keeps the plain dot for own messages and aligns their bubbles right", () => {
-    const own = makeMessage({
-      id: "m1",
-      senderId: me.id,
-      sender: me,
-      content: "Fechei a conta",
-    });
-    const { container } = renderThread({ messages: [own] });
-    expect(screen.queryByText("AS")).toBeNull();
-    expect(container.querySelector(".rounded-br-md.ml-auto.bg-primary")).not.toBeNull();
+  it("omits sender names when the thread asks for it", () => {
+    renderThread({ messages: [makeMessage()], showSenderNames: false });
+    expect(screen.getByText("BS")).toBeDefined();
+    expect(screen.queryByText("Bob")).toBeNull();
   });
 
   it("calls onLoadMore when clicking Carregar anteriores button", () => {

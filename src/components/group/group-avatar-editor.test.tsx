@@ -64,13 +64,12 @@ describe("GroupAvatarEditor", () => {
     expect(mocks.updateGroupAvatar).toHaveBeenCalledWith(groupId, { kind: "emoji", emoji: "🏠" });
   });
 
-  it("closes the anchored editor without a backdrop", async () => {
+  it("closes with Escape when no changes would be lost", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     render(<GroupAvatarEditor groupId={groupId} open onOpenChange={onOpenChange} />);
 
-    expect(screen.getByRole("dialog", { name: "Editar imagem do grupo" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Fechar editor de imagem" }));
+    await user.keyboard("{Escape}");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -83,7 +82,7 @@ describe("GroupAvatarEditor", () => {
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Gato" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Gato" })).toBeChecked();
     expect(mocks.toastError).toHaveBeenCalled();
   });
 
@@ -97,9 +96,23 @@ describe("GroupAvatarEditor", () => {
     const user = userEvent.setup();
     render(<GroupAvatarEditor groupId={groupId} open onOpenChange={vi.fn()} />);
 
-    await user.click(screen.getByRole("button", { name: "Usar iniciais" }));
+    await user.click(screen.getByRole("button", { name: "Remover" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(mocks.updateGroupAvatar).toHaveBeenCalledWith(groupId, { kind: "initials" });
+  });
+
+  it("keeps unsaved input until discarding is confirmed", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    render(<GroupAvatarEditor groupId={groupId} open onOpenChange={onOpenChange} />);
+    await user.click(screen.getByRole("radio", { name: "Casa" }));
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Continuar editando" }));
+    expect(screen.getByRole("radio", { name: "Casa" })).toBeChecked();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Descartar" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

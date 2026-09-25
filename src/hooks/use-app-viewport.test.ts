@@ -1,9 +1,19 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppViewport } from "./use-app-viewport";
+const native = vi.hoisted(() => ({ enabled: false }));
+const keyboardListeners = vi.hoisted(() => new Map<string, (info: { keyboardHeight: number }) => void>());
+vi.mock("@capacitor/keyboard", () => ({
+  Keyboard: {
+    addListener: vi.fn(async (event: string, listener: (info: { keyboardHeight: number }) => void) => {
+      keyboardListeners.set(event, listener);
+      return { remove: async () => { keyboardListeners.delete(event); } };
+    }),
+  },
+}));
 
 vi.mock("@/lib/capacitor/auth", () => ({
-  isNativePlatform: () => false,
+  isNativePlatform: () => native.enabled,
 }));
 
 interface FakeVisualViewport {
@@ -24,6 +34,8 @@ function emitResize() {
 }
 
 beforeEach(() => {
+  native.enabled = false;
+  keyboardListeners.clear();
   listeners = [];
   viewport = {
     height: FULL_HEIGHT,
@@ -62,6 +74,18 @@ async function settle() {
 }
 
 describe("useAppViewport", () => {
+  it("publishes native keyboard height without shrinking geometry twice", async () => {
+    native.enabled = true;
+    const { result } = renderHook(() => useAppViewport());
+    await settle();
+    await act(async () => keyboardListeners.get("keyboardWillShow")?.({ keyboardHeight: 336 }));
+    expect(result.current.keyboardOpen).toBe(true);
+    viewport.height = 508;
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("508px");
+    await act(async () => keyboardListeners.get("keyboardWillHide")?.({ keyboardHeight: 0 }));
+    expect(result.current.keyboardOpen).toBe(false);
+  });
   it("publishes the measured visual viewport to the document root", async () => {
     renderHook(() => useAppViewport());
     await settle();
@@ -85,6 +109,11 @@ describe("useAppViewport", () => {
 
     expect(result.current.keyboardOpen).toBe(true);
     expect(document.documentElement.getAttribute("data-keyboard")).toBe("open");
+    input.blur();
+    await settle();
+    viewport.height = FULL_HEIGHT;
+    await settle();
+    expect(result.current.keyboardOpen).toBe(false);
   });
 
   it("keeps the keyboard flag while any mounted surface still reports one", async () => {
@@ -149,6 +178,33 @@ describe("useAppViewport", () => {
 
     unmount();
 
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
+  });
+  it("keeps geometry when a nested instance unmounts after keyboard closes", async () => {
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+
+    const shell = renderHook(() => useAppViewport());
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("844px");
+
+    input.focus();
+    viewport.height = FULL_HEIGHT - 336;
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("508px");
+
+    const sheet = renderHook(() => useAppViewport());
+    await settle();
+
+    input.blur();
+    viewport.height = FULL_HEIGHT;
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("844px");
+
+    sheet.unmount();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("844px");
+
+    shell.unmount();
     expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
   });
 });

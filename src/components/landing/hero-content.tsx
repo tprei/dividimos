@@ -46,8 +46,8 @@ export function HeroContent() {
           animate="visible"
           className="mt-6 text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl"
         >
-          Racha a conta{" "}
-          <span className="text-primary">sem drama</span>
+          Quem divide,{" "}
+          <span className="text-primary">multiplica</span>
         </motion.h1>
 
         <motion.p
@@ -71,11 +71,6 @@ export function HeroContent() {
             <Button size="lg" className="gap-2 text-base">
               <Split className="h-5 w-5" />
               Rachar uma conta
-            </Button>
-          </Link>
-          <Link href="/demo">
-            <Button size="lg" variant="outline" className="text-base">
-              Ver como funciona
             </Button>
           </Link>
           <InstallPrompt />
