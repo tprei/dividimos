@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { initialsOf } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import type { GroupAvatar as GroupAvatarData } from "@/types/ledger";
 
@@ -14,6 +14,14 @@ const sizeClasses = {
 
 const sizePixels = { sm: 32, md: 44, lg: 56 } as const;
 type GroupAvatarSize = keyof typeof sizeClasses;
+
+function GroupInitials({ name, size }: { name: string; size: GroupAvatarSize }) {
+  return (
+    <div role="img" aria-label={name} className={cn("flex shrink-0 items-center justify-center rounded-[28%] border border-primary/25 bg-primary/15 font-bold text-primary-text", sizeClasses[size])}>
+      {initialsOf(name)}
+    </div>
+  );
+}
 
 function PhotoAvatar({
   name,
@@ -28,7 +36,7 @@ function PhotoAvatar({
 }) {
   const [imageFailed, setImageFailed] = useState(false);
 
-  if (imageFailed) return <UserAvatar name={name} size={size} />;
+  if (imageFailed) return <GroupInitials name={name} size={size} />;
 
   return (
     <div className={cn("relative shrink-0 overflow-hidden rounded-full", sizeClasses[size])}>
@@ -83,5 +91,5 @@ export function GroupAvatar({
     );
   }
 
-  return <UserAvatar name={name} size={size} />;
+  return <GroupInitials name={name} size={size} />;
 }

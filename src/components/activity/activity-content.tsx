@@ -86,6 +86,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const cardContent = (
     <div className="flex items-start gap-3">
       <UserAvatar
+        id={event.actor?.id}
         name={actorName}
         avatarUrl={event.actor?.avatarUrl}
         size="sm"
@@ -95,10 +96,10 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         <p className="text-sm leading-snug">{sentence}</p>
         <div className="mt-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {groupLabel}
             </span>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {relativeTime}
             </span>
           </div>

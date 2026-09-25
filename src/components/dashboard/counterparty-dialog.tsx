@@ -4,7 +4,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { Bell, Check, Loader2, QrCode, UserPlus } from "lucide-react";
 import Link from "next/link";
-import { GuestBadge } from "@/components/shared/guest-avatar";
+import { Chip } from "@/components/ui/chip";
 import { GuestInviteDialog } from "@/components/expense/guest-invite-dialog";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -97,7 +97,7 @@ export function CounterpartyDialog({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <PopoverTitle className="truncate">{row.counterpartyName}</PopoverTitle>
-              {row.counterpartyKind === "guest" && <GuestBadge />}
+              {row.counterpartyKind === "guest" && <Chip tone="guest">Convidado</Chip>}
             </div>
             <PopoverDescription className="truncate">
               {group} · {direction} {formatBRL(row.amountCents)}

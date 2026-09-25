@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { Chip } from "@/components/ui/chip";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import type { GroupSpending, GroupSpendingRow } from "@/types/ledger";
@@ -70,21 +71,22 @@ export function GroupSpendingSection({
             >
               {row.kind === "user" ? (
                 <UserAvatar
+                  id={row.participantId}
                   name={name}
                   avatarUrl={row.user.avatarUrl}
                   isBot={row.user.isBot}
                   size="sm"
                 />
               ) : (
-                <GuestAvatar size="sm" />
+                <GuestAvatar id={row.participantId} name={name} size="sm" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <p className="truncate text-sm font-medium">{displayName}</p>
-                  {row.kind === "guest" && <GuestBadge />}
+                  {row.kind === "guest" && <Chip tone="guest">Convidado</Chip>}
                 </div>
                 {row.kind === "user" && row.participantId === meId && (
-                  <p className="text-[11px] text-muted-foreground">Sua parte</p>
+                  <p className="text-xs text-muted-foreground">Sua parte</p>
                 )}
               </div>
               <Money cents={row.shareCents} className="text-sm" label={`${displayName}: gasto compartilhado`} />

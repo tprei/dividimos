@@ -108,21 +108,22 @@ export function SettlementDetailPopover({
           <div className="space-y-3">
             <div className="rounded-xl border bg-card p-3">
               <div className="flex items-center gap-2">
-                <UserAvatar name={payer.name} avatarUrl={payer.avatarUrl} size="sm" isBot={payer.isBot} />
+                <UserAvatar id={settlement.fromUserId} name={payer.name} avatarUrl={payer.avatarUrl} size="sm" isBot={payer.isBot} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium" data-testid="settlement-detail-payer">
                     {payer.name}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Quem pagou</p>
+                  <p className="text-xs text-muted-foreground">Quem pagou</p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1 text-right">
                   <p className="truncate text-sm font-medium" data-testid="settlement-detail-recipient">
                     {recipient.name}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Quem recebeu</p>
+                  <p className="text-xs text-muted-foreground">Quem recebeu</p>
                 </div>
                 <UserAvatar
+                  id={settlement.toUserId}
                   name={recipient.name}
                   avatarUrl={recipient.avatarUrl}
                   size="sm"
@@ -134,7 +135,7 @@ export function SettlementDetailPopover({
               </div>
               <div className="mt-2 flex flex-col items-center gap-1">
                 <span
-                  className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", cfg.className)}
+                  className={cn("rounded-full px-2 py-0.5 text-xs font-medium", cfg.className)}
                   data-testid="settlement-detail-status"
                 >
                   {cfg.label}
@@ -176,7 +177,7 @@ export function SettlementDetailPopover({
                 </Button>
               </div>
             )}
-            <p className="text-center text-[11px] text-muted-foreground">
+            <p className="text-center text-xs text-muted-foreground">
               Registro do grupo. Não é comprovante bancário.
             </p>
           </div>

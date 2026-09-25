@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { SelectField } from "@/components/ui/select-field";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { displayNames } from "@/lib/people";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import {
   PendingOperationNotice,
@@ -57,6 +58,9 @@ export function GroupRegisterPaymentSheet({
   errorMessage,
   anchor,
 }: GroupRegisterPaymentSheetProps) {
+  const people = [{ id: currentUserHandle, name: currentUserHandle }, ...counterparties];
+  const labels = displayNames(people, { style: "full", viewerId: currentUserHandle });
+  const shortLabels = displayNames(people, { style: "short", viewerId: currentUserHandle });
   const [amountCents, setAmountCents] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(
     counterparties[0]?.id ?? null,
@@ -143,7 +147,7 @@ export function GroupRegisterPaymentSheet({
             disabled={isConfirming}
             options={counterparties.map((member) => ({
               value: member.id,
-              label: `${member.name} (@${member.handle})`,
+              label: labels.get(member.id) ?? member.name,
             }))}
           />
           <div className="text-center">
@@ -248,7 +252,7 @@ export function GroupRegisterPaymentSheet({
             }`}
             data-testid="group-payment-payer-self"
           >
-            <PersonLabel name="Eu" handle={currentUserHandle} nameClassName="text-sm" />
+            <PersonLabel name={labels.get(currentUserHandle) ?? "Você"} nameClassName="text-sm" />
           </button>
           {counterparty && (
             <button
@@ -262,7 +266,7 @@ export function GroupRegisterPaymentSheet({
               }`}
               data-testid="group-payment-payer-other"
             >
-              <PersonLabel name={counterparty.name} handle={counterparty.handle} nameClassName="text-sm" />
+              <PersonLabel name={counterparty.name} overrideName={shortLabels.get(counterparty.id)} nameClassName="text-sm" />
             </button>
           )}
             </div>

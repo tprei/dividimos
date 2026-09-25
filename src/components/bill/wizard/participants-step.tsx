@@ -6,6 +6,8 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { User } from "@/types";
@@ -197,12 +199,12 @@ export function ParticipantsStep({
               className="flex items-center gap-3 rounded-xl border bg-card p-3"
             >
               <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
-              <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="sm" isBot={me.isBot} />
+              <UserAvatar id={me.id} name={me.name} avatarUrl={me.avatarUrl} size="sm" isBot={me.isBot} />
               <div className="flex-1">
                 <p className="text-sm font-medium">{me.name}</p>
                 <p className="text-xs text-muted-foreground">@{me.handle}</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">Você</span>
+              <Chip tone="primary">Você</Chip>
             </div>
             {memberRows.map((m) => {
               const isChecked = participants.some((p) => p.id === m.userId);
@@ -217,15 +219,13 @@ export function ParticipantsStep({
                   className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
                 >
                   <input type="checkbox" checked={isChecked} readOnly className="h-4 w-4 accent-primary pointer-events-none" />
-                  <UserAvatar name={m.user.name} avatarUrl={m.user.avatarUrl} size="sm" isBot={m.user.isBot} />
+                  <UserAvatar id={m.userId} name={m.user.name} avatarUrl={m.user.avatarUrl} size="sm" isBot={m.user.isBot} />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{m.user.name}</p>
                     <p className="text-xs text-muted-foreground">@{m.user.handle}</p>
                   </div>
                   {isInvited && (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      convite pendente
-                    </span>
+                    <Chip tone="warning">Convite pendente</Chip>
                   )}
                 </button>
               );
@@ -234,13 +234,13 @@ export function ParticipantsStep({
         ) : (
           participants.map((p) => (
             <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-              <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+              <UserAvatar id={p.id} name={p.name} avatarUrl={p.avatarUrl} size="sm" />
               <div className="flex-1">
                 <p className="text-sm font-medium">{p.name}</p>
                 <p className="text-xs text-muted-foreground">@{p.handle}</p>
               </div>
               {p.id === me.id ? (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">Você</span>
+                <Chip tone="primary">Você</Chip>
               ) : (
                 <button onClick={() => onRemoveParticipant(p.id)} aria-label={`Remover ${p.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                   <X className="h-4 w-4" />
@@ -256,13 +256,11 @@ export function ParticipantsStep({
           <p className="text-xs text-muted-foreground">Convidados (sem conta no Dividimos)</p>
           {guests.map((g) => (
             <div key={g.id} className="flex items-center gap-3 rounded-xl border border-dashed bg-card p-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                {g.name.charAt(0)}
-              </span>
+              <GuestAvatar id={g.id} name={g.name} size="sm" />
               <div className="flex-1">
                 <p className="text-sm font-medium">{g.name}</p>
               </div>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Convidado</span>
+              <Chip tone="guest">Convidado</Chip>
               <button onClick={() => onRemoveGuest(g.id)} aria-label={`Remover ${g.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                 <X className="h-4 w-4" />
               </button>

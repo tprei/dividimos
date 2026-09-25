@@ -27,6 +27,7 @@ export function InvitationCard({
       <div className="flex items-center gap-3">
         {inviter && (
           <UserAvatar
+            id={inviter.userId}
             size="sm"
             name={inviter.user.name}
             avatarUrl={inviter.user.avatarUrl}
@@ -34,7 +35,7 @@ export function InvitationCard({
           />
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold">
+          <p className="truncate text-base font-semibold">
             Convite · {snapshot.group.name}
           </p>
           {inviter && (

@@ -8,6 +8,7 @@ import type { PayerAttribution } from "@/lib/expense-attribution";
 interface ExpensePayersProps {
   payers: PayerAttribution[];
   participantName: (participantIndex: number) => string;
+  participantId: (participantIndex: number) => string;
   participantAvatarUrl: (participantIndex: number) => string | null;
   participantIsGuest: (participantIndex: number) => boolean;
 }
@@ -15,6 +16,7 @@ interface ExpensePayersProps {
 export function ExpensePayers({
   payers,
   participantName,
+  participantId,
   participantAvatarUrl,
   participantIsGuest,
 }: ExpensePayersProps) {
@@ -34,9 +36,10 @@ export function ExpensePayers({
               className="flex min-h-14 items-center gap-3 px-4 py-2"
             >
               {participantIsGuest(payer.participantIndex) ? (
-                <GuestAvatar size="sm" />
+                <GuestAvatar id={participantId(payer.participantIndex)} name={name} size="sm" />
               ) : (
                 <UserAvatar
+                  id={participantId(payer.participantIndex)}
                   name={name}
                   avatarUrl={participantAvatarUrl(payer.participantIndex)}
                   size="sm"

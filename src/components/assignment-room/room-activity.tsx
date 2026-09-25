@@ -2,7 +2,7 @@
 
 import { Activity } from "lucide-react";
 import { useEffect, useState } from "react";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { AvatarStack } from "@/components/shared/avatar-stack";
 import { claimQuantityLabel, formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import type {
@@ -146,16 +146,8 @@ export function RoomActivity({
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
       {joinParticipants.length > 0 ? (
-        <span className="flex shrink-0" aria-hidden="true">
-          {joinParticipants.slice(0, 3).map((participant, index) => (
-            <span key={participant.id} className={index > 0 ? "-ml-1" : undefined}>
-              <UserAvatar
-                name={participant.displayName}
-                avatarUrl={participant.avatarUrl}
-                size="xs"
-              />
-            </span>
-          ))}
+        <span aria-hidden="true">
+          <AvatarStack people={joinParticipants.map((person) => ({ ...person, name: person.displayName }))} surface="muted" />
         </span>
       ) : (
         <Activity className="size-4 shrink-0 text-primary" aria-hidden="true" />

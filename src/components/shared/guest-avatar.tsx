@@ -1,33 +1,18 @@
-import { User } from "lucide-react";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { cn } from "@/lib/utils";
 
-const AVATAR_SIZES = { xs: "size-6", sm: "size-8", md: "size-10" };
-
 export function GuestAvatar({
+  id,
+  name,
   size = "md",
   className,
+  standalone,
 }: {
-  size?: keyof typeof AVATAR_SIZES;
+  id: string;
+  name: string;
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
+  standalone?: boolean;
 }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40 text-muted-foreground",
-        AVATAR_SIZES[size],
-        className,
-      )}
-    >
-      <User className={size === "md" ? "size-4" : "size-3.5"} />
-    </div>
-  );
-}
-
-export function GuestBadge() {
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-      Convidado
-    </span>
-  );
+  return <UserAvatar id={id} name={name} size={size} standalone={standalone} className={cn("border border-dashed border-current", className)} />;
 }

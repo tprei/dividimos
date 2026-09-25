@@ -9,6 +9,7 @@ import { PersonLabel } from "@/components/shared/person-label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { displayNames } from "@/lib/people";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import {
   PendingOperationNotice,
@@ -81,6 +82,10 @@ export function QuickChargeSheet({
   errorMessage,
   anchor,
 }: QuickChargeSheetProps) {
+  const labels = displayNames([
+    { id: currentUserHandle, name: currentUserHandle },
+    { id: counterpartyHandle, name: counterpartyName, handle: counterpartyHandle },
+  ], { style: "short", viewerId: currentUserHandle });
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);
@@ -217,7 +222,7 @@ export function QuickChargeSheet({
             }`}
             data-testid="quick-charge-payer-self"
           >
-            <PersonLabel name="Eu" handle={currentUserHandle} nameClassName="text-sm" />
+            <PersonLabel name={labels.get(currentUserHandle) ?? "Você"} nameClassName="text-sm" />
           </button>
           <button
             type="button"
@@ -229,7 +234,7 @@ export function QuickChargeSheet({
             }`}
             data-testid="quick-charge-payer-other"
           >
-            <PersonLabel name={counterpartyName} handle={counterpartyHandle} nameClassName="text-sm" />
+            <PersonLabel name={counterpartyName} overrideName={labels.get(counterpartyHandle)} nameClassName="text-sm" />
           </button>
         </div>
       </div>

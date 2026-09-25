@@ -163,6 +163,16 @@
   --sidebar-accent-foreground: oklch(0.25 0.08 195);
   --sidebar-border: oklch(0.91 0.005 250);
   --sidebar-ring: oklch(0.78 0.16 75);
+
+  --avatar-tone-0: oklch(0.88 0.06 75);
+  --avatar-tone-1: oklch(0.88 0.06 35);
+  --avatar-tone-2: oklch(0.88 0.06 350);
+  --avatar-tone-3: oklch(0.88 0.06 305);
+  --avatar-tone-4: oklch(0.88 0.06 265);
+  --avatar-tone-5: oklch(0.88 0.06 225);
+  --avatar-tone-6: oklch(0.88 0.06 185);
+  --avatar-tone-7: oklch(0.88 0.06 135);
+  --avatar-foreground: oklch(0.25 0.025 250);
 }
 
 .dark {
@@ -229,6 +239,16 @@
   --sidebar-accent-foreground: oklch(0.80 0.12 195);
   --sidebar-border: oklch(1 0 0 / 14%);
   --sidebar-ring: oklch(0.80 0.16 75);
+
+  --avatar-tone-0: oklch(0.35 0.055 75);
+  --avatar-tone-1: oklch(0.35 0.055 35);
+  --avatar-tone-2: oklch(0.35 0.055 350);
+  --avatar-tone-3: oklch(0.35 0.055 305);
+  --avatar-tone-4: oklch(0.35 0.055 265);
+  --avatar-tone-5: oklch(0.35 0.055 225);
+  --avatar-tone-6: oklch(0.35 0.055 185);
+  --avatar-tone-7: oklch(0.35 0.055 135);
+  --avatar-foreground: oklch(0.96 0.008 80);
 }
 
 @keyframes shimmer {

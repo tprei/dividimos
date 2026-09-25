@@ -129,6 +129,11 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     [payloadParticipants, nameOf],
   );
 
+  const participantId = useCallback((index: number): string => {
+    const participant = detail?.participants.find((person) => person.participantIndex === index);
+    return participant?.user?.id ?? participant?.guest?.id ?? `${expenseId}:${index}`;
+  }, [detail, expenseId]);
+
   const participantAvatarUrl = useCallback(
     (participantIndex: number): string | null => {
       const ref = payloadParticipants?.[participantIndex];
@@ -238,6 +243,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         items={current.payload.items}
         itemAssignments={current.payload.itemAssignments}
         participantName={participantName}
+        participantId={participantId}
         payers={payers}
         participantAvatarUrl={participantAvatarUrl}
         participantIsGuest={participantIsGuest}
@@ -343,6 +349,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         <ExpensePayers
           payers={payers}
           participantName={participantName}
+          participantId={participantId}
           participantAvatarUrl={participantAvatarUrl}
           participantIsGuest={participantIsGuest}
         />
@@ -360,7 +367,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         </section>
       ) : (
         <>
-          {participantList}
+          <div className="px-4">{participantList}</div>
           {items && <div className="px-4">{items}</div>}
           <div className="px-4">{history}</div>
         </>

@@ -4,6 +4,7 @@ import { Ban, Lock, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -58,8 +59,9 @@ export function RoomHostMenu({ disabled = false, onCancel }: { disabled?: boolea
   );
 }
 
-export function RoomHostPerson({ participant, money, disabled, removable, onRemove }: {
+export function RoomHostPerson({ participant, label, money, disabled, removable, onRemove }: {
   participant: AssignmentRoomParticipant;
+  label: string;
   money?: RoomParticipantMoney;
   disabled: boolean;
   removable: boolean;
@@ -69,9 +71,11 @@ export function RoomHostPerson({ participant, money, disabled, removable, onRemo
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger aria-label={participant.displayName} className="flex w-[72px] flex-col items-center gap-1 rounded-xl border bg-card px-1 py-2 text-center hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary">
-        <UserAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} size="md" className={participant.isGuest ? "border-2 border-dashed border-muted-foreground/40 bg-transparent" : undefined} />
-        <span className="w-full truncate text-xs font-medium">{participant.ordinal === 0 ? "Você" : participant.displayName.split(" ")[0]}</span>
-        <span className="text-[11px] text-muted-foreground tabular-nums">{money ? money.lineCount > 0 ? <Money cents={money.itemsCents} /> : "nada ainda" : "—"}</span>
+        {participant.isGuest
+          ? <GuestAvatar id={participant.id} name={participant.displayName} size="md" />
+          : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="md" />}
+        <span title={participant.displayName} className="w-full truncate text-xs font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground tabular-nums">{money ? money.lineCount > 0 ? <Money cents={money.itemsCents} /> : "nada ainda" : "—"}</span>
       </PopoverTrigger>
       <PopoverContent>
         <PopoverTitle>{participant.displayName}</PopoverTitle>

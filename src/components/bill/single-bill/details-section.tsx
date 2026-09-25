@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
+import { displayNames } from "@/lib/people";
 import type { Guest } from "@/stores/bill-store";
 import type { User } from "@/types";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
@@ -86,6 +87,7 @@ export function SingleBillDetails({
     ...participants.map((participant) => ({
       id: participant.id,
       name: participant.name,
+      handle: participant.handle,
       avatarUrl: participant.avatarUrl ?? null,
     })),
     ...guests.map((guest) => ({
@@ -95,8 +97,9 @@ export function SingleBillDetails({
       isGuest: true,
     })),
   ];
+  const labels = displayNames(people, { style: "short", viewerId: me.id });
   const participantSummary = people
-    .map((person) => (person.id === me.id ? "Você" : person.name.split(" ")[0]))
+    .map((person) => labels.get(person.id))
     .join(", ");
   const selectedGroup = groups.find((snapshot) => snapshot.group.id === groupSelection);
   const inviteeNames = selectedGroup
@@ -106,7 +109,7 @@ export function SingleBillDetails({
             participant.id !== me.id &&
             !selectedGroup.members.some((member) => member.userId === participant.id),
         )
-        .map((participant) => participant.name.split(" ")[0])
+        .map((participant) => labels.get(participant.id))
     : [];
 
   return (
@@ -119,7 +122,7 @@ export function SingleBillDetails({
               valueCents={totalCents}
               onChangeCents={onTotalChange}
               aria-label="Valor total"
-              className="h-14 min-w-0 flex-1 text-4xl font-semibold font-mono tabular-nums"
+              className="h-14 min-w-0 flex-1 text-4xl font-semibold tabular-nums"
             />
           </label>
           <AmountQuickAdd valueCents={totalCents} onChangeCents={onTotalChange} />

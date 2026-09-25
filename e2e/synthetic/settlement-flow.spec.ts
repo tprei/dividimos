@@ -57,7 +57,7 @@ test.describe("Settlement Flow", () => {
     await carolPage.goto(`/app/groups/${group.id}`);
     await carolPage.waitForLoadState("networkidle");
 
-    await expect(carolPage.getByText("Você paga")).toBeVisible({
+    await expect(carolPage.getByRole("button", { name: /Você paga/ })).toBeVisible({
       timeout: 10000,
     });
 

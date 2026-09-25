@@ -47,7 +47,7 @@ export function ConversationInviteScreen({
     <div className="flex h-full flex-col">
       <ScreenHeader back title={counterparty.name} subtitle={`@${counterparty.handle}`} />
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
-        <UserAvatar name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" isBot={counterparty.isBot} />
+        <UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" isBot={counterparty.isBot} />
         <div className="space-y-1">
           <p className="font-semibold">{counterparty.name}</p>
           <p className="text-sm text-muted-foreground">

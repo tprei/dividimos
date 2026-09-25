@@ -16,6 +16,7 @@ export interface ReviewIssue {
 }
 
 export interface ReviewSectionProps {
+  viewerId: string;
   expense: Expense | null;
   items: ExpenseItem[];
   splits: ExpenseSplit[];
@@ -28,6 +29,7 @@ export interface ReviewSectionProps {
 }
 
 export function ReviewSection({
+  viewerId,
   expense,
   items,
   splits,
@@ -69,6 +71,7 @@ export function ReviewSection({
 
       <BillSummary
         expense={expense}
+        viewerId={viewerId}
         items={items}
         itemSplits={splits}
         participants={participants}

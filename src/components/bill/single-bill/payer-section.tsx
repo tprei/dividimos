@@ -39,7 +39,7 @@ export function SingleBillPayerSection({
                   : "border-border bg-card text-foreground"
               }`}
             >
-              <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="xs" />
+              <UserAvatar id={participant.id} name={participant.name} avatarUrl={participant.avatarUrl} size="xs" />
               <PersonLabel name={participant.name} handle={participant.handle} nameClassName="text-sm" />
             </button>
           );

@@ -49,6 +49,7 @@ export function ExpenseHistory({
             >
               <div className="flex items-center gap-3">
                 <UserAvatar
+                  id={v.authorId}
                   name={author}
                   avatarUrl={avatarUrlOf(v.authorId)}
                   size="sm"
