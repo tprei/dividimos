@@ -15,12 +15,11 @@ import {
   matchesFilter,
   matchesQuery,
   type BalanceFilter,
-  type ConversationRowData,
-  conversationRow,
 } from "@/lib/conversations";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
+import { selectConversationRows } from "@/stores/app-selectors";
 
 const FILTERS: Array<{ key: BalanceFilter; label: string }> = [
   { key: "all", label: "Todas" },
@@ -31,24 +30,11 @@ const FILTERS: Array<{ key: BalanceFilter; label: string }> = [
 
 export function ConversationsListContent() {
   const me = useMe();
-  const groupOrder = useAppStore((state) => state.groupOrder);
-  const groups = useAppStore((state) => state.groups);
+  const rows = useAppStore((state) => selectConversationRows(state, me?.id ?? null));
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAnchor, setShareAnchor] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BalanceFilter>("all");
-
-  const rows = useMemo(() => {
-    if (!me) return [];
-    const built: ConversationRowData[] = [];
-    for (const groupId of groupOrder) {
-      const snapshot = groups[groupId];
-      if (!snapshot) continue;
-      const row = conversationRow(snapshot, me.id);
-      if (row) built.push(row);
-    }
-    return built;
-  }, [groupOrder, groups, me]);
 
   const visibleRows = useMemo(
     () => rows.filter((row) => matchesQuery(query, row) && matchesFilter(filter, row.netCents)),
@@ -58,12 +44,12 @@ export function ConversationsListContent() {
   const showFilteredEmpty = rows.length > 0 && visibleRows.length === 0 && hasFilters;
 
   useEffect(() => {
-    if (!me || groupOrder.length === 0) return undefined;
-    const unsubscribes = groupOrder.map((groupId) => subscribeChat(groupId));
+    if (!me || rows.length === 0) return undefined;
+    const unsubscribes = rows.map((row) => subscribeChat(row.groupId));
     return () => {
       for (const unsubscribe of unsubscribes) unsubscribe();
     };
-  }, [groupOrder, me]);
+  }, [me, rows]);
 
   return (
     <div className="mx-auto max-w-lg pb-6">

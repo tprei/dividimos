@@ -77,11 +77,14 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
   useEffect(() => {
     if (!hydrated || snapshot || loadError || departedRef.current) return;
-    if (read.status === "loading" || read.status === "error") return;
+    // Only an unattempted read may start one. A completed read without a
+    // snapshot means the group is gone; refetching would loop forever.
+    if (read.status !== "idle") return;
     load();
   }, [hydrated, snapshot, loadError, read.status, load]);
 
-  if (!hydrated || (!snapshot && !loadError && read.status !== "error")) {
+  const readPending = read.status === "idle" || read.status === "loading";
+  if (!hydrated || (!snapshot && !loadError && readPending)) {
     return (
       <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
         {[1, 2, 3].map((i) => (

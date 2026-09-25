@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import Link from "next/link";
 import { Receipt, Search, Users, X } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -22,15 +22,21 @@ export function SearchContent() {
   const groups = useAppStore((state) => state.groups);
   const groupOrder = useAppStore((state) => state.groupOrder);
   const expenses = useAppStore((state) => state.expenses);
-  const me = useAppStore((state) => state.me);
+  const meId = useAppStore((state) => state.me?.id ?? null);
 
-  const trimmed = query.trim();
+  // Matching runs on the deferred query so every keystroke updates the input
+  // immediately and the result lists follow a frame behind.
+  const deferredQuery = useDeferredValue(query);
+  const trimmed = deferredQuery.trim();
   const q = trimmed.toLowerCase();
 
-  const handleQuery = q.startsWith("@") ? q.slice(1) : q;
+  const typedTrimmed = query.trim();
+  const typedQ = typedTrimmed.toLowerCase();
+  const handleQuery = typedQ.startsWith("@") ? typedQ.slice(1) : typedQ;
   const isHandleQuery =
-    (q.startsWith("@") && handleQuery.length >= 3) || /^[a-z0-9_]{3,30}$/.test(q);
-  const current = isHandleQuery && remoteResult?.query === q ? remoteResult : null;
+    (typedQ.startsWith("@") && handleQuery.length >= 3) ||
+    /^[a-z0-9_]{3,30}$/.test(typedQ);
+  const current = isHandleQuery && remoteResult?.query === typedQ ? remoteResult : null;
   const remoteUser = current && !current.failed ? current.user : null;
   const remoteFailed = current?.failed ?? false;
 
@@ -40,16 +46,16 @@ export function SearchContent() {
     const timer = setTimeout(async () => {
       try {
         const user = await lookupUserByHandle(handleQuery);
-        if (!cancelled) setRemoteResult({ query: q, user, failed: false });
+        if (!cancelled) setRemoteResult({ query: typedQ, user, failed: false });
       } catch {
-        if (!cancelled) setRemoteResult({ query: q, user: null, failed: true });
+        if (!cancelled) setRemoteResult({ query: typedQ, user: null, failed: true });
       }
     }, 500);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [q, handleQuery, isHandleQuery]);
+  }, [typedQ, handleQuery, isHandleQuery]);
 
   const matchedGroups = useMemo(() => {
     if (!q) return [];
@@ -74,7 +80,7 @@ export function SearchContent() {
     const list: UserProfile[] = [];
     for (const snapshot of Object.values(groups)) {
       for (const m of snapshot.members) {
-        if (m.userId === me?.id || seen.has(m.userId)) continue;
+        if (m.userId === meId || seen.has(m.userId)) continue;
         seen.add(m.userId);
         const nameMatch = m.user.name.toLowerCase().includes(q);
         const handleMatch = m.user.handle.toLowerCase().includes(q);
@@ -84,20 +90,16 @@ export function SearchContent() {
       }
     }
     return list;
-  }, [groups, me?.id, q]);
+  }, [groups, meId, q]);
 
   const matchedPeople = useMemo(() => {
     if (!q) return [];
     const result = [...localMembers];
-    if (
-      remoteUser &&
-      remoteUser.id !== me?.id &&
-      !result.some((u) => u.id === remoteUser.id)
-    ) {
+    if (remoteUser && remoteUser.id !== meId && !result.some((u) => u.id === remoteUser.id)) {
       result.push(remoteUser);
     }
     return result;
-  }, [localMembers, remoteUser, me?.id, q]);
+  }, [localMembers, remoteUser, meId, q]);
 
   const matchedExpenses = useMemo(() => {
     if (!q) return [];

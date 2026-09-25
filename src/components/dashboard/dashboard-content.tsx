@@ -3,12 +3,12 @@
 import { ChevronRight, Plus, QrCode, Receipt, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
-import { selectHomeMode, selectRecentBills } from "@/components/dashboard/home-selectors";
+import { selectHomeMode } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
@@ -29,6 +29,7 @@ import { recordSettlement } from "@/lib/sync/mutations";
 import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
+import { selectHomeRecentBills } from "@/stores/app-selectors";
 
 const PixQrModal = dynamic(
   () =>
@@ -48,16 +49,10 @@ const QuickChargeModal = dynamic(
 
 export function DashboardContent() {
   const me = useMe();
-  const expenses = useAppStore((state) => state.expenses);
-  const groups = useAppStore((state) => state.groups);
-  const myExpenses = useAppStore((state) => state.myExpenses);
   const hydrated = useAppStore((state) => state.hydrated);
   const rows = useAppStore(selectDebtRows);
   const homeMode = useAppStore(selectHomeMode);
-  const recentBills = useMemo(
-    () => selectRecentBills({ expenses, groups, me, myExpenses }, 3),
-    [expenses, groups, me, myExpenses],
-  );
+  const recentBills = useAppStore(selectHomeRecentBills);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
   /**

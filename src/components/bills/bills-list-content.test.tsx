@@ -194,6 +194,24 @@ describe("BillsListContent", () => {
     expect(container.querySelector("a")).toBeNull();
   });
 
+  it("renders a cached empty history as the empty state while the read restarts", () => {
+    seedStore({}, { ids: [], complete: true, total: 0 });
+    useAppStore.setState({ reads: {} });
+    const { container } = render(<BillsListContent />);
+
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(screen.getByText("Nenhuma conta por aqui")).toBeInTheDocument();
+  });
+
+  it("keeps cached history on screen while the read is loading", () => {
+    seedStore(seededExpenses);
+    useAppStore.setState({ reads: { myExpenses: { status: "loading" } } });
+    const { container } = render(<BillsListContent />);
+
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(screen.getByText("Aluguel")).toBeInTheDocument();
+  });
+
   it("renders history in the server's order rather than re-sorting it", () => {
     // Deliberately not the occurredOn order: the advertised total describes
     // this sequence, so the screen must not reorder it.

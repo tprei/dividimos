@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { useShallow } from "zustand/react/shallow";
 import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
 import { ChargeHistoryList } from "@/components/dashboard/charge-history-list";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -30,30 +29,14 @@ import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { deleteExpense } from "@/lib/sync/mutations";
 import { useMe } from "@/hooks/use-me";
 import { IDLE_READ, MY_EXPENSES_READ_KEY, useAppStore } from "@/stores/app-store";
-import { formatOccurredOn, groupNameOf } from "@/components/dashboard/home-selectors";
-
-interface BillRow {
-  id: string;
-  title: string;
-  merchantName: string | null;
-  occurredOn: string;
-  createdAt: string;
-  totalCents: number;
-  deleted: boolean;
-  groupName: string;
-}
+import { formatOccurredOn, selectMyExpenseRows } from "@/stores/app-selectors";
 
 export function BillsListContent() {
   const router = useRouter();
   const me = useMe();
-  const { hydrated, expenses, groups, myExpenses } = useAppStore(
-    useShallow((s) => ({
-      hydrated: s.hydrated,
-      expenses: s.expenses,
-      groups: s.groups,
-      myExpenses: s.myExpenses,
-    })),
-  );
+  const hydrated = useAppStore((s) => s.hydrated);
+  const bills = useAppStore(selectMyExpenseRows);
+  const myExpenses = useAppStore((s) => s.myExpenses);
   const read = useAppStore((s) => s.reads[MY_EXPENSES_READ_KEY] ?? IDLE_READ);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"contas" | "cobrancas">("contas");
@@ -84,42 +67,26 @@ export function BillsListContent() {
     }
   }, [loadingMore]);
 
-  // The server owns the order, so the list follows its ids rather than
-  // re-sorting a page by occurredOn and contradicting the advertised total.
-  const bills = useMemo<BillRow[]>(() => {
-    if (!me) return [];
-    const rows: BillRow[] = [];
-    for (const id of myExpenses.ids) {
-      const e = expenses[id];
-      if (e === undefined) continue;
-      rows.push({
-        id: e.id,
-        title: e.title,
-        merchantName: e.merchantName,
-        occurredOn: e.occurredOn,
-        createdAt: e.createdAt,
-        totalCents: e.totalCents,
-        deleted: e.status === "deleted",
-        groupName: groupNameOf(groups[e.groupId], me.id),
-      });
-    }
-    return rows;
-  }, [myExpenses.ids, expenses, groups, me]);
-
   const query = search.trim().toLowerCase();
-  const filtered = query
-    ? bills.filter(
-        (bill) =>
-          bill.title.toLowerCase().includes(query) ||
-          (bill.merchantName?.toLowerCase().includes(query) ?? false),
-      )
-    : bills;
+  const filtered = useMemo(
+    () =>
+      query
+        ? bills.filter(
+            (bill) =>
+              bill.title.toLowerCase().includes(query) ||
+              (bill.merchantName?.toLowerCase().includes(query) ?? false),
+          )
+        : bills,
+    [bills, query],
+  );
 
-  if (
-    !hydrated ||
-    !me ||
-    (bills.length === 0 && (read.status === "idle" || read.status === "loading"))
-  ) {
+  // Cursor/total/complete record that a page was already read, so a cached
+  // empty history renders as the empty state instead of flashing skeletons.
+  const historyNeverLoaded =
+    myExpenses.cursor === null && !myExpenses.complete && myExpenses.total === null;
+  const readPending = read.status === "idle" || read.status === "loading";
+
+  if (!hydrated || !me || (bills.length === 0 && readPending && historyNeverLoaded)) {
     return (
       <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
         {[1, 2, 3].map((i) => (

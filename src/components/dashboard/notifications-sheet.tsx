@@ -81,7 +81,6 @@ export function NotificationsSheet({
   const { accept, decline, pendingGroupId } = useInvitationActions();
   const events = useAppStore(useShallow((s) => s.activity.items));
   const read = useAppStore(useShallow((s) => s.activity.read));
-  const groups = useAppStore(useShallow((s) => s.groups));
   const readIds = useAppStore(useShallow((s) => s.activity.readIds));
   const dismissedIds = useAppStore(useShallow((s) => s.activity.dismissedIds));
   const viewedAt = useAppStore(useShallow((s) => s.activityViewedAt[meId]));
@@ -113,6 +112,24 @@ export function NotificationsSheet({
     [events, dismissedIds, invitations.length],
   );
   const previewInvitations = invitations.slice(0, PREVIEW_LIMIT);
+
+  // Only the snapshots the preview names: a refresh of any other group must
+  // not re-render the sheet. useShallow keeps the record stable while every
+  // referenced snapshot is unchanged.
+  const previewGroupIds = useMemo(
+    () => Array.from(new Set(previewEvents.map((event) => event.groupId))),
+    [previewEvents],
+  );
+  const groups = useAppStore(
+    useShallow((s) => {
+      const referenced: Record<string, GroupSnapshot> = {};
+      for (const groupId of previewGroupIds) {
+        const snapshot = s.groups[groupId];
+        if (snapshot !== undefined) referenced[groupId] = snapshot;
+      }
+      return referenced;
+    }),
+  );
 
   const empty =
     previewInvitations.length === 0 && previewEvents.length === 0 && read.status === "ready";
