@@ -6,6 +6,8 @@ import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "./room-host-cont
 import { RoomJoin } from "./room-join";
 import { RoomShare } from "./room-share";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
+
 const { toCanvas } = vi.hoisted(() => ({
   toCanvas: vi.fn(() => Promise.resolve()),
 }));

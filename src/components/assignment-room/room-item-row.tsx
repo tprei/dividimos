@@ -6,6 +6,8 @@ import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { AvatarStack } from "@/components/shared/avatar-stack";
+import { Chip } from "@/components/ui/chip";
+import { springs } from "@/lib/animations";
 import { claimQuantityLabel, formatRoomTicks } from "@/lib/assignment-room-quantity";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import type { RoomItemMoney } from "@/lib/assignment-room-projection";
@@ -33,6 +35,7 @@ interface RoomItemRowProps {
   onUndo?: () => void;
   claimMoney?: RoomItemMoney["claims"];
   selfParticipantId?: string;
+  labels?: ReadonlyMap<string, string>;
   onUndoParticipant?: (participantId: string) => void;
 }
 
@@ -52,6 +55,7 @@ export function RoomItemRow({
   onUndo,
   claimMoney,
   selfParticipantId,
+  labels,
   onUndoParticipant,
 }: RoomItemRowProps) {
   const reducedMotion = useReducedMotion();
@@ -68,7 +72,7 @@ export function RoomItemRow({
         data-item-id={item.id}
         initial={false}
         exit={reducedMotion ? undefined : { height: 0, opacity: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        transition={springs.snappy}
         className="overflow-hidden"
       >
         <div className="flex min-h-14 items-center">
@@ -104,7 +108,7 @@ export function RoomItemRow({
                     <AvatarStack people={visibleOwners.map((owner) => ({ ...owner, name: owner.displayName }))} />
                   </span>
                 )}
-                {ownTicks > 0 && <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-primary-foreground">Você: {ownLabel}</span>}
+                {ownTicks > 0 && <Chip className="border-transparent bg-primary text-primary-foreground">Você: {ownLabel}</Chip>}
                 {money && <Money cents={money.lineCents} className="text-sm font-medium tabular-nums" />}
               </span>
             )}
@@ -142,7 +146,7 @@ export function RoomItemRow({
               <AvatarStack people={visibleOwners.map((owner) => ({ ...owner, name: owner.displayName }))} />
             </span>
           )}
-          {availableTicks > 0 && <span className="rounded-full bg-primary/25 px-2 py-0.5 text-xs font-semibold text-primary-text">{owners.length === 0 ? "Sem dono" : multiUnit ? `${formatRoomTicks(availableTicks)} sobrando` : "incompleto"}</span>}
+          {availableTicks > 0 && <Chip tone="neutral">{owners.length === 0 ? "Sem dono" : multiUnit ? `${formatRoomTicks(availableTicks)} sobrando` : "incompleto"}</Chip>}
         </span>
         <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-muted-foreground motion-safe:transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
@@ -162,7 +166,7 @@ export function RoomItemRow({
                       ? <GuestAvatar id={owner.id} name={owner.displayName} size="sm" />
                       : <UserAvatar id={owner.id} name={owner.displayName} avatarUrl={owner.avatarUrl} size="sm" />}
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2 text-xs"><span className="truncate font-medium">{owner.id === selfParticipantId ? "Você" : owner.displayName}</span><span className="shrink-0 text-muted-foreground">{claimQuantityLabel(item.quantityMilliunits, claim.ticks)}{multiUnit ? ` de ${original}` : ""}</span></span>
+                      <span className="flex items-baseline justify-between gap-2 text-xs"><span title={owner.displayName} className="truncate font-semibold">{labels?.get(owner.id) ?? (owner.id === selfParticipantId ? "Você" : owner.displayName)}</span><span className="shrink-0 text-muted-foreground">{claimQuantityLabel(item.quantityMilliunits, claim.ticks)}{multiUnit ? ` de ${original}` : ""}</span></span>
                       <span className="mt-1 flex items-center gap-2"><span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-primary" style={{ width }} /></span><span className="text-xs text-muted-foreground tabular-nums">{percent}</span></span>
                     </span>
                     {amount && <Money cents={amount.amountCents} className="shrink-0 text-xs font-medium tabular-nums" />}

@@ -89,6 +89,7 @@ function Harness({
         open={open}
         onOpenChange={setOpen}
         getReturnFocus={() => null}
+        selfParticipantId={me.id}
         item={item}
         claims={claims}
         availableTicks={capacity - claimed}
@@ -312,5 +313,22 @@ describe("RoomItemClaim", () => {
     await user.click(screen.getByRole("radio", { name: /Bia/ }));
 
     expect(onTargetChange).toHaveBeenCalledWith(other.id);
+  });
+
+  it("keeps an unconfirmed choice when dismissal is declined", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const onSubmit = vi.fn(async () => true);
+    render(<Harness submit={onSubmit} />);
+    await user.click(screen.getByRole("button", { name: "Metade" }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Metade" })).toHaveAttribute("aria-pressed", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onSubmit).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

@@ -6,6 +6,8 @@ import type { AssignmentBillBreakdown, AssignmentRoomView } from "@/types/assign
 import { RoomBreakdown } from "./room-breakdown";
 import { RoomReview, type RoomPayerDraft } from "./room-review";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
+
 const ROOM_ID = "00000000-0000-4000-8000-000000000001";
 
 function hostView(): Extract<AssignmentRoomView, { role: "host" }> {
@@ -214,7 +216,7 @@ describe("RoomBreakdown", () => {
   it("opens the viewer's item amounts by default and allows collapsing them", async () => {
     const user = userEvent.setup();
     render(<RoomBreakdown bill={currentBill()} selfParticipantIndex={1} />);
-    const self = screen.getByRole("button", { name: /Bia/ });
+    const self = screen.getByRole("button", { name: /Você/ });
     expect(self).toHaveAttribute("aria-expanded", "true");
     expect(within(self.closest("li") as HTMLElement).getByText("Prato feito").parentElement).toHaveTextContent(/R\$\s*30,00/);
     expect(screen.getByRole("region", { name: "Sua parte" })).toHaveTextContent(/R\$\s*33,01/);
