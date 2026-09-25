@@ -89,14 +89,17 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     const bruno = troupe.bots[1];
     await page.goto(`/app/groups/${troupe.groupId}/chat`);
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
-    // The sheet picks a counterparty through a select, and it opens on
-    // whichever member the group listed first, so Bruno has to be chosen.
-    // The option label is the member's display name; a handle only appears
-    // when two members share a name, which the troupe never does.
-    await page.getByRole("combobox", { name: "Com quem?" }).click();
-    await page.getByRole("option", { name: bruno.name, exact: true }).click();
-    await expect(page.getByText(`Você pagou para ${bruno.name}`)).toBeVisible();
-    await page.getByTestId("group-payment-payer-other").click();
+    // The dialog picks a counterparty from a row of avatar radios and
+    // preselects whoever has the largest open balance, so Bruno has to be
+    // chosen. The radio name is the member's display name; a handle only
+    // appears when two members share a name, which the troupe never does.
+    await page
+      .getByRole("radiogroup", { name: "Com quem?" })
+      .getByRole("radio", { name: bruno.name, exact: true })
+      .click();
+    const brunoPaid = page.getByTestId("group-payment-payer-other");
+    await brunoPaid.click();
+    await expect(brunoPaid).toHaveAttribute("aria-checked", "true");
 
     // The sheet caps the amount at the debt between the two and offers to
     // clear it. With no debt it offers to record something anyway, and then
