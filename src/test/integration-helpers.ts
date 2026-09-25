@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Client } from "pg";
 import type { Database } from "@/types/database";
+import type { ValidationResult } from "@/lib/expense-money";
+import type { WireIssue } from "@/types/ledger";
 import {
   adminClient,
   registerTestUser,
@@ -159,6 +161,35 @@ async function callRpc<T>(
     throw new Error(error.message);
   }
   return data as T;
+}
+
+export function decodeRpcData<T>(
+  fn: string,
+  data: unknown,
+  decode: (raw: unknown) => ValidationResult<T, WireIssue>,
+): T {
+  const result = decode(data);
+  if (!result.ok) {
+    throw new Error(
+      `${fn} returned invalid wire data at ${result.issue.path.join(".")}`,
+    );
+  }
+  return result.value;
+}
+
+type PublicFunctions = Database["public"]["Functions"];
+
+export async function rpcDecoded<F extends keyof PublicFunctions, T>(
+  client: SupabaseClient<Database>,
+  fn: F,
+  args: PublicFunctions[F]["Args"],
+  decode: (raw: unknown) => ValidationResult<T, WireIssue>,
+): Promise<T> {
+  const { data, error } = await client.rpc(fn, args);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return decodeRpcData(fn, data, decode);
 }
 
 export async function createGroup(

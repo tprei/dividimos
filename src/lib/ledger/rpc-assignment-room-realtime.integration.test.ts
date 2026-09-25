@@ -6,10 +6,16 @@ import {
 } from "@supabase/supabase-js";
 import { buildAssignmentExpense } from "@/lib/assignment-room-money";
 import type { AssignmentRoomView } from "@/types/assignment-room";
-import type { Database, Json } from "@/types/database";
+import {
+  decodeAssignmentRoomView,
+  decodeFinalizeAssignmentRoomResult,
+} from "@/lib/ledger/decode-assignment-room";
+import { decodeMutationAck } from "@/lib/ledger/decode";
+import type { Database } from "@/types/database";
 import {
   authenticateAs,
   createTestUsers,
+  rpcDecoded,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -19,30 +25,7 @@ import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
 assertLedgerInvariantsAfterEach();
 
 type Client = SupabaseClient<Database>;
-interface RoomView {
-  role: "host" | "participant";
-  room: {
-    id: string;
-    revision: number;
-    status: string;
-    selfParticipantId: string;
-    topic: string;
-    items: Array<{ id: string; revision: number }>;
-    participants: Array<{
-      id: string;
-      ordinal: number;
-      displayName: string;
-      removed: boolean;
-    }>;
-    currentBill: Json | null;
-  };
-  groupTarget?: Json;
-  participantRefs?: Json[];
-}
-interface FinalizeResult {
-  room: RoomView;
-  ack: { expenseId: string; groupId: string; versionNo: number };
-}
+type RoomView = AssignmentRoomView;
 
 const HEADER = {
   title: "Conta em tempo real",
@@ -63,14 +46,19 @@ function capability(prefix: "armj1" | "armm1", fill: string): string {
   return `${prefix}_${fill.repeat(43)}`;
 }
 
-async function rpc<T>(
+async function rpcRoom(
   client: Client,
   name: keyof Database["public"]["Functions"],
-  args: Record<string, unknown>
-): Promise<T> {
-  const { data, error } = await client.rpc(name, args as never);
-  if (error) throw new Error(error.message);
-  return data as T;
+  args: Record<string, unknown>,
+): Promise<RoomView> {
+  return rpcDecoded(client, name, args, decodeAssignmentRoomView);
+}
+
+function roomTopic(view: RoomView): string {
+  if (view.room.topic === null) {
+    throw new Error("expected the room view to carry a realtime topic");
+  }
+  return view.room.topic;
 }
 
 function joinOutcome(
@@ -202,10 +190,7 @@ describe.skipIf(!isIntegrationTestReady)(
     async function roomWithGuest(fill: string) {
       const roomId = crypto.randomUUID();
       const joinToken = capability("armj1", fill);
-      const created = await rpc<RoomView>(
-        hostClient,
-        "create_assignment_room",
-        {
+      const created = await rpcRoom(hostClient, "create_assignment_room", {
           p_room_id: roomId,
           p_group_target: { kind: "new", name: "Conta compartilhada" },
           p_header: HEADER,
@@ -221,22 +206,22 @@ describe.skipIf(!isIntegrationTestReady)(
         }
       );
       const memberToken = capability("armm1", fill.toLowerCase());
-      const guest = await rpc<RoomView>(anonClient, "join_assignment_room", {
+      const guest = await rpcRoom(anonClient, "join_assignment_room", {
         p_room_id: roomId,
         p_join_token: joinToken,
         p_member_token: memberToken,
         p_display_name: "Convidada",
       });
-      return { roomId, joinToken, memberToken, created, guest };
+      return { roomId, joinToken, memberToken, created, guest, topic: roomTopic(guest) };
     }
 
     it("delivers revision-only invalidations to an anonymous capability holder", async () => {
       const setup = await roomWithGuest("R");
-      expect(setup.guest.room.topic).toMatch(
+      expect(setup.topic).toMatch(
         new RegExp(`^assignment:${setup.roomId}:[A-Za-z0-9_-]{43}$`)
       );
       const channel = await joinSubscribed(() =>
-        anonClient.channel(setup.guest.room.topic, {
+        anonClient.channel(setup.topic, {
           config: { private: true },
         })
       );
@@ -249,10 +234,7 @@ describe.skipIf(!isIntegrationTestReady)(
       for (let attempt = 1; ; attempt += 1) {
         const message = nextBroadcast(channel, "assignment", 4_000);
         const startedAt = performance.now();
-        const updated = await rpc<RoomView>(
-          hostClient,
-          "set_assignment_room_claim",
-          {
+        const updated = await rpcRoom(hostClient, "set_assignment_room_claim", {
             p_room_id: setup.roomId,
             p_member_token: null,
             p_item_id: item.id,
@@ -287,7 +269,7 @@ describe.skipIf(!isIntegrationTestReady)(
 
     it("denies guessed topics, client sends, malformed predicates, and public delivery", async () => {
       const setup = await roomWithGuest("S");
-      const wrongTopic = `${setup.guest.room.topic.slice(0, -1)}X`;
+      const wrongTopic = `${setup.topic.slice(0, -1)}X`;
       const unauthorized = anonClient.channel(wrongTopic, {
         config: { private: true },
       });
@@ -295,7 +277,7 @@ describe.skipIf(!isIntegrationTestReady)(
       await unauthorized.unsubscribe();
 
       const allowed = await joinSubscribed(() =>
-        anonClient.channel(setup.guest.room.topic, {
+        anonClient.channel(setup.topic, {
           config: { private: true, broadcast: { ack: true } },
         })
       );
@@ -307,10 +289,10 @@ describe.skipIf(!isIntegrationTestReady)(
         })
       ).resolves.not.toBe("ok");
 
-      const publicChannel = anonClient.channel(setup.guest.room.topic);
+      const publicChannel = anonClient.channel(setup.topic);
       const publicAbsence = expectNoBroadcast(publicChannel, "assignment");
       await joinOutcome(publicChannel, 2_000);
-      await rpc<RoomView>(hostClient, "set_assignment_room_claim", {
+      await rpcRoom(hostClient, "set_assignment_room_claim", {
         p_room_id: setup.roomId,
         p_member_token: null,
         p_item_id: setup.created.room.items[0].id,
@@ -334,12 +316,12 @@ describe.skipIf(!isIntegrationTestReady)(
     it("rotates topics on removal and recovers a missed invalidation from a snapshot", async () => {
       const setup = await roomWithGuest("T");
       const oldChannel = await joinSubscribed(() =>
-        anonClient.channel(setup.guest.room.topic, {
+        anonClient.channel(setup.topic, {
           config: { private: true },
         })
       );
       const accessChanged = nextBroadcast(oldChannel, "access_changed");
-      const removed = await rpc<RoomView>(
+      const removed = await rpcRoom(
         hostClient,
         "remove_assignment_room_participant",
         {
@@ -351,10 +333,10 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       const rotationMessage = await accessChanged;
       expectRevisionPayload(rotationMessage.payload, removed.room.revision);
-      expect(removed.room.topic).not.toBe(setup.guest.room.topic);
+      expect(removed.room.topic).not.toBe(setup.topic);
 
       const oldTopicAbsence = expectNoBroadcast(oldChannel, "assignment");
-      await rpc<RoomView>(hostClient, "set_assignment_room_claim", {
+      await rpcRoom(hostClient, "set_assignment_room_claim", {
         p_room_id: setup.roomId,
         p_member_token: null,
         p_item_id: setup.created.room.items[0].id,
@@ -364,7 +346,7 @@ describe.skipIf(!isIntegrationTestReady)(
       });
       await oldTopicAbsence;
 
-      const recovered = await rpc<RoomView>(hostClient, "get_assignment_room", {
+      const recovered = await rpcRoom(hostClient, "get_assignment_room", {
         p_room_id: setup.roomId,
         p_member_token: null,
       });
@@ -374,10 +356,7 @@ describe.skipIf(!isIntegrationTestReady)(
 
     it("invalidates a finalized room for its bill edit but not an unrelated group event", async () => {
       const setup = await roomWithGuest("V");
-      const claimed = await rpc<RoomView>(
-        hostClient,
-        "set_assignment_room_claim",
-        {
+      const claimed = await rpcRoom(hostClient, "set_assignment_room_claim", {
           p_room_id: setup.roomId,
           p_member_token: null,
           p_item_id: setup.created.room.items[0].id,
@@ -386,17 +365,19 @@ describe.skipIf(!isIntegrationTestReady)(
           p_ticks: 120_000,
         }
       );
-      const closed = await rpc<RoomView>(hostClient, "close_assignment_room", {
+      const closed = await rpcRoom(hostClient, "close_assignment_room", {
         p_room_id: setup.roomId,
         p_expected_revision: claimed.room.revision,
       });
-      const built = buildAssignmentExpense(
-        closed as unknown as Extract<AssignmentRoomView, { role: "host" }>,
-        [{ participantIndex: 0, amountCents: 4_000 }]
-      );
+      if (closed.role !== "host") {
+        throw new Error("expected a host view to build the expense payload");
+      }
+      const built = buildAssignmentExpense(closed, [
+        { participantIndex: 0, amountCents: 4_000 },
+      ]);
       if (!built.ok) throw new Error(JSON.stringify(built.issue));
       const channel = await joinSubscribed(() =>
-        anonClient.channel(closed.room.topic, {
+        anonClient.channel(roomTopic(closed), {
           config: { private: true },
         })
       );
@@ -406,36 +387,39 @@ describe.skipIf(!isIntegrationTestReady)(
         channel,
         closed.room.revision + 1
       );
-      const finalized = await rpc<FinalizeResult>(
+      const finalized = await rpcDecoded(
         hostClient,
         "finalize_assignment_room",
         {
           p_room_id: setup.roomId,
           p_expected_revision: closed.room.revision,
           p_payload: built.value,
-        }
+        },
+        decodeFinalizeAssignmentRoomResult
       );
       expectRevisionPayload(
         (await finalizationMessage).payload,
         closed.room.revision + 1
       );
+      const expenseId = finalized.ack.expenseId;
+      if (!expenseId) throw new Error("finalize_assignment_room ack has no expenseId");
 
       const editMessage = nextRevisionBroadcast(
         channel,
         finalized.room.room.revision + 1
       );
-      await rpc(hostClient, "edit_expense", {
-        p_expense_id: finalized.ack.expenseId,
+      await rpcDecoded(hostClient, "edit_expense", {
+        p_expense_id: expenseId,
         p_expected_version_no: 1,
         p_occurred_on: HEADER.occurredOn,
         p_title: "Conta corrigida",
-        p_merchant_name: null,
+        p_merchant_name: "",
         p_expense_type: "itemized",
         p_total_cents: 4_000,
         p_service_fee_bps: 0,
         p_fixed_fee_cents: 0,
         p_payload: built.value,
-      });
+      }, decodeMutationAck);
       const editedMessage = await editMessage;
       expectRevisionPayload(
         editedMessage.payload,
@@ -444,11 +428,10 @@ describe.skipIf(!isIntegrationTestReady)(
       // The expense trigger is the sole invalidation owner for bill edits,
       // so the room revision advanced exactly once even though
       // broadcast_group also carried the expense_edited group event.
-      const editedRoom = await rpc<RoomView>(
-        hostClient,
-        "get_assignment_room",
-        { p_room_id: setup.roomId, p_member_token: null }
-      );
+      const editedRoom = await rpcRoom(hostClient, "get_assignment_room", {
+        p_room_id: setup.roomId,
+        p_member_token: null,
+      });
       expect(editedRoom.room.revision).toBe(finalized.room.room.revision + 1);
 
       // Composing the absence window with the group-event transaction in a
