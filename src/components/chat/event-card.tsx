@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, ReceiptText } from "lucide-react";
+import { ArrowRight, Check, ReceiptText } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { formatChatTime } from "@/components/chat/chat-rail-row";
@@ -107,7 +107,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
 
   if (!(event.kind in EXPENSE_KINDS) && !(event.kind in SETTLEMENT_KINDS)) {
     return (
-      <div className="flex min-h-6 max-w-80 items-baseline gap-2 pr-3">
+      <div className="flex min-h-6 items-baseline gap-2">
         <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="event-sentence">
           {copy}
         </p>
@@ -125,7 +125,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
     const card = (
       <div
         className={cn(
-          "max-w-80 rounded-[0.75rem] border border-dashed border-border bg-card px-3 py-2 transition-colors",
+          "rounded-[0.75rem] border border-dashed border-border bg-card px-3 py-2 transition-colors",
           !deleted && "hover:bg-muted/40",
         )}
         data-testid="event-expense-card"
@@ -160,7 +160,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
     return event.expenseId && !deleted ? (
       <Link
         href={`/app/bill/${event.expenseId}`}
-        className="block max-w-80 rounded-[0.75rem] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="block rounded-[0.75rem] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {card}
       </Link>
@@ -206,7 +206,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   };
 
   return (
-    <div className="relative max-w-80">
+    <div className="relative">
       <div
         className="rounded-[0.75rem] border border-success/30 bg-success/5 px-3 py-2"
         data-testid="event-settlement-card"
@@ -230,12 +230,15 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           />
         </div>
         <div className="mt-0.5 flex items-center gap-1">
-          <span className={cn("text-xs font-semibold", cfg.className)}>{cfg.label}</span>
+          <span className={cn("flex items-center gap-1 text-xs font-semibold", cfg.className)}>
+            {status === "confirmed" && <Check aria-hidden="true" className="size-3.5" />}
+            {cfg.label}
+          </span>
           {canUndo && (
             <Button
               size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs text-muted-foreground"
+              variant="link"
+              className="h-7 px-2 text-xs"
               onClick={(e) => {
                 setSettlementAnchor(e.currentTarget);
                 if (preferences.confirmVoidSettlement) setConfirmOpen(true);
@@ -250,8 +253,8 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           {settlementId !== null && (
             <Button
               size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs text-muted-foreground"
+              variant="link"
+              className="h-7 px-2 text-xs"
               onClick={(e) => { setSettlementAnchor(e.currentTarget); setDetailOpen(true); }}
               data-testid="event-view-settlement"
             >

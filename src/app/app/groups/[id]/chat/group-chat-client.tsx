@@ -25,6 +25,7 @@ import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { selectGroup } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
+import type { UserProfile } from "@/types/ledger";
 
 export interface GroupChatClientProps {
   groupId: string;
@@ -54,15 +55,16 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     (sum, row) => sum + (row.direction === "owed" ? row.amountCents : -row.amountCents),
     0,
   );
-  const nameById = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const member of snapshot?.members ?? []) names.set(member.userId, member.user.name);
-    return names;
+  const profileById = useMemo(() => {
+    const profiles = new Map<string, UserProfile>();
+    for (const member of snapshot?.members ?? []) profiles.set(member.userId, member.user);
+    return profiles;
   }, [snapshot]);
   const nameOf = useCallback(
-    (userId: string) => nameById.get(userId) ?? "Alguém",
-    [nameById],
+    (userId: string) => profileById.get(userId)?.name ?? "Alguém",
+    [profileById],
   );
+  const profileOf = useCallback((userId: string) => profileById.get(userId), [profileById]);
   const paymentCounterparties = useMemo(() => {
     const owedByMe = new Map<string, number>();
     const owedToMe = new Map<string, number>();
@@ -244,6 +246,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           settlements={snapshot.settlements}
           expenses={snapshot.recentExpenses}
           nameOf={nameOf}
+          profileOf={profileOf}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}
           onRenderedThrough={handleRenderedThrough}
