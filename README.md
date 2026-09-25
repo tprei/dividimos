@@ -8,7 +8,6 @@
 
 <p align="center">
   <a href="https://www.dividimos.ai">Web</a> &middot;
-  <a href="https://www.dividimos.ai/demo">Demo</a> &middot;
   <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android (WIP)</a>
 </p>
 
@@ -83,7 +82,7 @@ stateDiagram-v2
 ### Liquidação
 
 - **QR Code Pix.** BR Code EMV com Copia e Cola, gerado no servidor com a chave de quem recebe. Dá pra pagar só uma parte.
-- **Poucas transferências.** **Quem paga quem** cruza o maior devedor com o maior credor até zerar o grupo, com no máximo uma transferência a menos que o número de pessoas com saldo. A demo mostra a simplificação passo a passo.
+- **Poucas transferências.** **Quem paga quem** cruza o maior devedor com o maior credor até zerar o grupo, com no máximo uma transferência a menos que o número de pessoas com saldo.
 - **Registrar pagamento.** Quem pagou ou quem recebeu registra, e o saldo atualiza na hora. Errou? **Desfazer** no feed, no chat ou no detalhe do pagamento.
 - **Lembrar.** Um toque manda um push pra quem te deve. Um lembrete por pessoa a cada 24h no grupo, e só se a dívida com você existir.
 - **Cobrar rápido.** Cobrança Pix avulsa, sem grupo: digita o valor, compartilha o QR e marca **Pagamento recebido** quando cair. O histórico fica em **Cobranças**.
@@ -116,7 +115,6 @@ stateDiagram-v2
 - **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
 - **Tema.** Claro, escuro ou o do sistema.
 - **Tour guiado.** Na primeira sessão, um tour apresenta **Seu saldo**, **Ações rápidas**, **Quem deve o quê** e a navegação.
-- **Demo pública.** `/demo` mostra uma conta completa com QR Codes Pix interativos, sem login.
 - **Bots verificados.** Contas de plataforma ganham o selo **Bot verificado**, e grupos só de bots ganham selo dourado. Só o servidor liga essa marca.
 
 ### Segurança
@@ -181,7 +179,7 @@ graph LR
     E[Eva] -->|R$ 60| B
 ```
 
-**8 dívidas cruzadas viram 4 Pix.** Cada transferência abre um QR Code com o valor certo. A demo parte das dívidas proporcionais (`src/lib/simplify.ts`) e mostra, passo a passo, como elas somem. No banco, as transferências sempre saem dos saldos.
+**8 dívidas cruzadas viram 4 Pix.** Cada transferência abre um QR Code com o valor certo, e todas saem dos saldos na hora da leitura.
 
 ## Arquitetura
 
@@ -455,7 +453,6 @@ src/
 ├── proxy.ts                    # Sessão Supabase, rotas públicas, /manutencao
 ├── app/                        # Rotas (Next.js App Router)
 │   ├── page.tsx                # Landing
-│   ├── demo/                   # Demo pública (sem login)
 │   ├── auth/                   # Login Google, retorno do popup, onboarding (handle + chave Pix)
 │   ├── app/                    # Shell autenticado (pré-renderizado, servido cache-first pelo service worker)
 │   │   ├── page.tsx            # Início: saldo, ações rápidas, quem deve o quê
@@ -526,7 +523,7 @@ agent-guidance/                 # Guias para agentes: migrations, TypeScript, st
 
 ## Orientação rápida
 
-- `src/app/` é o App Router do Next.js 16. Fluxos principais: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), o shell autenticado (`app/`, pré-renderizado e servido cache-first pelo `public/sw.js`) e os destinos de link públicos `room/`, `claim/`, `join/` e `u/`.
+- `src/app/` é o App Router do Next.js 16. Fluxos principais: landing (`page.tsx`), auth (`auth/`), o shell autenticado (`app/`, pré-renderizado e servido cache-first pelo `public/sw.js`) e os destinos de link públicos `room/`, `claim/`, `join/` e `u/`.
 - `src/proxy.ts` é o proxy do Next 16. Renova a sessão do Supabase via `src/lib/supabase/middleware.ts`, libera as rotas públicas, responde 503 quando a verificação de auth está fora do ar e manda quem está logado pra `/manutencao` quando o banco e o app estão em versões financeiramente incompatíveis.
 - `src/app/auth/` faz login com um ID token do Google: redirect de página inteira na web (`popup/` é a página pra onde o Google volta) e `@capgo/capacitor-social-login` no Android. `continue/` decide se precisa de onboarding, e `onboard/` coleta o handle e a chave Pix. Sem telefone, sem 2FA.
 - `src/app/api/` guarda só o que precisa de segredo: chaves Pix (`pix/generate`, `pix/generate-self`), Gemini (`receipt/ocr`, `voice/parse`, `chat/parse`), push (`notify`, `push/*`), fotos de grupo (`groups/[groupId]/avatar`) e busca por handle (`users/lookup`), além do `dev/login`, que só existe em dev. As outras rotas checam a sessão, e a maioria aplica rate limit por usuário via `src/lib/rate-limit.ts`.
@@ -563,7 +560,7 @@ npm run dev                  # sobe o servidor de dev
 
 **Migrations**: o SQL em `supabase/migrations/` é a fonte da verdade do banco. Nunca edite, renomeie ou apague uma migration que já entrou na `main` ou foi aplicada num banco compartilhado. Crie uma migration nova com timestamp pra cada mudança e rode `supabase db reset --local` pra repetir o histórico inteiro localmente. As declarações antigas em `supabase/schemas/` e o snapshot `supabase/schema.sql` foram aposentados e não entram no desenvolvimento nem na CI.
 
-**Sem nenhuma variável de ambiente**: o proxy degrada sem quebrar. `/` e `/demo` abrem, e as páginas protegidas redirecionam pra `/`.
+**Sem nenhuma variável de ambiente**: o proxy degrada sem quebrar. As páginas públicas abrem, e as protegidas redirecionam pra `/`.
 
 ### Supabase remoto (sem Docker)
 
@@ -761,8 +758,6 @@ Os testes sintéticos (`e2e/synthetic/*.spec.ts`) percorrem jornadas reais pela 
 **Dinheiro**: sempre centavos inteiros no store, nos tipos e no banco, com teto de `MAX_EXPENSE_CENTS = 99_999_999` por conta. Nunca ponto flutuante em conta; `src/lib/expense-money.ts` é o único dono do teto e da fórmula da taxa. `formatBRL` converte pra exibição. Toda igualdade de item, parte, pagador e taxa é exata (sem tolerância de centavo).
 
 **Distribuição da taxa**: a taxa de serviço é guardada em pontos-base inteiros (`service_fee_bps` na versão da conta, de 0 a 10.000), calculada com arredondamento half-up não negativo de `subtotal * basisPoints / 10_000` e distribuída na proporção do consumo de itens. Taxas fixas são em centavos, divididas igualmente entre todos os participantes.
-
-**Demo**: pública em `/demo`, sem login. Uma conta pronta com o passo a passo da simplificação e QR Codes Pix interativos.
 
 Fluxo de contribuição e regras de revisão estão no `CONTRIBUTING.md`. Regras pra agentes, no `AGENTS.md`.
 

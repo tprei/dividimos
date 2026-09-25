@@ -73,11 +73,6 @@ export function HeroContent() {
               Rachar uma conta
             </Button>
           </Link>
-          <Link href="/demo">
-            <Button size="lg" variant="outline" className="text-base">
-              Ver como funciona
-            </Button>
-          </Link>
           <InstallPrompt />
         </motion.div>
       </div>

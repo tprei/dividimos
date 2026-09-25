@@ -197,7 +197,7 @@ PIX_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000
 DEV_LOGIN_ENABLED=true
 EOF
 
-    warn "Only / and /demo will work. Auth and app pages require real credentials."
+    warn "Only public pages will work. Auth and app pages require real credentials."
     exit 0
   fi
 
