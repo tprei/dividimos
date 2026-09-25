@@ -71,6 +71,8 @@ export default function ScanInvitePage() {
             setPaused(false);
             return;
           }
+          // The sheet unmounts the focused input, so no blur fires to reset typing.
+          setTyping(false);
           setScannedProfile(user);
         })();
       }
@@ -82,6 +84,7 @@ export default function ScanInvitePage() {
   const dismissProfile = useCallback(() => {
     setScannedProfile(null);
     setPaused(false);
+    setTyping(false);
   }, []);
 
   const showCamera = useCallback(() => {

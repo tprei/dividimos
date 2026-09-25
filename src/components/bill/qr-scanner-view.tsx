@@ -37,6 +37,7 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
   const suspended = paused || collapsed;
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
+  const readyRef = useRef(false);
 
   // Stable callback ref to avoid re-creating scanner on every render
   const onDecodeRef = useRef(onDecode);
@@ -48,6 +49,10 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
 
   useEffect(() => {
     const videoEl = videoRef.current;
+    // Ignore suspend/resume until start() settled: pausing mid-start races a
+    // second _getCameraStream whose stream overwrites the first, leaking a
+    // track that keeps the camera light on after destroy.
+    readyRef.current = false;
     if (!videoEl) return;
 
     let destroyed = false;
@@ -78,6 +83,7 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
           scanner.destroy();
           return;
         }
+        readyRef.current = true;
         // The camera may have been collapsed while permission was pending.
         if (suspendedRef.current) void scanner.pause(true);
 
@@ -108,6 +114,7 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
   }, [handleDecode]);
 
   useEffect(() => {
+    if (!readyRef.current) return;
     const scanner = scannerRef.current;
     if (!scanner) return;
 

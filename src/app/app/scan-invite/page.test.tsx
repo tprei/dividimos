@@ -172,4 +172,28 @@ describe("ScanInvitePage router", () => {
     });
     expect(mocks.push).not.toHaveBeenCalled();
   });
+
+  it("remounts the camera expanded after dismissing a profile submitted by Enter", async () => {
+    const user = userEvent.setup();
+    mocks.lookupUserByHandle.mockResolvedValueOnce({
+      id: "user-8",
+      handle: "beltrano",
+      name: "Beltrano Souza",
+      avatarUrl: null,
+      isBot: false,
+    });
+    render(<ScanInvitePage />);
+
+    const field = screen.getByLabelText("Link ou código");
+    await user.click(field);
+    expect(screen.getByTestId("scanner")).toHaveAttribute("data-collapsed", "true");
+
+    await user.type(field, `${PROD}/u/beltrano{Enter}`);
+
+    expect(await screen.findByText("Beltrano Souza")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByTestId("scanner")).toHaveAttribute("data-collapsed", "false");
+  });
 });
