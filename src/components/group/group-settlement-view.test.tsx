@@ -133,7 +133,7 @@ beforeEach(() => {
 });
 
 describe("GroupSettlementView", () => {
-  it("shows consolidated totals, segment labels, and the plan counts", () => {
+  it("shows authoritative group totals and per-person amounts", () => {
     const value = snapshot();
     seed(value);
 
@@ -145,7 +145,6 @@ describe("GroupSettlementView", () => {
     expect(
       screen.getByRole("img", { name: `Crédito total: +R$${NBSP}170,00` }),
     ).toBeInTheDocument();
-    expect(screen.getByText("4 dívidas → 3 Pix")).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: `Dívida de Dan: −R$${NBSP}90,00` }),
     ).toBeInTheDocument();
@@ -155,22 +154,18 @@ describe("GroupSettlementView", () => {
     expect(
       screen.getByRole("img", { name: `Crédito de Bia: +R$${NBSP}21,00` }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("devem")).not.toBeInTheDocument();
-    expect(screen.queryByText("recebem")).not.toBeInTheDocument();
   });
 
-  it("renders every transfer row including third-party acertos", () => {
+  it("renders third-party transfers without payment actions", () => {
     const value = snapshot();
     seed(value);
 
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
 
     const danRow = document.getElementById("transfer-user-4-user-3")!;
-    expect(within(danRow).getByText("Dan")).toBeInTheDocument();
-    expect(within(danRow).getByText("Carlos")).toBeInTheDocument();
-    expect(screen.getByText("Outro acerto")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Grafo de dívidas" })).toBeInTheDocument();
-    expect(screen.getByText("Simplificação · 4 → 3")).toBeInTheDocument();
+    expect(within(danRow).getByTitle("Dan Silva")).toBeVisible();
+    expect(within(danRow).getByTitle("Carlos Souza")).toBeVisible();
+    expect(within(danRow).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("opens PixQrModal in pay mode only from my payable rows", async () => {
@@ -180,12 +175,11 @@ describe("GroupSettlementView", () => {
 
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
 
-    expect(screen.getAllByRole("button", { name: /^Você paga/ })).toHaveLength(2);
+    const transfers = screen.getByRole("region", { name: "Quem paga quem" });
+    expect(within(transfers).getAllByRole("button", { name: /^Pagar/ })).toHaveLength(2);
 
     await user.click(
-      screen.getByRole("button", {
-        name: `Você paga: Tiago Silva paga R$${NBSP}59,00 para Carlos Souza`,
-      }),
+      within(transfers).getByRole("button", { name: /Pagar.*59,00/ }),
     );
 
     const modalProps = pixModalProps.at(-1)!;
@@ -214,12 +208,11 @@ describe("GroupSettlementView", () => {
 
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId="user-2" />);
 
-    expect(screen.getAllByRole("button", { name: /^Cobrar/ })).toHaveLength(1);
+    const transfers = screen.getByRole("region", { name: "Quem paga quem" });
+    expect(within(transfers).getAllByRole("button", { name: /^Cobrar/ })).toHaveLength(1);
 
     await user.click(
-      screen.getByRole("button", {
-        name: `Cobrar: Tiago Silva paga R$${NBSP}21,00 para Bia Costa`,
-      }),
+      within(transfers).getByRole("button", { name: /Cobrar.*21,00/ }),
     );
 
     const modalProps = pixModalProps.at(-1)!;
@@ -252,7 +245,7 @@ describe("GroupSettlementView", () => {
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("keeps guest debtor rows read-only with a Convidado badge", () => {
+  it("keeps guest debtor rows read-only", () => {
     const guestSnapshot = snapshot({
       members: [
         member("user-3", "carlos", "Carlos Souza"),
@@ -276,10 +269,8 @@ describe("GroupSettlementView", () => {
     const guestRow = document.getElementById("transfer-guest-1-user-3")!;
     expect(within(guestRow).getByText("Bruno")).toBeInTheDocument();
     expect(within(guestRow).queryByText("@bruno")).not.toBeInTheDocument();
-    expect(screen.getByText("Convidado")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Cobrar/ })).not.toBeInTheDocument();
     expect(screen.getByText("Combinar fora do app")).toBeInTheDocument();
-    expect(guestRow.tagName.toLowerCase()).toBe("div");
   });
 
   it("renders guest creditor rows as non-clickable 'Combinar fora do app'", () => {
@@ -304,19 +295,18 @@ describe("GroupSettlementView", () => {
 
     const guestRow = document.getElementById("transfer-user-3-guest-1")!;
     expect(within(guestRow).getByText("Bruno")).toBeInTheDocument();
-    expect(screen.getByText("Convidado")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Você paga/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pagar/ })).not.toBeInTheDocument();
     expect(screen.getByText("Combinar fora do app")).toBeInTheDocument();
-    expect(guestRow.tagName.toLowerCase()).toBe("div");
   });
 
   it("selecting a graph edge highlights and announces the matching transfer row", async () => {
     const value = snapshot();
     seed(value);
 
-    const { container } = render(
+    render(
       <GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />,
     );
+    await userEvent.click(screen.getByText("Como os pagamentos se simplificam"));
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -328,8 +318,6 @@ describe("GroupSettlementView", () => {
         "Transferência selecionada: Dan Silva paga R$ 90,00 para Carlos Souza",
       ),
     ).toBeInTheDocument();
-    const row = container.querySelector("#transfer-user-4-user-3");
-    expect(row?.className).toContain("bg-primary/5");
   });
 
   it("keeps a row inert while the counterparty has not accepted the invitation", () => {
@@ -354,8 +342,8 @@ describe("GroupSettlementView", () => {
       "Aguardando o convite: Tiago Silva paga R$ 30,00 para Bia Costa",
     );
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Você paga/ })).not.toBeInTheDocument();
+    expect(within(row).getByText("Aguardando o convite")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pagar/ })).not.toBeInTheDocument();
   });
 
   it("keeps a collectable row inert while the debtor has not accepted", () => {
@@ -397,8 +385,8 @@ describe("GroupSettlementView", () => {
 
     render(<GroupSettlementView groupId={groupId} snapshot={accepted} meId="user-1" />);
 
-    expect(screen.getByRole("button", { name: /^Você paga/ })).toBeInTheDocument();
-    expect(screen.queryByText("Convite pendente")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Quem paga quem" })).getByRole("button", { name: /^Pagar/ })).toBeInTheDocument();
+    expect(screen.queryByText("Aguardando o convite")).not.toBeInTheDocument();
   });
 
   it("shows only the settled state when every balance is zero", () => {
@@ -410,11 +398,10 @@ describe("GroupSettlementView", () => {
 
     render(<GroupSettlementView groupId={groupId} snapshot={settled} meId={me.id} />);
 
-    expect(screen.getByText("Tudo liquidado!")).toBeInTheDocument();
-    expect(screen.queryByText("Saldo consolidado")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Quem paga quem" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("group", { name: "Grafo de dívidas" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Plano sugerido")).not.toBeInTheDocument();
   });
 });

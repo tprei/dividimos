@@ -21,8 +21,6 @@ export interface SettlementPerson {
 interface ConsolidatedBalanceCardProps {
   balances: BalanceRow[];
   people: SettlementPerson[];
-  debtsCount: number;
-  pixCount: number;
   viewerId?: string;
 }
 
@@ -213,8 +211,6 @@ function ConsolidatedSide({
 export function ConsolidatedBalanceCard({
   balances,
   people,
-  debtsCount,
-  pixCount,
   viewerId,
 }: ConsolidatedBalanceCardProps) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
@@ -229,12 +225,11 @@ export function ConsolidatedBalanceCard({
   const creditTotal = creditBalances.reduce((total, balance) => total + balance.netCents, 0);
 
   return (
-    <section className="rounded-2xl border bg-card px-4 py-3" aria-label="Saldo consolidado">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-bold">Saldo consolidado</p>
-        <span className="text-xs text-muted-foreground">
-          {debtsCount} dívidas → {pixCount} Pix
-        </span>
+    <section className="rounded-2xl border bg-card px-4 py-3" aria-label="Saldos">
+      <h2 className="text-lg font-bold">Saldos</h2>
+      <div className="mt-3 flex justify-between text-xs text-muted-foreground">
+        <span>A pagar</span>
+        <span>A receber</span>
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span role="img" aria-label={`Dívida total: ${signedAmountLabel(debtTotal)}`}>

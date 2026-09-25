@@ -26,7 +26,10 @@ import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { UnreadBadge } from "@/components/shared/unread-badge";
+import { haptics } from "@/hooks/use-haptics";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { isBotGroup } from "@/lib/bot-group";
@@ -231,7 +234,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg px-4 pb-6 md:max-w-2xl [&>header]:px-0 [&>header_h1]:line-clamp-2">
       <ScreenHeader
         back
         leading={
@@ -243,7 +246,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             {groupAvatar}
           </Link>
         }
-        subtitle={tab === "saldos" ? "Acerto" : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
+        subtitle={`${accepted.length + snapshot.guests.length} pessoas`}
         title={snapshot.group.name}
         onBack={() => router.push("/app/groups")}
         onTitleClick={() => router.push(`/app/groups/${groupId}/info`)}
@@ -257,29 +260,21 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           ) : null
         }
         action={
-          <div className="flex items-center gap-1">
-            {isAcceptedMember && (
-              <Link
-                href={`/app/groups/${groupId}/chat`}
-                aria-label="Conversa"
-                className={buttonVariants({ size: "icon", variant: "ghost", className: "relative rounded-full" })}
-              >
-                <MessageSquare className="size-5" />
-                {snapshot.unreadCount > 0 && (
-                  <span
-                    aria-label={`${snapshot.unreadCount} mensagens não lidas`}
-                    className="absolute top-0.5 right-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-[5px] text-[9.5px] font-extrabold text-primary-foreground"
-                  >
-                    {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
-                  </span>
-                )}
-              </Link>
-            )}
-          </div>
+          isAcceptedMember && (
+            <IconButton
+              aria-label="Conversa"
+              className="relative"
+              nativeButton={false}
+              role="link"
+              render={<Link href={`/app/groups/${groupId}/chat`} />}
+              onClick={() => haptics.tap()}
+            >
+              <MessageSquare className="size-5" />
+              {snapshot.unreadCount > 0 && <span aria-label={`${snapshot.unreadCount} mensagens não lidas`}><UnreadBadge count={snapshot.unreadCount} /></span>}
+            </IconButton>
+          )
         }
       />
-
-      <NotificationPrompt />
 
       <div className="mt-5">
         <SegmentedControl aria-label="Seções do grupo" value={tab} onChange={setTab} options={[{ value: "saldos", label: "Saldos" }, { value: "contas", label: "Contas" }, { value: "membros", label: "Membros" }]} />
@@ -336,6 +331,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           />
         </div>}
       </div>
+      <div className="mt-6"><NotificationPrompt /></div>
 
       <GroupInviteModal
         open={showInviteModal}

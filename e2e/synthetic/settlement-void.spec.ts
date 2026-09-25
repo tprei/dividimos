@@ -19,8 +19,8 @@ test.describe("Settlement void", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Nenhuma dívida pendente no grupo")).toBeVisible();
+    await expect(page.getByText("Tudo acertado")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Ninguém deve nada por aqui.")).toBeVisible();
 
     await page.goto("/app/activity");
     await page.waitForLoadState("networkidle");
@@ -40,9 +40,10 @@ test.describe("Settlement void", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    const chargeRow = page.getByRole("button", { name: /Cobrar/ });
+    const chargeRow = page
+      .getByRole("region", { name: "Quem paga quem" })
+      .getByRole("button", { name: /Cobrar R\$\s*50,00/ });
     await expect(chargeRow).toBeVisible({ timeout: 10000 });
-    await expect(chargeRow).toContainText("R$ 50,00");
-    await expect(page.getByText("Tudo liquidado!")).toBeHidden();
+    await expect(page.getByText("Tudo acertado")).toBeHidden();
   });
 });

@@ -2,6 +2,8 @@
 
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/section-card";
+import { haptics } from "@/hooks/use-haptics";
 import type { GroupSnapshot, GroupMember } from "@/types/ledger";
 
 export function InvitationCard({
@@ -23,7 +25,7 @@ export function InvitationCard({
     snapshot.members.find((m) => m.userId === snapshot.group.creatorId);
 
   return (
-    <div className="rounded-2xl border bg-card p-4">
+    <SectionCard className="p-3">
       <div className="flex items-center gap-3">
         {inviter && (
           <UserAvatar
@@ -35,35 +37,47 @@ export function InvitationCard({
           />
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-semibold">
+          <p
+            title={snapshot.group.name}
+            className="truncate text-base font-semibold"
+          >
             Convite · {snapshot.group.name}
           </p>
           {inviter && (
-            <p className="text-xs text-muted-foreground">
+            <p
+              title={inviter.user.name}
+              className="truncate text-sm text-muted-foreground"
+            >
               Enviado por {inviter.user.name}
             </p>
           )}
         </div>
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex justify-end gap-2">
         <Button
           variant="ghost"
-          className="min-h-11 flex-1"
+          className="min-h-11"
           disabled={busy}
           aria-label={`Recusar convite para ${snapshot.group.name}`}
-          onClick={onDecline}
+          onClick={() => {
+            haptics.tap();
+            onDecline();
+          }}
         >
           Recusar
         </Button>
         <Button
-          className="min-h-11 flex-1"
+          className="min-h-11"
           disabled={busy}
           aria-label={`Aceitar convite para ${snapshot.group.name}`}
-          onClick={onAccept}
+          onClick={() => {
+            haptics.tap();
+            onAccept();
+          }}
         >
           Aceitar
         </Button>
       </div>
-    </div>
+    </SectionCard>
   );
 }

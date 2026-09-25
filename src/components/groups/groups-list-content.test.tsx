@@ -168,8 +168,7 @@ describe("GroupsListContent", () => {
     render(<GroupsListContent />);
 
     expect(screen.getByText("Viagem")).toBeInTheDocument();
-    expect(screen.getByText("2 membros · 7 contas")).toBeInTheDocument();
-    expect(screen.queryByText("3 membros · 1 contas")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Viagem/ })).toHaveTextContent("2 pessoas · 7 contas");
     expect(screen.getByRole("link", { name: /Viagem/ })).toHaveAttribute(
       "href",
       "/app/groups/g1",
@@ -190,7 +189,7 @@ describe("GroupsListContent", () => {
     expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
   });
 
-  it("renders a signed receivable and an in-day balance", () => {
+  it("distinguishes receivable and settled balances without relying on color", () => {
     seed([
       snapshot("g1", {
         members: [member("user-1", "Alice", "accepted")],
@@ -204,8 +203,8 @@ describe("GroupsListContent", () => {
 
     render(<GroupsListContent />);
 
-    expect(screen.getByText("A receber")).toBeInTheDocument();
-    expect(screen.getByText("Em dia")).toBeInTheDocument();
+    expect(screen.getByLabelText(/a receber R\$\s*50,00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/em dia R\$\s*0,00/)).toBeInTheDocument();
   });
 
   it("marks a group of bots and leaves a human group alone", () => {
@@ -228,11 +227,11 @@ describe("GroupsListContent", () => {
 
     render(<GroupsListContent />);
 
-    expect(screen.getByRole("link", { name: /Bots da casa.*grupo de bots/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Viagem.*grupo de bots/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Bots da casa/ }).querySelector('[aria-label="Grupo de bots"]')).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Viagem/ }).querySelector('[aria-label="Grupo de bots"]')).not.toBeInTheDocument();
   });
 
-  it("renders a payable signed balance", () => {
+  it("identifies a payable balance without relying on color", () => {
     seed([
       snapshot("g1", {
         members: [member("user-1", "Alice", "accepted")],
@@ -242,7 +241,7 @@ describe("GroupsListContent", () => {
 
     render(<GroupsListContent />);
 
-    expect(screen.getByText("A pagar")).toBeInTheDocument();
+    expect(screen.getByLabelText(/a pagar R\$\s*25,00/)).toBeInTheDocument();
   });
 
   it("excludes DMs and groups where the viewer is not accepted", () => {

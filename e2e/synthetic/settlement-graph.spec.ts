@@ -31,9 +31,9 @@ test.describe("Settlement plan graph", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
     await page.getByRole("radio", { name: "Saldos" }).click();
+    await page.getByText("Como os pagamentos se simplificam").click();
 
     const plan = page.getByRole("region", { name: "Plano sugerido" });
-    await expect(plan).toContainText("Simplificação · 3 → 1");
 
     const edges = plan.locator('svg[role="group"] foreignObject');
     await expect(edges).toHaveCount(1, { timeout: 15000 });
@@ -89,7 +89,7 @@ test.describe("Settlement plan graph", () => {
     await page.waitForLoadState("networkidle");
     await page.getByRole("radio", { name: "Saldos" }).click();
 
-    const card = page.getByRole("region", { name: "Saldo consolidado" });
+    const card = page.getByRole("region", { name: "Saldos", exact: true });
     await expect(card).toBeVisible();
 
     const boxes = await card
