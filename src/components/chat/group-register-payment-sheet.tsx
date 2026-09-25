@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -74,6 +74,39 @@ function directionWithDebt(
   return payerIsSelf;
 }
 
+/** WAI-ARIA radio pattern movements; every key wraps around the group. */
+const RADIO_MOVES: Record<string, (index: number, count: number) => number> = {
+  ArrowRight: (index, count) => (index + 1) % count,
+  ArrowDown: (index, count) => (index + 1) % count,
+  ArrowLeft: (index, count) => (index - 1 + count) % count,
+  ArrowUp: (index, count) => (index - 1 + count) % count,
+  Home: () => 0,
+  End: (_, count) => count - 1,
+};
+
+/**
+ * Roving-tabindex keyboard support for a radio group: arrows and Home/End
+ * select the neighbouring radio and move focus to it.
+ */
+function handleRadioNav(
+  event: KeyboardEvent<HTMLButtonElement>,
+  onPick: (index: number) => void,
+) {
+  const move = RADIO_MOVES[event.key];
+  if (!move) return;
+  const group = event.currentTarget.closest<HTMLElement>('[role="radiogroup"]');
+  if (!group) return;
+  const radios = Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  const current = radios.indexOf(event.currentTarget);
+  if (current < 0) return;
+  event.preventDefault();
+  const nextIndex = move(current, radios.length);
+  const next = radios.at(nextIndex);
+  if (!next) return;
+  next.focus();
+  onPick(nextIndex);
+}
+
 export function GroupRegisterPaymentSheet({
   currentUser,
   counterparties,
@@ -95,6 +128,8 @@ export function GroupRegisterPaymentSheet({
       initialPayerIsSelf,
     ),
   );
+  // Debt-derived direction only applies until the user picks one themselves.
+  const [directionTouched, setDirectionTouched] = useState(false);
 
   const counterparty = useMemo(
     () =>
@@ -139,11 +174,16 @@ export function GroupRegisterPaymentSheet({
     if (member.id === counterparty?.id) return;
     haptics.selectionChanged();
     setSelectedId(member.id);
-    setPayerIsSelf(directionWithDebt(member, payerIsSelf));
+    // The overpay override belongs to the pair, not the sheet.
+    setAllowOverpay(false);
+    if (!directionTouched) {
+      setPayerIsSelf(directionWithDebt(member, payerIsSelf));
+    }
   };
   const pickDirection = (next: boolean) => {
     if (next === payerIsSelf) return;
     haptics.selectionChanged();
+    setDirectionTouched(true);
     setPayerIsSelf(next);
   };
 
@@ -153,6 +193,10 @@ export function GroupRegisterPaymentSheet({
   const counterpartyFull = counterparty
     ? (labels.get(counterparty.id) ?? counterparty.name)
     : "";
+  const selectedPersonIndex = counterparties.findIndex(
+    (member) => member.id === counterparty?.id,
+  );
+  const personFocusIndex = Math.max(selectedPersonIndex, 0);
 
   return (
     <Dialog
@@ -188,7 +232,7 @@ export function GroupRegisterPaymentSheet({
               aria-labelledby="group-payment-who"
               className="-mx-4 flex snap-x gap-1 overflow-x-auto px-3 pt-1 pb-1 [scrollbar-width:none]"
             >
-              {counterparties.map((member) => {
+              {counterparties.map((member, index) => {
                 const selected = member.id === counterparty?.id;
                 return (
                   <button
@@ -197,8 +241,15 @@ export function GroupRegisterPaymentSheet({
                     role="radio"
                     aria-checked={selected}
                     aria-label={labels.get(member.id) ?? member.name}
+                    tabIndex={index === personFocusIndex ? 0 : -1}
                     disabled={isConfirming}
                     onClick={() => pickCounterparty(member)}
+                    onKeyDown={(event) =>
+                      handleRadioNav(event, (nextIndex) => {
+                        const next = counterparties[nextIndex];
+                        if (next) pickCounterparty(next);
+                      })
+                    }
                     className="flex w-17 shrink-0 snap-start flex-col items-center gap-1.5 rounded-xl px-1 py-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     <span
@@ -241,6 +292,7 @@ export function GroupRegisterPaymentSheet({
                 selected={payerIsSelf}
                 disabled={isConfirming}
                 onSelect={() => pickDirection(true)}
+                onRadioNav={(index) => pickDirection(index === 0)}
                 label={`Você pagou para ${counterpartyFull}`}
                 from={currentUser}
                 to={counterparty}
@@ -250,6 +302,7 @@ export function GroupRegisterPaymentSheet({
                 selected={!payerIsSelf}
                 disabled={isConfirming}
                 onSelect={() => pickDirection(false)}
+                onRadioNav={(index) => pickDirection(index === 0)}
                 label={`${counterpartyFull} pagou para você`}
                 from={counterparty}
                 to={currentUser}
@@ -354,6 +407,7 @@ function DirectionOption({
   selected,
   disabled,
   onSelect,
+  onRadioNav,
   label,
   from,
   to,
@@ -362,6 +416,7 @@ function DirectionOption({
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  onRadioNav: (index: number) => void;
   label: string;
   from: GroupPaymentPerson;
   to: GroupPaymentPerson;
@@ -376,6 +431,8 @@ function DirectionOption({
       title={label}
       disabled={disabled}
       onClick={onSelect}
+      onKeyDown={(event) => handleRadioNav(event, onRadioNav)}
+      tabIndex={selected ? 0 : -1}
       data-testid={testId}
       className={cn(
         "flex min-h-11 items-center justify-center gap-1.5 rounded-lg outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",

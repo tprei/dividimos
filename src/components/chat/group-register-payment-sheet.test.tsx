@@ -247,4 +247,98 @@ describe("GroupRegisterPaymentSheet", () => {
       allowOverpay: false,
     });
   });
+
+  it("keeps a hand-picked direction when switching between people", async () => {
+    const { user } = renderSheet(undefined, [
+      { ...MEMBERS[0], owedByMeCents: 5000, owedToMeCents: 0 },
+      { ...MEMBERS[1], owedByMeCents: 0, owedToMeCents: 4000 },
+    ]);
+    expect(screen.getByRole("radio", { name: "Você pagou para Bob Santos" })).toBeChecked();
+
+    await user.click(screen.getByTestId("group-payment-payer-other"));
+    expect(screen.getByRole("radio", { name: "Bob Santos pagou para você" })).toBeChecked();
+
+    const people = screen.getByRole("radiogroup", { name: "Com quem?" });
+    await user.click(within(people).getByRole("radio", { name: "Carol Dias" }));
+    await user.click(within(people).getByRole("radio", { name: "Bob Santos" }));
+
+    expect(screen.getByRole("radio", { name: "Bob Santos pagou para você" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Você pagou para Bob Santos" })).not.toBeChecked();
+  });
+
+  it("resets the overpay override when the counterparty changes", async () => {
+    const { onConfirm, user } = renderSheet();
+    const input = screen.getByTestId("group-payment-amount") as HTMLInputElement;
+
+    fireEvent.click(screen.getByTestId("group-payment-allow-overpay"));
+    expect(screen.getByTestId("group-payment-overpay-note")).toBeInTheDocument();
+
+    const people = screen.getByRole("radiogroup", { name: "Com quem?" });
+    await user.click(within(people).getByRole("radio", { name: "Carol Dias" }));
+
+    expect(screen.queryByTestId("group-payment-overpay-note")).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "60,00" } });
+    expect(input).toHaveAttribute("aria-invalid");
+
+    fireEvent.change(input, { target: { value: "3,00" } });
+    fireEvent.click(screen.getByTestId("group-payment-confirm"));
+    expect(onConfirm).toHaveBeenCalledWith({
+      counterpartyId: "user-carol",
+      payerIsSelf: true,
+      amountCents: 300,
+      allowOverpay: false,
+    });
+  });
+
+  it("moves the people selection and focus with arrow keys, Home, and End", async () => {
+    const { user } = renderSheet();
+    const people = screen.getByRole("radiogroup", { name: "Com quem?" });
+    const bob = within(people).getByRole("radio", { name: "Bob Santos" });
+    const carol = within(people).getByRole("radio", { name: "Carol Dias" });
+
+    expect(bob).toHaveAttribute("tabindex", "0");
+    expect(carol).toHaveAttribute("tabindex", "-1");
+
+    bob.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(carol).toBeChecked();
+    expect(carol).toHaveFocus();
+    expect(carol).toHaveAttribute("tabindex", "0");
+    expect(bob).toHaveAttribute("tabindex", "-1");
+
+    await user.keyboard("{ArrowRight}");
+    expect(bob).toBeChecked();
+    expect(bob).toHaveFocus();
+
+    await user.keyboard("{ArrowLeft}");
+    expect(carol).toBeChecked();
+    expect(carol).toHaveFocus();
+
+    await user.keyboard("{Home}");
+    expect(bob).toBeChecked();
+    expect(bob).toHaveFocus();
+
+    await user.keyboard("{End}");
+    expect(carol).toBeChecked();
+    expect(carol).toHaveFocus();
+  });
+
+  it("moves the direction selection and focus with arrow keys", async () => {
+    const { user } = renderSheet();
+    const self = screen.getByTestId("group-payment-payer-self");
+    const other = screen.getByTestId("group-payment-payer-other");
+
+    expect(self).toHaveAttribute("tabindex", "0");
+    expect(other).toHaveAttribute("tabindex", "-1");
+
+    self.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(other).toBeChecked();
+    expect(other).toHaveFocus();
+    expect(other).toHaveAttribute("tabindex", "0");
+
+    await user.keyboard("{ArrowUp}");
+    expect(self).toBeChecked();
+    expect(self).toHaveFocus();
+  });
 });
