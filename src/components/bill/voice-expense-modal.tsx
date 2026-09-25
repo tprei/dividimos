@@ -260,7 +260,7 @@ export function VoiceExpenseModal({
                           ? "bg-success/15 text-success-text"
                           : p.confidence === "low"
                             ? "bg-muted text-muted-foreground"
-                            : "bg-warning/15 text-warning-foreground dark:text-warning"
+                            : "bg-warning/15 text-warning-text"
                       }`}
                     >
                       {resolved[i] ? <Check className="size-4" /> : p.spokenName.charAt(0).toUpperCase()}
@@ -276,7 +276,7 @@ export function VoiceExpenseModal({
                       ) : p.matchedHandle ? (
                         <p className="text-xs text-muted-foreground">@{p.matchedHandle} ?</p>
                       ) : (
-                        <p className="text-xs text-warning-foreground dark:text-warning">Não identificado</p>
+                        <p className="text-xs text-warning-text">Não identificado</p>
                       )}
                     </div>
                     {resolved[i] ? (
@@ -336,14 +336,14 @@ export function VoiceExpenseModal({
       </section>
 
       {needsAmount && (
-        <p className="flex items-center gap-2 rounded-[0.75rem] bg-warning/10 px-3 py-2 text-sm text-warning-foreground dark:text-warning">
+        <p className="flex items-center gap-2 rounded-[0.75rem] bg-warning/10 px-3 py-2 text-sm text-warning-text">
           <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
           Informe o valor antes de confirmar
         </p>
       )}
 
       {hasUnresolved && (
-        <p className="flex items-center gap-2 rounded-[0.75rem] bg-warning/10 px-3 py-2 text-sm text-warning-foreground dark:text-warning">
+        <p className="flex items-center gap-2 rounded-[0.75rem] bg-warning/10 px-3 py-2 text-sm text-warning-text">
           <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
           Atribua todos os participantes antes de confirmar
         </p>

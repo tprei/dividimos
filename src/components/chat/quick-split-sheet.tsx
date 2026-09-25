@@ -381,7 +381,7 @@ export function QuickSplitSheet({
                       <Money cents={Math.max(0, totalCents - myFixedCents)} size="sm" />
                     </div>
                     {fixedWarning && (
-                      <p className="text-xs text-warning-foreground">{fixedWarning}</p>
+                      <p className="text-xs text-warning-text">{fixedWarning}</p>
                     )}
                   </div>
                 )}

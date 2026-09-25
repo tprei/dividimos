@@ -154,7 +154,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
             </>
           )}
           {unassigned > 0 && (
-            <div className="flex justify-between text-warning-foreground">
+            <div className="flex justify-between text-warning-text">
               <span className="text-xs">Valor não atribuído</span>
               <span className="text-xs font-medium tabular-nums">
                 {formatBRL(unassigned)}

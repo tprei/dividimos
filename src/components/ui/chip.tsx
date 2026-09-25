@@ -6,7 +6,7 @@ const tones = {
   primary: "border-primary/25 bg-primary/10 text-primary-text",
   success: "border-success/25 bg-success/10 text-success-text",
   danger: "border-destructive/25 bg-destructive/10 text-destructive-text",
-  warning: "border-warning/30 bg-warning/10 text-warning-foreground",
+  warning: "border-warning/30 bg-warning/10 text-warning-text",
   guest: "border-dashed border-border bg-muted text-muted-foreground",
 };
 

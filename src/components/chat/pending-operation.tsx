@@ -69,7 +69,7 @@ export function PendingOperationNotice({
         Pendente
       </Chip>
       <div className="mt-1 flex items-center gap-1.5">
-        <Clock className="size-4 text-warning-foreground" />
+        <Clock className="size-4 text-warning-text" />
         <p className="text-sm font-semibold">Aguardando confirmação</p>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
