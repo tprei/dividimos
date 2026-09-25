@@ -486,8 +486,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
             <ScreenHeaderActionsContext.Provider
               value={
-                  !pathname.startsWith("/app/bill/new") &&
-                  pathname !== "/app"
+                  !pathname.startsWith("/app/bill/new")
                   ? unifiedBell
                   : null
               }

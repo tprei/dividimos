@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { selectHomeMode } from "./home-selectors";
+import { selectHomeMode, selectHomeRecentBills } from "./home-selectors";
 
 const me: Me = {
   id: "user-1",
@@ -96,7 +96,14 @@ describe("selectHomeMode", () => {
   });
 
   it("returns settled when user has an accepted non-DM group membership but zero debts", () => {
-    const acceptedGroup = snapshot();
+    const acceptedGroup = snapshot({
+      recentExpenses: [{
+        id: "expense-1", groupId: "g1", creatorId: me.id, status: "active",
+        occurredOn: "2026-09-23", createdAt: "2026-09-23T12:00:00Z", versionNo: 1,
+        title: "Peixe e camarão", merchantName: null, expenseType: "single_amount",
+        totalCents: 15000, myShareCents: 7500, myPaidCents: 15000, participantCount: 2,
+      }],
+    });
     useAppStore.setState({
       hydrated: true,
       me,
@@ -104,6 +111,7 @@ describe("selectHomeMode", () => {
       groupOrder: [acceptedGroup.group.id],
     });
     expect(selectHomeMode(useAppStore.getState())).toBe("settled");
+    expect(selectHomeRecentBills(useAppStore.getState()).map((bill) => bill.title)).toEqual(["Peixe e camarão"]);
   });
 
   it("returns settled when user has loaded expenses even without accepted groups", () => {
