@@ -9,6 +9,11 @@ import { resolve } from "path";
  * the ServiceWorkerGlobalScope APIs (caches, clients, fetch, events).
  */
 
+const SW_SOURCE = readFileSync(resolve(__dirname, "../../public/sw.js"), "utf-8");
+// Parsed from the source so a version bump in sw.js cannot silently desync
+// the cache names these tests open and assert on.
+const CACHE_VERSION = SW_SOURCE.match(/const CACHE_VERSION = "(v\d+)"/)![1];
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Minimal Response mock */
@@ -79,6 +84,7 @@ function createCacheMock() {
       const key = typeof req === "string" ? req : req.url;
       return store.get(key) ?? undefined;
     }),
+    keys: vi.fn(async () => Array.from(store.keys()).map((url) => ({ url }))),
     _store: store,
   };
 }
@@ -142,11 +148,10 @@ function createSWEnv(origin = "https://dividimos.app") {
 }
 
 function loadSW(env: Record<string, unknown>) {
-  const src = readFileSync(resolve(__dirname, "../../public/sw.js"), "utf-8");
   // Wrap in a function that receives the SW globals
   const keys = Object.keys(env);
   const values = keys.map((k) => env[k]);
-  const factory = new Function(...keys, src);
+  const factory = new Function(...keys, SW_SOURCE);
   factory(...values);
 }
 
@@ -174,7 +179,7 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
       await Promise.all(event._promises);
 
-      const staticCache = await env.cacheStorage.open("dividimos-static-v6");
+      const staticCache = await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
       expect(staticCache.put).toHaveBeenCalledTimes(4);
       expect(Array.from(staticCache._store.keys())).toEqual([
         "/offline.html",
@@ -191,7 +196,7 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
 
       await expect(Promise.all(event._promises)).rejects.toThrow("Invalid precache response");
-      const staticCache = await env.cacheStorage.open("dividimos-static-v6");
+      const staticCache = await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
       expect(staticCache.put).toHaveBeenCalledTimes(1);
       expect(env.env.skipWaiting).not.toHaveBeenCalled();
     });
@@ -203,16 +208,16 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-static-v0");
       await env.cacheStorage.open("dividimos-runtime-v0");
       // Also create current caches so they exist
-      await env.cacheStorage.open("dividimos-static-v6");
-      await env.cacheStorage.open("dividimos-runtime-v6");
+      await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
+      await env.cacheStorage.open(`dividimos-runtime-${CACHE_VERSION}`);
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
       await Promise.all(event._promises);
       const remaining = await env.cacheStorage.keys();
 
-      expect(remaining).toContain("dividimos-static-v6");
-      expect(remaining).toContain("dividimos-runtime-v6");
+      expect(remaining).toContain(`dividimos-static-${CACHE_VERSION}`);
+      expect(remaining).toContain(`dividimos-runtime-${CACHE_VERSION}`);
       expect(remaining).not.toContain("dividimos-static-v0");
       expect(remaining).not.toContain("dividimos-runtime-v0");
     });
@@ -233,8 +238,8 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-runtime-v4");
       await env.cacheStorage.open("dividimos-static-v5");
       await env.cacheStorage.open("dividimos-runtime-v5");
-      await env.cacheStorage.open("dividimos-static-v6");
-      await env.cacheStorage.open("dividimos-runtime-v6");
+      await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
+      await env.cacheStorage.open(`dividimos-runtime-${CACHE_VERSION}`);
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
@@ -249,8 +254,8 @@ describe("Service Worker", () => {
       expect(remaining).not.toContain("dividimos-runtime-v4");
       expect(remaining).not.toContain("dividimos-static-v5");
       expect(remaining).not.toContain("dividimos-runtime-v5");
-      expect(remaining).toContain("dividimos-static-v6");
-      expect(remaining).toContain("dividimos-runtime-v6");
+      expect(remaining).toContain(`dividimos-static-${CACHE_VERSION}`);
+      expect(remaining).toContain(`dividimos-runtime-${CACHE_VERSION}`);
     });
   });
 
@@ -324,13 +329,13 @@ describe("Service Worker", () => {
 
       // Give the cache.put a tick to complete
       await new Promise((r) => setTimeout(r, 10));
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v6");
+      const runtimeCache = await env.cacheStorage.open(`dividimos-runtime-${CACHE_VERSION}`);
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("falls back to cache when asset fetch fails", async () => {
       // Pre-populate runtime cache
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v6");
+      const runtimeCache = await env.cacheStorage.open(`dividimos-runtime-${CACHE_VERSION}`);
       const cachedRes = new MockResponse("cached", { status: 200 });
       const assetUrl = "https://dividimos.app/_next/static/chunk.js";
       await runtimeCache.put(new MockRequest(assetUrl) as unknown as string, cachedRes);
@@ -345,10 +350,56 @@ describe("Service Worker", () => {
       expect(response).toBe(cachedRes);
     });
 
+    it("serves optimized avatar images cache-first so repeat views skip the network", async () => {
+      const fetchMock = env.env.fetch as Mock;
+      fetchMock.mockResolvedValue(
+        new MockResponse("avatar", { status: 200, contentType: "image/webp" }),
+      );
+      const avatarUrl =
+        "https://dividimos.app/_next/image?url=https%3A%2F%2Flh3.googleusercontent.com%2Fa%2Fabc&w=96&q=75";
+
+      const first = makeFetchEvent(avatarUrl, { destination: "image" });
+      env.listeners["fetch"]![0]!(first);
+      await first._response;
+      await Promise.all(first._pending);
+
+      const second = makeFetchEvent(avatarUrl, { destination: "image" });
+      env.listeners["fetch"]![0]!(second);
+      const cached = (await second._response) as MockResponse;
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(cached).toBeDefined();
+      expect(cached.body).toBe("avatar");
+      const avatarCache = await env.cacheStorage.open(`dividimos-avatars-${CACHE_VERSION}`);
+      expect(avatarCache.put).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the avatar cache bounded", async () => {
+      const fetchMock = env.env.fetch as Mock;
+      fetchMock.mockResolvedValue(
+        new MockResponse("avatar", { status: 200, contentType: "image/webp" }),
+      );
+
+      for (let i = 0; i < 305; i++) {
+        const event = makeFetchEvent(`https://dividimos.app/_next/image?url=p${i}&w=96&q=75`, {
+          destination: "image",
+        });
+        env.listeners["fetch"]![0]!(event);
+        await event._response;
+        await Promise.all(event._pending);
+      }
+
+      const avatarCache = await env.cacheStorage.open(`dividimos-avatars-${CACHE_VERSION}`);
+      expect(avatarCache._store.size).toBeLessThanOrEqual(300);
+      // Oldest entries are evicted first.
+      expect(avatarCache._store.has("https://dividimos.app/_next/image?url=p0&w=96&q=75")).toBe(false);
+      expect(avatarCache._store.has("https://dividimos.app/_next/image?url=p304&w=96&q=75")).toBe(true);
+    });
+
     it.each([502, 503, 504])(
       "serves the offline page when a navigation gets %i",
       async (status) => {
-        const staticCache = await env.cacheStorage.open("dividimos-static-v6");
+        const staticCache = await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
         const offline = new MockResponse("offline page", { status: 200 });
         await staticCache.put("/offline.html", offline);
         (env.env.fetch as Mock).mockResolvedValue(
@@ -382,7 +433,7 @@ describe("Service Worker", () => {
     it("serves the offline page when a navigation never settles", async () => {
       vi.useFakeTimers();
       try {
-        const staticCache = await env.cacheStorage.open("dividimos-static-v6");
+        const staticCache = await env.cacheStorage.open(`dividimos-static-${CACHE_VERSION}`);
         const offline = new MockResponse("offline page", { status: 200 });
         await staticCache.put("/offline.html", offline);
         (env.env.fetch as Mock).mockReturnValue(new Promise(() => {}));
@@ -411,7 +462,7 @@ describe("Service Worker", () => {
       expect(event._pending).toHaveLength(1);
       await Promise.all(event._pending);
 
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v6");
+      const runtimeCache = await env.cacheStorage.open(`dividimos-runtime-${CACHE_VERSION}`);
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
@@ -428,7 +479,7 @@ describe("Service Worker", () => {
     });
 
     it("serves /app navigations cache-first from shell cache when cached", async () => {
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v6");
+      const shellCache = await env.cacheStorage.open(`dividimos-shell-${CACHE_VERSION}`);
       const cachedRes = new MockResponse("cached-shell", { status: 200 });
       const appUrl = "https://dividimos.app/app";
       await shellCache.put(appUrl, cachedRes);
@@ -455,7 +506,7 @@ describe("Service Worker", () => {
       env.listeners["fetch"]![0]!(event);
 
       expect(await event._response).toBe(authResponse);
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v6");
+      const shellCache = await env.cacheStorage.open(`dividimos-shell-${CACHE_VERSION}`);
       await Promise.resolve();
       expect(shellCache.put).not.toHaveBeenCalled();
     });
@@ -471,7 +522,7 @@ describe("Service Worker", () => {
       const response = await event._response;
       expect(response).toBe(freshRes);
 
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v6");
+      const shellCache = await env.cacheStorage.open(`dividimos-shell-${CACHE_VERSION}`);
       await vi.waitFor(() => {
         expect(shellCache.put).toHaveBeenCalled();
       });
@@ -487,7 +538,7 @@ describe("Service Worker", () => {
       const response = await event._response;
       expect(response).toBe(freshRes);
 
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v6");
+      const shellCache = await env.cacheStorage.open(`dividimos-shell-${CACHE_VERSION}`);
       await Promise.resolve();
       expect(shellCache.put).not.toHaveBeenCalled();
     });

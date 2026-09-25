@@ -38,6 +38,8 @@ const badgeClasses: Record<"sm" | "md" | "lg", string> = {
   lg: "size-4.5",
 };
 
+type PhotoState = "loading" | "loaded" | "error";
+
 export function avatarStyle(id: string) {
   return {
     backgroundColor: `var(--avatar-tone-${avatarToneIndex(id)})`,
@@ -46,23 +48,53 @@ export function avatarStyle(id: string) {
 }
 
 export function UserAvatar({ id, name, avatarUrl, size = "md", className, priority, isBot, standalone = false }: UserAvatarProps) {
-  const [imgError, setImgError] = useState(false);
+  const [photoState, setPhotoState] = useState<PhotoState>("loading");
+  const [prevUrl, setPrevUrl] = useState(avatarUrl);
+  // Adjusting state during render: a new URL restarts the cycle instead of
+  // staying stuck on the previous photo's "loaded"/"error" state.
+  if (prevUrl !== avatarUrl) {
+    setPrevUrl(avatarUrl);
+    setPhotoState("loading");
+  }
   const sizeClass = sizeClasses[size];
   const px = sizePx[size];
 
+  const photoUrl = avatarUrl && photoState !== "error" ? avatarUrl : undefined;
+
+  const toneLayer = (
+    <div
+      aria-hidden="true"
+      style={avatarStyle(id ?? name)}
+      className={cn(
+        "absolute inset-0 flex items-center justify-center rounded-full font-bold",
+        photoState === "loading" && "animate-pulse motion-reduce:animate-none",
+      )}
+    >
+      {initialsOf(name)}
+    </div>
+  );
+
   const avatar =
-    avatarUrl && !imgError ? (
+    photoUrl ? (
       <div
         className={cn("relative shrink-0 overflow-hidden rounded-full", sizeClass, className)}
         aria-hidden={standalone ? undefined : true}
       >
+        {toneLayer}
+        {/* fill is load-bearing: without it (and without width/height) Next
+            emits an <img> at intrinsic size, which collapses inside the box. */}
         <Image
-          src={avatarUrl}
+          src={photoUrl}
+          fill
           alt={standalone ? name : ""}
           sizes={`${px}px`}
-          className="object-cover"
           priority={priority}
-          onError={() => setImgError(true)}
+          onLoad={() => setPhotoState("loaded")}
+          onError={() => setPhotoState("error")}
+          className={cn(
+            "object-cover opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
+            photoState === "loaded" && "opacity-100",
+          )}
         />
       </div>
     ) : (

@@ -77,4 +77,22 @@ describe("UserAvatar", () => {
     expect(screen.getByRole("img", { name: "Ana Souza" }).style.backgroundColor).toBe(tone);
     expect(screen.getByText("AS")).toBeInTheDocument();
   });
+
+  it("shows the initials behind the photo and fades the image in on load", () => {
+    render(<UserAvatar name="Maria Silva" avatarUrl="https://example.com/photo.jpg" />);
+    expect(screen.getByText("MS")).toBeInTheDocument();
+    const img = screen.getByAltText("");
+    expect(img.className).toContain("opacity-0");
+    fireEvent.load(img);
+    expect(img.className).toContain("opacity-100");
+  });
+
+  it("pulses the tone layer only while the photo loads", () => {
+    render(<UserAvatar name="Maria Silva" avatarUrl="https://example.com/photo.jpg" />);
+    const toneLayer = screen.getByText("MS");
+    expect(toneLayer.className).toContain("animate-pulse");
+    expect(toneLayer.className).toContain("motion-reduce:animate-none");
+    fireEvent.load(screen.getByAltText(""));
+    expect(toneLayer.className).not.toContain("animate-pulse");
+  });
 });
