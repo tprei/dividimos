@@ -1,6 +1,6 @@
 import { transfersFromBalances } from "@/lib/ledger/transfers";
 import type { AppState } from "@/stores/app-store";
-import type { GroupSnapshot, MemberStatus, ParticipantKind } from "@/types/ledger";
+import type { BalanceRow, GroupSnapshot, MemberStatus, ParticipantKind } from "@/types/ledger";
 
 export interface DebtRow {
   groupId: string;
@@ -99,12 +99,19 @@ export function selectDebtRows(state: AppState): DebtRow[] {
   return rows;
 }
 
+function userNetCents(balances: readonly BalanceRow[], participantId: string): number {
+  for (const row of balances) {
+    if (row.kind === "user" && row.participantId === participantId) return row.netCents;
+  }
+  return 0;
+}
+
 /**
- * Live amount `fromId` still owes `toId` inside `groupId`'s minimized
- * transfer graph — the same derivation that produces the debt rows and the
- * group transfer list. Returns 0 when that edge no longer exists (the pair
- * settled) or the group is unknown, so an open Pix dialog can follow the
- * ledger instead of a frozen snapshot.
+ * Amount `fromId` may still pay `toId` in `groupId`: the cap the
+ * `record_settlement` RPC derives from the two raw nets, not the minimized
+ * pair edge. A reroute can dissolve the greedy edge while both nets still
+ * face each other, and only the nets decide whether the debt settled. Like
+ * the RPC, only user balances count, so guest counterparties cap at 0.
  */
 export function selectOutstandingCents(
   state: AppState,
@@ -114,10 +121,8 @@ export function selectOutstandingCents(
 ): number {
   const snapshot = state.groups[groupId];
   if (!snapshot) return 0;
-  for (const transfer of transfersFromBalances(snapshot.balances)) {
-    if (transfer.fromId === fromId && transfer.toId === toId) {
-      return transfer.amountCents;
-    }
-  }
-  return 0;
+  const fromNet = userNetCents(snapshot.balances, fromId);
+  const toNet = userNetCents(snapshot.balances, toId);
+  if (fromNet >= 0 || toNet <= 0) return 0;
+  return Math.min(-fromNet, toNet);
 }

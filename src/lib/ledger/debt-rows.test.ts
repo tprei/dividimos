@@ -236,7 +236,7 @@ describe("selectDebtRows", () => {
 });
 
 describe("selectOutstandingCents", () => {
-  it("returns the minimized transfer amount in the payer-to-recipient direction", () => {
+  it("caps at the smaller raw net in the payer-to-recipient direction", () => {
     useAppStore.setState({
       groups: {
         g1: snapshot("g1", {
@@ -272,5 +272,55 @@ describe("selectOutstandingCents", () => {
     });
 
     expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, carol.id)).toBe(200);
+  });
+
+  it("stays outstanding when a reroute dissolves the minimized pair edge", () => {
+    // The minimized graph pairs D→B 150 and A→C 50, so no A→B edge exists,
+    // yet the RPC still accepts A paying B up to min(50, 150).
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [
+            balance("user", "user-a", -50),
+            balance("user", "user-b", 150),
+            balance("user", "user-c", 50),
+            balance("user", "user-d", -150),
+          ],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", "user-a", "user-b")).toBe(50);
+  });
+
+  it("caps at the net even where the minimized edge is smaller", () => {
+    // The graph pairs A→C 100, B→C 50, B→D 50, but B may pay C up to
+    // min(-net(B), net(C)) like the RPC allows.
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [
+            balance("user", "user-a", -100),
+            balance("user", "user-b", -100),
+            balance("user", "user-c", 150),
+            balance("user", "user-d", 50),
+          ],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", "user-b", "user-c")).toBe(100);
+  });
+
+  it("ignores guest nets like the settlement RPC", () => {
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          balances: [balance("user", me.id, -100), balance("guest", "guest-1", 100)],
+        }),
+      },
+    });
+
+    expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, "guest-1")).toBe(0);
   });
 });

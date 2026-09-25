@@ -34,6 +34,7 @@ import {
 import { selectOutstandingCents } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
+import { selectPairEdgeCents } from "@/stores/app-selectors";
 import { generatePixCode, PixRequestError } from "@/lib/sync/pix";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/platform/clipboard";
@@ -91,6 +92,12 @@ interface PixQrModalBaseProps {
 
 export type PixQrModalProps = PixQrModalBaseProps & { recipientUserId: string; groupId: string };
 
+function pairDirection(mode: "pay" | "collect", meId: string, counterpartyId: string) {
+  return mode === "pay"
+    ? { fromId: meId, toId: counterpartyId }
+    : { fromId: counterpartyId, toId: meId };
+}
+
 export function PixQrModal({
   open,
   onClose,
@@ -111,25 +118,35 @@ export function PixQrModal({
   const [isSettling, setIsSettling] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [settledAmountCents, setSettledAmountCents] = useState(0);
-  // Live outstanding the payer still owes the recipient, straight from the
-  // store: an open modal follows settlements the other side records.
-  const maxCents = useAppStore((state) => {
+  // The RPC cap decides whether the pair settled; the minimized edge, when it
+  // still exists, is the amount the user tapped in the debt list.
+  const capCents = useAppStore((state) => {
     if (!state.me) return 0;
-    return selectOutstandingCents(
-      state,
-      groupId,
-      mode === "pay" ? state.me.id : counterpartyId,
-      mode === "pay" ? counterpartyId : state.me.id,
-    );
+    const { fromId, toId } = pairDirection(mode, state.me.id, counterpartyId);
+    return selectOutstandingCents(state, groupId, fromId, toId);
   });
-  const [paymentCents, setPaymentCents] = useState(maxCents);
+  const edgeCents = useAppStore((state) => {
+    if (!state.me) return 0;
+    const { fromId, toId } = pairDirection(mode, state.me.id, counterpartyId);
+    return selectPairEdgeCents(state, groupId, fromId, toId);
+  });
+  const reverseCapCents = useAppStore((state) => {
+    if (!state.me) return 0;
+    const { fromId, toId } = pairDirection(mode, state.me.id, counterpartyId);
+    return selectOutstandingCents(state, groupId, toId, fromId);
+  });
+  const maxCents = edgeCents > 0 ? edgeCents : capCents;
+  const [requestedCents, setRequestedCents] = useState(maxCents);
+  // Derived, never clamped into state: an optimistic patch that zeroes the
+  // ledger mid-write must not eat the user's requested amount on rollback.
+  const paymentCents = Math.min(requestedCents, maxCents);
   const [editingAmount, setEditingAmount] = useState(false);
   const [payload, setPayload] = useState<PixPayloadState>({ status: "idle" });
   const [showPayQr, setShowPayQr] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
 
-  const counterpartySettled = open && !showSuccess && maxCents === 0;
+  const counterpartySettled = open && !isSettling && !showSuccess && capCents === 0;
   const isFullPayment = paymentCents >= maxCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= maxCents;
   const halfCents = Math.ceil(maxCents / 2);
@@ -145,7 +162,9 @@ export function PixQrModal({
 
   const commitAmount = useCallback(() => {
     setEditingAmount(false);
-    setPaymentCents((current) => Math.min(Math.max(current, 1), maxCents));
+    setRequestedCents((current) =>
+      maxCents > 0 ? Math.min(Math.max(current, 1), maxCents) : current,
+    );
   }, [maxCents]);
   const settleKey = useRef(crypto.randomUUID());
 
@@ -172,7 +191,7 @@ export function PixQrModal({
         lastSnapRef.current = nearestSnap;
         haptics.selectionChanged();
       }
-      setPaymentCents(snapped);
+      setRequestedCents(snapped);
     },
     [snapPoints, snapRadius],
   );
@@ -192,7 +211,7 @@ export function PixQrModal({
     e.preventDefault();
     const clamped = Math.min(maxCents, Math.max(sliderMin, next));
     if (clamped === current) return;
-    setPaymentCents(clamped);
+    setRequestedCents(clamped);
     // A held arrow key repeats dozens of times per second; buzz once per burst.
     if (!e.repeat) haptics.selectionChanged();
   };
@@ -207,18 +226,12 @@ export function PixQrModal({
     }
     if (wasOpenRef.current || isSettling) return;
     wasOpenRef.current = true;
-    setPaymentCents(maxCents);
+    setRequestedCents(maxCents);
     setShowSuccess(false);
     setSettledAmountCents(0);
     setCopied(false);
     setCopyFailed(false);
   }, [maxCents, isSettling, open]);
-
-  // Follow the live ledger without stomping a smaller choice the user made:
-  // only clamp down when the outstanding dropped below it.
-  useEffect(() => {
-    setPaymentCents((current) => (current > maxCents ? maxCents : current));
-  }, [maxCents]);
 
   useEffect(() => {
     if (!counterpartySettled || settledHapticDoneRef.current) return;
@@ -339,11 +352,10 @@ export function PixQrModal({
     } catch (error) {
       setIsSettling(false);
       if (error instanceof LedgerError && error.code === "amount_exceeds_debt") {
-        // The ledger moved under us: the other side already settled (part of)
-        // this debt. Clamp to the live max; the refresh the rollback schedules
-        // then resolves the modal into the settled state. Never surface the
-        // RPC error.
-        setPaymentCents((current) => Math.min(current, maxCents));
+        // The ledger moved under us; the mutation's rollback/refresh restores
+        // the nets and the displayed amount re-derives from them. Just tell
+        // the user to recheck — never surface the RPC error itself.
+        toast("O valor mudou. Confira e tente de novo.");
         return;
       }
       toast.error(ledgerErrorMessage(error));
@@ -417,14 +429,26 @@ export function PixQrModal({
               <DialogTitle className="mt-5 text-xl">Tudo certo!</DialogTitle>
 
               <p className="mt-1 text-center text-sm text-muted-foreground">
-                {mode === "pay" ? (
-                  <>
-                    <span className="font-medium text-foreground">{recipientName}</span> já registrou esse pagamento.
-                  </>
-                ) : (
-                  "Esse pagamento já foi registrado."
-                )}
+                Não há nada pendente com{" "}
+                <span className="font-medium text-foreground">{recipientName}</span> agora.
               </p>
+
+              {reverseCapCents > 0 && (
+                <p className="mt-1 text-center text-sm text-muted-foreground">
+                  {mode === "pay" ? (
+                    <>
+                      Agora é{" "}
+                      <span className="font-medium text-foreground">{recipientName}</span> quem te
+                      deve <Money cents={reverseCapCents} size="sm" />.
+                    </>
+                  ) : (
+                    <>
+                      Agora é você quem deve <Money cents={reverseCapCents} size="sm" /> a{" "}
+                      <span className="font-medium text-foreground">{recipientName}</span>.
+                    </>
+                  )}
+                </p>
+              )}
 
               <div className="mt-6">
                 <Button
@@ -472,7 +496,7 @@ export function PixQrModal({
                           autoFocus
                           valueCents={paymentCents}
                           maxCents={maxCents}
-                          onChangeCents={setPaymentCents}
+                          onChangeCents={setRequestedCents}
                           aria-label="Editar valor"
                           className="h-12 w-40 text-3xl font-bold text-inherit compact:h-11 compact:w-28 compact:text-2xl"
                         />
@@ -505,7 +529,7 @@ export function PixQrModal({
                       />
                       <button
                         type="button"
-                        onClick={() => { setPaymentCents(maxCents); haptics.selectionChanged(); }}
+                        onClick={() => { setRequestedCents(maxCents); haptics.selectionChanged(); }}
                         disabled={isSettling}
                         aria-pressed={paymentCents === maxCents}
                         aria-label="Tudo"
@@ -521,7 +545,7 @@ export function PixQrModal({
                       {halfAvailable && (
                         <button
                           type="button"
-                          onClick={() => { setPaymentCents(halfCents); haptics.selectionChanged(); }}
+                          onClick={() => { setRequestedCents(halfCents); haptics.selectionChanged(); }}
                           disabled={isSettling}
                           aria-pressed={paymentCents === halfCents}
                           aria-label="Metade"

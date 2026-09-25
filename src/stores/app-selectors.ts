@@ -38,6 +38,24 @@ export function selectTransfers(state: AppState, groupId: string): Transfer[] {
   return transfers;
 }
 
+/**
+ * Amount of the minimized `fromId → toId` edge, or 0 when a reroute dissolved
+ * that pair. Reads through the cached `selectTransfers` so unrelated store
+ * updates don't recompute the graph; the still-payable cap is
+ * `selectOutstandingCents` in lib/ledger/debt-rows.
+ */
+export function selectPairEdgeCents(
+  state: AppState,
+  groupId: string,
+  fromId: string,
+  toId: string,
+): number {
+  for (const transfer of selectTransfers(state, groupId)) {
+    if (transfer.fromId === fromId && transfer.toId === toId) return transfer.amountCents;
+  }
+  return 0;
+}
+
 interface DebtsCache {
   groups: Record<string, GroupSnapshot>;
   meId: string | null;
