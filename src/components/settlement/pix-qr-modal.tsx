@@ -23,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
-import { generatePixCopiaECola } from "@/lib/pix";
 import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { ConfettiBurst } from "@/components/shared/confetti-burst";
@@ -42,10 +41,6 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { popIn } from "@/lib/animations";
 
 const PIX_QR_OPTIONS = { width: 240, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
-
-type PixQrModalSource =
-  | { pixKey: string; recipientUserId?: never; groupId?: never }
-  | { pixKey?: never; recipientUserId: string; groupId: string };
 
 type TimerId = number | NodeJS.Timeout;
 
@@ -93,7 +88,7 @@ interface PixQrModalBaseProps {
   onSettlementComplete?: () => void;
 }
 
-export type PixQrModalProps = PixQrModalBaseProps & PixQrModalSource;
+export type PixQrModalProps = PixQrModalBaseProps & { recipientUserId: string; groupId: string };
 
 export function PixQrModal({
   open,
@@ -102,7 +97,6 @@ export function PixQrModal({
   counterpartyId,
   counterpartyAvatarUrl,
   amountCents,
-  pixKey,
   recipientUserId,
   groupId,
   mode = "pay",
@@ -219,7 +213,7 @@ export function PixQrModal({
 
 
   const generatePayload = useCallback(() => {
-    if (!recipientUserId || !groupId || qrAmountCents <= 0) return;
+    if (qrAmountCents <= 0) return;
 
     clearTimeout(timerRef.current);
     abortRef.current?.abort();
@@ -251,7 +245,7 @@ export function PixQrModal({
   }, [recipientUserId, groupId, qrAmountCents]);
 
   useEffect(() => {
-    if (!open || pixKey || !recipientUserId || !groupId) return;
+    if (!open) return;
     if (qrAmountCents <= 0) return;
 
     setPayload({ status: "loading" });
@@ -263,18 +257,9 @@ export function PixQrModal({
       clearTimeout(timerRef.current);
       abortRef.current?.abort();
     };
-  }, [open, pixKey, recipientUserId, groupId, qrAmountCents, generatePayload]);
+  }, [open, recipientUserId, groupId, qrAmountCents, generatePayload]);
 
-  const copiaECola = pixKey
-    ? generatePixCopiaECola({
-        pixKey,
-        merchantName: recipientName,
-        merchantCity: "SAO PAULO",
-        amountCents: qrAmountCents,
-      })
-    : payload.status === "ready"
-      ? payload.code
-      : "";
+  const copiaECola = payload.status === "ready" ? payload.code : "";
 
   const showsQr = Boolean(copiaECola) && (showPayQr || mode === "collect");
 
