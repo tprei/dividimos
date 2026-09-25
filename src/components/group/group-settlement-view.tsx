@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { formatBRL } from "@/lib/currency";
 import { displayNames } from "@/lib/people";
-import type { DebtEdge } from "@/lib/simplify";
+import type { DebtEdge } from "@/types";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { selectTransfers } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
