@@ -382,10 +382,9 @@ export function refreshAssignmentRoomMember(roomId: string): Promise<AssignmentR
 export async function refreshAssignmentRoomCompletion(
   roomId: string,
 ): Promise<AssignmentRoomCompletion> {
-  const memberToken = readCredentials(roomId).memberToken ?? null;
   const completion = await rpc(
     "get_assignment_room_completion",
-    { p_room_id: roomId, p_member_token: memberToken as string },
+    { p_room_id: roomId, p_member_token: readCredentials(roomId).memberToken },
     decodeAssignmentRoomCompletion,
   );
   return completion;
