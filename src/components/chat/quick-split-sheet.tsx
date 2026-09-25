@@ -16,6 +16,7 @@ import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { formatBRL } from "@/lib/currency";
 import { allocateByWeights, allocateEvenly, parseAllocationPercentText } from "@/lib/expense-money";
 import { FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
@@ -171,6 +172,10 @@ export function QuickSplitSheet({
     if (isDisabled) return;
     onClose();
   };
+
+  // Hardware Back dismisses the sheet through the same guard as the
+  // backdrop, so a confirm in flight is never dropped.
+  useBackHandler(open && !isDisabled, onClose);
 
   if (!open) return null;
 

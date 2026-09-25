@@ -3,12 +3,15 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { useClientOnly } from "@/hooks/use-client-only";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buildWhatsAppLink } from "@/lib/contacts";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
 
 interface ProfileShareModalProps {
   open: boolean;
@@ -26,9 +29,8 @@ export function ProfileShareModal({
   avatarUrl,
 }: ProfileShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
+  useBackHandler(open, onClose);
 
   const profileUrl =
     typeof window !== "undefined"
@@ -37,37 +39,34 @@ export function ProfileShareModal({
 
   useEffect(() => {
     if (!open || !profileUrl || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, profileUrl, {
+    // A failed paint just leaves the canvas untouched; no state follows,
+    // so only the rejection needs handling.
+    void qrToCanvas(canvasRef.current, profileUrl, {
       width: 200,
       margin: 2,
       color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
+    }).catch(() => {});
   }, [open, profileUrl]);
 
   const shareMessage = `Me adicione no Dividimos! Meu perfil: @${handle}`;
 
   const handleShare = useCallback(async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Dividimos",
-          text: shareMessage,
-          url: profileUrl,
-        });
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          toast.error("Erro ao compartilhar");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(`${shareMessage}\n${profileUrl}`);
-      toast.success("Link copiado!");
+    if (!canShare) {
+      if (await copyText(`${shareMessage}\n${profileUrl}`)) toast.success("Link copiado!");
+      else toast.error("Não deu pra copiar");
+      return;
     }
-  }, [shareMessage, profileUrl]);
+    const outcome = await shareLink({
+      title: "Dividimos",
+      text: shareMessage,
+      url: profileUrl,
+    });
+    if (outcome === "unsupported") toast.error("Erro ao compartilhar");
+  }, [canShare, shareMessage, profileUrl]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(profileUrl);
-    toast.success("Link copiado!");
+    if (await copyText(profileUrl)) toast.success("Link copiado!");
+    else toast.error("Não deu pra copiar");
   }, [profileUrl]);
 
   const handleWhatsApp = useCallback(() => {

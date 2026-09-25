@@ -2,7 +2,6 @@
 
 import { Copy, MessageCircle, QrCode, RefreshCw, Share2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +18,9 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutations-group";
 import { cn } from "@/lib/utils";
 import { refreshExpense } from "@/lib/sync/refresh";
+import { copyText } from "@/lib/platform/clipboard";
+import { isShareSupported, shareLink } from "@/lib/platform/share";
+import { qrToCanvas } from "@/lib/qr";
 import type { GuestParticipant } from "@/types/ledger";
 
 interface GuestInviteDialogProps {
@@ -41,9 +43,7 @@ export function GuestInviteDialog({
   expenseTitle,
   expenseId,
 }: GuestInviteDialogProps) {
-  const canShare = useClientOnly(
-    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
-  );
+  const canShare = useClientOnly(isShareSupported);
   const [token, setToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -115,15 +115,17 @@ export function GuestInviteDialog({
   const paintQr = useCallback(
     (node: HTMLCanvasElement | null) => {
       if (!node || !claimUrl) return;
-      QRCode.toCanvas(
-        node,
-        claimUrl,
-        { width: 200, margin: 1, color: { dark: "#1a1d2e", light: "#ffffff" } },
-        () => {
-          node.style.removeProperty("width");
-          node.style.removeProperty("height");
-        },
-      );
+      // The library pins the drawn size with inline styles, which would
+      // outrank the class that shrinks the code in a short popover.
+      const unpinSize = () => {
+        node.style.removeProperty("width");
+        node.style.removeProperty("height");
+      };
+      void qrToCanvas(node, claimUrl, {
+        width: 200,
+        margin: 1,
+        color: { dark: "#1a1d2e", light: "#ffffff" },
+      }).then(unpinSize, unpinSize);
     },
     [claimUrl],
   );
@@ -136,22 +138,14 @@ export function GuestInviteDialog({
 
   async function handleShare() {
     if (!claimUrl) return;
-    try {
-      await navigator.share({ title: "Dividimos", text: shareText, url: claimUrl });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error("Não foi possível compartilhar");
-    }
+    const outcome = await shareLink({ title: "Dividimos", text: shareText, url: claimUrl });
+    if (outcome === "unsupported") toast.error("Não foi possível compartilhar");
   }
 
   async function handleCopy() {
     if (!claimUrl) return;
-    try {
-      await navigator.clipboard.writeText(claimUrl);
-      toast.success("Link copiado");
-    } catch {
-      toast.error("Não foi possível copiar o link");
-    }
+    if (await copyText(claimUrl)) toast.success("Link copiado");
+    else toast.error("Não foi possível copiar o link");
   }
 
   return (

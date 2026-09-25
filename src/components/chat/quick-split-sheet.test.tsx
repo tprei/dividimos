@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { QuickSplitSheet } from "./quick-split-sheet";
 import type { UserProfile } from "@/types/ledger";
 
@@ -183,6 +184,21 @@ describe("QuickSplitSheet", () => {
   it("prevents closing during confirming state", async () => {
     const { user, onClose } = renderSheet({ status: "confirming" });
     await user.click(screen.getByTestId("quick-split-backdrop"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes on hardware Back instead of navigating away", () => {
+    const { onClose } = renderSheet();
+
+    // true means the app consumed Back; false would let it navigate.
+    expect(runBackHandlers()).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the sheet open on hardware Back while a confirm is in flight", () => {
+    const { onClose } = renderSheet({ status: "confirming" });
+
+    expect(runBackHandlers()).toBe(false);
     expect(onClose).not.toHaveBeenCalled();
   });
 

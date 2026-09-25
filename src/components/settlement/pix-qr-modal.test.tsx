@@ -3,8 +3,8 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { useState } from "react";
 import { LedgerError } from "@/lib/sync/errors";
 
-vi.mock("qrcode", () => ({
-  default: { toCanvas: vi.fn() },
+vi.mock("@/lib/qr", () => ({
+  qrToCanvas: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@/lib/pix", () => ({
@@ -44,7 +44,7 @@ vi.mock("@/components/shared/confetti-burst", () => ({
   ConfettiBurst: () => null,
 }));
 
-import QRCode from "qrcode";
+import { qrToCanvas } from "@/lib/qr";
 import { haptics } from "@/hooks/use-haptics";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { PixQrModal } from "./pix-qr-modal";
@@ -180,11 +180,10 @@ describe("PixQrModal", () => {
       screen.getByRole("button", { name: "Mostrar QR code" }),
     );
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "fetched-br-code",
         expect.anything(),
-        expect.any(Function),
       );
     }, { timeout: 3000 });
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -549,11 +548,11 @@ describe("PixQrModal", () => {
       expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeEnabled();
     });
 
-    vi.mocked(QRCode.toCanvas).mockClear();
+    vi.mocked(qrToCanvas).mockClear();
     fireEvent.click(screen.getByRole("button", { name: /Metade/i }));
 
     expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeDisabled();
-    expect(QRCode.toCanvas).not.toHaveBeenCalledWith(
+    expect(qrToCanvas).not.toHaveBeenCalledWith(
       expect.anything(),
       "br-code-for-10000",
       expect.anything(),
@@ -610,33 +609,30 @@ describe("PixQrModal", () => {
       screen.getByRole("button", { name: "Mostrar QR code" }),
     );
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "br-code-10000",
         expect.anything(),
-        expect.any(Function),
       );
     }, { timeout: 3000 });
 
     fireEvent.click(screen.getByRole("button", { name: /Metade/i }));
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "br-code-5000",
         expect.anything(),
-        expect.any(Function),
       );
     }, { timeout: 4000 });
 
-    vi.mocked(QRCode.toCanvas).mockClear();
+    vi.mocked(qrToCanvas).mockClear();
     fireEvent.click(screen.getByRole("button", { name: /Tudo/i }));
 
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+      expect(qrToCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "br-code-10000",
         expect.anything(),
-        expect.any(Function),
       );
     }, { timeout: 4000 });
   });
@@ -711,7 +707,7 @@ describe("PixQrModal", () => {
     });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     expect(disclosure).toHaveAttribute("aria-controls", "pix-qr-region");
-    expect(QRCode.toCanvas).not.toHaveBeenCalled();
+    expect(qrToCanvas).not.toHaveBeenCalled();
     expect(screen.queryByText("1. Pague no app do seu banco")).not.toBeInTheDocument();
     expect(
       screen.getByText(
@@ -737,14 +733,14 @@ describe("PixQrModal", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
     mockFetch.mockClear();
-    vi.mocked(QRCode.toCanvas).mockClear();
+    vi.mocked(qrToCanvas).mockClear();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Mostrar QR code" }),
     );
 
     await waitFor(() => {
-      expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+      expect(qrToCanvas).toHaveBeenCalledTimes(1);
     });
     expect(mockFetch).not.toHaveBeenCalled();
     expect(
@@ -755,7 +751,7 @@ describe("PixQrModal", () => {
   it("renders the collect QR immediately with the collect expectation line", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} mode="collect" />);
 
-    expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+    expect(qrToCanvas).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByRole("button", { name: /Mostrar QR code/ }),
     ).not.toBeInTheDocument();

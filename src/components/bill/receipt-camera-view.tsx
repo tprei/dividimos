@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 export interface ReceiptCameraViewProps {
   /** Called with the captured JPEG when the user taps the shutter. */
@@ -163,6 +164,10 @@ export function ReceiptCameraView({
     stopStream();
     onClose();
   }, [onClose, stopStream]);
+
+  // The live camera is the top overlay while mounted: hardware Back closes
+  // it like the Fechar button instead of navigating.
+  useBackHandler(true, handleClose);
 
   const handleRetry = useCallback(() => {
     setStatus("starting");

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
+import { readClipboardText } from "@/lib/platform/clipboard";
 import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
@@ -152,8 +153,8 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   };
 
   const handlePaste = async () => {
-    const text = await navigator.clipboard.readText();
-    getInputHandler()(text.trim());
+    const text = await readClipboardText();
+    if (text) getInputHandler()(text.trim());
   };
 
   const handleSubmit = () => {
