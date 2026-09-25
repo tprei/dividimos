@@ -24,7 +24,7 @@ test.describe("Group register payment", () => {
     const amount = page.getByRole("textbox", { name: "Valor do pagamento" });
     await amount.click();
     await amount.fill("30,00");
-    await page.getByRole("button", { name: /^Registrar$|Confirmar/ }).click();
+    await page.getByTestId("group-payment-confirm").click();
 
     await expect(page.getByText(/Você pagou/)).toBeVisible({ timeout: 15000 });
 
@@ -51,7 +51,7 @@ test.describe("Group register payment", () => {
     await expect(page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /^Pagar/ })).toHaveAccessibleName(/R\$\s*20,00/);
   });
 
-  test("settles with the counterparty picked from the list, not the default one", async ({
+  test("settles with the counterparty picked from the avatars, not the preselected one", async ({
     page,
     seed,
     loginAs,
@@ -80,19 +80,15 @@ test.describe("Group register payment", () => {
 
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
-    // The sheet opens on the group's first member; the test picks the other
-    // one so a select that ignores the click cannot pass.
-    const picker = page.getByRole("combobox", { name: "Com quem?" });
-    await expect(picker).toBeVisible();
-    const shown = (await picker.textContent()) ?? "";
-    const target = shown.includes(bob.name) ? carol : bob;
-    const expectedCents = target.id === bob.id ? 5000 : 3000;
-
-    await picker.click();
-    await page
-      .getByRole("option", { name: target.name, exact: true })
-      .click();
-    await expect(page.getByText(`Você pagou para ${target.name}`)).toBeVisible();
+    // The form opens on the largest open balance (Bob, R$ 50); the test picks
+    // the other member so a picker that ignores the tap cannot pass.
+    const people = page.getByRole("radiogroup", { name: "Com quem?" });
+    await expect(people.getByRole("radio", { name: bob.name })).toBeChecked();
+    await people.getByRole("radio", { name: carol.name }).click();
+    await expect(people.getByRole("radio", { name: carol.name })).toBeChecked();
+    await expect(
+      page.getByRole("radio", { name: `Você pagou para ${carol.name}` }),
+    ).toBeChecked();
 
     await page.getByTestId("group-payment-settle-all").click();
     await page.getByTestId("group-payment-confirm").click();
@@ -108,8 +104,8 @@ test.describe("Group register payment", () => {
       .toEqual([
         {
           from_user_id: alice.id,
-          to_user_id: target.id,
-          amount_cents: expectedCents,
+          to_user_id: carol.id,
+          amount_cents: 3000,
           status: "confirmed",
         },
       ]);

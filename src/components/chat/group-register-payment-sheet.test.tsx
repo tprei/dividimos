@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   runBackHandlers,
@@ -7,13 +7,16 @@ import {
 } from "@/lib/capacitor/back-handler";
 import {
   GroupRegisterPaymentSheet,
+  type GroupPaymentCounterparty,
   type GroupPaymentStatus,
 } from "./group-register-payment-sheet";
 
-const MEMBERS = [
-  { id: "user-bob", name: "Bob Santos", handle: "bob", owedByMeCents: 5000, owedToMeCents: 2500 },
-  { id: "user-carol", name: "Carol Dias", handle: "carol", owedByMeCents: 10000, owedToMeCents: 7500 },
+const MEMBERS: GroupPaymentCounterparty[] = [
+  { id: "user-bob", name: "Bob Santos", avatarUrl: null, handle: "bob", owedByMeCents: 5000, owedToMeCents: 2500 },
+  { id: "user-carol", name: "Carol Dias", avatarUrl: null, handle: "carol", owedByMeCents: 3000, owedToMeCents: 1000 },
 ];
+
+const ME = { id: "user-alice", name: "Alice Lima", avatarUrl: null };
 
 function renderSheet(
   status?: GroupPaymentStatus,
@@ -22,20 +25,14 @@ function renderSheet(
   onLeavePending = vi.fn(),
 ) {
   const onConfirm = vi.fn();
-  // A real mounted trigger: the popover positions against it and focus
-  // returns there on dismissal, exactly as in the chat screen.
-  const anchor = document.createElement("button");
-  anchor.textContent = "Registrar pagamento";
-  document.body.appendChild(anchor);
   render(
     <GroupRegisterPaymentSheet
-      currentUserHandle="alice"
+      currentUser={ME}
       counterparties={counterparties}
       onConfirm={onConfirm}
       onDismiss={onDismiss}
       onLeavePending={onLeavePending}
       status={status}
-      anchor={anchor}
     />,
   );
   return { onConfirm, onDismiss, onLeavePending, user: userEvent.setup() };
@@ -63,7 +60,7 @@ describe("GroupRegisterPaymentSheet", () => {
 
     // The tap that closes the form lands on the backdrop, never on the
     // settlement control underneath it.
-    const backdrop = document.querySelector('[data-slot="popover-backdrop"]');
+    const backdrop = document.querySelector('[data-slot="dialog-overlay"]');
     expect(backdrop).not.toBeNull();
     await user.click(backdrop as HTMLElement);
 
@@ -113,11 +110,24 @@ describe("GroupRegisterPaymentSheet", () => {
       vi.useRealTimers();
     }
   });
+  it("preselects the largest open balance and the direction that settles it", () => {
+    renderSheet(undefined, [
+      { ...MEMBERS[0], owedByMeCents: 0, owedToMeCents: 800 },
+      { ...MEMBERS[1], owedByMeCents: 0, owedToMeCents: 9000 },
+    ]);
+
+    const people = screen.getByRole("radiogroup", { name: "Com quem?" });
+    expect(within(people).getByRole("radio", { name: "Carol Dias" })).toBeChecked();
+    expect(within(people).getByRole("radio", { name: "Bob Santos" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Carol Dias pagou para você" })).toBeChecked();
+  });
+
   it("reports the chosen member, direction, and amount in cents", async () => {
     const { onConfirm, user } = renderSheet();
 
-    await user.click(screen.getByRole("combobox", { name: "Com quem?" }));
-    await user.click(await screen.findByRole("option", { name: /Carol Dias/ }));
+    const people = screen.getByRole("radiogroup", { name: "Com quem?" });
+    await user.click(within(people).getByRole("radio", { name: "Carol Dias" }));
+    expect(screen.getByRole("radio", { name: "Você pagou para Carol Dias" })).toBeChecked();
     setAmountText("3,00");
     await user.click(screen.getByTestId("group-payment-confirm"));
 
@@ -186,7 +196,7 @@ describe("GroupRegisterPaymentSheet", () => {
 
   it("shows settled copy and hides chip row when both debt figures are zero", () => {
     const zeroMember = [
-      { id: "user-dave", name: "Dave Souza", handle: "dave", owedByMeCents: 0, owedToMeCents: 0 },
+      { id: "user-dave", name: "Dave Souza", avatarUrl: null, handle: "dave", owedByMeCents: 0, owedToMeCents: 0 },
     ];
     renderSheet(undefined, zeroMember);
 
