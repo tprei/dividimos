@@ -2,7 +2,10 @@
 
 import { X } from "lucide-react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import { ScreenHeader } from "@/components/shared/screen-header";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
@@ -41,8 +44,6 @@ import type { ExpenseDetail, GroupSnapshot } from "@/types/ledger";
 import { ExpenseConflictPanel } from "@/components/bill/wizard/expense-conflict-panel";
 import type { ExpenseType, User } from "@/types";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
-import {
-} from "@/lib/bill-draft-isolation";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 import { buildScanDraftCandidate, type ScanDraftCandidate } from "./scan-replacement";
@@ -142,6 +143,7 @@ function NewBillPageContent() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [discardDialogMode, setDiscardDialogMode] = useState<DiscardDraftMode>("type-switch");
   const [pendingType, setPendingType] = useState<ExpenseType | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [pendingVoice, setPendingVoice] = useState<{
     result: VoiceExpenseResult;
     resolvedParticipants: ResolvedParticipant[];
@@ -651,6 +653,24 @@ function NewBillPageContent() {
     setCreateGroupName("");
   };
 
+  const requestClose = () => {
+    if (me && hasMeaningfulDraft(store, me.id)) setLeaveOpen(true);
+    else router.push("/app");
+  };
+  useBackHandler(!reviewingScan && (isTypeStep || isSingleFlow), requestClose);
+  const leaveDialog = (
+    <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+      <DialogContent showCloseButton={false}>
+        <DialogTitle>Sair desta conta?</DialogTitle>
+        <DialogDescription>O rascunho fica salvo pra continuar depois.</DialogDescription>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => setLeaveOpen(false)}>Continuar editando</Button>
+          <Button className="flex-1" onClick={() => router.push("/app")}>Sair e guardar</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (!mounted || !me) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6" aria-busy="true">
@@ -715,35 +735,30 @@ function NewBillPageContent() {
         isEditing={isEditing}
         hasContactPicker={hasContactPicker}
         onPickContacts={handlePickContacts}
-        onBack={goBack}
+        onBack={requestClose}
         submit={submit}
         submitting={submitting}
         conflictPanel={conflictPanel}
         submitBlockedReason={conflictBlockedReason}
       />
+        {leaveDialog}
       </>
     );
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto max-w-lg pb-[max(1.5rem,env(safe-area-inset-bottom))] md:max-w-2xl">
       {!reviewingScan && (
-        <div className="flex items-center gap-3">
-          <Link
-            href="/app"
-            aria-label="Fechar"
-            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
-          >
-            <X className="h-5 w-5" />
-          </Link>
-          <h1 className="text-[22px] leading-tight font-bold tracking-tight">
-            {isDmMode ? "Cobrar" : "Nova conta"}
-          </h1>
-        </div>
+        <ScreenHeader title="Nova conta" action={
+          <Button variant="ghost" size="icon-lg" aria-label="Fechar" onClick={requestClose}>
+            <X className="size-5" />
+          </Button>
+        } />
       )}
+      {leaveDialog}
 
       {isTypeStep && mounted && me && store.expense && hasMeaningfulDraft(store, me.id) && !dismissedThisMount && !reviewingScan && (
-        <div className="mt-4">
+        <div className="mt-3 px-4">
           <DraftResumeBanner
             title={draftSummary.title}
             itemCount={draftSummary.itemCount}
@@ -754,7 +769,7 @@ function NewBillPageContent() {
         </div>
       )}
 
-      <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
+      <div className={reviewingScan ? "px-4" : "px-4 pt-3"}>
         <TypeStep
           accountId={me?.id ?? null}
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({

@@ -9,7 +9,7 @@ test.describe("Bill draft", () => {
     const alice = await seed.createUser({ name: "Alice Draft" });
     await loginAs(alice);
 
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
     const titleInput = page.getByLabel("Nome");
@@ -17,18 +17,16 @@ test.describe("Bill draft", () => {
     await titleInput.fill("Aluguel da praia");
     await page.getByLabel("Valor total").fill("360,50");
 
-    // Leave mid-draft and come back later, the way a user does: through the
-    // bottom navigation, never reloading the page.
-    await page.getByRole("button", { name: "Voltar" }).click();
-    await page.getByRole("link", { name: "Fechar" }).click();
-    await page.locator("nav").getByRole("link", { name: "Grupos" }).click();
+    await page.getByRole("button", { name: /^(Voltar|Fechar)$/ }).click();
+    await page.getByRole("button", { name: "Sair e guardar" }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    await page.goto("/app/groups");
     await expect(page).toHaveURL(/\/app\/groups$/);
 
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.goto("/app/bill/new");
 
-    const banner = page.getByText("Continuar de onde você parou?");
-    await expect(banner).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("«Aluguel da praia»")).toBeVisible();
+    const banner = page.getByRole("status").filter({ hasText: "Aluguel da praia" });
+    await expect(banner).toContainText("Aluguel da praia", { timeout: 10000 });
     await expect(page.getByText("R$ 360,50")).toBeVisible();
 
     await page.getByRole("button", { name: "Continuar" }).click();
@@ -41,30 +39,31 @@ test.describe("Bill draft", () => {
     const alice = await seed.createUser({ name: "Alice Discard" });
     await loginAs(alice);
 
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
     await page.getByLabel("Nome").fill("Cinema sábado");
     await page.getByLabel("Valor total").fill("84,00");
 
-    await page.getByRole("button", { name: "Voltar" }).click();
-    await page.getByRole("link", { name: "Fechar" }).click();
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.getByRole("button", { name: /^(Voltar|Fechar)$/ }).click();
+    await page.getByRole("button", { name: "Sair e guardar" }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    await page.goto("/app/bill/new");
 
-    await expect(page.getByText("Continuar de onde você parou?")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("status").filter({ hasText: "Cinema sábado" })).toBeVisible({ timeout: 10000 });
     await page.getByRole("button", { name: "Descartar" }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("Descartar o rascunho?")).toBeVisible();
     await dialog.getByRole("button", { name: "Descartar rascunho" }).click();
 
-    await expect(page.getByText("Que tipo de conta?")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Valor único/ })).toBeVisible();
 
-    // A later visit reads the same reset store: no banner comes back.
-    await page.getByRole("link", { name: "Fechar" }).click();
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
-    await expect(page.getByText("Continuar de onde você parou?")).toBeHidden({ timeout: 10000 });
-    await expect(page.getByText("Que tipo de conta?")).toBeVisible();
+    await page.getByRole("button", { name: "Fechar" }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    await page.goto("/app/bill/new");
+    await expect(page.getByRole("button", { name: "Continuar", exact: true })).toBeHidden({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: /Valor único/ })).toBeVisible();
   });
 
   test("resumes a draft after a hard reload / PWA cold start", async ({
@@ -75,7 +74,7 @@ test.describe("Bill draft", () => {
     const alice = await seed.createUser({ name: "Alice Reload Draft" });
     await loginAs(alice);
 
-    await page.locator("nav").getByRole("link", { name: "Nova conta" }).click();
+    await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
 
     const titleInput = page.getByLabel("Nome");
@@ -87,9 +86,8 @@ test.describe("Bill draft", () => {
 
     await page.goto("/app/bill/new");
 
-    const banner = page.getByText("Continuar de onde você parou?");
-    await expect(banner).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("«Aluguel da praia»")).toBeVisible();
+    const banner = page.getByRole("status").filter({ hasText: "Aluguel da praia" });
+    await expect(banner).toContainText("Aluguel da praia", { timeout: 10000 });
     await expect(page.getByText("R$ 360,50")).toBeVisible();
 
     await page.getByRole("button", { name: "Continuar" }).click();

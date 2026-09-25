@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { haptics } from "@/hooks/use-haptics";
 import { buildExpensePayload } from "@/lib/ledger/payload";
 import { createExpense, createExpenseWithGroup, editExpense } from "@/lib/sync/mutations";
 import { getOrCreateDm, inviteMember } from "@/lib/sync/mutations-group";
@@ -104,6 +105,7 @@ export function useWizardSubmit({
       const occurredOn = state.occurredOn ?? todayIsoDate();
       const result = buildExpensePayload(state, occurredOn);
       if (!result.ok) {
+        haptics.error();
         toast.error(payloadIssueMessage(result.issue));
         return false;
       }
@@ -127,6 +129,7 @@ export function useWizardSubmit({
             header,
             payload,
           });
+          haptics.success();
           useBillStore.getState().reset();
           clearDraftIntent();
           router.push(`/app/bill/${editExpenseId}`);
@@ -161,11 +164,13 @@ export function useWizardSubmit({
           });
         }
 
+        haptics.success();
         useBillStore.getState().reset();
         clearDraftIntent();
         router.push(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
       } catch (error) {
+        haptics.error();
         if (error instanceof LedgerError && error.code === "stale_version") {
           onStaleVersion();
           return false;
