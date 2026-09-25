@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { ChatInput } from "./chat-input";
@@ -125,5 +125,34 @@ describe("ChatInput", () => {
 
     const textarea = screen.getByPlaceholderText("Mensagem...");
     expect(textarea).toBeDisabled();
+  });
+
+  it("sends the characters an IME still holds in marked text", async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>("Mensagem...");
+    await user.type(textarea, "Ol");
+    fireEvent.compositionStart(textarea);
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "Ola");
+    fireEvent.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith("Ola");
+    });
+  });
+
+  it("an Enter that confirms an IME candidate does not send", async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<ChatInput onSend={onSend} />);
+
+    const textarea = screen.getByPlaceholderText("Mensagem...");
+    await user.type(textarea, "ni hao");
+    fireEvent.keyDown(textarea, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(textarea, { key: "Enter", keyCode: 229 });
+
+    expect(onSend).not.toHaveBeenCalled();
   });
 });

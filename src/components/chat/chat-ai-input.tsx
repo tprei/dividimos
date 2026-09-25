@@ -4,7 +4,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/icon-button";
-import { ComposerDock, ComposerField, ComposerSendButton } from "@/components/chat/composer";
+import {
+  ComposerDock,
+  ComposerField,
+  ComposerSendButton,
+  isImeComposing,
+} from "@/components/chat/composer";
 import { ChatDraftCard, type ChatDraftStatus } from "@/components/chat/chat-draft-card";
 import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
@@ -67,7 +72,9 @@ export function ChatAiInput(props: ChatAiInputProps) {
   const editGenerationRef = useRef(0);
 
   const handleSubmit = useCallback(async () => {
-    const trimmed = text.trim();
+    // The field, not state, is the truth: an IME can still hold the last
+    // characters in marked text that has not reached onChange yet.
+    const trimmed = (inputRef.current?.value ?? text).trim();
     if (!trimmed) return;
 
     if (isAiMode) {
@@ -107,7 +114,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
         e.preventDefault();
         handleSubmit();
       }

@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ComposerDock, ComposerField, ComposerSendButton } from "@/components/chat/composer";
+import {
+  ComposerDock,
+  ComposerField,
+  ComposerSendButton,
+  isImeComposing,
+} from "@/components/chat/composer";
 import { haptics } from "@/hooks/use-haptics";
 
 interface ChatInputProps {
@@ -28,7 +33,9 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
   }, []);
 
   const handleSend = useCallback(async () => {
-    const trimmed = value.trim();
+    // The field, not state, is the truth: an IME can still hold the last
+    // characters in marked text that has not reached onChange yet.
+    const trimmed = (textareaRef.current?.value ?? value).trim();
     if (!trimmed || sending || disabled) return;
 
     setSending(true);
@@ -49,7 +56,7 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
         e.preventDefault();
         handleSend();
       }

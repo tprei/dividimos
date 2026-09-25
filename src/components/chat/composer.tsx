@@ -1,9 +1,18 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/**
+ * An Enter pressed while an IME is composing (Pinyin, Japanese, iOS marked
+ * text) confirms the candidate; it is not a send. Safari reports that Enter
+ * with `isComposing` false but keyCode 229, so both are checked.
+ */
+export function isImeComposing(event: KeyboardEvent): boolean {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
 
 /**
  * Full-bleed bar docked to the bottom of a chat screen. The body already owns

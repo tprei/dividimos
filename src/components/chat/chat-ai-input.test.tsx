@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatAiInput } from "./chat-ai-input";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -310,6 +310,33 @@ describe("ChatAiInput", () => {
 
     await user.type(screen.getByTestId("chat-input"), "Oi{Enter}");
     expect(onSend).toHaveBeenCalledWith("Oi");
+  });
+
+  it("sends the characters an IME still holds in marked text", async () => {
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId<HTMLInputElement>("chat-input");
+    await user.type(input, "Ol");
+    fireEvent.compositionStart(input);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Ola");
+    fireEvent.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith("Ola");
+    });
+  });
+
+  it("an Enter that confirms an IME candidate does not send", async () => {
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId("chat-input");
+    await user.type(input, "ni hao");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+
+    expect(onSend).not.toHaveBeenCalled();
   });
 });
 
