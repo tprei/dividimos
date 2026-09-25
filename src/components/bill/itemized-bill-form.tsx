@@ -291,6 +291,8 @@ export function ItemizedBillForm({
           basisPointsById: payers.draft.percent.shares,
           centsById: payers.centsById,
           onShareChange: payers.setShare,
+          completable: payers.completable,
+          onComplete: payers.complete,
           onSplitEvenly: payers.canSplitEvenly ? payers.splitEvenly : null,
           remainderCents: payers.remainderCents,
           summary: splitPeople.map((person) => ({

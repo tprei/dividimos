@@ -119,6 +119,31 @@ export function setSplitShare(balance: SplitBalance, id: string, value: number):
   return settle(balance.total, balance.ids, userShares, setByUser, id);
 }
 
+/**
+ * What `id` would gain by taking everything nobody else was given by hand:
+ * the total minus the other user-set shares, less what `id` holds now. Zero
+ * until someone else has been set, so an untouched even split offers nothing.
+ */
+export function completableShare(balance: SplitBalance, id: string): number {
+  if (!balance.ids.includes(id)) return 0;
+  let pinnedByOthers = 0;
+  let anyPinned = false;
+  for (const other of balance.setByUser) {
+    if (other === id) continue;
+    anyPinned = true;
+    pinnedByOthers += balance.shares[other] ?? 0;
+  }
+  if (!anyPinned) return 0;
+  return Math.max(0, balance.total - pinnedByOthers - (balance.shares[id] ?? 0));
+}
+
+/** `id` takes the whole remainder; the people nobody set drop to zero. */
+export function completeSplitShare(balance: SplitBalance, id: string): SplitBalance {
+  const extra = completableShare(balance, id);
+  if (extra === 0) return balance;
+  return setSplitShare(balance, id, (balance.shares[id] ?? 0) + extra);
+}
+
 /** People joined or left: the user's shares stay, the rest re-spreads. */
 export function withSplitPeople(balance: SplitBalance, ids: readonly string[]): SplitBalance {
   const setByUser = balance.setByUser.filter((id) => ids.includes(id));

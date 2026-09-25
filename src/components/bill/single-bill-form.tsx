@@ -286,7 +286,7 @@ export function SingleBillForm({
 
       {step === 1 && (
         <div className="space-y-4 px-4 py-3">
-          <div className="space-y-2">
+          <div className="space-y-2 split-typing:hidden">
             <AmountField
               valueCents={totalCents}
               onChangeCents={(cents) => store.updateExpense({ totalAmountInput: cents, totalAmount: cents })}
@@ -312,6 +312,8 @@ export function SingleBillForm({
               basisPointsById={consumed.percent.shares}
               centsById={consumedCents}
               onShareChange={consumption.setShare}
+              completable={consumption.completable}
+              onComplete={consumption.complete}
               onSplitEvenly={consumption.canSplitEvenly ? consumption.splitEvenly : null}
               emptyText="Escolha quem consumiu."
               shareVerb="consumiu"
@@ -344,6 +346,8 @@ export function SingleBillForm({
               basisPointsById={payers.draft.percent.shares}
               centsById={payers.centsById}
               onShareChange={payers.setShare}
+              completable={payers.completable}
+              onComplete={payers.complete}
               onSplitEvenly={payers.canSplitEvenly ? payers.splitEvenly : null}
               emptyText="Escolha quem pagou."
               shareVerb="pagou"

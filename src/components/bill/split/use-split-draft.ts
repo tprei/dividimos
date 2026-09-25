@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { allocateByBasisPoints, allocateByWeights } from "@/lib/expense-money";
 import { FULL_PERCENT_BASIS_POINTS } from "@/lib/item-division";
 import {
+  completableShare,
+  completeSplitShare,
   evenSplitBalance,
   setSplitShare,
   splitBalanceFromShares,
@@ -150,6 +152,11 @@ export function useSplitDraft({
     if (draft.mode === "fixed") setDraft({ ...draft, fixed: setSplitShare(draft.fixed, id, value) });
   };
 
+  const complete = (id: string) => {
+    if (draft.mode === "percent") setDraft({ ...draft, percent: completeSplitShare(draft.percent, id) });
+    if (draft.mode === "fixed") setDraft({ ...draft, fixed: completeSplitShare(draft.fixed, id) });
+  };
+
   const splitEvenly = () => {
     setDraft({
       ...draft,
@@ -159,6 +166,13 @@ export function useSplitDraft({
   };
 
   const shownBalance = draft.mode === "percent" ? draft.percent : draft.mode === "fixed" ? draft.fixed : null;
+  const completable: Record<string, number> = {};
+  if (shownBalance) {
+    for (const id of draft.included) {
+      const extra = completableShare(shownBalance, id);
+      if (extra > 0) completable[id] = extra;
+    }
+  }
   const remainderCents =
     draft.included.length === 0
       ? 0
@@ -169,9 +183,12 @@ export function useSplitDraft({
     centsById,
     remainderCents,
     canSplitEvenly: shownBalance !== null && shownBalance.setByUser.length > 0,
+    /** Units (basis points or centavos) each person would gain with "Completar". */
+    completable,
     setMode,
     toggle,
     setShare,
+    complete,
     splitEvenly,
   };
 }

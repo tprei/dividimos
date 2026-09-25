@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  completableShare,
+  completeSplitShare,
   evenSplitBalance,
   setSplitShare,
   splitBalanceFromShares,
@@ -134,7 +136,7 @@ describe("the sum always holds", () => {
       for (let edit = 0; edit < 12; edit++) {
         const id = ids[Math.floor(random() * count)];
         const value = Math.floor(random() * (total + 2)) - 1;
-        balance = setSplitShare(balance, id, value);
+        balance = random() < 0.25 ? completeSplitShare(balance, id) : setSplitShare(balance, id, value);
         expect(splitRemainder(balance)).toBe(0);
         for (const share of sharesOf(balance)) {
           expect(Number.isInteger(share)).toBe(true);
@@ -142,6 +144,38 @@ describe("the sum always holds", () => {
         }
       }
     }
+  });
+});
+
+describe("completing one person's share", () => {
+  it("offers nothing while nobody else was set by hand", () => {
+    const even = evenSplitBalance(FULL, ["a", "b", "c"]);
+    expect(["a", "b", "c"].map((id) => completableShare(even, id))).toEqual([0, 0, 0]);
+  });
+
+  it("offers what the untouched people hold and hands it over exactly", () => {
+    const typed = setSplitShare(evenSplitBalance(FULL, ["a", "b", "c"]), "a", 7000);
+    expect(sharesOf(typed)).toEqual([7000, 1500, 1500]);
+    expect(completableShare(typed, "a")).toBe(0);
+    expect(completableShare(typed, "c")).toBe(1500);
+
+    const completed = completeSplitShare(typed, "c");
+    expect(sharesOf(completed)).toEqual([7000, 0, 3000]);
+    expect(splitRemainder(completed)).toBe(0);
+    expect(completableShare(completed, "b")).toBe(0);
+  });
+
+  it("lets someone set to zero take back what is left in centavos", () => {
+    let balance = setSplitShare(evenSplitBalance(6001, ["a", "b", "c"]), "a", 4200);
+    balance = setSplitShare(balance, "b", 0);
+    expect(sharesOf(balance)).toEqual([4200, 0, 1801]);
+    expect(completableShare(balance, "b")).toBe(1801);
+    expect(sharesOf(completeSplitShare(balance, "b"))).toEqual([4200, 1801, 0]);
+  });
+
+  it("leaves the balance alone when there is nothing to complete", () => {
+    const typed = setSplitShare(evenSplitBalance(FULL, ["a", "b"]), "a", 4000);
+    expect(completeSplitShare(typed, "b")).toBe(typed);
   });
 });
 
