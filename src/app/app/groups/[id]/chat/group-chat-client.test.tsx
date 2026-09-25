@@ -163,10 +163,27 @@ describe("GroupChatClient", () => {
 
     expect(screen.getByText("Churrasco")).toBeDefined();
     expect(screen.getByText("Levo o carvão")).toBeDefined();
-    expect(screen.getByText("2 membros")).toBeDefined();
     expect(screen.getByRole("link", { name: "Ver grupo" }).getAttribute("href")).toBe(
       "/app/groups/group-1",
     );
+  });
+
+  it("shows the viewer's debt under the header and keeps payment in the composer", () => {
+    seed(
+      makeSnapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -2500 },
+          { kind: "user", participantId: carol.id, netCents: 2500 },
+        ],
+      }),
+    );
+
+    render(<GroupChatClient groupId="group-1" />);
+
+    expect(screen.getByText("Você deve").parentElement?.textContent).toMatch(/R\$\s25,00/);
+    const payment = screen.getByRole("button", { name: "Registrar pagamento" });
+    fireEvent.change(screen.getByPlaceholderText("Mensagem..."), { target: { value: "oi" } });
+    expect(payment).not.toBeInTheDocument();
   });
 
   it("sends a message through the group mutation", async () => {

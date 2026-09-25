@@ -248,7 +248,7 @@ describe("ConversationPageClient", () => {
       "Essa conversa não está disponível para sua conta.",
     );
     expect(screen.queryByTestId("chat-input")).toBeNull();
-    expect(screen.queryByText("Nova cobrança")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Nova cobrança" })).toBeNull();
   });
 
   it("sending a message calls sendMessage", async () => {
@@ -329,7 +329,7 @@ describe("ConversationPageClient", () => {
     );
 
     render(<ConversationPageClient counterpartyId={counterparty.id} />);
-    fireEvent.click(screen.getByText("Nova cobrança"));
+    fireEvent.click(screen.getByRole("button", { name: "Nova cobrança" }));
     fireEvent.change(screen.getByTestId("quick-charge-amount"), {
       target: { value: "100,00" },
     });

@@ -14,8 +14,9 @@ import {
   type GroupPaymentResult,
   type GroupPaymentStatus,
 } from "@/components/chat/group-register-payment-sheet";
-import { Money } from "@/components/shared/money";
+import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { IconButton } from "@/components/ui/icon-button";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
@@ -52,7 +53,6 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     (sum, row) => sum + (row.direction === "owed" ? row.amountCents : -row.amountCents),
     0,
   );
-  const netLabel = netCents > 0 ? "Membros te devem" : "Você deve";
   const nameById = useMemo(() => {
     const names = new Map<string, string>();
     for (const member of snapshot?.members ?? []) names.set(member.userId, member.user.name);
@@ -122,7 +122,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
         setPaymentError(ledgerErrorMessage(error));
       }
     },
-    [groupId, me],
+    [groupId, me, setPaymentStatus, setPaymentError, setPaymentOpen],
   );
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col md:max-w-2xl">
       <ScreenHeader
         back
         title={snapshot.group.name}
@@ -232,20 +232,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           </Link>
         }
       />
-      {netCents !== 0 && (
-        <div className="border-b bg-muted/30 px-4 py-1.5 text-center">
-          <p
-            className={`flex items-center justify-center gap-1 text-xs font-medium ${
-              netCents > 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {netLabel}
-            <Money cents={netCents} />
-          </p>
-        </div>
-      )}
+      <ChatBalanceStrip netCents={netCents} owedLabel="Membros te devem" />
       <div className="flex min-h-0 flex-1 flex-col justify-center">
         <ChatThread
           groupId={groupId}
@@ -274,26 +261,30 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           anchor={paymentAnchor}
         />
       )}
-      {paymentCounterparties.length > 0 && (
-        <div className="flex px-4 pb-2">
-          <button
-            type="button"
-            onClick={(event) => {
-              if (paymentStatus === "confirming") return;
-              setPaymentStatus("idle");
-              setPaymentError(undefined);
-              setPaymentAnchor(event.currentTarget);
-              setPaymentOpen((prev) => !prev);
-            }}
-            disabled={paymentStatus === "confirming"}
-            className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-          >
-            <Banknote className="h-3.5 w-3.5" />
-            Registrar pagamento
-          </button>
-        </div>
-      )}
-      <ChatInput onSend={handleSend} onError={handleSendError} />
+      <ChatInput
+        onSend={handleSend}
+        onError={handleSendError}
+        actions={
+          paymentCounterparties.length > 0 ? (
+            <IconButton
+              aria-label="Registrar pagamento"
+              title="Registrar pagamento"
+              aria-expanded={paymentOpen}
+              className="text-muted-foreground"
+              disabled={paymentStatus === "confirming"}
+              onClick={(event) => {
+                if (paymentStatus === "confirming") return;
+                setPaymentStatus("idle");
+                setPaymentError(undefined);
+                setPaymentAnchor(event.currentTarget);
+                setPaymentOpen((prev) => !prev);
+              }}
+            >
+              <Banknote className="size-5" />
+            </IconButton>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

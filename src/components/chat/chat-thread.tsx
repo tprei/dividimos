@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
-import {
-  ChatRailRow,
-  formatRailTime,
-  type ChatRailMarker,
-} from "@/components/chat/chat-rail-row";
+import { ChatRailRow, formatChatTime, type ChatRailMarker } from "@/components/chat/chat-rail-row";
+import { displayNames } from "@/lib/people";
 import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/chat-date-separator";
 import { EventCard } from "@/components/chat/event-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -54,26 +51,10 @@ function isSameRun(
   );
 }
 
-function messageMarker(
-  previous: TimelineItem | undefined,
-  message: ChatMessage,
-  meId: string,
-): ChatRailMarker {
-  if (message.senderId !== meId && !isSameRun(previous, message)) {
-    return {
-      kind: "avatar",
-      name: message.sender.name,
-      avatarUrl: message.sender.avatarUrl,
-      isBot: message.sender.isBot,
-    };
-  }
-  return { kind: "message" };
-}
-
 function eventMarker(event: GroupEvent): ChatRailMarker {
   if (event.kind.startsWith("expense_")) return { kind: "expense" };
   if (event.kind.startsWith("settlement_")) return { kind: "payment" };
-  return { kind: "message" };
+  return { kind: "system" };
 }
 
 interface ChatThreadProps {
@@ -83,6 +64,7 @@ interface ChatThreadProps {
   events: GroupEvent[];
   settlements: Settlement[];
   nameOf: (userId: string) => string;
+  showSenderNames?: boolean;
   loading?: boolean;
   hasMore?: boolean;
   /** Server-confirmed contiguous boundary this thread may acknowledge. */
@@ -99,6 +81,7 @@ export function ChatThread({
   events,
   settlements,
   nameOf,
+  showSenderNames = true,
   loading,
   hasMore,
   acknowledgeThroughId,
@@ -111,6 +94,7 @@ export function ChatThread({
   const prevItemCount = useRef(messages.length + events.length);
 
   const items = mergeTimeline(messages, events);
+  const senderNames = displayNames(messages.map(({ sender }) => sender), { style: "short", viewerId: meId });
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -163,7 +147,7 @@ export function ChatThread({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex flex-1 flex-col overflow-y-auto px-4"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 pb-3"
     >
       {hasMore && onLoadMore && (
         <div className="flex justify-center py-3">
@@ -183,21 +167,57 @@ export function ChatThread({
       {items.map((item, index) => {
         const previous = index > 0 ? items[index - 1] : undefined;
         const showSeparator = shouldShowDateSeparator(item.at, previous?.at);
+        const membershipEvent = item.kind === "event" && (item.event.kind === "member_joined" || item.event.kind === "member_left");
+        if (membershipEvent && previous?.kind === "event" && previous.event.kind === item.event.kind && !showSeparator) return null;
+        const memberNames: string[] = [];
+        if (membershipEvent) {
+          for (let cursor = index; cursor < items.length; cursor += 1) {
+            const candidate = items[cursor];
+            if (candidate.kind !== "event" || candidate.event.kind !== item.event.kind || shouldShowDateSeparator(candidate.at, item.at)) break;
+            const id = candidate.event.subjectUserId ?? candidate.event.actorId;
+            if (id) memberNames.push(nameOf(id));
+          }
+        }
+        const continuesRun = item.kind === "message" && isSameRun(previous, item.message);
+        const spaced = !showSeparator && previous !== undefined && !continuesRun;
+        let marker: ChatRailMarker;
+        if (item.kind === "event") {
+          marker = eventMarker(item.event);
+        } else if (item.message.senderId !== meId && !continuesRun) {
+          marker = {
+            kind: "avatar",
+            id: item.message.senderId,
+            name: item.message.sender.name,
+            avatarUrl: item.message.sender.avatarUrl,
+            isBot: item.message.sender.isBot,
+          };
+        } else {
+          marker = { kind: "message" };
+        }
         return (
           <div key={item.kind === "message" ? item.message.id : `event-${item.event.id}`}>
             {showSeparator && <ChatDateSeparator date={item.at} />}
-            {item.kind === "message" ? (
-              <ChatRailRow
-                time={formatRailTime(item.at)}
-                marker={messageMarker(previous, item.message, meId)}
-              >
+            <ChatRailRow marker={marker} spaced={spaced}>
+              {item.kind === "message" ? (
                 <ChatMessageBubble
                   message={item.message}
                   isOwn={item.message.senderId === meId}
+                  senderLabel={
+                    showSenderNames && marker.kind === "avatar"
+                      ? senderNames.get(item.message.senderId)
+                      : undefined
+                  }
                 />
-              </ChatRailRow>
-            ) : (
-              <ChatRailRow time={formatRailTime(item.at)} marker={eventMarker(item.event)}>
+              ) : membershipEvent && memberNames.length > 1 ? (
+                <div className="flex min-h-6 max-w-80 items-baseline gap-2 pr-3">
+                  <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {new Intl.ListFormat("pt-BR").format(memberNames)} {item.event.kind === "member_joined" ? "entraram" : "saíram"}
+                  </p>
+                  <time dateTime={item.at} className="shrink-0 text-2xs leading-4 tabular-nums text-muted-foreground">
+                    {formatChatTime(item.at)}
+                  </time>
+                </div>
+              ) : (
                 <EventCard
                   event={item.event}
                   groupId={groupId}
@@ -214,8 +234,8 @@ export function ChatThread({
                   }
                   nameOf={nameOf}
                 />
-              </ChatRailRow>
-            )}
+              )}
+            </ChatRailRow>
           </div>
         );
       })}

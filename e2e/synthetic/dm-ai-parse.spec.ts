@@ -40,10 +40,7 @@ test.describe("DM AI parse", () => {
 
     // After toggle: aria-pressed is true, placeholder changes
     await expect(sparkle).toHaveAttribute("aria-pressed", "true");
-    await expect(input).toHaveAttribute(
-      "placeholder",
-      "Descreva a despesa (ex: 'uber 25 eu paguei')",
-    );
+    await expect(input).toHaveAttribute("placeholder", 'Ex.: "pizza 80 com João"');
 
     void dm;
   });
