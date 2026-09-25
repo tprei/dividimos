@@ -11,74 +11,22 @@ import {
   expectRpcError,
   authenticateAs,
   withPg,
+  decodeRpcData,
+  type CreateExpenseInput,
   type TestUser,
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+import { decodeMutationAck, decodeExpensePage } from "@/lib/ledger/decode";
+import {
+  decodeExpenseDetail,
+  fail,
+  id,
+  isRecord,
+} from "@/lib/ledger/decode-expense";
+import type { ExpenseDetail, MutationAck } from "@/types/ledger";
 
 assertLedgerInvariantsAfterEach();
-
-type ExpenseAck = {
-  expenseId: string;
-  groupId: string;
-  versionNo: number;
-  ledgerVersion: number;
-  eventId: number | null;
-};
-
-type ChangeSummary = {
-  title: [string, string] | null;
-  totalCents: [number, number] | null;
-  participantsAdded: string[];
-  participantsRemoved: string[];
-  payersChanged: boolean;
-};
-
-type ExpenseVersionJson = {
-  versionNo: number;
-  occurredOn: string;
-  totalCents: number;
-  changeSummary: ChangeSummary | null;
-  payload: {
-    participants: Array<{
-      kind: string;
-      userId?: string;
-      guestId?: string | null;
-      displayName?: string;
-    }>;
-    itemAssignments: Array<{
-      itemIndex: number;
-      participantIndex: number;
-      amountCents: number;
-    }> | null;
-    splitMethod?: string | null;
-  };
-};
-
-type ExpenseDetail = {
-  expense: {
-    id: string;
-    status: string;
-    currentVersionNo: number;
-    occurredOn: string;
-    deletedAt: string | null;
-    deletedBy: string | null;
-  };
-  current: ExpenseVersionJson;
-  versions: ExpenseVersionJson[];
-  participants: Array<{
-    participantIndex: number;
-    kind: string;
-    shareCents: number;
-    paidCents: number;
-    guest: {
-      id: string;
-      displayName: string;
-      claimedBy: string | null;
-      claimLinkGeneration: number;
-    } | null;
-  }>;
-};
 
 type RpcResult = { data: unknown; error: { message: string } | null };
 
@@ -105,12 +53,37 @@ async function callRpc(
   return { data, error };
 }
 
+function expenseAck(
+  fn: string,
+  data: unknown,
+): MutationAck & { expenseId: string; versionNo: number } {
+  const ack = decodeRpcData(fn, data, decodeMutationAck);
+  if (typeof ack.expenseId !== "string" || typeof ack.versionNo !== "number") {
+    throw new Error(`${fn} ack is missing expenseId or versionNo`);
+  }
+  return { ...ack, expenseId: ack.expenseId, versionNo: ack.versionNo };
+}
+
+async function createExpenseAck(
+  actor: TestUser,
+  input: CreateExpenseInput,
+): Promise<MutationAck & { expenseId: string; versionNo: number }> {
+  return expenseAck("create_expense", await createExpense(actor, input));
+}
+
+function guestClaimToken(fn: string, data: unknown): string {
+  return decodeRpcData(fn, data, (raw) => {
+    if (!isRecord(raw)) return fail<string>(["token"]);
+    return id(raw.token, ["token"]);
+  });
+}
+
 async function getExpense(expenseId: string): Promise<ExpenseDetail> {
   const { data, error } = await callRpc(aliceClient, "get_expense", {
     p_expense_id: expenseId,
   });
   expect(error).toBeNull();
-  return data as ExpenseDetail;
+  return decodeRpcData("get_expense", data, decodeExpenseDetail);
 }
 
 function createArgs(
@@ -172,11 +145,11 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
 
   it("create returns the exact mutation ack and equal-split balances around the payer", async () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
-    const ack = (await createExpense(alice, {
+    const ack = await createExpenseAck(alice, {
       groupId,
       totalCents: 3000,
       payload: equalSplitPayload([alice.id, bruno.id], 3000),
-    })) as unknown as ExpenseAck;
+    });
 
     expect(Object.keys(ack).sort()).toEqual([
       "eventId",
@@ -198,18 +171,18 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
     const clientId = crypto.randomUUID();
     const payload = equalSplitPayload([alice.id, bruno.id], 2000);
-    const first = (await createExpense(alice, {
+    const first = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       clientId,
-    })) as unknown as ExpenseAck;
-    const replay = (await createExpense(alice, {
+    });
+    const replay = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       clientId,
-    })) as unknown as ExpenseAck;
+    });
 
     expect(replay.expenseId).toBe(first.expenseId);
     expect(replay.eventId).toBeNull();
@@ -224,13 +197,13 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     const aliceGroupId = await createGroupWithMembers(alice, [bruno]);
     const receiptKey = "12345678901234567890123456789012345678901234";
     const clientId = crypto.randomUUID();
-    const aliceExpense = (await createExpense(alice, {
+    const aliceExpense = await createExpenseAck(alice, {
       groupId: aliceGroupId,
       totalCents: 2000,
       payload: equalSplitPayload([alice.id, bruno.id], 2000),
       clientId,
       receiptAccessKey: receiptKey,
-    })) as unknown as ExpenseAck;
+    });
 
     const persisted = await withPg((client) =>
       client.query<{ chave_acesso: string | null }>(
@@ -248,7 +221,9 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       }),
     );
     expect(malformedReplay.error).toBeNull();
-    expect((malformedReplay.data as ExpenseAck).expenseId).toBe(aliceExpense.expenseId);
+    expect(expenseAck("create_expense", malformedReplay.data).expenseId).toBe(
+      aliceExpense.expenseId,
+    );
 
 
     const secondAliceGroupId = await createGroupWithMembers(alice, [bruno]);
@@ -310,7 +285,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     );
     expect(activeRows.rows[0]?.count).toBe(1);
 
-    const winningResult = successful[0]?.data as ExpenseAck;
+    const winningResult = expenseAck("create_expense", successful[0]?.data);
     const winningClientId = winningResult.groupId === groupA ? clientIdA : clientIdB;
     const replay = await callRpc(
       aliceClient,
@@ -321,7 +296,9 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       }),
     );
     expect(replay.error).toBeNull();
-    expect((replay.data as ExpenseAck).expenseId).toBe(winningResult.expenseId);
+    expect(expenseAck("create_expense", replay.data).expenseId).toBe(
+      winningResult.expenseId,
+    );
   });
 
 
@@ -354,23 +331,23 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
     const receiptKey = "98765432109876543210987654321098765432109876";
     const payload = equalSplitPayload([alice.id, bruno.id], 2000);
-    const first = (await createExpense(alice, {
+    const first = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       receiptAccessKey: receiptKey,
-    })) as unknown as ExpenseAck;
+    });
 
     expect(
       (await callRpc(aliceClient, "delete_expense", { p_expense_id: first.expenseId })).error,
     ).toBeNull();
 
-    const second = (await createExpense(alice, {
+    const second = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       receiptAccessKey: receiptKey,
-    })) as unknown as ExpenseAck;
+    });
     expect(second.expenseId).not.toBe(first.expenseId);
 
     expect(
@@ -392,18 +369,18 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
     const clientId = crypto.randomUUID();
     const payload = equalSplitPayload([alice.id, bruno.id], 2000);
-    const first = (await createExpense(alice, {
+    const first = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       clientId,
-    })) as unknown as ExpenseAck;
-    const replay = (await createExpense(alice, {
+    });
+    const replay = await createExpenseAck(alice, {
       groupId,
       totalCents: 2000,
       payload,
       clientId,
-    })) as unknown as ExpenseAck;
+    });
     expect(replay.expenseId).toBe(first.expenseId);
     expect(replay.eventId).toBeNull();
 
@@ -586,10 +563,8 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       p_limit: 10,
     });
     expect(pageErr).toBeNull();
-    const pageObj = pageData as {
-      expenses: Array<{ id: string; occurredOn: string; versionNo: number }>;
-    };
-    const summary = pageObj.expenses.find((e) => e.id === created.expenseId);
+    const page = decodeRpcData("get_group_expenses", pageData, decodeExpensePage);
+    const summary = page.expenses.find((e) => e.id === created.expenseId);
     expect(summary?.versionNo).toBe(2);
     expect(summary?.occurredOn).toBe(newDate);
   });
@@ -629,11 +604,10 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       "create_guest_claim_token",
       { p_guest_id: guestId },
     );
-    const tokenObj = tokenData as { token: string };
-    expect(tokenObj?.token).toBeDefined();
+    const token = guestClaimToken("create_guest_claim_token", tokenData);
 
     const { error: claimErr } = await callRpc(brunoClient, "claim_guest", {
-      p_token: tokenObj.token,
+      p_token: token,
     });
     expect(claimErr).toBeNull();
 
@@ -1046,13 +1020,13 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
         { itemIndex: 1, participantIndex: 1, amountCents: 2000 },
       ],
     };
-    const ack = (await createExpense(alice, {
+    const ack = await createExpenseAck(alice, {
       groupId,
       totalCents: 5500,
       expenseType: "itemized",
       serviceFeeBps: 1000,
       payload,
-    })) as unknown as ExpenseAck;
+    });
     expect(ack.versionNo).toBe(1);
 
     const balances = await getBalances(groupId);
@@ -1220,11 +1194,11 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       payers: [{ participantIndex: 0, amountCents: 3000 }],
       itemAssignments: null,
     };
-    const ack = (await createExpense(alice, {
+    const ack = await createExpenseAck(alice, {
       groupId,
       totalCents: 3000,
       payload,
-    })) as unknown as ExpenseAck;
+    });
 
     const balances = await getBalances(groupId);
     const guestRow = balances.find(
@@ -1240,7 +1214,11 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(guestParticipant?.guest?.displayName).toBe("Zé");
     expect(guestParticipant?.guest?.claimedBy).toBeNull();
     expect(guestParticipant?.guest?.claimLinkGeneration).toBe(0);
-    expect(typeof detail.current.payload.participants[1]?.guestId).toBe("string");
+    const guestRef = detail.current.payload.participants[1];
+    if (guestRef.kind !== "guest") {
+      throw new Error("expected the second payload participant to be a guest");
+    }
+    expect(typeof guestRef.guestId).toBe("string");
   });
 });
 
@@ -1257,10 +1235,8 @@ describe("authored split method", () => {
       payload: { ...payload, splitMethod: "percentage" },
     });
 
-    const detail = (await authenticateAs(alice).rpc("get_expense", {
-      p_expense_id: ack.expenseId,
-    })) as { data: ExpenseDetail | null };
-    expect(detail.data?.current.payload.splitMethod).toBe("percentage");
+    const detail = await getExpense(ack.expenseId);
+    expect(detail.current.payload.splitMethod).toBe("percentage");
   });
 
   it("accepts a payload written before the method existed", async () => {
@@ -1274,10 +1250,8 @@ describe("authored split method", () => {
       payload: equalSplitPayload([alice.id, bruno.id], 8000),
     });
 
-    const detail = (await authenticateAs(alice).rpc("get_expense", {
-      p_expense_id: ack.expenseId,
-    })) as { data: ExpenseDetail | null };
-    expect(detail.data?.current.payload.splitMethod ?? null).toBeNull();
+    const detail = await getExpense(ack.expenseId);
+    expect(detail.current.payload.splitMethod ?? null).toBeNull();
   });
 
   it("rejects a method the division controls cannot produce", async () => {
@@ -1324,7 +1298,7 @@ describe("create_expense_with_group", () => {
       args(clientId, payload),
     );
     expect(error).toBeNull();
-    const ack = data as ExpenseAck;
+    const ack = expenseAck("create_expense_with_group", data);
 
     expect(ack.groupId).toBeTruthy();
     expect(ack.expenseId).toBeTruthy();
@@ -1371,12 +1345,26 @@ describe("create_expense_with_group", () => {
     const clientId = crypto.randomUUID();
     const payload = equalSplitPayload([alice.id, bruno.id], 10000);
 
-    const first = (
-      await callRpc(aliceClient, "create_expense_with_group", args(clientId, payload))
-    ).data as ExpenseAck;
-    const replay = (
-      await callRpc(aliceClient, "create_expense_with_group", args(clientId, payload))
-    ).data as ExpenseAck;
+    const first = expenseAck(
+      "create_expense_with_group",
+      (
+        await callRpc(
+          aliceClient,
+          "create_expense_with_group",
+          args(clientId, payload),
+        )
+      ).data,
+    );
+    const replay = expenseAck(
+      "create_expense_with_group",
+      (
+        await callRpc(
+          aliceClient,
+          "create_expense_with_group",
+          args(clientId, payload),
+        )
+      ).data,
+    );
 
     expect(replay.expenseId).toBe(first.expenseId);
     expect(replay.groupId).toBe(first.groupId);
@@ -1868,11 +1856,11 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
     await callRpc(cCreator, "invite_member", { p_group_id: groupId, p_email: invitedMember.email });
 
     // Active expense with creator and participant (50/50 split)
-    const activeExpense = (await createExpense(creator, {
+    const activeExpense = await createExpenseAck(creator, {
       groupId,
       totalCents: 2000,
       payload: equalSplitPayload([creator.id, participant.id], 2000),
-    })) as unknown as ExpenseAck;
+    });
     const activeId = activeExpense.expenseId;
 
     // --- Active expense authorization tests ---
@@ -1927,7 +1915,7 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
       editArgs(activeId, 1, 2000, equalSplitPayload([creator.id, participant.id], 2000)),
     );
     expect(partEdit.error).toBeNull();
-    expect((partEdit.data as ExpenseAck).versionNo).toBe(2);
+    expect(expenseAck("edit_expense", partEdit.data).versionNo).toBe(2);
 
     // 5. Creator -> allowed to edit (now expected version is 2)
     const creatorEdit = await callRpc(
@@ -1936,7 +1924,7 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
       editArgs(activeId, 2, 2000, equalSplitPayload([creator.id, participant.id], 2000)),
     );
     expect(creatorEdit.error).toBeNull();
-    expect((creatorEdit.data as ExpenseAck).versionNo).toBe(3);
+    expect(expenseAck("edit_expense", creatorEdit.data).versionNo).toBe(3);
 
     // --- Deleted expense & restore tests ---
     // Non-creator participant deletes expense
@@ -1986,11 +1974,11 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
     const cParticipant = authenticateAs(participant);
 
     const groupId = await createGroupWithMembers(creator, [participant]);
-    const exp = (await createExpense(creator, {
+    const exp = await createExpenseAck(creator, {
       groupId,
       totalCents: 2000,
       payload: equalSplitPayload([creator.id, participant.id], 2000),
-    })) as unknown as ExpenseAck;
+    });
 
     // Simulate departed participant by removing their membership row
     await withPg(async (pg) => {
@@ -2054,7 +2042,7 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
     const groupId = await createGroupWithMembers(creator, [claimant]);
 
     // Create expense with guest
-    const exp = (await createExpense(creator, {
+    const exp = await createExpenseAck(creator, {
       groupId,
       totalCents: 2000,
       payload: {
@@ -2067,11 +2055,15 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
         payers: [{ participantIndex: 0, amountCents: 2000 }],
         itemAssignments: null,
       },
-    })) as unknown as ExpenseAck;
+    });
 
     const detailRes = await callRpc(cCreator, "get_expense", { p_expense_id: exp.expenseId });
-    const detail = detailRes.data as ExpenseDetail;
-    const guestId = detail.current.payload.participants[1].guestId!;
+    const detail = decodeRpcData("get_expense", detailRes.data, decodeExpenseDetail);
+    const guestRef = detail.current.payload.participants[1];
+    if (guestRef.kind !== "guest") {
+      throw new Error("expected the second payload participant to be a guest");
+    }
+    const guestId = guestRef.guestId;
 
     // Before claim: claimant has accepted membership in group, but is not an expense party
     expect(
@@ -2088,7 +2080,7 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
 
     // Claimant claims guest
     const tokenRes = await callRpc(cCreator, "create_guest_claim_token", { p_guest_id: guestId });
-    const token = (tokenRes.data as { token: string }).token;
+    const token = guestClaimToken("create_guest_claim_token", tokenRes.data);
     await callRpc(cClaimant, "claim_guest", { p_token: token });
 
     // Now claimant is recognized on the effective current version (v1)!
@@ -2115,7 +2107,7 @@ describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization mat
       },
     });
     expect(editRes.error).toBeNull();
-    expect((editRes.data as ExpenseAck).versionNo).toBe(2);
+    expect(expenseAck("edit_expense", editRes.data).versionNo).toBe(2);
 
     // Can delete
     const delRes = await callRpc(cClaimant, "delete_expense", { p_expense_id: exp.expenseId });

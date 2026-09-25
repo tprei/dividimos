@@ -1,15 +1,22 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/types/database";
-import type { AssignmentRoomView } from "@/types/assignment-room";
 import type { ExpensePayload } from "@/types/ledger";
 import { buildAssignmentExpense } from "@/lib/assignment-room-money";
+import type { AssignmentRoomView } from "@/types/assignment-room";
+import {
+  decodeAssignmentRoomView,
+  decodeFinalizeAssignmentRoomResult,
+  type FinalizeAssignmentRoomResult,
+} from "@/lib/ledger/decode-assignment-room";
+import { decodeMutationAck } from "@/lib/ledger/decode";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
   createGroupWithMembers,
   createTestUsers,
   expectRpcError,
+  rpcDecoded,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -21,37 +28,7 @@ assertLedgerInvariantsAfterEach();
 type Client = SupabaseClient<Database>;
 type CreateArgs =
   Database["public"]["Functions"]["create_assignment_room"]["Args"];
-
-interface RoomView {
-  role: "host" | "participant";
-  room: {
-    id: string;
-    revision: number;
-    status: string;
-    selfParticipantId: string;
-    items: Array<{ id: string; revision: number }>;
-    participants: Array<{
-      id: string;
-      ordinal: number;
-      displayName: string;
-      removed: boolean;
-    }>;
-    claims: Array<{ itemId: string; participantId: string; ticks: number }>;
-  };
-  groupTarget?: Json;
-  participantRefs?: Json[];
-}
-
-interface FinalizeResult {
-  room: RoomView;
-  ack: {
-    expenseId: string;
-    groupId: string;
-    versionNo: number;
-    ledgerVersion: number;
-    eventId: number | null;
-  };
-}
+type RoomView = AssignmentRoomView;
 
 const HEADER = {
   title: "Conta em terços",
@@ -95,18 +72,16 @@ function roomArgs(
   };
 }
 
-async function rpc<T>(
+async function rpcRoom(
   client: Client,
   name: keyof Database["public"]["Functions"],
   args: Record<string, unknown>
-): Promise<T> {
-  const { data, error } = await client.rpc(name, args as never);
-  if (error) throw new Error(error.message);
-  return data as T;
+): Promise<RoomView> {
+  return rpcDecoded(client, name, args, decodeAssignmentRoomView);
 }
 
 async function createRoom(client: Client, args: CreateArgs): Promise<RoomView> {
-  return rpc<RoomView>(client, "create_assignment_room", args);
+  return rpcRoom(client, "create_assignment_room", args);
 }
 
 async function claim(
@@ -118,7 +93,7 @@ async function claim(
   expectedItemRevision: number,
   ticks: number
 ): Promise<RoomView> {
-  return rpc<RoomView>(client, "set_assignment_room_claim", {
+  return rpcRoom(client, "set_assignment_room_claim", {
     p_room_id: roomId,
     p_member_token: memberTokenValue,
     p_item_id: itemId,
@@ -133,17 +108,19 @@ async function closeRoom(
   roomId: string,
   expectedRevision: number
 ): Promise<RoomView> {
-  return rpc<RoomView>(client, "close_assignment_room", {
+  return rpcRoom(client, "close_assignment_room", {
     p_room_id: roomId,
     p_expected_revision: expectedRevision,
   });
 }
 
 function expensePayload(view: RoomView, payerIndex = 0): ExpensePayload {
-  const built = buildAssignmentExpense(
-    view as unknown as Extract<AssignmentRoomView, { role: "host" }>,
-    [{ participantIndex: payerIndex, amountCents: 111 }]
-  );
+  if (view.role !== "host") {
+    throw new Error("expected a host view to build the expense payload");
+  }
+  const built = buildAssignmentExpense(view, [
+    { participantIndex: payerIndex, amountCents: 111 },
+  ]);
   if (!built.ok) throw new Error(JSON.stringify(built.issue));
   return built.value;
 }
@@ -153,12 +130,17 @@ async function finalize(
   roomId: string,
   revision: number,
   payload: ExpensePayload
-): Promise<FinalizeResult> {
-  return rpc<FinalizeResult>(client, "finalize_assignment_room", {
-    p_room_id: roomId,
-    p_expected_revision: revision,
-    p_payload: payload,
-  });
+): Promise<FinalizeAssignmentRoomResult> {
+  return rpcDecoded(
+    client,
+    "finalize_assignment_room",
+    {
+      p_room_id: roomId,
+      p_expected_revision: revision,
+      p_payload: payload,
+    },
+    decodeFinalizeAssignmentRoomResult
+  );
 }
 
 describe.skipIf(!isIntegrationTestReady)(
@@ -195,7 +177,7 @@ describe.skipIf(!isIntegrationTestReady)(
       const token = memberToken();
       const args = roomArgs(host, groupTarget);
       const created = await createRoom(hostClient, args);
-      const joined = await rpc<RoomView>(joiner, "join_assignment_room", {
+      const joined = await rpcRoom(joiner, "join_assignment_room", {
         p_room_id: args.p_room_id,
         p_join_token: args.p_join_token,
         p_member_token: token,
@@ -237,13 +219,13 @@ describe.skipIf(!isIntegrationTestReady)(
       const secondToken = memberToken();
       const args = roomArgs(host, groupTarget);
       const created = await createRoom(hostClient, args);
-      const first = await rpc<RoomView>(anonClient, "join_assignment_room", {
+      const first = await rpcRoom(anonClient, "join_assignment_room", {
         p_room_id: args.p_room_id,
         p_join_token: args.p_join_token,
         p_member_token: firstToken,
         p_display_name: "Bia",
       });
-      const second = await rpc<RoomView>(anonClient, "join_assignment_room", {
+      const second = await rpcRoom(anonClient, "join_assignment_room", {
         p_room_id: args.p_room_id,
         p_join_token: args.p_join_token,
         p_member_token: secondToken,
@@ -563,10 +545,15 @@ describe.skipIf(!isIntegrationTestReady)(
 
       // The group creator, who is not this room's host, revokes access after
       // the person already picked their items.
-      await rpc<unknown>(groupOwnerClient, "remove_member", {
-        p_group_id: groupId,
-        p_user_id: selected.id,
-      });
+      await rpcDecoded(
+        groupOwnerClient,
+        "remove_member",
+        {
+          p_group_id: groupId,
+          p_user_id: selected.id,
+        },
+        decodeMutationAck
+      );
       expect(
         await expectRpcError(
           hostClient.rpc("finalize_assignment_room", {
@@ -577,7 +564,7 @@ describe.skipIf(!isIntegrationTestReady)(
         )
       ).toContain("member_excluded");
 
-      const corrected = await rpc<RoomView>(
+      const corrected = await rpcRoom(
         hostClient,
         "remove_assignment_room_participant",
         {
@@ -641,26 +628,30 @@ describe.skipIf(!isIntegrationTestReady)(
         kind: "existing",
         groupId: otherGroupId,
       });
-      await rpc(hostClient, "create_expense", {
-        p_client_id: second.args.p_room_id,
-        p_group_id: otherGroupId,
-        p_occurred_on: "2026-09-19",
-        p_title: "Outra despesa",
-        p_merchant_name: null,
-        p_expense_type: "single_amount",
-        p_total_cents: 1,
-        p_service_fee_bps: 0,
-        p_fixed_fee_cents: 0,
-        p_payload: {
-          items: [],
-          participants: [{ kind: "user", userId: host.id }],
-          shares: [1],
-          payers: [{ participantIndex: 0, amountCents: 1 }],
-          itemAssignments: null,
-          splitMethod: "fixed",
+      await rpcDecoded(
+        hostClient,
+        "create_expense",
+        {
+          p_client_id: second.args.p_room_id,
+          p_group_id: otherGroupId,
+          p_occurred_on: "2026-09-19",
+          p_title: "Outra despesa",
+          p_merchant_name: "",
+          p_expense_type: "single_amount",
+          p_total_cents: 1,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [],
+            participants: [{ kind: "user", userId: host.id }],
+            shares: [1],
+            payers: [{ participantIndex: 0, amountCents: 1 }],
+            itemAssignments: null,
+            splitMethod: "fixed",
+          },
         },
-        p_chave_acesso: null,
-      });
+        decodeMutationAck
+      );
       expect(
         await expectRpcError(
           hostClient.rpc("finalize_assignment_room", {
@@ -709,7 +700,7 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       expect(race.contention.observed).toBe(true);
       expect(race.result.filter((result) => result.error === null)).toHaveLength(1);
-      const current = await rpc<RoomView>(hostClient, "get_assignment_room", {
+      const current = await rpcRoom(hostClient, "get_assignment_room", {
         p_room_id: args.p_room_id,
         p_member_token: null,
       });

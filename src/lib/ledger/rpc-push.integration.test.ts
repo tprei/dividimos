@@ -7,12 +7,32 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
   createTestUsers,
+  decodeRpcData,
   expectRpcError,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
+import type { ValidationResult } from "@/lib/expense-money";
+import { bool, exactKeys, fail, id, isRecord } from "@/lib/ledger/decode-expense";
+import type { WireIssue } from "@/types/ledger";
 
 type ClaimResult = { subscriptionId: string; transferred: boolean };
+
+function decodeClaimResult(
+  raw: unknown,
+): ValidationResult<ClaimResult, WireIssue> {
+  if (!isRecord(raw)) return fail(["claim"]);
+  const keys = exactKeys(raw, ["subscriptionId", "transferred"], []);
+  if (!keys.ok) return keys;
+  const subscriptionId = id(raw.subscriptionId, ["subscriptionId"]);
+  if (!subscriptionId.ok) return subscriptionId;
+  const transferred = bool(raw.transferred, ["transferred"]);
+  if (!transferred.ok) return transferred;
+  return {
+    ok: true,
+    value: { subscriptionId: subscriptionId.value, transferred: transferred.value },
+  };
+}
 
 function serviceClient(): SupabaseClient<Database> {
   return createClient<Database>(
@@ -35,7 +55,7 @@ async function claim(
     p_subscription_encrypted: `encrypted:${endpoint}`,
   });
   if (error) throw new Error(error.message);
-  return data as unknown as ClaimResult;
+  return decodeRpcData("claim_push_subscription", data, decodeClaimResult);
 }
 
 async function ownersOf(endpoint: string): Promise<string[]> {
