@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, ReceiptText } from "lucide-react";
+import { ReceiptText } from "lucide-react";
 import type { ReactNode } from "react";
 import { Money } from "@/components/shared/money";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -15,21 +15,16 @@ export interface VoiceBillPreviewProps {
   state: "idle" | "active";
 }
 
-const MAX_GHOSTS = 6;
-
 /** Ghost ink: muted-foreground tint, so placeholders stay visible on dark cards where `bg-muted` nearly vanishes. */
 const GHOST_BAR = "bg-muted-foreground/15";
 
-function GhostAvatars({ count, filled = false }: { count: number; filled?: boolean }) {
+function GhostAvatars({ count }: { count: number }) {
   return (
     <span className="flex -space-x-2">
       {Array.from({ length: count }, (_, i) => (
         <span
           key={i}
-          className={cn(
-            "size-8 rounded-full border border-dashed ring-2 ring-card",
-            filled ? "border-primary/70 bg-primary/20" : "border-muted-foreground/50 bg-muted-foreground/10",
-          )}
+          className="size-8 rounded-full border border-dashed border-muted-foreground/50 bg-muted-foreground/10 ring-2 ring-card"
         />
       ))}
     </span>
@@ -69,15 +64,7 @@ function peopleLabel(people: string[]): string {
   return `${people[0]} e mais ${people.length - 1}`;
 }
 
-function PeopleFill({ people, headcount }: Pick<VoiceBillSketch, "people" | "headcount">) {
-  if (people.length === 0) {
-    return (
-      <>
-        <GhostAvatars count={Math.min(headcount ?? 0, MAX_GHOSTS)} filled />
-        <span className="text-sm font-medium tabular-nums">{headcount} pessoas</span>
-      </>
-    );
-  }
+function PeopleFill({ people }: { people: string[] }) {
   return (
     <>
       <span className="flex -space-x-2">
@@ -90,25 +77,6 @@ function PeopleFill({ people, headcount }: Pick<VoiceBillSketch, "people" | "hea
   );
 }
 
-function PayerFill({ payer }: { payer: string }) {
-  if (payer === "me") {
-    return (
-      <>
-        <span className="flex size-8 items-center justify-center rounded-full bg-success/15 text-success-text">
-          <Check className="size-4" aria-hidden="true" />
-        </span>
-        <span className="text-sm font-semibold">Você</span>
-      </>
-    );
-  }
-  return (
-    <>
-      <UserAvatar id={payer} name={payer} size="sm" />
-      <span className="truncate text-sm font-semibold">{payer}</span>
-    </>
-  );
-}
-
 /**
  * The bill voice will fill, drawn as a ticket stub. Each line starts as a
  * ghost and turns real the moment the words for it are heard, so people see
@@ -116,7 +84,6 @@ function PayerFill({ payer }: { payer: string }) {
  */
 export function VoiceBillPreview({ sketch, state }: VoiceBillPreviewProps) {
   const skeleton = state === "active" ? "pulse" : "static";
-  const hasPeople = sketch.people.length > 0 || sketch.headcount !== null;
   return (
     <section aria-label="Prévia da conta" className="overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-2 px-4 pt-3.5 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -130,29 +97,19 @@ export function VoiceBillPreview({ sketch, state }: VoiceBillPreviewProps) {
         <Row label="Quanto" fillKey={sketch.amountCents === null ? null : String(sketch.amountCents)} ghost={<Skeleton variant={skeleton} className={cn("h-5 w-20", GHOST_BAR)} />}>
           <Money cents={sketch.amountCents ?? 0} className="text-lg font-bold" />
         </Row>
-        <Row label="Com quem" fillKey={hasPeople ? `${sketch.people.join("|")}#${sketch.headcount}` : null} ghost={<GhostAvatars count={3} />}>
-          <PeopleFill people={sketch.people} headcount={sketch.headcount} />
-        </Row>
-      </dl>
-      <dl className="border-t border-dashed border-border bg-muted/50 px-4">
         <Row
-          label="Quem pagou"
-          fillKey={sketch.payer}
-          ghost={
-            <span className="flex items-center gap-2">
-              <GhostAvatars count={1} />
-              <Skeleton variant={skeleton} className={cn("h-4 w-14", GHOST_BAR)} />
-            </span>
-          }
+          label="Com quem"
+          fillKey={sketch.people.length > 0 ? sketch.people.join("|") : null}
+          ghost={<GhostAvatars count={3} />}
         >
-          <PayerFill payer={sketch.payer ?? ""} />
+          <PeopleFill people={sketch.people} />
         </Row>
       </dl>
     </section>
   );
 }
 
-const VOICE_EXAMPLES = ["Pizza 80 dividido em 4", "Mercado 120, paguei eu", "Uber com João, 25 reais"] as const;
+const VOICE_EXAMPLES = ["Uber com João, 25 reais", "Pizza 80 com Ana e Bia", "Mercado 120 e cinquenta"] as const;
 
 export function VoiceExamples() {
   return (
