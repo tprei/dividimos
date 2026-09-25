@@ -154,7 +154,7 @@ async function readCompletion(
 ): Promise<Completion> {
   return rpc<Completion>(client, "get_assignment_room_completion", {
     p_room_id: roomId,
-    p_member_token: member as string,
+    p_member_token: member,
   });
 }
 
@@ -283,7 +283,6 @@ describe.skipIf(!isIntegrationTestReady)("assignment room completion RPCs", () =
       await expectRpcError(
         hostClient.rpc("get_assignment_room_completion", {
           p_room_id: args.p_room_id,
-          p_member_token: null as unknown as string,
         }),
       ),
     ).toContain("room_incomplete");

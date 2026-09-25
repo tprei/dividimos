@@ -1379,7 +1379,7 @@ export type Database = {
       get_assignment_room_completion: {
         Args: {
           p_room_id: string
-          p_member_token: string
+          p_member_token?: string
         }
         Returns: Json
       }
