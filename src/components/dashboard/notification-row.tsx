@@ -183,12 +183,16 @@ export function NotificationRow({
       <motion.button
         type="button"
         style={{ width: actionWidth }}
+        // While closed the action is zero-width and unreachable by drag, so
+        // it must not sit in the tab order; keyboard users discard through
+        // the inline reduced-motion button instead.
+        tabIndex={open ? 0 : -1}
         onTap={discard}
         onClick={(event) => {
           if (event.detail === 0) discard();
         }}
-        onFocus={() => {
-          if (!open) settle(-ACTION_WIDTH);
+        onBlur={() => {
+          if (open && !discarded.current) settle(0);
         }}
         className={cn(
           "absolute inset-y-0 right-0 z-10 flex items-center overflow-hidden rounded-r-lg outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",

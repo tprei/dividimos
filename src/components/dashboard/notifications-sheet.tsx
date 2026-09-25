@@ -115,6 +115,12 @@ export function NotificationsSheet({
     });
   }, []);
 
+  // Descartar todas covers everything loaded, not just the ≤5 preview rows:
+  // capping the discard would strand the rest and require a second tap.
+  const discardableEvents = useMemo(
+    () => events.filter((event) => !dismissedIds.includes(event.id)),
+    [events, dismissedIds],
+  );
   // Invitations first, then the newest activity, capped at five rows total.
   // Dismissed rows leave before the cap, so the next row fills the slot.
   const previewEvents = useMemo<GroupEvent[]>(
@@ -156,13 +162,15 @@ export function NotificationsSheet({
       <PopoverContent anchor={anchor} side="bottom" align="end" aria-label="Notificações" className="gap-3 p-3">
         <div className="flex min-h-11 items-center justify-between gap-2">
           <PopoverTitle>Notificações</PopoverTitle>
-          {previewEvents.length > 0 && (
+          {/* Shown while any loaded event survives, even when invitations
+              crowd the preview so event rows never render. */}
+          {discardableEvents.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="-mr-1 rounded-full text-xs text-primary-text"
               onClick={() => {
-                previewEvents.forEach((event) => discard(event.id));
+                discardableEvents.forEach((event) => discard(event.id));
                 haptics.impact();
               }}
             >
