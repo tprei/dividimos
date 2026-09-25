@@ -16,7 +16,7 @@ export function ConversationQuickActions({
       <IconButton
         aria-label="Nova cobrança"
         title="Nova cobrança"
-        className="text-muted-foreground"
+        className="rounded-full text-success-text hover:text-success-text"
         onClick={(event) => onCharge(event.currentTarget)}
       >
         <HandCoins className="size-5" />
@@ -24,7 +24,7 @@ export function ConversationQuickActions({
       <IconButton
         aria-label="Dividir conta"
         title="Dividir conta"
-        className="text-muted-foreground"
+        className="rounded-full text-info-text hover:text-info-text"
         onClick={onSplit}
       >
         <ReceiptText className="size-5" />

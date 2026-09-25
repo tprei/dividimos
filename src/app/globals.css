@@ -56,6 +56,7 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-text: var(--success-text);
+  --color-info-text: var(--info-text);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-gold: var(--gold);
@@ -115,6 +116,10 @@
   --success: oklch(0.70 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
   --success-text: oklch(0.52 0.15 155);
+
+  /* Bills and receipts: a cool accent so "new bill" never reads as money
+     (success) or AI (primary) when they sit side by side. */
+  --info-text: oklch(0.52 0.12 240);
 
   --warning: oklch(0.75 0.15 75);
   --warning-foreground: oklch(0.25 0.05 75);
@@ -206,6 +211,8 @@
   --success: oklch(0.72 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
   --success-text: var(--success);
+
+  --info-text: oklch(0.78 0.10 240);
 
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.20 0.05 75);
