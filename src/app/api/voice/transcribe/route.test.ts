@@ -28,33 +28,48 @@ vi.mock("@/lib/rate-limit", () => ({
 const { POST, runtime, maxDuration } = await import("./route");
 const { AppError } = await import("@/lib/errors");
 
-function audioRequest(options?: { type?: string; bytes?: number }): Request {
+function audioRequest(options?: {
+  type?: string;
+  bytes?: number;
+  /** Declared body length; `null` sends no content-length header. */
+  contentLength?: string | null;
+}): Request {
+  const bytes = options?.bytes ?? 16;
   const form = new FormData();
   form.append(
     "audio",
-    new File([new Uint8Array(options?.bytes ?? 16)], "clip", {
+    new File([new Uint8Array(bytes)], "clip", {
       type: options?.type ?? "audio/mp4",
     }),
   );
-  return new Request("http://localhost/api/voice/transcribe", {
+  const request = new Request("http://localhost/api/voice/transcribe", {
     method: "POST",
     body: form,
   });
+  const declared = options?.contentLength ?? String(bytes);
+  // happy-dom drops content-length given in the init headers; real clients
+  // always send it, so set it the way a browser would.
+  if (options?.contentLength !== null) request.headers.set("content-length", declared);
+  return request;
 }
 
 function emptyFormRequest(): Request {
-  return new Request("http://localhost/api/voice/transcribe", {
+  const request = new Request("http://localhost/api/voice/transcribe", {
     method: "POST",
     body: new FormData(),
   });
+  request.headers.set("content-length", "96");
+  return request;
 }
 
 function jsonRequest(body: string): Request {
-  return new Request("http://localhost/api/voice/transcribe", {
+  const request = new Request("http://localhost/api/voice/transcribe", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
   });
+  request.headers.set("content-length", String(body.length));
+  return request;
 }
 
 describe("POST /api/voice/transcribe", () => {
@@ -115,79 +130,6 @@ describe("POST /api/voice/transcribe", () => {
 
     const call = mockTranscribeVoiceAudio.mock.calls[0][0];
     expect(call.apiKey).toBe("test-key");
-  });
-
-  // --- Body parsing ---
-
-  it("returns 400 when the audio field is missing", async () => {
-    const res = await POST(emptyFormRequest());
-
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("Campo 'audio' obrigatório");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 when the body is not multipart", async () => {
-    const res = await POST(jsonRequest(JSON.stringify({ audio: "x" })));
-
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("Corpo da requisição inválido");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
-  });
-
-  // --- Mime validation ---
-
-  it.each(["video/mp4", "application/octet-stream", "text/plain", ""])(
-    "returns 415 for unsupported mime type %s",
-    async (type) => {
-      const res = await POST(audioRequest({ type }));
-
-      expect(res.status).toBe(415);
-      const body = await res.json();
-      expect(body.error).toBe("Formato de áudio não suportado");
-      expect(mockEnforceRateLimit).not.toHaveBeenCalled();
-      expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
-    },
-  );
-
-  it("strips codec parameters before checking the mime type", async () => {
-    const res = await POST(audioRequest({ type: "audio/webm;codecs=opus" }));
-
-    expect(res.status).toBe(200);
-    const call = mockTranscribeVoiceAudio.mock.calls[0][0];
-    expect(call.mimeType).toBe("audio/webm");
-  });
-
-  it.each(["audio/mp4", "audio/webm", "audio/ogg", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a"])(
-    "accepts allowlisted mime type %s",
-    async (type) => {
-      mockTranscribeVoiceAudio.mockResolvedValue("oi");
-
-      const res = await POST(audioRequest({ type }));
-
-      expect(res.status).toBe(200);
-      expect(mockTranscribeVoiceAudio).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  // --- Size validation ---
-
-  it("returns 413 when the audio exceeds 2 MB", async () => {
-    const res = await POST(audioRequest({ bytes: 2 * 1024 * 1024 + 1 }));
-
-    expect(res.status).toBe(413);
-    const body = await res.json();
-    expect(body.error).toContain("2 MB");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
-    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
-  });
-
-  it("accepts audio at exactly 2 MB", async () => {
-    const res = await POST(audioRequest({ bytes: 2 * 1024 * 1024 }));
-
-    expect(res.status).toBe(200);
   });
 
   // --- Rate limiting ---
@@ -253,6 +195,117 @@ describe("POST /api/voice/transcribe", () => {
     expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
   });
 
+  // --- Declared body length ---
+
+  it("rejects a declared body over the multipart cap before reading it", async () => {
+    // The audio itself fits the 2 MB file cap: only the declared length
+    // explains the 413.
+    const res = await POST(
+      audioRequest({
+        bytes: 2 * 1024 * 1024,
+        contentLength: String(2 * 1024 * 1024 + 64 * 1024 + 1),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body.error).toContain("2 MB");
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith(
+      "voice.transcribe",
+      "user-123",
+    );
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing content-length instead of buffering an unknown body", async () => {
+    const res = await POST(audioRequest({ contentLength: null }));
+
+    expect(res.status).toBe(413);
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith(
+      "voice.transcribe",
+      "user-123",
+    );
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unparseable content-length", async () => {
+    const res = await POST(audioRequest({ contentLength: "abc" }));
+
+    expect(res.status).toBe(413);
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  // --- Body parsing ---
+
+  it("returns 400 when the audio field is missing", async () => {
+    const res = await POST(emptyFormRequest());
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Campo 'audio' obrigatório");
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the body is not multipart", async () => {
+    const res = await POST(jsonRequest(JSON.stringify({ audio: "x" })));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Corpo da requisição inválido");
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  // --- Mime validation ---
+
+  it.each(["video/mp4", "application/octet-stream", "text/plain", ""])(
+    "returns 415 for unsupported mime type %s",
+    async (type) => {
+      const res = await POST(audioRequest({ type }));
+
+      expect(res.status).toBe(415);
+      const body = await res.json();
+      expect(body.error).toBe("Formato de áudio não suportado");
+      expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+    },
+  );
+
+  it("strips codec parameters before checking the mime type", async () => {
+    const res = await POST(audioRequest({ type: "audio/webm;codecs=opus" }));
+
+    expect(res.status).toBe(200);
+    const call = mockTranscribeVoiceAudio.mock.calls[0][0];
+    expect(call.mimeType).toBe("audio/webm");
+  });
+
+  it.each(["audio/mp4", "audio/webm", "audio/ogg", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a"])(
+    "accepts allowlisted mime type %s",
+    async (type) => {
+      mockTranscribeVoiceAudio.mockResolvedValue("oi");
+
+      const res = await POST(audioRequest({ type }));
+
+      expect(res.status).toBe(200);
+      expect(mockTranscribeVoiceAudio).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  // --- Size validation ---
+
+  it("returns 413 when the audio exceeds 2 MB", async () => {
+    const res = await POST(audioRequest({ bytes: 2 * 1024 * 1024 + 1 }));
+
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body.error).toContain("2 MB");
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("accepts audio at exactly 2 MB", async () => {
+    const res = await POST(audioRequest({ bytes: 2 * 1024 * 1024 }));
+
+    expect(res.status).toBe(200);
+  });
+
   // --- Transcription ---
 
   it("returns 200 with the transcript on success", async () => {
@@ -270,9 +323,13 @@ describe("POST /api/voice/transcribe", () => {
     const form = new FormData();
     form.append("audio", new File([bytes], "clip", { type: "audio/mp4" }));
 
-    const res = await POST(
-      new Request("http://localhost/api/voice/transcribe", { method: "POST", body: form }),
-    );
+    const request = new Request("http://localhost/api/voice/transcribe", {
+      method: "POST",
+      body: form,
+    });
+    request.headers.set("content-length", String(bytes.length));
+
+    const res = await POST(request);
 
     expect(res.status).toBe(200);
     expect(mockTranscribeVoiceAudio).toHaveBeenCalledExactlyOnceWith({

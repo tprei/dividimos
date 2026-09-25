@@ -9,6 +9,9 @@ export const runtime = "nodejs";
 export const maxDuration = 15;
 
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+/** Multipart framing (boundary + part headers) allowed on top of the audio. */
+const MAX_MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+const MAX_MULTIPART_BYTES = MAX_AUDIO_BYTES + MAX_MULTIPART_OVERHEAD_BYTES;
 const NO_SPEECH_MESSAGE = "Não ouvi nada. Tente de novo.";
 
 /** Container/codec MIME types accepted from the client recorder. */
@@ -36,6 +39,39 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Transcrição de voz não configurada" },
       { status: 503 },
+    );
+  }
+
+  try {
+    await enforceRateLimit("voice.transcribe", userId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[voice/transcribe] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
+  }
+
+  // The multipart parser buffers the body without a bound, so the declared
+  // length gates the read. A missing or unparseable length fails closed.
+  const rawLength = request.headers.get("content-length");
+  const declaredLength = rawLength === null ? Number.NaN : Number(rawLength);
+  if (
+    !Number.isInteger(declaredLength) ||
+    declaredLength < 0 ||
+    declaredLength > MAX_MULTIPART_BYTES
+  ) {
+    return NextResponse.json(
+      { error: "Áudio muito grande (max 2 MB)" },
+      { status: 413 },
     );
   }
 
@@ -70,24 +106,6 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Áudio muito grande (max 2 MB)" },
       { status: 413 },
-    );
-  }
-
-  try {
-    await enforceRateLimit("voice.transcribe", userId);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
-      return NextResponse.json(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        { status: 429 },
-      );
-    }
-    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
-      console.error("[voice/transcribe] unexpected rate-limit failure:", error);
-    }
-    return NextResponse.json(
-      { error: "Serviço temporariamente indisponível" },
-      { status: 503 },
     );
   }
 
