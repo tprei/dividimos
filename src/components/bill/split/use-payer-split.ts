@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { evenSplitBalance } from "@/lib/split-balance";
 import type { ExpensePayer } from "@/types";
 import { useSplitDraft, type SplitDraftSeed } from "./use-split-draft";
@@ -59,6 +59,18 @@ export function usePayerSplit({
   const { draft, centsById } = editor;
   const { setPayerFull, splitPaymentEqually, setPayerAmount, removePayerEntry } = actions;
   const soleId = participantIds.length === 1 ? participantIds[0] : null;
+
+  // While one person is the only possible payer the store holds "they paid it
+  // all" but the draft may be empty (whoever was picked has left). When a
+  // second account holder joins, start the draft from that same payer so the
+  // screen and the store agree instead of the screen asking again.
+  const [seenSoleId, setSeenSoleId] = useState(soleId);
+  if (seenSoleId !== soleId) {
+    setSeenSoleId(soleId);
+    if (seenSoleId !== null && soleId === null && draft.included.length === 0 && participantIds.includes(seenSoleId)) {
+      editor.toggle(seenSoleId);
+    }
+  }
 
   useEffect(() => {
     if (totalCents <= 0) return;
