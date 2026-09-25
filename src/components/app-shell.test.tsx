@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
 const mockRouter = {
   push: vi.fn(),
@@ -479,26 +479,108 @@ describe("AppShell haptics", () => {
     expect(mockRunBootstrap).not.toHaveBeenCalled();
   });
 
-  it("does not trigger haptics when pull distance is below threshold", () => {
+  it("does not refresh from a pull that stops short of the threshold", async () => {
     mockPathname.mockReturnValue("/app");
     render(<AppShell><div>content</div></AppShell>);
+    mockRunBootstrap.mockClear();
+
+    const main = document.querySelector("main")!;
+
+    // 200px of finger travel used to be enough; resistance now keeps it short.
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 200 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.selectionChanged).not.toHaveBeenCalled();
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("cancels a pull that is eased back under the threshold before release", async () => {
+    mockPathname.mockReturnValue("/app");
+    render(<AppShell><div>content</div></AppShell>);
+    mockRunBootstrap.mockClear();
 
     const main = document.querySelector("main")!;
 
     act(() => {
       fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
     });
-
     act(() => {
-      fireEvent.touchMove(main, { touches: [{ clientY: 50 }] });
+      fireEvent.touchMove(main, { touches: [{ clientY: 300 }] });
     });
-
     act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 120 }] });
+    });
+    await act(async () => {
       fireEvent.touchEnd(main);
     });
 
+    // Crossing in and back out are both felt, and nothing fires.
+    expect(haptics.selectionChanged).toHaveBeenCalledTimes(2);
     expect(haptics.impact).not.toHaveBeenCalled();
-    expect(haptics.success).not.toHaveBeenCalled();
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+  });
+
+  describe("resting at the top", () => {
+    let now = 10_000;
+    let clock: MockInstance<() => number>;
+
+    beforeEach(() => {
+      now = 10_000;
+      clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    });
+
+    afterEach(() => {
+      clock.mockRestore();
+    });
+
+    const pullPastThreshold = async (main: HTMLElement) => {
+      act(() => {
+        fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+      });
+      act(() => {
+        fireEvent.touchMove(main, { touches: [{ clientY: 300 }] });
+      });
+      await act(async () => {
+        fireEvent.touchEnd(main);
+      });
+    };
+
+    it("ignores a pull that begins right after a fling reached the top", async () => {
+      mockPathname.mockReturnValue("/app");
+      render(<AppShell><div>content</div></AppShell>);
+      mockRunBootstrap.mockClear();
+      const main = document.querySelector("main")!;
+
+      fireEvent.scroll(main);
+      now += 120;
+      await pullPastThreshold(main);
+
+      expect(haptics.impact).not.toHaveBeenCalled();
+      expect(mockRunBootstrap).not.toHaveBeenCalled();
+    });
+
+    it("refreshes once when the list had settled at the top before the pull", async () => {
+      mockPathname.mockReturnValue("/app");
+      render(<AppShell><div>content</div></AppShell>);
+      mockRunBootstrap.mockClear();
+      const main = document.querySelector("main")!;
+
+      fireEvent.scroll(main);
+      now += 400;
+      await pullPastThreshold(main);
+
+      expect(haptics.impact).toHaveBeenCalledOnce();
+      expect(mockRunBootstrap).toHaveBeenCalledOnce();
+      expect(haptics.success).toHaveBeenCalledOnce();
+    });
   });
 });
 

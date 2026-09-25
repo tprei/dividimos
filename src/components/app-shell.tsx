@@ -4,7 +4,6 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   Bell,
   Home,
-  Loader2,
   MessageSquare,
   Plus,
   User,
@@ -33,7 +32,11 @@ import { cn } from "@/lib/utils";
 import { startRealtime } from "@/lib/sync/realtime";
 import { loadActivity } from "@/lib/sync/refresh";
 import { selectPendingInvitations, selectUnreadTotal } from "@/stores/app-selectors";
-import { ScreenHeaderActionsContext } from "@/components/shared/screen-header-actions";
+import {
+  ScreenHeaderActionsContext,
+  ScreenRefreshContext,
+} from "@/components/shared/screen-header-actions";
+import { PullToRefreshIndicator } from "@/components/shared/pull-to-refresh-indicator";
 import { NotificationsSheet } from "@/components/dashboard/notifications-sheet";
 import { useAppStore } from "@/stores/app-store";
 
@@ -133,26 +136,36 @@ const PULL_TO_REFRESH_PATHS: Record<string, true> = {
 const PULL_BLOCKING_SELECTOR =
   'input, textarea, select, button, a, label, [contenteditable="true"], [role="slider"], [data-no-pull]';
 
-/** A pull must begin this close to the top of the scroll container. */
-const PULL_START_ZONE_PX = 64;
+/** Damped pull distance at which a release refreshes. */
+const PULL_THRESHOLD = 96;
+/** The damped distance approaches but never passes this. */
+const PULL_MAX = 140;
+/** Finger travel over which resistance builds; ~210px reaches the threshold. */
+const PULL_RESISTANCE = 180;
+/**
+ * A scroller must have been resting at the top this long before the touch:
+ * a fling that just reached the top is still the user scrolling, not pulling.
+ */
+const PULL_REST_MS = 300;
 
 /**
- * `onRefresh` resolves true only when the refresh actually succeeded.
+ * `onRefresh` settles when the refresh is over.
  *
  * A pull is only a refresh when the user clearly meant one: a single finger,
- * starting at the very top of an eligible list, moving down. Everything else
- * (sliders, horizontal swipes, a second finger, a nested scroller, an open
- * overlay) is ordinary interaction and must not reload the screen.
+ * starting on an eligible list that has been resting at its very top, moving
+ * down far enough against growing resistance and released there. Everything
+ * else (sliders, horizontal swipes, a second finger, a nested scroller, an
+ * open overlay, scrolling back up to the top) is ordinary interaction and
+ * must not reload the screen.
  */
-function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
-  const [pulling, setPulling] = useState(false);
+function usePullToRefresh(onRefresh: () => Promise<void>, enabled: boolean) {
+  const [firing, setFiring] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const start = useRef({ x: 0, y: 0 });
   const touchId = useRef<number | null>(null);
   const isDragging = useRef(false);
   const distance = useRef(0);
-  const refreshing = useRef(false);
-  const threshold = 80;
+  const lastScrollAt = useRef(Number.NEGATIVE_INFINITY);
 
   const cancel = useCallback(() => {
     isDragging.current = false;
@@ -167,25 +180,27 @@ function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
     if (!enabled) cancel();
   }, [enabled, cancel]);
 
+  const onScroll = useCallback(() => {
+    lastScrollAt.current = performance.now();
+  }, []);
+
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       cancel();
-      if (!enabled || refreshing.current) return;
+      if (!enabled) return;
       if (e.touches.length !== 1) return;
 
       const source = e.target as HTMLElement | null;
       if (source?.closest(PULL_BLOCKING_SELECTOR)) return;
 
       const container = e.currentTarget as HTMLElement;
-      if (container.scrollTop > 1) return;
+      if (container.scrollTop > 0) return;
+      if (performance.now() - lastScrollAt.current < PULL_REST_MS) return;
       // A gesture that starts inside a nested scroller belongs to that
       // scroller, even when the shell happens to be at the top.
       if (source && nearestScrollable(source, container) !== container) return;
 
       const touch = e.touches[0];
-      const bounds = container.getBoundingClientRect();
-      if (touch.clientY - bounds.top > PULL_START_ZONE_PX) return;
-
       start.current = { x: touch.clientX, y: touch.clientY };
       touchId.current = touch.identifier;
       isDragging.current = true;
@@ -209,8 +224,8 @@ function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
         return;
       }
 
-      const next = Math.min(deltaY * 0.4, threshold * 1.5);
-      if (distance.current < threshold && next >= threshold) haptics.selectionChanged();
+      const next = PULL_MAX * (1 - Math.exp(-deltaY / PULL_RESISTANCE));
+      if ((distance.current < PULL_THRESHOLD) !== (next < PULL_THRESHOLD)) haptics.selectionChanged();
       distance.current = next;
       setPullDistance(next);
     },
@@ -220,24 +235,23 @@ function usePullToRefresh(onRefresh: () => Promise<boolean>, enabled: boolean) {
   const onTouchEnd = useCallback(async () => {
     if (!isDragging.current) return;
     const travelled = distance.current;
-    const eligible = enabled && !refreshing.current;
     cancel();
-    if (travelled < threshold || !eligible) return;
+    if (travelled < PULL_THRESHOLD || !enabled) return;
 
     haptics.impact();
-    refreshing.current = true;
-    setPulling(true);
+    setFiring(true);
     try {
-      // Success feedback would otherwise fire on a failed refresh and tell the
-      // user their data is current when it is not.
-      if (await onRefresh()) haptics.success();
+      await onRefresh();
     } finally {
-      refreshing.current = false;
-      setPulling(false);
+      setFiring(false);
     }
   }, [cancel, enabled, onRefresh]);
 
-  return { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel: cancel };
+  return {
+    firing,
+    pullDistance,
+    handlers: { onScroll, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel: cancel },
+  };
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -421,13 +435,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
+  // One refresh at a time, whether the header button or the pull asked for it.
+  const refresh = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      // Success feedback would otherwise fire on a failed refresh and tell the
+      // user their data is current when it is not.
+      if (await handleRefresh()) haptics.success();
+      else haptics.error();
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [handleRefresh]);
+
+  const screenRefresh = useMemo(
+    () => ({ refreshing, refresh: () => void refresh() }),
+    [refreshing, refresh],
+  );
+
   // Wizards, detail screens, and settings never reload from a pull: the
   // gesture there is almost always a mis-read scroll or slider drag.
   const refreshEligible =
-    PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen;
+    PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen && !refreshing;
 
-  const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } =
-    usePullToRefresh(handleRefresh, refreshEligible);
+  const { firing, pullDistance, handlers: pullHandlers } = usePullToRefresh(refresh, refreshEligible);
+  const reducedMotion = useReducedMotion() ?? false;
+  // The content opens a gap the indicator rides in; at the threshold, and
+  // while the pull's refresh runs, the gap fits the whole pill.
+  let contentOffset = 0;
+  if (!reducedMotion) contentOffset = firing ? 52 : pullDistance * 0.55;
 
   return (
     <>
@@ -451,20 +492,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : (
         <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background md:flex-row compact:md:flex-col">
 
-          {(pulling || pullDistance > 0) && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={springs.snappy} className="absolute inset-x-0 top-2 z-40 flex justify-center pointer-events-none">
-              <span role="status" aria-label={pulling ? "Atualizando" : "Puxe para atualizar"} className="rounded-full border border-border bg-card p-2 shadow-sm">
-                <Loader2 className={cn("size-4 text-muted-foreground", pulling && "motion-safe:animate-spin")} style={{ opacity: pulling ? 1 : pullDistance / 80 }} />
-              </span>
-            </motion.div>
-          )}
+          <PullToRefreshIndicator
+            distance={pullDistance}
+            threshold={PULL_THRESHOLD}
+            contentOffset={contentOffset}
+            refreshing={firing}
+          />
 
           <main
             className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            onTouchCancel={onTouchCancel}
+            {...pullHandlers}
           >
           {bootstrapStatus === "error" && (
             <div
@@ -491,7 +528,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : null
               }
             >
-              <div className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0")}>{children}</div>
+              <ScreenRefreshContext.Provider value={screenRefresh}>
+                <motion.div
+                  animate={{ y: contentOffset }}
+                  transition={pullDistance > 0 ? { duration: 0 } : springs.snappy}
+                  className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0")}
+                >
+                  {children}
+                </motion.div>
+              </ScreenRefreshContext.Provider>
             </ScreenHeaderActionsContext.Provider>
           </main>
 
