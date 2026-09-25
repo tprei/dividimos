@@ -12,7 +12,7 @@ import { haptics } from "@/hooks/use-haptics";
 import { formatBRL } from "@/lib/currency";
 import { parseAllocationPercentText } from "@/lib/expense-money";
 import { percentText } from "@/lib/item-division";
-import { ShareSlider } from "./share-slider";
+import { ShareSlider, type ShareGesture } from "./share-slider";
 import type { SplitMode } from "./use-split-draft";
 
 export interface SplitPerson {
@@ -35,7 +35,7 @@ export interface SplitEditorProps {
   onToggle: (id: string) => void;
   basisPointsById: Readonly<Record<string, number>>;
   centsById: Readonly<Record<string, number>>;
-  onShareChange: (id: string, value: number) => void;
+  onShareChange: (id: string, value: number, gesture?: ShareGesture) => void;
   /** Per person, what "Completar" would add (basis points or centavos); absent when nothing. */
   completable: Readonly<Record<string, number>>;
   /** Gives the person everything nobody else was given by hand. */
@@ -213,7 +213,7 @@ export function SplitEditor({
                 <div className="-mt-1.5 flex items-center gap-2 pr-2 pl-[2.625rem]">
                   <ShareSlider
                     basisPoints={basisPoints}
-                    onChange={(value) => onShareChange(person.id, value)}
+                    onChange={(value, gesture) => onShareChange(person.id, value, gesture)}
                     label={`Ajustar o percentual que ${person.name} ${shareVerb}`}
                     valueText={`${percentLabel(basisPoints)}%, ${formatBRL(cents)}`}
                   />

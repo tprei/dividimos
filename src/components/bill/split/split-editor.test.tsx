@@ -77,8 +77,15 @@ function percentBox(name: string) {
   return screen.getByRole("textbox", { name: `Percentual que ${name} consumiu` });
 }
 
-function drag(target: HTMLElement, percent: number) {
-  fireEvent.pointerDown(target);
+function drag(target: HTMLElement, ...percents: number[]) {
+  fireEvent.pointerDown(target, { clientX: 0 });
+  fireEvent.pointerMove(target, { clientX: 40 });
+  for (const percent of percents) fireEvent.change(target, { target: { value: String(percent) } });
+  fireEvent.pointerUp(target);
+}
+
+function tap(target: HTMLElement, percent: number) {
+  fireEvent.pointerDown(target, { clientX: 0 });
   fireEvent.change(target, { target: { value: String(percent) } });
   fireEvent.pointerUp(target);
 }
@@ -113,6 +120,29 @@ describe("SplitEditor percent sliders", () => {
     fireEvent.change(slider("Ana"), { target: { value: "49" } });
     expect(shares().percent.a).toBe(4900);
   });
+
+  it("hands back what a drag borrowed when it comes back down", () => {
+    const { shares, percentSum } = renderEditor(10_000, "percent");
+    fireEvent.change(percentBox("Ana"), { target: { value: "60" } });
+
+    drag(slider("Bia"), 50, 30);
+
+    expect(shares().percent).toEqual({ a: 6000, b: 3000, c: 1000 });
+    expect(percentSum()).toBe(10_000);
+  });
+
+  it("doesn't pull a tap to the quarter, and a key press ends a drag that lost its pointer", () => {
+    const { shares } = renderEditor(10_000, "percent");
+
+    tap(slider("Ana"), 49);
+    expect(shares().percent.a).toBe(4900);
+
+    fireEvent.pointerDown(slider("Caio"), { clientX: 0 });
+    fireEvent.pointerMove(slider("Caio"), { clientX: 40 });
+    fireEvent.keyDown(slider("Caio"), { key: "ArrowRight" });
+    fireEvent.change(slider("Caio"), { target: { value: "24" } });
+    expect(shares().percent.c).toBe(2400);
+  });
 });
 
 describe("SplitEditor completar", () => {
@@ -137,5 +167,14 @@ describe("SplitEditor completar", () => {
 
     expect(shares().fixed).toEqual({ a: 2000, b: 8001, c: 0 });
     expect(centsSum()).toBe(10_001);
+  });
+
+  it("offers no Completar that would not move a centavo", () => {
+    renderEditor(100, "percent");
+
+    fireEvent.change(percentBox("Ana"), { target: { value: "50" } });
+    fireEvent.change(percentBox("Bia"), { target: { value: "49,99" } });
+
+    expect(screen.queryByRole("button", { name: /^Completar/ })).not.toBeInTheDocument();
   });
 });
