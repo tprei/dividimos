@@ -158,7 +158,7 @@ test.describe("Assignment room multi-client acceptance", () => {
     // the app copies instead of reading the real clipboard.
     await context.addInitScript(() => {
       const record = (text: string) => {
-        (window as unknown as { __copiedText?: string }).__copiedText = text;
+        window.__copiedText = text;
         return Promise.resolve();
       };
       Object.defineProperty(navigator, "clipboard", {

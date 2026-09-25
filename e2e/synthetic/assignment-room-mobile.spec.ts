@@ -63,7 +63,7 @@ async function recordClipboard(context: BrowserContext): Promise<void> {
   // records what the app copies instead of reading a real clipboard.
   await context.addInitScript(() => {
     const record = (text: string) => {
-      (window as unknown as { __copiedText?: string }).__copiedText = text;
+      window.__copiedText = text;
       return Promise.resolve();
     };
     Object.defineProperty(navigator, "clipboard", {

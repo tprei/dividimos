@@ -106,7 +106,7 @@ test.describe("Mobile interactions", () => {
 
     const marker = await page.evaluate(() => {
       const token = `pull-${Date.now()}`;
-      (window as unknown as Record<string, unknown>).__pullMarker = token;
+      window.__pullMarker = token;
       return token;
     });
 
@@ -120,9 +120,7 @@ test.describe("Mobile interactions", () => {
     }
 
     // A reload would drop the marker; the wizard must stay exactly where it is.
-    const survived = await page.evaluate(
-      () => (window as unknown as Record<string, unknown>).__pullMarker,
-    );
+    const survived = await page.evaluate(() => window.__pullMarker);
     expect(survived).toBe(marker);
     await expect(page).toHaveURL(/\/app\/bill\/new/);
   });
