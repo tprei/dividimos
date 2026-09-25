@@ -479,6 +479,8 @@
   --color-obj-danger-ink: var(--obj-danger-ink);
   --color-obj-danger-bg: var(--obj-danger-bg);
   --color-obj-google-ink: var(--obj-google-ink);
+  --color-cta: var(--cta);
+  --color-cta-foreground: var(--cta-foreground);
 }
 
 /* Height steps of the intro viewport (the element with .intro-vp). */
@@ -565,6 +567,96 @@
     stroke-width: 2.5;
   }
 
+  .intro-dot > i {
+    position: relative;
+    display: block;
+    height: 8px;
+    width: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--border);
+    transition:
+      width 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+      background-color 0.25s ease;
+  }
+  .intro-dot:hover > i {
+    background: color-mix(in oklab, var(--primary) 45%, var(--border));
+  }
+  .intro-dot[aria-current="true"] > i {
+    width: 24px;
+    background: var(--primary);
+  }
+  [data-counting] .intro-dot[aria-current="true"] > i {
+    background: color-mix(in oklab, var(--primary) 35%, var(--border));
+  }
+  .intro-dot-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--primary);
+    transform-origin: left center;
+    animation: intro-dot-fill linear forwards;
+  }
+
+  .intro-swipe-cue {
+    transition:
+      opacity 0.45s ease,
+      visibility 0s;
+  }
+  .intro-swipe-cue[data-off] {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.45s ease,
+      visibility 0s 0.45s;
+  }
+  .intro-cue-chevron {
+    animation: intro-cue-nudge 1.4s ease-in-out infinite;
+  }
+
+  .intro-nav-wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    margin: -6px -8px 0;
+    transition: grid-template-rows 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .intro-nav-wrap[data-collapsed] {
+    grid-template-rows: 0fr;
+  }
+  .intro-nav-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .intro-nav-wrap[data-collapsed] .intro-nav-inner {
+    visibility: hidden;
+    transition: visibility 0s 0.42s;
+  }
+
+  .intro-skip {
+    opacity: 0;
+    transform: translateY(8px);
+    visibility: hidden;
+    transition:
+      opacity 0.45s ease,
+      transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s 0.5s,
+      color 0.2s ease;
+  }
+  .intro-skip[data-shown] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition:
+      opacity 0.45s ease,
+      transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+      color 0.2s ease;
+  }
+
+  .intro-label-swap {
+    display: inline-block;
+    animation: intro-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
   .intro-enter-up {
     animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
@@ -617,6 +709,23 @@
   }
 }
 
+@keyframes intro-dot-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes intro-cue-nudge {
+  0%,
+  100% {
+    transform: translateX(-2px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
 @keyframes intro-fade-up {
   from {
     opacity: 0;

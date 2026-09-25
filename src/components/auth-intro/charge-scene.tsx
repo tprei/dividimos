@@ -4,13 +4,13 @@ import {
   animate,
   motion,
   useMotionValue,
-  useReducedMotion,
   useTransform,
   type AnimationPlaybackControls,
   type MotionValue,
 } from "framer-motion";
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { formatBRL } from "@/lib/currency";
 import { INTRO_DEFAULT_SHARERS, INTRO_PEOPLE, splitIntroBill, type IntroPerson } from "@/lib/intro-demo-bill";
 import { SceneAvatar } from "./scene-avatar";
@@ -223,20 +223,20 @@ function startChargeRun(setup: Omit<ChargeRun, "charged" | "paid">): ChargeRun {
 }
 
 export function ChargeScene({ stage, onSettle, onBusy }: IntroSceneProps) {
-  const still = useReducedMotion() === true;
+  const still = useMediaQuery(REDUCED_MOTION_QUERY);
   const clipId = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const runRef = useRef<ChargeRun | null>(null);
   const previousStage = useRef<IntroSceneStage | null>(null);
   const [runner] = useState(createSceneRunner);
   const [state, setState] = useState<ChargeState>(() => stateForStage(stage, stage, still));
-  const [trackedStage, setTrackedStage] = useState(stage);
+  const [tracked, setTracked] = useState({ stage, still });
   const remaining = useMotionValue(state.finished ? 0 : OWED_CENTS);
   const settle = useEffectEvent(onSettle);
 
-  if (trackedStage !== stage) {
-    setTrackedStage(stage);
-    setState(stateForStage(trackedStage, stage, still));
+  if (tracked.stage !== stage || tracked.still !== still) {
+    setTracked({ stage, still });
+    setState(stateForStage(tracked.stage, stage, still));
   }
 
   useLayoutEffect(() => {
