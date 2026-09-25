@@ -13,7 +13,7 @@ export interface JoinQrResult {
 }
 
 /** Invite tokens are 32-character base64url values minted by the invite RPC. */
-export const JOIN_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
+const JOIN_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 
 const WHITESPACE_RE = /\s/;
 

@@ -18,7 +18,7 @@ export const BOT_SPECS: readonly BotSpec[] = [
   { handle: "bot_elisa", name: "Elisa (bot)" },
 ] as const;
 
-export const BOT_EMAIL_DOMAIN = "bots.dividimos.ai";
+const BOT_EMAIL_DOMAIN = "bots.dividimos.ai";
 export const BOT_GROUP_NAME = "Bots da casa";
 export const MAX_ACTIVE_BOT_EXPENSES = 60;
 
@@ -77,7 +77,7 @@ export async function pruneOldExpenses(troupe: Troupe): Promise<number> {
 // without a sweep the group gains roughly 48 expenses, events and chat lines
 // a day and never gives any back. A week still covers reading a weekend
 // failure on Monday.
-export const HISTORY_RETENTION_DAYS = 7;
+const HISTORY_RETENTION_DAYS = 7;
 // Chat has no cap of its own, and the walk leaves one line per run.
 export const MAX_CHAT_MESSAGES = 200;
 // One run's worth of deletes, so a long-neglected group shrinks over several
@@ -100,7 +100,7 @@ export interface SweptHistory {
  * nothing. Settlements are left alone, because deleting a confirmed one would
  * change a balance.
  */
-export async function sweepGroupHistory(
+async function sweepGroupHistory(
   troupe: Troupe,
   groupId: string,
 ): Promise<SweptHistory> {

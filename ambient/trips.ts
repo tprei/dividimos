@@ -24,7 +24,7 @@ import { firstName, note } from "./diary";
  * starts the next UTC day.
  */
 
-export const TRIP_GROUP_PREFIX = "Viagem dos bots";
+const TRIP_GROUP_PREFIX = "Viagem dos bots";
 
 // Trip start and trip settled always get a line; this caps the per-step
 // facts so the board's diary keeps room for the rest of the run.

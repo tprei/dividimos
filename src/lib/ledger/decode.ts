@@ -57,20 +57,9 @@ export type { Path };
 export type { WireIssue };
 
 export {
-  decodeChangeSummary,
   decodeExpenseDetail,
-  decodeExpenseGroupSummary,
-  decodeExpenseItemAssignmentPayload,
-  decodeExpenseItemPayload,
-  decodeExpensePayerPayload,
   decodeExpensePayload,
-  decodeExpenseRecord,
-  decodeExpenseSummaries,
-  decodeExpenseSummary,
-  decodeExpenseVersion,
   decodeGuestParticipant,
-  decodeParticipant,
-  decodeParticipantRef,
   decodeUserProfile,
   decodeUserProfileOrNull,
 } from "./decode-expense";
@@ -207,7 +196,7 @@ const GROUP_KEYS = [
   "createdAt",
 ] as const;
 
-export function decodeGroup(
+function decodeGroup(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<Group, WireIssue> {
@@ -254,7 +243,7 @@ const GROUP_MEMBER_KEYS = [
 ] as const;
 
 
-export function decodeGroupMember(
+function decodeGroupMember(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<GroupMember, WireIssue> {
@@ -287,7 +276,7 @@ export function decodeGroupMember(
 
 const BALANCE_ROW_KEYS = ["kind", "participantId", "netCents"] as const;
 
-export function decodeBalanceRow(
+function decodeBalanceRow(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<BalanceRow, WireIssue> {
@@ -307,7 +296,7 @@ export function decodeBalanceRow(
 
 const TRANSFER_KEYS = ["fromKind", "fromId", "toId", "amountCents"] as const;
 
-export function decodeTransfer(
+function decodeTransfer(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<Transfer, WireIssue> {
@@ -517,7 +506,7 @@ export function decodeChatMessage(
 
 const CHAT_LAST_MESSAGE_KEYS = ["content", "senderId", "createdAt"] as const;
 
-export function decodeChatLastMessage(
+function decodeChatLastMessage(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ChatLastMessage, WireIssue> {
@@ -535,7 +524,7 @@ export function decodeChatLastMessage(
 
 const GROUP_GUEST_KEYS = ["id", "displayName", "expenseId"] as const;
 
-export function decodeGroupGuest(
+function decodeGroupGuest(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<GroupGuest, WireIssue> {
@@ -957,7 +946,7 @@ const READ_WATERMARK_KEYS = ["lastReadAt", "lastReadMessageId"] as const;
  * Date-based parsing truncates to milliseconds and would skip or repeat rows
  * sharing a millisecond, so this normalizes the text instead.
  */
-export function canonicalizeTimestamp(
+function canonicalizeTimestamp(
   raw: unknown,
   path: Path,
 ): ValidationResult<string, WireIssue> {

@@ -1,8 +1,8 @@
 /** @typedef {import("../report.mjs").AmbientReport} AmbientReport */
 /** @typedef {import("../report.mjs").SinkContext} SinkContext */
 
-export const TITLE = "Ambient synthetic failing on production";
-export const LABEL = "synthetic-prod";
+const TITLE = "Ambient synthetic failing on production";
+const LABEL = "synthetic-prod";
 
 /**
  * @param {NodeJS.ProcessEnv} env

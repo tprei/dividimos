@@ -2,7 +2,7 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { allocateEvenly } from "@/lib/expense-money";
 import type { ExpenseHeader, ExpensePayload, Me, UserProfile } from "@/types/ledger";
 
-export function todayIso(): string {
+function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -41,7 +41,7 @@ export function dmExpensePayload(
   };
 }
 
-export function normalizeHandle(handle: string): string {
+function normalizeHandle(handle: string): string {
   return handle.trim().replace(/^@/, "").toLowerCase();
 }
 

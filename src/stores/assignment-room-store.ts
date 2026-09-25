@@ -98,7 +98,7 @@ function itemOrder(snapshot: AssignmentRoomSnapshot): Map<string, number> {
   );
 }
 
-export function deriveAssignmentRoomActivity(
+function deriveAssignmentRoomActivity(
   previous: AssignmentRoomSnapshot,
   next: AssignmentRoomSnapshot,
   latest: AssignmentRoomActivity | null,
