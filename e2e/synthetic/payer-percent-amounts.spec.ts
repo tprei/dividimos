@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
-test.describe("Percentage payer split shows money while you drag", () => {
-  test("names each payer's amount before the split reaches 100%", async ({
+test.describe("Itemized payer split balances percentages as you type", () => {
+  test("completes the other payer and names both amounts", async ({
     page,
     seed,
     loginAs,
@@ -14,34 +14,29 @@ test.describe("Percentage payer split shows money while you drag", () => {
     await page.goto("/app/bill/new");
 
     await page.getByRole("button", { name: /Vários itens/ }).click();
-    await page.getByRole("textbox", { name: "Nome" }).fill("Conta detalhada");
-    await page.getByRole("combobox").first().click();
+    await page.getByLabel("Nome da conta").fill("Conta detalhada");
+    await page.getByRole("combobox", { name: "Grupo", exact: true }).click();
     await page.getByRole("option", { name: "Grupo Percentual" }).click();
 
     await page.getByRole("tab", { name: "Itens" }).click();
-    // No service fee, so the percentages map onto round numbers.
     await page.getByRole("textbox", { name: "Taxa de serviço (%)" }).fill("0");
     await page.getByRole("button", { name: "Adicionar item" }).click();
     await page.getByPlaceholder("Descrição (ex: Picanha 400g)").fill("Rodízio");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("100,00");
     await page.getByRole("button", { name: "Adicionar", exact: true }).click();
 
+    await page.getByRole("tab", { name: "Quem consumiu" }).click();
+    await page.getByRole("button", { name: "Dividir tudo igualmente" }).click();
+
     await page.getByRole("tab", { name: "Pagamento" }).click();
-    await page.getByRole("button", { name: "Mais de uma pessoa pagou" }).click();
-    await page.getByRole("button", { name: "Porcentagem" }).click();
+    const payers = page.getByRole("list", { name: "Quem pagou" });
+    await payers.getByRole("button", { name: /Bob/ }).click();
+    await page.getByRole("radiogroup", { name: "Como dividir: Quem pagou" }).getByText("%", { exact: true }).click();
+    await page.getByRole("textbox", { name: "Percentual que Alice Percentual pagou" }).fill("40");
 
-    const alicePercent = page.getByRole("slider", { name: "Percentual pago por Alice Percentual" });
-    await alicePercent.fill("40");
-
-    // The whole point: the amount is readable while the split is still short,
-    // instead of an em dash until the sliders happen to land on 100%.
-    await expect(page.getByText(/R\$\s*40,00/).first()).toBeVisible();
-    await expect(page.getByText(/faltam .*% para completar 100%/)).toBeVisible();
-
-    const bobPercent = page.getByRole("slider", { name: "Percentual pago por Bob Percentual" });
-    await bobPercent.fill("70");
-
-    await expect(page.getByText(/excede 100% em/)).toBeVisible();
-    await expect(page.getByText(/R\$\s*70,00/).first()).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Percentual que Bob Percentual pagou" })).toHaveValue("60");
+    await expect(payers.getByText(/R\$\s*40,00/)).toBeVisible();
+    await expect(payers.getByText(/R\$\s*60,00/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Criar conta" })).toBeEnabled();
   });
 });

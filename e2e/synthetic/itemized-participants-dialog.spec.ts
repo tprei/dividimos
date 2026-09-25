@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
-test.describe("Itemized participants dialog", () => {
-  test("shows people controls only, since the Conta section owns the group", async ({
+test.describe("Itemized participants step", () => {
+  test("keeps people controls inline and leaves the group to the group picker", async ({
     page,
     seed,
     loginAs,
@@ -16,19 +16,14 @@ test.describe("Itemized participants dialog", () => {
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: /Vários itens/ }).click();
 
-    await expect(page.getByRole("combobox", { name: "Grupo" })).toBeVisible();
-    await page.getByRole("button", { name: /Participantes/ }).click();
+    await expect(page.getByRole("combobox", { name: "Grupo", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Por @handle" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Adicionar convidado" })).toBeVisible();
+    await expect(page.getByText("Escolher um grupo existente")).toHaveCount(0);
+    await expect(page.getByText("Criar grupo com essas pessoas")).toHaveCount(0);
 
-    const dialog = page.getByRole("dialog", { name: "Participantes" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Por @handle" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Adicionar convidado" })).toBeVisible();
-    await expect(dialog.getByText("Grupo Itens A")).toHaveCount(0);
-    await expect(dialog.getByText("Grupo Itens B")).toHaveCount(0);
-    await expect(dialog.getByText("Criar grupo com essas pessoas")).toHaveCount(0);
-
-    const done = dialog.getByRole("button", { name: "Concluir" });
-    await expect(done).toBeVisible();
-    await expect(done).toBeInViewport();
+    await page.getByRole("combobox", { name: "Grupo", exact: true }).click();
+    await page.getByRole("option", { name: "Grupo Itens A" }).click();
+    await expect(page.getByRole("button", { name: "Bob Itens" })).toHaveAttribute("aria-pressed", "true");
   });
 });

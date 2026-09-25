@@ -5,11 +5,10 @@ import { ChevronRight } from "lucide-react";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 
 const SECTION_TABS: { key: ItemizedSectionKey; label: string }[] = [
-  { key: "account", label: "Conta" },
+  { key: "account", label: "Participantes" },
   { key: "items", label: "Itens" },
   { key: "split", label: "Quem consumiu" },
   { key: "payment", label: "Pagamento" },
-  { key: "review", label: "Revisão" },
 ];
 
 export interface SectionTabsProps {
