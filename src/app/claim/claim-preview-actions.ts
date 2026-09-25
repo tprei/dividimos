@@ -2,9 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
+import { createLogger } from "@/lib/logger";
+
+const logger = createLogger("claim.preview");
 
 export type ClaimPreview =
   | { kind: "not_found" }
+  | { kind: "unavailable" }
   | { kind: "sign_in_required" }
   | { kind: "already_claimed" }
   | {
@@ -28,7 +32,11 @@ export async function previewGuestClaim(token: string): Promise<ClaimPreview> {
     p_token: token,
   });
 
-  if (error || !data || typeof data !== "object") return notFound();
+  if (error) {
+    logger.error({ code: error.code, message: error.message }, "resolve_guest_claim_token failed");
+    return { kind: "unavailable" };
+  }
+  if (!data || typeof data !== "object") return notFound();
 
   const raw = data as Record<string, unknown>;
   const status = raw.status as string;

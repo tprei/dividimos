@@ -443,6 +443,19 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(resolved.guestId).toBeNull();
     });
 
+    it("treats an empty or blank token as unknown for resolve", async () => {
+      for (const token of ["", "   "]) {
+        const resolved = await rpc<GuestClaimResolve>(
+          anonClient,
+          "resolve_guest_claim_token",
+          { p_token: token },
+        );
+        expect(resolved.status).toBe("not_found");
+        expect(resolved.guestId).toBeNull();
+        expect(resolved.displayName).toBeNull();
+      }
+    });
+
     it("rejects a claim by an existing participant of the same expense with already_participant", async () => {
       // Second expense where A participates alongside a fresh guest. Shares
       // [2000, 0] keep every per-participant delta at zero so group balances

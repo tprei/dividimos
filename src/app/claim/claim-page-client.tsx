@@ -177,6 +177,8 @@ export function ClaimPageClient() {
     }
   }, [handleSignIn, router, state.preview, state.token]);
 
+  const retryPreview = useCallback(() => capture(state.token), [capture, state.token]);
+
   const { preview } = state;
 
   return (
@@ -197,6 +199,19 @@ export function ClaimPageClient() {
           <p className="mt-2 text-sm text-muted-foreground">
             O link do convite é inválido ou expirou.
           </p>
+        </div>
+      ) : preview.kind === "unavailable" ? (
+        <div className="flex flex-col items-center rounded-2xl border bg-card p-8 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <AlertCircle className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h1 className="mt-4 text-lg font-bold">Não deu pra abrir o convite</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Tente de novo em alguns instantes.
+          </p>
+          <Button className="mt-5 w-full" size="lg" onClick={retryPreview}>
+            Tentar de novo
+          </Button>
         </div>
       ) : preview.kind === "sign_in_required" ? (
         <div className="flex flex-col items-center rounded-2xl border bg-card p-8 text-center">
