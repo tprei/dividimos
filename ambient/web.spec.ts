@@ -91,11 +91,10 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
     // The sheet picks a counterparty through a select, and it opens on
     // whichever member the group listed first, so Bruno has to be chosen.
-    // The option label is the one SelectField builds: name plus @handle.
+    // The option label is the member's display name; a handle only appears
+    // when two members share a name, which the troupe never does.
     await page.getByRole("combobox", { name: "Com quem?" }).click();
-    await page
-      .getByRole("option", { name: `${bruno.name} (@${bruno.handle})`, exact: true })
-      .click();
+    await page.getByRole("option", { name: bruno.name, exact: true }).click();
     await expect(page.getByText(`Você pagou para ${bruno.name}`)).toBeVisible();
     await page.getByTestId("group-payment-payer-other").click();
 
