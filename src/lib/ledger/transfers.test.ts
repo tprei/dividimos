@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { netAndMinimize, transfersFromBalances, transfersInvolving } from "./transfers";
-import type { DebtEdge } from "../simplify";
+import { transfersFromBalances, transfersInvolving } from "./transfers";
 import type { BalanceRow, Transfer } from "@/types/ledger";
 
 function mulberry32(seed: number): () => number {
@@ -11,35 +10,6 @@ function mulberry32(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-function legacyNetAndMinimize(edges: DebtEdge[]): DebtEdge[] {
-  const balances = new Map<string, number>();
-  for (const e of edges) {
-    balances.set(e.fromUserId, (balances.get(e.fromUserId) ?? 0) - e.amountCents);
-    balances.set(e.toUserId, (balances.get(e.toUserId) ?? 0) + e.amountCents);
-  }
-  const debtors: { id: string; amount: number }[] = [];
-  const creditors: { id: string; amount: number }[] = [];
-  for (const [id, balance] of balances) {
-    if (balance < 0) debtors.push({ id, amount: Math.abs(balance) });
-    if (balance > 0) creditors.push({ id, amount: balance });
-  }
-  debtors.sort((a, b) => b.amount - a.amount);
-  creditors.sort((a, b) => b.amount - a.amount);
-  const result: DebtEdge[] = [];
-  let di = 0;
-  let ci = 0;
-  while (di < debtors.length && ci < creditors.length) {
-    const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
-    if (transfer <= 0) break;
-    result.push({ fromUserId: debtors[di].id, toUserId: creditors[ci].id, amountCents: transfer });
-    debtors[di].amount -= transfer;
-    creditors[ci].amount -= transfer;
-    if (debtors[di].amount <= 0) di++;
-    if (creditors[ci].amount <= 0) ci++;
-  }
-  return result;
 }
 
 function netConservation(balances: readonly BalanceRow[], transfers: readonly Transfer[]): boolean {
@@ -192,48 +162,5 @@ describe("transfersInvolving", () => {
     const result = transfersInvolving(transfers, "nobody");
     expect(result.owes).toEqual([]);
     expect(result.owed).toEqual([]);
-  });
-});
-
-describe("netAndMinimize", () => {
-  it("matches previous behaviour for non-tie inputs", () => {
-    const rand = mulberry32(4242);
-    let tested = 0;
-    while (tested < 50) {
-      const userCount = 4 + Math.floor(rand() * 4);
-      const edgeCount = userCount + Math.floor(rand() * 6);
-      const edges: DebtEdge[] = [];
-      for (let e = 0; e < edgeCount; e++) {
-        const from = Math.floor(rand() * userCount);
-        let to = Math.floor(rand() * userCount);
-        while (to === from) {
-          to = Math.floor(rand() * userCount);
-        }
-        edges.push({
-          fromUserId: `u-${from}`,
-          toUserId: `u-${to}`,
-          amountCents: 10 + Math.floor(rand() * 5000),
-        });
-      }
-
-      const nets = new Map<string, number>();
-      for (const edge of edges) {
-        nets.set(edge.fromUserId, (nets.get(edge.fromUserId) ?? 0) - edge.amountCents);
-        nets.set(edge.toUserId, (nets.get(edge.toUserId) ?? 0) + edge.amountCents);
-      }
-      const debtorAmounts = [...nets.values()].filter((n) => n < 0).map(Math.abs);
-      const creditorAmounts = [...nets.values()].filter((n) => n > 0);
-      const hasDebtorTie = new Set(debtorAmounts).size !== debtorAmounts.length;
-      const hasCreditorTie = new Set(creditorAmounts).size !== creditorAmounts.length;
-
-      if (hasDebtorTie || hasCreditorTie) {
-        continue;
-      }
-
-      const current = netAndMinimize(edges);
-      const legacy = legacyNetAndMinimize(edges);
-      expect(current).toEqual(legacy);
-      tested++;
-    }
   });
 });

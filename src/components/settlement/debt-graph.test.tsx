@@ -6,7 +6,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { DebtGraph } from "./debt-graph";
-import type { DebtEdge } from "@/lib/simplify";
+import type { DebtEdge } from "@/types";
 
 const originalMatchMedia = globalThis.matchMedia;
 

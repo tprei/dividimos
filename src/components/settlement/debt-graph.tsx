@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { avatarStyle } from "@/components/shared/user-avatar";
 import { displayNames, initialsOf } from "@/lib/people";
-import type { DebtEdge } from "@/lib/simplify";
+import type { DebtEdge } from "@/types";
 import { formatBRL } from "@/lib/currency";
 
 export interface DebtGraphNode {
