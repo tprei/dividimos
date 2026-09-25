@@ -22,30 +22,27 @@ export function ExpensePayers({
 }: ExpensePayersProps) {
   if (payers.length === 0) return null;
   return (
-    <section className="mt-5">
-      <h2 className="mb-1 text-sm font-semibold">Quem pagou</h2>
-      <p className="mb-2 text-xs text-muted-foreground">
-        Quem colocou o dinheiro na mesa.
-      </p>
+    <section className="mt-6">
+      <h2 className="mb-3 text-lg font-semibold">Quem pagou</h2>
       <ul className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
         {payers.map((payer) => {
           const name = participantName(payer.participantIndex);
           return (
             <li
               key={payer.participantIndex}
-              className="flex min-h-14 items-center gap-3 px-4 py-2"
+              className="flex min-h-11 items-center gap-3 px-3 py-2.5"
             >
               {participantIsGuest(payer.participantIndex) ? (
-                <GuestAvatar id={participantId(payer.participantIndex)} name={name} size="sm" />
+                <GuestAvatar id={participantId(payer.participantIndex)} name={name} size="xs" />
               ) : (
                 <UserAvatar
                   id={participantId(payer.participantIndex)}
                   name={name}
                   avatarUrl={participantAvatarUrl(payer.participantIndex)}
-                  size="sm"
+                  size="xs"
                 />
               )}
-              <span className="min-w-0 flex-1 text-sm font-semibold">{name}</span>
+              <span title={name} className="min-w-0 flex-1 truncate text-sm font-semibold">{name}</span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {Math.round(payer.basisPoints / 100)}%
               </span>

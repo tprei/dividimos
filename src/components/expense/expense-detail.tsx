@@ -1,7 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Check, Pencil, Receipt, RotateCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Receipt, RotateCcw, Share2, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -17,6 +16,12 @@ import { Skeleton } from "@/components/shared/skeleton";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { haptics } from "@/hooks/use-haptics";
+import { displayNames } from "@/lib/people";
+import { shareLink } from "@/lib/platform/share";
+import { formatOccurredOn } from "@/stores/app-selectors";
+import { copyText } from "@/lib/platform/clipboard";
+import { formatServiceFeeBasisPoints } from "@/lib/expense-money";
 import {
   Popover,
   PopoverContent,
@@ -46,8 +51,9 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [working, setWorking] = useState(false);
   const [deleteAnchor, setDeleteAnchor] = useState<HTMLButtonElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchor = useRef<HTMLButtonElement>(null);
   const [inviteIndex, setInviteIndex] = useState<number | null>(null);
-  const [inviteAnchor, setInviteAnchor] = useState<HTMLElement | null>(null);
   const [roomSection, setRoomSection] = useState({ expenseId, value: "people" });
   const activeRoomSection = roomSection.expenseId === expenseId ? roomSection.value : "people";
   // Default focus of the delete confirmation stays on the safe action.
@@ -199,14 +205,22 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const isDeleted = expense.status === "deleted";
   const canManage =
     assignmentRoom === undefined || assignmentRoom.hostUserId === me?.id;
+  const names = displayNames(detail.participants.map((p) => ({
+    id: participantId(p.participantIndex), name: participantName(p.participantIndex),
+    handle: p.user?.handle, isGuest: p.kind === "guest",
+  })), { style: "full", viewerId: me?.id, selfLabel: "você" });
+  const payerNames = payers.map((payer) => names.get(participantId(payer.participantIndex))).join(", ");
+  const unclaimedGuest = detail.participants.find((p) => p.guest?.claimedBy === null);
 
   async function handleDelete() {
     setWorking(true);
     try {
       await deleteExpense(expenseId);
+      haptics.error();
       toast.success("Conta excluída");
       setConfirmOpen(false);
     } catch (error) {
+      haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
       setWorking(false);
@@ -217,8 +231,10 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     setWorking(true);
     try {
       await restoreExpense(expenseId);
+      haptics.success();
       toast.success("Conta restaurada");
     } catch (error) {
+      haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
       setWorking(false);
@@ -231,9 +247,8 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       meId={me?.id ?? null}
       invitedUserIds={invitedUserIds}
       showHeading={!assignmentRoom}
-      onInviteGuest={(participant, anchor) => {
+      onInviteGuest={(participant) => {
         setInviteIndex(participant.participantIndex);
-        setInviteAnchor(anchor);
       }}
     />
   );
@@ -260,90 +275,48 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   );
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col">
+    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col md:max-w-2xl">
       <ScreenHeader
         back
         title={current.title}
-        action={
-          <div
-            aria-hidden="true"
-            className="grid size-10 shrink-0 place-items-center rounded-full bg-success/15 text-success"
-          >
-            <Check className="size-5" />
-          </div>
-        }
+        subtitle={`${detail.group.name} · ${formatOccurredOn(current.occurredOn)} · pago por ${payerNames}`}
+        action={<>
+          {canManage && !isDeleted && <Button variant="ghost" size="icon" aria-label="Editar conta" onClick={() => router.push(`/app/bill/new?edit=${expenseId}`)}><Pencil className="size-5" /></Button>}
+          <Button ref={menuAnchor} variant="ghost" size="icon" aria-label="Mais opções" onClick={() => setMenuOpen(true)}><MoreHorizontal className="size-5" /></Button>
+        </>}
       />
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="border-b px-4 pb-4"
-      >
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-          Total
-        </p>
-        <Money cents={current.totalCents} className="text-4xl font-semibold" />
-      </motion.div>
+      <div className="px-4 py-6">
+        <p className="mb-1 text-sm text-muted-foreground">Total da conta</p>
+        <Money cents={current.totalCents} size="hero" />
+      </div>
+      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <PopoverContent anchor={menuAnchor.current} align="end">
+          <PopoverTitle>Opções da conta</PopoverTitle>
+          <Button variant="ghost" className="w-full justify-start" onClick={() => {
+            setMenuOpen(false);
+            void shareLink({ title: current.title, url: window.location.href }).then(async (outcome) => {
+              if (outcome === "unsupported") {
+                if (await copyText(window.location.href)) {
+                  haptics.success();
+                  toast.success("Link copiado");
+                } else toast.error("Não deu pra copiar o link.");
+              }
+            }).catch(() => toast.error("Não deu pra compartilhar a conta."));
+          }}><Share2 className="size-4" />Compartilhar conta</Button>
+          {unclaimedGuest && <Button variant="ghost" className="w-full justify-start" onClick={() => { setMenuOpen(false); setInviteIndex(unclaimedGuest.participantIndex); }}><UserPlus className="size-4" />Convidar participante</Button>}
+          {canManage && !isDeleted && <Button variant="ghost" className="w-full justify-start text-destructive-text" onClick={() => { setDeleteAnchor(menuAnchor.current); setMenuOpen(false); setConfirmOpen(true); }}><Trash2 className="size-4" />Excluir conta</Button>}
+          {assignmentRoom && <Button variant="ghost" className="w-full justify-start" onClick={() => router.push(`/room/${assignmentRoom.id}`)}><Receipt className="size-4" />Ver sala</Button>}
+        </PopoverContent>
+      </Popover>
 
       <div className="px-4">
         {isDeleted && (
-          <div className="mt-4 rounded-2xl border-2 border-dashed border-warning/30 bg-warning/5 p-4">
-            <p className="flex items-center gap-2 text-sm font-semibold text-warning">
-              <Trash2 className="h-4 w-4" />
-              Conta excluída
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Essa conta foi excluída e não entra nos saldos do grupo.
-            </p>
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-muted/50 px-4 py-3">
+            <p className="text-sm text-muted-foreground">Conta excluída</p>
+            {canManage && <Button variant="outline" disabled={working} onClick={handleRestore}><RotateCcw className="size-4" />Restaurar</Button>}
           </div>
         )}
 
-        {canManage && (
-          <div className="mt-4 flex gap-2 [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1">
-            {isDeleted ? (
-              <Button
-                className="flex-1 gap-2"
-                disabled={working}
-                onClick={handleRestore}
-              >
-                <RotateCcw className="h-4 w-4" />
-                Restaurar
-              </Button>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  className="flex-1 gap-2"
-                  onClick={() => router.push(`/app/bill/new?edit=${expenseId}`)}
-                >
-                  <Pencil className="h-4 w-4" />
-                  Editar
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1 gap-2 text-destructive hover:text-destructive"
-                  onClick={(event) => {
-                    setDeleteAnchor(event.currentTarget);
-                    setConfirmOpen(true);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Excluir
-                </Button>
-              </>
-            )}
-            {assignmentRoom && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => router.push(`/room/${assignmentRoom.id}`)}
-              >
-                <Receipt className="h-4 w-4" />
-                Ver sala
-              </Button>
-            )}
-          </div>
-        )}
       </div>
       <div className="px-4">
         <ExpensePayers
@@ -354,6 +327,15 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           participantIsGuest={participantIsGuest}
         />
       </div>
+      {(current.serviceFeeBasisPoints > 0 || current.fixedFeeCents > 0) && (
+        <section className="mt-6 px-4">
+          <h2 className="mb-3 text-lg font-semibold">Taxas</h2>
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4 text-sm">
+            {current.serviceFeeBasisPoints > 0 && <p className="flex justify-between gap-3"><span>Taxa de serviço</span><span>{formatServiceFeeBasisPoints(current.serviceFeeBasisPoints)}</span></p>}
+            {current.fixedFeeCents > 0 && <p className="flex justify-between gap-3"><span>Taxa fixa</span><Money cents={current.fixedFeeCents} size="sm" /></p>}
+          </div>
+        </section>
+      )}
 
       {assignmentRoom ? (
         <section className="mt-5 px-4" aria-label="Sala de itens">
@@ -420,7 +402,6 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       {inviteParticipant?.guest && (
         <GuestInviteDialog
           open
-          anchor={inviteAnchor}
           onOpenChange={(open) => {
             if (!open) setInviteIndex(null);
           }}

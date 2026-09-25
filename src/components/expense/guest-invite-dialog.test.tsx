@@ -38,22 +38,16 @@ const guest: GuestParticipant = {
 };
 
 function renderDialog(overrides: Partial<GuestParticipant> = {}) {
-  // A real mounted trigger: the popover positions against the row button
-  // exactly as the expense screen does.
-  const anchor = document.createElement("button");
-  anchor.textContent = "trigger";
-  document.body.appendChild(anchor);
   const props = {
     open: true,
     onOpenChange: vi.fn(),
-    anchor,
     guest: { ...guest, ...overrides },
     shareCents: 6000,
     expenseTitle: "Jantar",
     expenseId: "e1",
   };
   const view = render(<GuestInviteDialog {...props} />);
-  return { ...view, props, anchor };
+  return { ...view, props };
 }
 function stubClipboard(writeText: () => Promise<void>) {
   Object.defineProperty(navigator, "clipboard", {
@@ -111,7 +105,7 @@ describe("GuestInviteDialog", () => {
     expect(toast.success).toHaveBeenCalledWith("Link copiado");
   });
 
-  it("expands the claim QR inside the popover and encodes the exact claim URL", async () => {
+  it("expands the claim QR and encodes the exact claim URL", async () => {
     const user = userEvent.setup();
     writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
     renderDialog();
@@ -130,10 +124,10 @@ describe("GuestInviteDialog", () => {
     // a second sheet covering them.
     expect(screen.getByText("Convidar Bruno")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
-    expect(screen.getByText("Escaneie pelo app para entrar na conta")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "QR code do convite de Bruno" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ocultar QR code" }));
-    expect(screen.queryByText("Escaneie pelo app para entrar na conta")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "QR code do convite de Bruno" })).not.toBeInTheDocument();
   });
 
   it("toasts success after copying and keeps the failure visible when copy is denied", async () => {
@@ -178,7 +172,7 @@ describe("GuestInviteDialog", () => {
     const user = userEvent.setup();
     const { props } = renderDialog();
 
-    const backdrop = document.querySelector('[data-slot="popover-backdrop"]');
+    const backdrop = document.querySelector('[data-slot="dialog-overlay"]');
     expect(backdrop).not.toBeNull();
     await user.click(backdrop as HTMLElement);
 

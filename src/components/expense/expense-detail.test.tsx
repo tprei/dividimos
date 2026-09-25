@@ -274,13 +274,7 @@ describe("ExpenseDetail", () => {
     const list = within(screen.getByRole("list", { name: "Participantes" }));
     const rows = list.getAllByRole("listitem");
     expect(within(rows[0]).getByText("Você")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") ===
-          "Consumiu R$ 70,00 · Pagou R$ 120,00",
-      ),
-    ).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("Consumiu R$ 70,00 · Pagou R$ 120,00");
     expect(
       within(rows[0]).getByLabelText("Saldo de Alice nessa conta").textContent,
     ).toBe("+R$\u00a050,00");
@@ -347,8 +341,8 @@ describe("ExpenseDetail", () => {
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
 
-    const trigger = screen.getByRole("button", { name: "Excluir" });
-    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
+    await user.click(screen.getByRole("button", { name: "Excluir conta" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Excluir conta?")).toBeInTheDocument();
@@ -363,13 +357,13 @@ describe("ExpenseDetail", () => {
     });
   });
 
-  it("hides linked mutation actions from a nonhost party", () => {
+  it("hides linked mutation actions from a nonhost party", async () => {
+    const user = userEvent.setup();
     seedStore("active", { id: "room-1", hostUserId: "user-2" });
     render(<ExpenseDetail expenseId="e1" />);
-
-    expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Excluir" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Ver sala" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
+    expect(screen.queryByRole("button", { name: "Editar conta" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Excluir conta" })).not.toBeInTheDocument();
   });
 
   it("links a room host back to the read-only board", async () => {
@@ -377,10 +371,11 @@ describe("ExpenseDetail", () => {
     seedStore("active", { id: "room-1", hostUserId: me.id });
     render(<ExpenseDetail expenseId="e1" />);
 
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
     await user.click(screen.getByRole("button", { name: "Ver sala" }));
     expect(routerMock.push).toHaveBeenCalledWith("/room/room-1");
-    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Excluir" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Editar conta" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Excluir conta" })).toBeInTheDocument();
   });
 
   it("audits room consumption and history in keyboard-accessible tabs without losing guest actions", async () => {
