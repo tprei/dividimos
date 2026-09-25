@@ -26,11 +26,17 @@ interface AddItemFormProps {
   onCancel: () => void;
 }
 
+/** Pressing a control must not pull focus out of the field: that would drop the keyboard mid-entry. */
+function keepFocus(event: React.MouseEvent) {
+  event.preventDefault();
+}
+
 export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState(1000);
   const [priceCents, setPriceCents] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
 
   const decrement = useCallback(() => {
     setQuantity((q) => {
@@ -61,6 +67,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
       unitPriceCents: priceCents,
       totalPriceCents: total.value as number,
     });
+    haptics.tap();
 
     setDescription("");
     setQuantity(1000);
@@ -83,6 +90,12 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
           placeholder="Descrição (ex: Picanha 400g)"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || priceCents > 0) return;
+            e.preventDefault();
+            if (description.trim()) priceRef.current?.focus();
+          }}
+          enterKeyHint="next"
           autoFocus
           className="min-w-0 flex-1"
         />
@@ -101,6 +114,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
         <div className="flex h-11 shrink-0 items-center rounded-[0.75rem] border border-input">
           <button
             type="button"
+            onMouseDown={keepFocus}
             onClick={decrement}
             disabled={quantity <= 1000}
             aria-label="Diminuir quantidade"
@@ -113,6 +127,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
           </span>
           <button
             type="button"
+            onMouseDown={keepFocus}
             onClick={increment}
             aria-label="Aumentar quantidade"
             className="flex h-full w-9 items-center justify-center rounded-r-[0.75rem] text-muted-foreground hover:bg-muted"
@@ -123,13 +138,19 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
         <label className="flex h-11 min-w-0 flex-1 items-center gap-1 rounded-[0.75rem] border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
           <span aria-hidden="true" className="text-base leading-6 text-muted-foreground md:text-sm">R$</span>
           <CurrencyInput
+            ref={priceRef}
             valueCents={priceCents}
             onChangeCents={setPriceCents}
             aria-label="Preço unitário"
             className="h-auto w-full min-w-0 rounded-none border-0 bg-transparent p-0 focus-visible:ring-0"
           />
         </label>
-        <Button type="submit" className="h-11 shrink-0" disabled={!description.trim() || priceCents <= 0}>
+        <Button
+          type="submit"
+          className="h-11 shrink-0"
+          disabled={!description.trim() || priceCents <= 0}
+          onMouseDown={keepFocus}
+        >
           Adicionar
         </Button>
       </div>

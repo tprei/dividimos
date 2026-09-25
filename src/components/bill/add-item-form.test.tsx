@@ -41,6 +41,17 @@ describe("AddItemForm", () => {
     expect(screen.getByPlaceholderText(/Descrição/)).toHaveFocus();
   });
 
+  it("moves from the description to the price on Enter instead of submitting", async () => {
+    const onAdd = vi.fn();
+    const user = userEvent.setup();
+    render(<AddItemForm onAdd={onAdd} onCancel={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText(/Descrição/), "Chopp{Enter}");
+
+    expect(screen.getByRole("textbox", { name: "Preço unitário" })).toHaveFocus();
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
   it("renders quantity with default value of 1", () => {
     render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
 
