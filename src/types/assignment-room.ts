@@ -182,3 +182,10 @@ export interface AssignmentRoomSummary {
 export interface OpenAssignmentRoom extends AssignmentRoomSummary {
   joined: boolean;
 }
+
+export type AssignmentRoomAccess = "none" | "joined" | "removed";
+
+export interface AssignmentRoomAccessEntry {
+  roomId: string;
+  access: AssignmentRoomAccess;
+}
