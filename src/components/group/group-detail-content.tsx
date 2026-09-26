@@ -21,6 +21,7 @@ import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
 import { GroupMembersSection } from "@/components/group/group-members-section";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
+import { OpenRoomsCard } from "@/components/group/open-rooms-card";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -32,10 +33,12 @@ import { haptics } from "@/hooks/use-haptics";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { isBotGroup } from "@/lib/bot-group";
+import { enterGroupAssignmentRoom } from "@/lib/sync/assignment-rooms";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import { refreshGroup } from "@/lib/sync/refresh";
+import { refreshGroup, refreshOpenAssignmentRooms } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 
 const UNAVAILABLE_CODES: Record<string, true> = {
   not_a_member: true,
@@ -43,6 +46,8 @@ const UNAVAILABLE_CODES: Record<string, true> = {
 };
 
 const TABS: Record<string, true> = { saldos: true, contas: true, membros: true };
+
+const EMPTY_OPEN_ROOMS: OpenAssignmentRoom[] = [];
 
 export function GroupDetailContent({ groupId }: { groupId: string }) {
   const router = useRouter();
@@ -57,11 +62,17 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const [tab, setTab] = useState(requestedTab !== null && TABS[requestedTab] ? requestedTab : "saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
   const departedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const openRoomsRefreshRef = useRef<string | null>(null);
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
 
   const read = useAppStore((s) => s.reads[groupReadKey(groupId)] ?? IDLE_READ);
+  const openRooms = useAppStore(
+    (s) => s.openAssignmentRoomsByGroupId[groupId] ?? EMPTY_OPEN_ROOMS,
+  );
 
   const load = useCallback(() => {
     refreshGroup(groupId).catch((e: unknown) => {
@@ -77,6 +88,26 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     });
   }, [groupId]);
 
+  const handleOpenRoom = useCallback(
+    async (room: OpenAssignmentRoom) => {
+      if (pendingRoomId !== null) return;
+      if (room.host.id === meId) {
+        router.push(`/room/${room.id}`);
+        return;
+      }
+      setPendingRoomId(room.id);
+      try {
+        await enterGroupAssignmentRoom({ groupId, roomId: room.id });
+        if (!mountedRef.current) return;
+        router.push(`/room/${room.id}`);
+      } catch (error) {
+        toast.error(ledgerErrorMessage(error));
+        setPendingRoomId(null);
+      }
+    },
+    [groupId, meId, pendingRoomId, router],
+  );
+
   useEffect(() => {
     if (!hydrated || snapshot || loadError || departedRef.current) return;
     // Only an unattempted read may start one. A completed read without a
@@ -84,6 +115,19 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     if (read.status !== "idle") return;
     load();
   }, [hydrated, snapshot, loadError, read.status, load]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || snapshot === undefined || openRoomsRefreshRef.current === groupId) return;
+    openRoomsRefreshRef.current = groupId;
+    void refreshOpenAssignmentRooms(groupId);
+  }, [hydrated, snapshot, groupId]);
 
   const readPending = read.status === "idle" || read.status === "loading";
   if (!hydrated || (!snapshot && !loadError && readPending)) {
@@ -274,6 +318,15 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           )
         }
       />
+
+      {isAcceptedMember && meId !== null && (
+        <OpenRoomsCard
+          rooms={openRooms}
+          viewerId={meId}
+          pendingRoomId={pendingRoomId}
+          onOpenRoom={handleOpenRoom}
+        />
+      )}
 
       <div className="mt-5">
         <SegmentedControl aria-label="Seções do grupo" value={tab} onChange={setTab} options={[{ value: "saldos", label: "Saldos" }, { value: "contas", label: "Contas" }, { value: "membros", label: "Membros" }]} />
