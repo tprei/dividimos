@@ -1,0 +1,347 @@
+.figure {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 340px);
+  margin-inline: auto;
+  rotate: -1.2deg;
+}
+
+.receipt {
+  filter: drop-shadow(0 3px 2px oklch(0.3 0.08 60 / 0.16)) drop-shadow(0 22px 34px oklch(0.3 0.08 60 / 0.26));
+}
+
+.money {
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.teeth {
+  height: 9px;
+  background-repeat: repeat-x;
+  background-size: 14px 9px;
+}
+
+.teethTop {
+  background-image:
+    linear-gradient(45deg, var(--receipt) 7px, transparent 7px),
+    linear-gradient(-45deg, var(--receipt) 7px, transparent 7px);
+}
+
+.teethBottom {
+  background-image:
+    linear-gradient(135deg, var(--receipt) 7px, transparent 7px),
+    linear-gradient(-135deg, var(--receipt) 7px, transparent 7px);
+}
+
+.paper {
+  padding: 18px 18px 14px;
+  background: var(--receipt);
+  color: var(--receipt-ink);
+}
+
+.head {
+  text-align: center;
+}
+
+.store {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.meta {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--receipt-ink-soft);
+}
+
+.rule {
+  margin: 12px -6px;
+  border-top: 2px dashed color-mix(in oklab, var(--receipt-ink) 26%, transparent);
+}
+
+.items {
+  display: grid;
+  gap: 10px;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.qty {
+  flex: none;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--receipt-ink-soft);
+}
+
+.amount {
+  margin-left: auto;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 5px 2px 0 18px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.units {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--receipt-ink-soft);
+}
+
+.totals {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.row span:last-child {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.finalRow {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 2px solid var(--receipt-ink);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.finalRow span:last-child {
+  font-size: 16.5px;
+}
+
+.tear {
+  height: 0;
+  margin: 4px 10px 0;
+  border-top: 2px dashed color-mix(in oklab, var(--receipt-ink) 26%, transparent);
+  background: var(--receipt);
+}
+
+.stubs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 10px 10px 12px;
+  background: var(--receipt);
+  color: var(--receipt-ink);
+}
+
+.stub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 10px 4px;
+}
+
+.stub:nth-child(even) {
+  border-left: 2px dashed color-mix(in oklab, var(--receipt-ink) 22%, transparent);
+}
+
+.stub:nth-child(n + 3) {
+  padding-top: 12px;
+  border-top: 2px dashed color-mix(in oklab, var(--receipt-ink) 22%, transparent);
+}
+
+.stubTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stubName {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.stubTag {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--receipt-ink-soft);
+}
+
+.receives {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--success-ink);
+  transform-origin: 0 50%;
+}
+
+.stubAmount {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.stubButton {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(135deg, var(--pix-from), var(--pix-to));
+  color: var(--pix-foreground);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px oklch(0.3 0.1 158 / 0.4);
+  box-shadow: inset 0 -2px 0 oklch(0.52 0.12 162 / 0.8);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    filter 0.15s ease,
+    transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.stubButton:hover {
+  filter: brightness(1.06);
+}
+
+.stubButton:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--ring) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.stubButton svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+@media (min-width: 760px) {
+  .figure {
+    position: absolute;
+    top: 188px;
+    left: 26px;
+    width: 344px;
+    margin: 0;
+    rotate: -2deg;
+  }
+
+  .paper {
+    padding: 14px 16px 10px;
+  }
+
+  .rule {
+    margin: 9px -6px;
+  }
+
+  .items {
+    gap: 7px;
+  }
+
+  .item {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    column-gap: 7px;
+  }
+
+  .line {
+    display: contents;
+  }
+
+  .chips {
+    order: 1;
+    flex-wrap: nowrap;
+    margin: 0;
+  }
+
+  .amount {
+    order: 2;
+    margin-left: 0;
+  }
+
+  .totals {
+    gap: 4px;
+  }
+
+  .stubs {
+    padding: 6px 8px 8px;
+  }
+
+  .stub {
+    gap: 4px;
+    padding: 7px 9px 2px;
+  }
+
+  .stub:nth-child(n + 3) {
+    padding-top: 8px;
+  }
+
+  .stubAmount {
+    font-size: 17px;
+  }
+
+  .stubButton {
+    min-height: 36px;
+    padding: 5px 8px;
+    font-size: 12.5px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .figure {
+    animation: land 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
+  }
+
+  .stubButton:hover {
+    transform: translateY(-1px);
+  }
+
+  .stubButton:active {
+    transform: translateY(1px) scale(0.96);
+  }
+}
+
+@keyframes land {
+  from {
+    translate: 0 -26px;
+    opacity: 0;
+  }
+
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
