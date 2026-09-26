@@ -140,11 +140,10 @@ test.describe("Voice expense", () => {
     await expect(micButton).toHaveCount(1);
     await micButton.click();
 
-    const modal = page.getByText("Confirmar conta");
-    await expect(modal).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Uber", { exact: true })).toBeVisible();
-    await expect(page.getByText("R$ 25,00")).toBeVisible();
-    await expect(page.getByText("Valor único")).toBeVisible();
+    const review = page.getByRole("region", { name: "Confira sua conta" });
+    await expect(review).toBeVisible({ timeout: 10000 });
+    await expect(review.getByRole("button", { name: "Nome da conta: Uber" })).toBeVisible();
+    await expect(review.getByRole("button", { name: /Valor total: R\$\s?25,00/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Confirmar" }).click();
 
