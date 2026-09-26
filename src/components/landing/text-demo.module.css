@@ -1,0 +1,162 @@
+.log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 0;
+}
+
+.userBubble {
+  align-self: flex-end;
+  flex: none;
+  max-width: 90%;
+  padding: 8px 12px;
+  border-radius: 16px 16px 5px 16px;
+  background: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
+  color: var(--gradient-foreground);
+  font-size: 14px;
+  font-weight: 800;
+  text-shadow: 0 1px 1px oklch(0.45 0.12 55 / 0.4);
+  overflow-wrap: anywhere;
+}
+
+.clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.miss {
+  align-self: flex-start;
+  padding: 9px 12px;
+  border-radius: 16px 16px 16px 5px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.typing {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 11px 13px;
+  border-radius: 16px 16px 16px 5px;
+  background: var(--card);
+}
+
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 4px 4px 4px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.form:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 35%, transparent);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.send {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
+  color: var(--gradient-foreground);
+  box-shadow: inset 0 -2px 0 oklch(0.58 0.16 62 / 0.8);
+  cursor: pointer;
+}
+
+.send svg {
+  width: 18px;
+  height: 18px;
+}
+
+.send:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--ring) 55%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .typing i {
+    animation: dot 1s ease-in-out infinite;
+  }
+
+  .typing i:nth-of-type(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing i:nth-of-type(3) {
+    animation-delay: 0.3s;
+  }
+
+  .userBubble,
+  .miss {
+    animation: pop-in 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+  }
+}
+
+@keyframes dot {
+  0%,
+  100% {
+    translate: 0 0;
+    opacity: 0.4;
+  }
+
+  40% {
+    translate: 0 -4px;
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    translate: 0 6px;
+    scale: 0.92;
+    opacity: 0;
+  }
+
+  to {
+    translate: 0 0;
+    scale: 1;
+    opacity: 1;
+  }
+}

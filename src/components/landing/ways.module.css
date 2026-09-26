@@ -1,0 +1,247 @@
+.ways {
+  display: grid;
+  gap: 18px;
+}
+
+.way {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow:
+    0 1px 0 oklch(0.25 0.04 250 / 0.04),
+    0 20px 40px -26px oklch(0.25 0.04 250 / 0.35);
+}
+
+.text {
+  --ic: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
+  --stage-a: color-mix(in oklab, var(--primary) 26%, var(--card));
+  --stage-b: color-mix(in oklab, var(--primary) 8%, var(--card));
+  --tint: color-mix(in oklab, var(--primary) 24%, var(--card));
+  --ink: var(--primary-text);
+  --line: color-mix(in oklab, var(--primary) 45%, var(--border));
+}
+
+.voice {
+  --ic: linear-gradient(135deg, oklch(0.66 0.12 212), oklch(0.52 0.12 235));
+  --stage-a: color-mix(in oklab, oklch(0.7 0.12 215) 30%, var(--card));
+  --stage-b: color-mix(in oklab, oklch(0.7 0.12 215) 9%, var(--card));
+  --tint: color-mix(in oklab, oklch(0.7 0.12 215) 24%, var(--card));
+  --ink: oklch(0.42 0.11 232);
+  --line: color-mix(in oklab, oklch(0.62 0.12 220) 45%, var(--border));
+}
+
+:global(.dark) .voice {
+  --ink: oklch(0.82 0.09 215);
+}
+
+.charge {
+  --ic: linear-gradient(135deg, var(--pix-from), var(--pix-to));
+  --stage-a: color-mix(in oklab, var(--pix-from) 30%, var(--card));
+  --stage-b: color-mix(in oklab, var(--pix-from) 9%, var(--card));
+  --tint: color-mix(in oklab, var(--pix-from) 26%, var(--card));
+  --ink: var(--success-text);
+  --line: color-mix(in oklab, var(--pix-to) 45%, var(--border));
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 18px 18px 14px;
+}
+
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--ic);
+  color: oklch(0.99 0 0);
+  box-shadow: inset 0 -2px 0 oklch(0 0 0 / 0.14);
+}
+
+.icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.title {
+  min-width: 0;
+  font-size: 17.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  flex: none;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stage {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 292px;
+  margin: 0 10px 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, var(--stage-a), var(--stage-b));
+}
+
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 22%, transparent) 1.2px, transparent 1.3px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(to bottom, #000, transparent 70%);
+}
+
+.draft {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow:
+    0 1px 0 oklch(0.25 0.04 250 / 0.05),
+    0 12px 24px -14px oklch(0.25 0.06 60 / 0.45);
+}
+
+.draftTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draftChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.draftChip svg {
+  width: 10px;
+  height: 10px;
+}
+
+.draftTitle {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draftAmount {
+  margin-top: 4px;
+  font-size: 25px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.draftSplit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.avatars {
+  display: flex;
+  flex: none;
+}
+
+.avatars > * {
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.avatars > * + * {
+  margin-left: -6px;
+}
+
+.avatars > :first-child {
+  position: relative;
+  z-index: 1;
+}
+
+.seat {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+@media (min-width: 900px) {
+  .ways {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1239px) {
+  .hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .draft {
+    animation: pop-in 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    translate: 0 6px;
+    scale: 0.92;
+    opacity: 0;
+  }
+
+  to {
+    translate: 0 0;
+    scale: 1;
+    opacity: 1;
+  }
+}
