@@ -1,4 +1,6 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import type { LinkProps } from "next/link";
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 
 const mockRouter = {
@@ -11,6 +13,24 @@ const mockPathname = vi.fn(() => "/app");
 vi.mock("next/navigation", () => ({
   useRouter: () => mockRouter,
   usePathname: () => mockPathname(),
+}));
+
+vi.mock("next/link", () => ({
+  default: function MockLink({ href, onClick, onNavigate, children, ...rest }: LinkProps & { children?: ReactNode }) {
+    return (
+      <a
+        {...rest}
+        href={typeof href === "string" ? href : href.href ?? undefined}
+        onClick={(event) => {
+          onClick?.(event);
+          event.preventDefault();
+          onNavigate?.({ preventDefault() {} });
+        }}
+      >
+        {children}
+      </a>
+    );
+  },
 }));
 
 vi.mock("@/components/shared/skeleton", () => ({
@@ -306,6 +326,54 @@ describe("AppShell navigation", () => {
   });
 });
 
+describe("AppShell pending navigation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname.mockReturnValue("/app/groups");
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("moves the active tab at once and swaps in the destination skeleton after the delay", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<AppShell><div>tela de grupos</div></AppShell>);
+
+    expect(screen.getByRole("link", { name: "Grupos" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Início" })).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(screen.getByRole("link", { name: "Início" }));
+
+    expect(screen.getByRole("link", { name: "Início" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Grupos" })).not.toHaveAttribute("aria-current");
+
+    act(() => {
+      vi.advanceTimersByTime(119);
+    });
+    expect(screen.getByText("tela de grupos")).toBeVisible();
+    expect(screen.queryByTestId("dashboard-skeleton")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByTestId("dashboard-skeleton")).toBeVisible();
+    expect(screen.getByText("tela de grupos")).not.toBeVisible();
+
+    mockPathname.mockReturnValue("/app");
+    rerender(<AppShell><div>tela de grupos</div></AppShell>);
+
+    expect(screen.queryByTestId("dashboard-skeleton")).toBeNull();
+    expect(screen.getByText("tela de grupos")).toBeVisible();
+  });
+});
+
 describe("AppShell haptics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -449,6 +517,29 @@ describe("AppShell haptics", () => {
     });
     act(() => {
       fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh from a pull while a tab navigation is pending", async () => {
+    mockPathname.mockReturnValue("/app");
+    render(<AppShell><div>content</div></AppShell>);
+    mockRunBootstrap.mockClear();
+
+    fireEvent.click(screen.getByRole("link", { name: "Grupos" }));
+
+    const main = document.querySelector("main")!;
+
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 300 }] });
     });
     await act(async () => {
       fireEvent.touchEnd(main);

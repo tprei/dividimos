@@ -110,11 +110,7 @@ export function DashboardContent() {
   const headerActions = useScreenHeaderActions();
   const screenRefresh = useScreenRefresh();
   if (!hydrated || !me) {
-    return (
-      <div className="px-4 py-6">
-        <DashboardSkeleton />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const handleMarkPaid = async (amountCents: number, operationId: string) => {

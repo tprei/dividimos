@@ -112,6 +112,7 @@ stateDiagram-v2
 ### App
 
 - **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão.
+- **Troca de aba na hora.** Tocar numa aba da barra de navegação já marca a aba. Se a tela demora mais de 120 ms pra chegar (rede lenta ou instável), o esqueleto dela aparece no lugar da tela anterior até a rota carregar. Cada aba registra o seu esqueleto em `navItems` no `app-shell.tsx`.
 - **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
 - **Tema.** Claro, escuro ou o do sistema.
 - **Apresentação na primeira visita.** Quem abre `/auth` pela primeira vez no aparelho vê três slides animados (ler a notinha, marcar quem comeu o quê, cobrar por Pix) antes do login. Links com destino, como convites, e a volta de um login que falhou vão direto pro login. Em telas largas, a apresentação roda em loop ao lado do login.
