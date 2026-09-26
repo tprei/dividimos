@@ -59,7 +59,6 @@ test.describe("Pix key dialog", () => {
   }) => {
     const owner = await seed.createUser({
       name: "Carol Pix",
-      handle: "carol_pix",
       pixKeyType: "email",
     });
     const visitor = await seed.createUser({ name: "Dave Peek" });
@@ -68,7 +67,7 @@ test.describe("Pix key dialog", () => {
     await page.goto(`/u/${owner.handle}`);
     await expect(page.getByRole("heading", { name: "Carol Pix" })).toBeVisible();
 
-    await expect(page.getByText("@carol_pix")).toBeVisible();
+    await expect(page.getByText(`@${owner.handle}`)).toBeVisible();
     // The public profile renders identity, never the key or its masked hint.
     await expect(page.getByText(/\*\*\*@/)).toHaveCount(0);
     await expect(page.getByText(/@hint/)).toHaveCount(0);

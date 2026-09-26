@@ -12,13 +12,18 @@ export default defineConfig({
   fullyParallel: false, // Run tests sequentially to avoid DB conflicts
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1, // Single worker to avoid race conditions with shared test users
+  // Worker pool for the whole run: in CI it is shared by every project, so
+  // this (plus any per-project caps below) bounds total concurrency.
+  workers: process.env.CI ? 3 : 1,
   reporter: "html",
   use: {
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    // In CI the first retry records video next to its trace, so passing
+    // attempts skip the recording cost. Locally there are no retries, so a
+    // failure keeps its own video.
+    video: process.env.CI ? "on-first-retry" : "retain-on-failure",
   },
   projects: [
     // Setup project - authenticates test users and saves state
@@ -32,6 +37,10 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
       testDir: "./e2e/flows",
+      // Single worker to avoid race conditions with shared test users.
+      // This cap is per-project: the flow tests never borrow the rest of the
+      // CI worker pool.
+      workers: 1,
     },
     // Synthetic tests — self-contained, each test seeds its own data via SeedHelper.
     // JWT-based auth (no GoTrue sign-in) eliminates magic-link races, so these
@@ -44,7 +53,6 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
-      workers: process.env.CI ? 2 : 1,
     },
     // Same synthetic suite on mobile browser engines. iPhone 13 runs WebKit and
     // Pixel 5 runs mobile Chromium, so viewport, touch, and engine differences
@@ -55,14 +63,12 @@ export default defineConfig({
       use: { ...devices["iPhone 13"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
-      workers: process.env.CI ? 2 : 1,
     },
     {
       name: "synthetic-android",
       use: { ...devices["Pixel 5"], serviceWorkers: "block" },
       testDir: "./e2e/synthetic",
       fullyParallel: true,
-      workers: process.env.CI ? 2 : 1,
     },
   ],
   // Run local dev server before tests
