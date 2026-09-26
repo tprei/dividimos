@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import type { SeedHelper } from "../seed-helper";
 
 async function seedNotifiedGroup(seed: SeedHelper, label: string) {
@@ -19,11 +19,11 @@ async function openBell(page: Page, groupId: string) {
   await page.getByRole("button", { name: /^Notificações/ }).click();
 }
 
-test.describe("Notification rows can be marked read or dismissed", () => {
-  // Without a pointer, the row exposes the same two actions inline, so this is
-  // the engine-independent way to drive them.
+test.describe("Notification rows can be discarded", () => {
+  // Without a pointer, the row exposes the same action inline, so this is
+  // the engine-independent way to drive it.
   test.describe("without the gesture", () => {
-    test("dismissing a row removes it and the dismissal outlives a reload", async ({
+    test("discarding a row removes it and the discard outlives a reload", async ({
       page,
       seed,
       loginAs,
@@ -35,7 +35,7 @@ test.describe("Notification rows can be marked read or dismissed", () => {
 
       const row = page.getByRole("listitem").filter({ hasText: title }).first();
       await expect(row).toBeVisible();
-      await row.getByRole("button", { name: "Dispensar" }).click();
+      await row.getByRole("button", { name: "Descartar" }).click();
 
       await expect(page.getByText(title)).toHaveCount(0);
 
@@ -44,32 +44,16 @@ test.describe("Notification rows can be marked read or dismissed", () => {
       await expect(page.getByText(title)).toHaveCount(0);
     });
 
-    test("marking a row as read clears its unread marker", async ({ page, seed, loginAs }) => {
-      const { owner, group, title } = await seedNotifiedGroup(seed, "Lida");
-      await loginAs(owner);
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await openBell(page, group.id);
-
-      const row = page.getByRole("listitem").filter({ hasText: title }).first();
-      await expect(row.locator("[data-testid^='unread-dot-']")).toBeVisible();
-
-      await row.getByRole("button", { name: "Marcar como lida" }).click();
-
-      await expect(row.locator("[data-testid^='unread-dot-']")).toHaveCount(0);
-      await expect(row.getByRole("button", { name: "Marcar como lida" })).toHaveCount(0);
-      await expect(row.getByRole("button", { name: "Dispensar" })).toBeVisible();
-    });
-
-    test("marking all read clears the preview and stays read after reopening", async ({ page, seed, loginAs }) => {
-      const { owner, group } = await seedNotifiedGroup(seed, "Todas");
+    test("discarding all empties the preview and stays empty after reopening", async ({ page, seed, loginAs }) => {
+      const { owner, group, title } = await seedNotifiedGroup(seed, "Todas");
       await loginAs(owner);
       await openBell(page, group.id);
-      await page.getByRole("button", { name: "Marcar todas como lidas" }).click();
-      await expect(page.locator("[data-testid^='unread-dot-']")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toHaveCount(0);
+      await expect(page.getByText(title)).toBeVisible();
+      await page.getByRole("button", { name: "Descartar todas" }).click();
+      await expect(page.getByText(title)).toHaveCount(0);
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: /^Notificações/ }).click();
-      await expect(page.locator("[data-testid^='unread-dot-']")).toHaveCount(0);
+      await expect(page.getByText(title)).toHaveCount(0);
     });
 
     test("opening a notification navigates to its bill and marks it read", async ({ page, seed, loginAs }) => {
@@ -89,16 +73,7 @@ test.describe("Notification rows can be marked read or dismissed", () => {
     // satisfy; injecting touch needs CDP, which only Chromium exposes.
     test.skip(({ browserName }) => browserName !== "chromium", "touch injection is Chromium-only");
 
-    test("swiping a row left reveals the actions and dismisses it", async ({
-      page,
-      context,
-      seed,
-      loginAs,
-    }) => {
-      const { owner, group, title } = await seedNotifiedGroup(seed, "Arrasto");
-      await loginAs(owner);
-      await openBell(page, group.id);
-
+    async function swipeLeft(page: Page, context: BrowserContext, title: string, distance: number) {
       const row = page.getByRole("listitem").filter({ hasText: title }).first();
       const box = (await row.boundingBox())!;
       const y = box.y + box.height / 2;
@@ -111,16 +86,47 @@ test.describe("Notification rows can be marked read or dismissed", () => {
           touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
         });
 
+      const steps = 12;
       await touch("touchStart", startX);
-      for (let step = 1; step <= 10; step++) {
-        await touch("touchMove", startX - step * 20);
-        await page.waitForTimeout(20);
+      for (let step = 1; step <= steps; step++) {
+        await touch("touchMove", startX - (step * distance) / steps);
+        await page.waitForTimeout(24);
       }
-      await touch("touchEnd", startX - 200);
+      await touch("touchEnd", startX - distance);
+      return { row, cdp };
+    }
 
-      const dismiss = row.getByRole("button", { name: "Dispensar" });
-      await expect(dismiss).toBeVisible();
-      await dismiss.click();
+    test("a full swipe discards the row", async ({ page, context, seed, loginAs }) => {
+      const { owner, group, title } = await seedNotifiedGroup(seed, "Arrasto");
+      await loginAs(owner);
+      await openBell(page, group.id);
+
+      const row = page.getByRole("listitem").filter({ hasText: title }).first();
+      const width = (await row.boundingBox())!.width;
+      await swipeLeft(page, context, title, width * 0.7);
+
+      await expect(page.getByText(title)).toHaveCount(0);
+    });
+
+    test("a short swipe reveals Descartar and a touch on it discards the row", async ({
+      page,
+      context,
+      seed,
+      loginAs,
+    }) => {
+      const { owner, group, title } = await seedNotifiedGroup(seed, "Revelar");
+      await loginAs(owner);
+      await openBell(page, group.id);
+
+      const { row, cdp } = await swipeLeft(page, context, title, 80);
+      const discard = row.getByRole("button", { name: "Descartar" });
+      await expect(discard).toBeVisible();
+      await expect(page.getByText(title)).toBeVisible();
+
+      const target = (await discard.boundingBox())!;
+      const point = { x: target.x + target.width / 2, y: target.y + target.height / 2, id: 1 };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 
       await expect(page.getByText(title)).toHaveCount(0);
     });

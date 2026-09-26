@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -9,6 +10,7 @@ import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { haptics } from "@/hooks/use-haptics";
+import { easeOut } from "@/lib/animations";
 import { displayNames } from "@/lib/people";
 import { isEventUnread } from "@/lib/activity-badge";
 import { formatRelativeDate } from "@/lib/datetime";
@@ -45,7 +47,7 @@ function InvitationRow({
   const inviter = snapshot.members.find((member) => member.user.id !== meId);
 
   return (
-    <li className="flex items-start gap-3 rounded-xl bg-muted/40 p-2">
+    <li className="flex items-center gap-2.5 rounded-xl bg-muted/40 p-2">
       <UserAvatar
         id={inviter?.user.id}
         name={inviter?.user.name ?? snapshot.group.name}
@@ -55,20 +57,20 @@ function InvitationRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold" title={snapshot.group.name}>{snapshot.group.name}</p>
         <p className="text-xs text-muted-foreground">Convite pendente</p>
-        <div className="mt-1.5 flex gap-1.5">
-          <Button size="sm" className="min-h-11 flex-1" disabled={busy} onClick={onAccept}>
-            Aceitar
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="min-h-11 flex-1"
-            disabled={busy}
-            onClick={onDecline}
-          >
-            Recusar
-          </Button>
-        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-full px-2.5 text-xs text-muted-foreground"
+          disabled={busy}
+          onClick={onDecline}
+        >
+          Recusar
+        </Button>
+        <Button size="sm" className="rounded-full px-3 text-xs" disabled={busy} onClick={onAccept}>
+          Aceitar
+        </Button>
       </div>
     </li>
   );
@@ -89,6 +91,14 @@ export function NotificationsSheet({
   const viewedAt = useAppStore(useShallow((s) => s.activityViewedAt[meId]));
   const markEventRead = useAppStore(useShallow((s) => s.markEventRead));
   const dismissEvent = useAppStore(useShallow((s) => s.dismissEvent));
+  const reducedMotion = useReducedMotion();
+
+  // Mark-as-read on its own isn't useful in a glance, so a discard also
+  // clears the event from the unread count.
+  const discard = useCallback((eventId: number) => {
+    markEventRead(eventId);
+    dismissEvent(eventId);
+  }, [markEventRead, dismissEvent]);
 
   useEffect(() => {
     // One read per open boundary, and only when nothing has been loaded yet:
@@ -105,6 +115,12 @@ export function NotificationsSheet({
     });
   }, []);
 
+  // Descartar todas covers everything loaded, not just the ≤5 preview rows:
+  // capping the discard would strand the rest and require a second tap.
+  const discardableEvents = useMemo(
+    () => events.filter((event) => !dismissedIds.includes(event.id)),
+    [events, dismissedIds],
+  );
   // Invitations first, then the newest activity, capped at five rows total.
   // Dismissed rows leave before the cap, so the next row fills the slot.
   const previewEvents = useMemo<GroupEvent[]>(
@@ -119,8 +135,6 @@ export function NotificationsSheet({
     previewEvents.flatMap((event) => event.actor ? [event.actor] : []),
     { style: "full", viewerId: meId },
   ), [previewEvents, meId]);
-  const unreadEvents = events.filter((event) =>
-    !dismissedIds.includes(event.id) && isEventUnread(event, readIds, viewedAt));
 
   // Only the snapshots the preview names: a refresh of any other group must
   // not re-render the sheet. useShallow keeps the record stable while every
@@ -146,7 +160,24 @@ export function NotificationsSheet({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverContent anchor={anchor} side="bottom" align="end" aria-label="Notificações" className="gap-3 p-3">
-        <PopoverTitle>Notificações</PopoverTitle>
+        <div className="flex min-h-11 items-center justify-between gap-2">
+          <PopoverTitle>Notificações</PopoverTitle>
+          {/* Shown while any loaded event survives, even when invitations
+              crowd the preview so event rows never render. */}
+          {discardableEvents.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-mr-1 rounded-full text-xs text-primary-text"
+              onClick={() => {
+                discardableEvents.forEach((event) => discard(event.id));
+                haptics.impact();
+              }}
+            >
+              Descartar todas
+            </Button>
+          )}
+        </div>
 
         {read.status === "loading" && previewEvents.length === 0 && (
           <div className="space-y-2" aria-hidden="true">
@@ -185,11 +216,19 @@ export function NotificationsSheet({
                 }}
               />
             ))}
+            <AnimatePresence initial={false}>
             {previewEvents.map((event) => {
               const nameOf = makeNameOf(event.groupId, groups, meId);
               const actorName = (event.actorId ? actorNames.get(event.actorId) : undefined) ?? event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
               return (
-                <li key={event.id}>
+                <motion.li
+                  key={event.id}
+                  className="overflow-hidden"
+                  initial={reducedMotion ? false : { height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={reducedMotion ? undefined : { height: 0, opacity: 0, transition: { duration: 0.22, delay: 0.08, ease: easeOut } }}
+                  transition={{ duration: 0.22, ease: easeOut }}
+                >
                   <NotificationRow
                     eventId={event.id}
                     unread={isEventUnread(event, readIds, viewedAt)}
@@ -198,8 +237,7 @@ export function NotificationsSheet({
                       markEventRead(event.id);
                       onOpenChange(false);
                     }}
-                    onMarkRead={() => markEventRead(event.id)}
-                    onDismiss={() => dismissEvent(event.id)}
+                    onDiscard={() => discard(event.id)}
                   >
                     <UserAvatar
                       id={event.actorId ?? undefined}
@@ -223,24 +261,13 @@ export function NotificationsSheet({
                       </p>
                     </div>
                   </NotificationRow>
-                </li>
+                </motion.li>
               );
             })}
+            </AnimatePresence>
           </ul>
         )}
 
-        {unreadEvents.length > 0 && (
-          <Button
-            variant="ghost"
-            className="min-h-11 shrink-0 text-primary-text"
-            onClick={() => {
-              unreadEvents.forEach((event) => markEventRead(event.id));
-              haptics.success();
-            }}
-          >
-            Marcar todas como lidas
-          </Button>
-        )}
         <div className="flex shrink-0 gap-2 border-t border-border pt-2">
           <Link
             href="/app/scan-invite"
