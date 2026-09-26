@@ -1550,6 +1550,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_reserved_handle: {
+        Args: {
+          p_handle: string
+        }
+        Returns: boolean
+      }
       join_assignment_room: {
         Args: {
           p_room_id: string
