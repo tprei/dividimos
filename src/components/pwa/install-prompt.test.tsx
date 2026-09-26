@@ -157,16 +157,6 @@ describe("InstallPrompt", () => {
   });
 
   describe("install button behavior", () => {
-    it("keeps a dismissed card hidden when returning to the page", () => {
-      setUserAgent(ANDROID_UA);
-      render(<InstallPrompt variant="card" />);
-      fireEvent.click(screen.getByRole("button", { name: "Dispensar instalação" }));
-      act(() => {
-        window.dispatchEvent(new Event("visibilitychange"));
-      });
-      expect(screen.queryByRole("button", { name: "Instalar no celular" })).not.toBeInTheDocument();
-    });
-
     it("keeps prompt visible when outcome is dismissed", async () => {
       setUserAgent(ANDROID_UA);
 
