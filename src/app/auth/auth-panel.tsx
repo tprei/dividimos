@@ -217,6 +217,7 @@ export function AuthPanel({ className }: AuthPanelProps) {
 
             <Button
               ref={googleRef}
+              data-google-sign-in=""
               variant="ghost"
               onClick={handleGoogleSignIn}
               disabled={isGoogleLoading}

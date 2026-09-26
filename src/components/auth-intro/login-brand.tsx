@@ -6,12 +6,12 @@ import {
   frame,
   useAnimate,
   useMotionValue,
-  useReducedMotion,
   type AnimationPlaybackControls,
   type FrameData,
 } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { easeBack, EASE_SPRING } from "./scene-motion";
@@ -139,7 +139,7 @@ interface LoginBrandProps {
 }
 
 export function LoginBrand({ stage }: LoginBrandProps) {
-  const still = useReducedMotion() === true;
+  const still = useMediaQuery(REDUCED_MOTION_QUERY);
   const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, isServerVisible);
   const [intro] = useState(() => stage === "play");
   const [splitTaps, setSplitTaps] = useState(0);

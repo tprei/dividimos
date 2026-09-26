@@ -4,7 +4,6 @@ import {
   animate,
   motion,
   useMotionValue,
-  useReducedMotion,
   useTransform,
   type EasingFunction,
   type EasingDefinition,
@@ -12,6 +11,7 @@ import {
 } from "framer-motion";
 import { useEffectEvent, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { formatBRL } from "@/lib/currency";
 import {
   INTRO_ITEMS,
@@ -268,7 +268,7 @@ async function rescan(run: ScanRun) {
 }
 
 export function ScanScene({ stage, onSettle, onBusy }: IntroSceneProps) {
-  const still = useReducedMotion() === true;
+  const still = useMediaQuery(REDUCED_MOTION_QUERY);
   const clipId = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const [firstFrame] = useState(() => stage !== "rest");
