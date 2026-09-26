@@ -52,6 +52,8 @@ import {
   str,
 } from "./decode-expense";
 import type { Path } from "./decode-expense";
+import { decodeAssignmentRoomSummary } from "./decode-assignment-room";
+import type { AssignmentRoomAccess } from "@/types/assignment-room";
 
 export type { Path };
 export type { WireIssue };
@@ -400,12 +402,15 @@ const GROUP_EVENT_KEYS = [
   "expenseTitle",
 ] as const;
 
+const GROUP_EVENT_OPTIONAL_KEYS = ["assignmentRoom", "assignmentRoomAccess"] as const;
+const ROOM_ACCESS: readonly AssignmentRoomAccess[] = ["none", "joined", "removed"];
+
 export function decodeGroupEvent(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<GroupEvent, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, GROUP_EVENT_KEYS, path);
+  const k = exactKeys(raw, GROUP_EVENT_KEYS, path, GROUP_EVENT_OPTIONAL_KEYS);
   if (!k.ok) return k;
 
   const eid = int(raw.id, [...path, "id"]);
@@ -439,7 +444,7 @@ export function decodeGroupEvent(
   const expTitle = nullableStr(raw.expenseTitle, [...path, "expenseTitle"]);
   if (!expTitle.ok) return expTitle;
 
-  return ok({
+  const event: GroupEvent = {
     id: eid.value,
     groupId: gid.value,
     actorId: aid.value,
@@ -451,7 +456,21 @@ export function decodeGroupEvent(
     createdAt: ca.value,
     actor,
     expenseTitle: expTitle.value,
-  });
+  };
+  let decoded = event;
+  if (raw.assignmentRoom === null) {
+    decoded = { ...decoded, assignmentRoom: null };
+  } else if (raw.assignmentRoom !== undefined) {
+    const room = decodeAssignmentRoomSummary(raw.assignmentRoom, [...path, "assignmentRoom"]);
+    if (!room.ok) return room;
+    decoded = { ...decoded, assignmentRoom: room.value };
+  }
+  if (raw.assignmentRoomAccess !== undefined) {
+    const access = oneOf(raw.assignmentRoomAccess, ROOM_ACCESS, [...path, "assignmentRoomAccess"]);
+    if (!access.ok) return access;
+    decoded = { ...decoded, assignmentRoomAccess: access.value };
+  }
+  return ok(decoded);
 }
 
 export function decodeGroupEvents(

@@ -510,6 +510,57 @@ describe("additional wire decoders", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("decodes the optional assignmentRoom summary only on room events", () => {
+    const roomEvent = {
+      id: 2,
+      groupId: "00000000-0000-4000-8000-000000000010",
+      actorId: "u-1",
+      kind: "assignment_room_opened",
+      expenseId: null,
+      settlementId: null,
+      subjectUserId: null,
+      payload: { roomId: "00000000-0000-4000-8000-000000000011", title: "Bar", totalCents: 100 },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      actor: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
+      expenseTitle: null,
+    };
+    const summary = {
+      id: "00000000-0000-4000-8000-000000000011",
+      groupId: "00000000-0000-4000-8000-000000000010",
+      status: "open",
+      revision: 3,
+      title: "Bar",
+      occurredOn: "2026-09-01",
+      totalCents: 100,
+      host: { id: "00000000-0000-4000-8000-000000000012", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      itemCount: 1,
+      ownedItemCount: 0,
+      claimers: [],
+      expenseId: null,
+    };
+
+    const absent = decodeGroupEvent(roomEvent);
+    expect(absent.ok && "assignmentRoom" in absent.value).toBe(false);
+    expect(decodeGroupEvent({ ...roomEvent, assignmentRoom: null })).toMatchObject({
+      ok: true,
+      value: { assignmentRoom: null },
+    });
+    expect(decodeGroupEvent({ ...roomEvent, assignmentRoom: summary })).toMatchObject({
+      ok: true,
+      value: { assignmentRoom: summary },
+    });
+    expect(
+      decodeGroupEvent({ ...roomEvent, assignmentRoom: { ...summary, status: "draft" } }),
+    ).toMatchObject({ ok: false, issue: { path: ["assignmentRoom", "status"] } });
+    expect(
+      decodeGroupEvent({ ...roomEvent, assignmentRoom: summary, assignmentRoomAccess: "removed" }),
+    ).toMatchObject({ ok: true, value: { assignmentRoomAccess: "removed" } });
+    expect(
+      decodeGroupEvent({ ...roomEvent, assignmentRoom: summary, assignmentRoomAccess: "host" }),
+    ).toMatchObject({ ok: false, issue: { path: ["assignmentRoomAccess"] } });
+  });
+
   it("decodes chat message and conversation", () => {
     const msg = {
       id: "m-1",
