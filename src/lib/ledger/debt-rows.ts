@@ -11,6 +11,7 @@ export interface DebtRow {
   counterpartyName: string;
   counterpartyHandle: string | null;
   counterpartyAvatarUrl: string | null;
+  counterpartyDeparted: boolean;
   amountCents: number;
   direction: "owes" | "owed";
 }
@@ -21,6 +22,7 @@ interface Counterparty {
   handle: string | null;
   avatarUrl: string | null;
   status: MemberStatus | null;
+  departed: boolean;
 }
 
 function resolveCounterparty(
@@ -35,12 +37,25 @@ function resolveCounterparty(
         handle: member.user.handle,
         avatarUrl: member.user.avatarUrl,
         status: member.status,
+        departed: false,
       };
     }
   }
   for (const guest of snapshot.guests) {
     if (guest.id === participantId) {
-      return { kind: "guest", name: guest.displayName, handle: null, avatarUrl: null, status: null };
+      return { kind: "guest", name: guest.displayName, handle: null, avatarUrl: null, status: null, departed: false };
+    }
+  }
+  for (const former of snapshot.formerMembers) {
+    if (former.id === participantId) {
+      return {
+        kind: "user",
+        name: former.name,
+        handle: former.handle,
+        avatarUrl: former.avatarUrl,
+        status: null,
+        departed: true,
+      };
     }
   }
   return null;
@@ -67,6 +82,7 @@ export function debtRowsForGroup(snapshot: GroupSnapshot, meId: string): DebtRow
       counterpartyName: counterparty.name,
       counterpartyHandle: counterparty.handle,
       counterpartyAvatarUrl: counterparty.avatarUrl,
+      counterpartyDeparted: counterparty.departed,
       amountCents: transfer.amountCents,
       direction,
     });
@@ -97,6 +113,14 @@ export function selectDebtRows(state: AppState): DebtRow[] {
   }
   debtRowsCache = { groups: state.groups, meId, rows };
   return rows;
+}
+
+export function departedCounterpartyLabel(rows: DebtRow[]): string | undefined {
+  const parts = rows
+    .filter((row) => row.counterpartyDeparted)
+    .map((row) => `${row.counterpartyName} · saiu do grupo`);
+  if (parts.length === 0) return undefined;
+  return parts.join("; ");
 }
 
 function userNetCents(balances: readonly BalanceRow[], participantId: string): number {

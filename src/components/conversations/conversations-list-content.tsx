@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
-import { selectConversationRows } from "@/stores/app-selectors";
+import { selectConversationListSections } from "@/stores/app-selectors";
 
 const FILTERS: Array<{ key: BalanceFilter; label: string }> = [
   { key: "all", label: "Todas" },
@@ -43,7 +43,7 @@ export function swipeTarget(current: BalanceFilter, info: Pick<PanInfo, "offset"
 
 export function ConversationsListContent() {
   const me = useMe();
-  const rows = useAppStore((state) => selectConversationRows(state, me?.id ?? null));
+  const rows = useAppStore((state) => selectConversationListSections(state).active);
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BalanceFilter>("all");

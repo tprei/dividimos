@@ -1,4 +1,5 @@
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
+import { groupArchiveAction, type GroupArchiveAction } from "@/lib/group-lifecycle";
 import type { GroupSnapshot, MemberStatus, UserProfile } from "@/types/ledger";
 
 export type BalanceFilter = "all" | "owes" | "owed" | "none";
@@ -18,6 +19,7 @@ export interface ConversationRowData {
   unreadCount: number;
   netCents: number;
   statusLine: string | null;
+  archiveAction: GroupArchiveAction | null;
 }
 
 function dmInviteStatusLine(
@@ -74,6 +76,7 @@ export function conversationRow(
       unreadCount: statusLine ? 0 : snapshot.unreadCount,
       netCents,
       statusLine,
+      archiveAction: groupArchiveAction(snapshot, meId),
     };
   }
 
@@ -96,6 +99,7 @@ export function conversationRow(
     unreadCount: snapshot.unreadCount,
     netCents,
     statusLine: null,
+    archiveAction: groupArchiveAction(snapshot, meId),
   };
 }
 

@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { NotificationRow } from "./notification-row";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
+import { selectVisibleActivityEvents } from "@/stores/app-selectors";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { haptics } from "@/hooks/use-haptics";
@@ -84,7 +85,7 @@ export function NotificationsSheet({
   anchor,
 }: NotificationsSheetProps) {
   const { accept, decline, pendingGroupId } = useInvitationActions();
-  const events = useAppStore(useShallow((s) => s.activity.items));
+  const events = useAppStore(selectVisibleActivityEvents);
   const read = useAppStore(useShallow((s) => s.activity.read));
   const readIds = useAppStore(useShallow((s) => s.activity.readIds));
   const dismissedIds = useAppStore(useShallow((s) => s.activity.dismissedIds));

@@ -41,6 +41,7 @@ function makeDebtRow(direction: "owes" | "owed", amountCents: number): DebtRow {
     counterpartyName: "Bob Silva",
     counterpartyHandle: "bob",
     counterpartyAvatarUrl: null,
+    counterpartyDeparted: false,
     amountCents,
     direction,
   };

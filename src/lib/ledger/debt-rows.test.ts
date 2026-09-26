@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BalanceRow, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { debtRowsForGroup, selectDebtRows, selectOutstandingCents } from "./debt-rows";
+import { debtRowsForGroup, departedCounterpartyLabel, selectDebtRows, selectOutstandingCents } from "./debt-rows";
 
 const me: Me = {
   id: "user-1",
@@ -41,9 +41,6 @@ function snapshot(
     },
     members: [],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -53,6 +50,9 @@ function snapshot(
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
@@ -91,6 +91,7 @@ describe("debtRowsForGroup", () => {
         counterpartyName: "Carol Souza",
         counterpartyHandle: carol.handle,
         counterpartyAvatarUrl: carol.avatarUrl,
+        counterpartyDeparted: false,
         amountCents: 5000,
         direction: "owes",
       },
@@ -103,6 +104,7 @@ describe("debtRowsForGroup", () => {
         counterpartyName: "Bruno Convidado",
         counterpartyHandle: null,
         counterpartyAvatarUrl: null,
+        counterpartyDeparted: false,
         amountCents: 3000,
         direction: "owes",
       },
@@ -128,6 +130,7 @@ describe("debtRowsForGroup", () => {
         counterpartyName: "Dave Lima",
         counterpartyHandle: dave.handle,
         counterpartyAvatarUrl: null,
+        counterpartyDeparted: false,
         amountCents: 2000,
         direction: "owed",
       },
@@ -158,6 +161,7 @@ describe("debtRowsForGroup", () => {
         counterpartyName: "Dave Lima",
         counterpartyHandle: dave.handle,
         counterpartyAvatarUrl: null,
+        counterpartyDeparted: false,
         amountCents: 3000,
         direction: "owes",
       },
@@ -191,6 +195,32 @@ describe("debtRowsForGroup", () => {
     });
 
     expect(debtRowsForGroup(group, me.id)).toEqual([]);
+  });
+
+  it("resolves a former member counterparty and marks it departed", () => {
+    const group = snapshot("g5", {
+      members: [
+        { groupId: "g5", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      ],
+      balances: [balance("user", me.id, -4143), balance("user", carol.id, 4143)],
+      formerMembers: [carol],
+    });
+
+    expect(debtRowsForGroup(group, me.id)).toEqual([
+      {
+        groupId: "g5",
+        groupName: "Group g5",
+        isDm: false,
+        counterpartyKind: "user",
+        counterpartyId: carol.id,
+        counterpartyName: "Carol Souza",
+        counterpartyHandle: carol.handle,
+        counterpartyAvatarUrl: carol.avatarUrl,
+        counterpartyDeparted: true,
+        amountCents: 4143,
+        direction: "owes",
+      },
+    ]);
   });
 });
 
@@ -325,5 +355,34 @@ describe("selectOutstandingCents", () => {
     });
 
     expect(selectOutstandingCents(useAppStore.getState(), "g1", me.id, "guest-1")).toBe(0);
+  });
+});
+
+describe("departedCounterpartyLabel", () => {
+  it("joins the departed counterparties and is undefined when nobody departed", () => {
+    const departed = snapshot("g1", {
+      members: [
+        { groupId: "g1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      ],
+      balances: [
+        balance("user", me.id, -8000),
+        balance("user", carol.id, 5000),
+        balance("user", dave.id, 3000),
+      ],
+      formerMembers: [carol, dave],
+    });
+    const active = snapshot("g1", {
+      members: [
+        { groupId: "g1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+        { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+      ],
+      balances: [balance("user", me.id, -1000), balance("user", carol.id, 1000)],
+      formerMembers: [],
+    });
+
+    expect(departedCounterpartyLabel(debtRowsForGroup(departed, me.id))).toBe(
+      "Carol Souza · saiu do grupo; Dave Lima · saiu do grupo",
+    );
+    expect(departedCounterpartyLabel(debtRowsForGroup(active, me.id))).toBeUndefined();
   });
 });

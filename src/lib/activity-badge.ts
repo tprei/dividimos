@@ -1,4 +1,5 @@
 import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 
 /**
  * Newest activity timestamp across the authoritative group snapshots. Group
@@ -8,6 +9,7 @@ import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 export function newestActivityAt(groups: Record<string, GroupSnapshot>): string | null {
   let newest: string | null = null;
   for (const snapshot of Object.values(groups)) {
+    if (isGroupArchived(snapshot)) continue;
     if (snapshot.lastActivityAt !== null && (newest === null || snapshot.lastActivityAt > newest)) {
       newest = snapshot.lastActivityAt;
     }

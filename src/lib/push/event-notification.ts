@@ -9,6 +9,7 @@ export interface EventNotificationMember {
   userId: string;
   name: string;
   status: "invited" | "accepted";
+  archived: boolean;
   notificationPreferences: NotificationPreferences;
 }
 
@@ -55,7 +56,8 @@ export function recipientsFor(
 
   if (kind.startsWith("settlement") || kind === "nudge") {
     const subject = event.subject_user_id;
-    return subject && byId.has(subject) ? [subject] : [];
+    const subjectMember = subject ? byId.get(subject) : undefined;
+    return subjectMember && !subjectMember.archived ? [subjectMember.userId] : [];
   }
 
   if (kind === "member_invited") {
@@ -66,7 +68,7 @@ export function recipientsFor(
         : [],
     );
     return members
-      .filter((member) => invited.has(member.userId))
+      .filter((member) => invited.has(member.userId) && !member.archived)
       .map((member) => member.userId);
   }
 
@@ -83,7 +85,10 @@ export function recipientsFor(
 
   return members
     .filter(
-      (member) => member.status === "accepted" && !excluded.has(member.userId),
+      (member) =>
+        member.status === "accepted" &&
+        !member.archived &&
+        !excluded.has(member.userId),
     )
     .map((member) => member.userId);
 }

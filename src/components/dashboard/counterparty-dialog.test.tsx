@@ -63,9 +63,6 @@ function snapshot(): GroupSnapshot {
       { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
     ],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [{ id: "guest-1", displayName: "Lucas", expenseId: "exp-1" }],
     settlements: [],
     recentExpenses: [],
@@ -75,6 +72,9 @@ function snapshot(): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-09-01T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
   };
 }
 
@@ -130,6 +130,7 @@ const guestRow: DebtRow = {
   counterpartyName: "lucas",
   counterpartyHandle: null,
   counterpartyAvatarUrl: null,
+  counterpartyDeparted: false,
   amountCents: 302,
   direction: "owed",
 };
@@ -143,6 +144,7 @@ const userRow: DebtRow = {
   counterpartyName: carol.name,
   counterpartyHandle: carol.handle,
   counterpartyAvatarUrl: null,
+  counterpartyDeparted: false,
   amountCents: 500,
   direction: "owed",
 };

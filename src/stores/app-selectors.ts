@@ -1,6 +1,7 @@
 import { transfersFromBalances, transfersInvolving } from "@/lib/ledger/transfers";
 import { conversationRow, type ConversationRowData } from "@/lib/conversations";
-import type { BalanceRow, ExpenseSummary, GroupSnapshot, Me, Transfer } from "@/types/ledger";
+import { isGroupArchived } from "@/lib/group-lifecycle";
+import type { BalanceRow, ExpenseSummary, GroupEvent, GroupSnapshot, Me, Transfer } from "@/types/ledger";
 import type { ExpenseListState } from "./app-store";
 import type { LedgerErrorCode } from "@/lib/sync/errors";
 import type { ResourceReadState } from "./app-store";
@@ -85,7 +86,10 @@ export function selectMyDebts(state: AppState): MyDebts[] {
 
 export function selectUnreadTotal(state: AppState): number {
   let total = 0;
-  for (const snapshot of Object.values(state.groups)) total += snapshot.unreadCount;
+  for (const snapshot of Object.values(state.groups)) {
+    if (isGroupArchived(snapshot)) continue;
+    total += snapshot.unreadCount;
+  }
   return total;
 }
 
@@ -130,6 +134,56 @@ export function selectPendingInvitations(state: AppState): GroupSnapshot[] {
   }
   pendingInvitationsCache = { groups: state.groups, meId, snapshots };
   return snapshots;
+}
+
+export interface GroupListSections {
+  active: GroupSnapshot[];
+  archived: GroupSnapshot[];
+  archivedUnreadCount: number;
+}
+
+const EMPTY_GROUP_LIST_SECTIONS: GroupListSections = {
+  active: [],
+  archived: [],
+  archivedUnreadCount: 0,
+};
+
+interface GroupListSectionsCache {
+  groups: Record<string, GroupSnapshot>;
+  meId: string | null;
+  sections: GroupListSections;
+}
+
+let groupListSectionsCache: GroupListSectionsCache | null = null;
+
+export function selectGroupListSections(state: AppState): GroupListSections {
+  const meId = state.me?.id ?? null;
+  if (meId === null) return EMPTY_GROUP_LIST_SECTIONS;
+  if (
+    groupListSectionsCache &&
+    groupListSectionsCache.groups === state.groups &&
+    groupListSectionsCache.meId === meId
+  ) {
+    return groupListSectionsCache.sections;
+  }
+  const active: GroupSnapshot[] = [];
+  const archived: GroupSnapshot[] = [];
+  let archivedUnreadCount = 0;
+  for (const groupId of state.groupOrder) {
+    const snapshot = state.groups[groupId];
+    if (!snapshot || snapshot.group.kind !== "group") continue;
+    const member = snapshot.members.find((item) => item.userId === meId);
+    if (member?.status !== "accepted") continue;
+    if (isGroupArchived(snapshot)) {
+      archived.push(snapshot);
+      if (snapshot.unreadCount > 0) archivedUnreadCount += 1;
+    } else {
+      active.push(snapshot);
+    }
+  }
+  const sections = { active, archived, archivedUnreadCount };
+  groupListSectionsCache = { groups: state.groups, meId, sections };
+  return sections;
 }
 
 export function findDmGroup(
@@ -278,26 +332,39 @@ interface ConversationRowEntry {
   row: ConversationRowData | null;
 }
 
-interface ConversationRowsCache {
+export interface ConversationListSections {
+  active: ConversationRowData[];
+  archived: ConversationRowData[];
+  archivedUnreadCount: number;
+}
+
+const EMPTY_CONVERSATION_SECTIONS: ConversationListSections = {
+  active: [],
+  archived: [],
+  archivedUnreadCount: 0,
+};
+
+interface ConversationSectionsCache {
   meId: string | null;
   groupOrder: string[];
   entries: Map<string, ConversationRowEntry>;
-  rows: ConversationRowData[];
+  sections: ConversationListSections;
 }
 
-let conversationRowsCache: ConversationRowsCache | null = null;
+let conversationSectionsCache: ConversationSectionsCache | null = null;
 
 /**
- * One row per conversable group, in group order. Rows are cached per group
- * snapshot, so a refresh of one conversation rebuilds only that row and a
- * write that touches no snapshot at all keeps the whole array identity.
+ * Conversation rows split by the group's archive state, in group order. Rows
+ * are cached per group snapshot, so a refresh of one conversation rebuilds
+ * only that row and a write that touches no snapshot at all keeps the whole
+ * section identities.
  */
-export function selectConversationRows(
+export function selectConversationListSections(
   state: AppState,
-  meId: string | null,
-): ConversationRowData[] {
-  if (meId === null) return [];
-  const cache = conversationRowsCache;
+): ConversationListSections {
+  const meId = state.me?.id ?? null;
+  if (meId === null) return EMPTY_CONVERSATION_SECTIONS;
+  const cache = conversationSectionsCache;
   if (
     cache !== null &&
     cache.meId === meId &&
@@ -308,10 +375,12 @@ export function selectConversationRows(
       return entry !== undefined && entry.snapshot === state.groups[groupId];
     })
   ) {
-    return cache.rows;
+    return cache.sections;
   }
   const entries = new Map<string, ConversationRowEntry>();
-  const rows: ConversationRowData[] = [];
+  const active: ConversationRowData[] = [];
+  const archived: ConversationRowData[] = [];
+  let archivedUnreadCount = 0;
   for (const groupId of state.groupOrder) {
     const snapshot = state.groups[groupId];
     if (snapshot === undefined) continue;
@@ -322,20 +391,34 @@ export function selectConversationRows(
         ? reusable
         : { snapshot, row: conversationRow(snapshot, meId) };
     entries.set(groupId, entry);
-    if (entry.row !== null) rows.push(entry.row);
+    if (entry.row === null) continue;
+    if (isGroupArchived(snapshot)) {
+      archived.push(entry.row);
+      if (entry.row.unreadCount > 0) archivedUnreadCount += 1;
+    } else {
+      active.push(entry.row);
+    }
   }
-  const stable =
+  const activeStable =
     cache !== null &&
-    cache.meId === meId &&
-    cache.rows.length === rows.length &&
-    cache.rows.every((row, index) => row === rows[index]);
-  conversationRowsCache = {
+    cache.sections.active.length === active.length &&
+    cache.sections.active.every((row, index) => row === active[index]);
+  const archivedStable =
+    cache !== null &&
+    cache.sections.archived.length === archived.length &&
+    cache.sections.archived.every((row, index) => row === archived[index]);
+  const sections: ConversationListSections = {
+    active: activeStable ? cache.sections.active : active,
+    archived: archivedStable ? cache.sections.archived : archived,
+    archivedUnreadCount,
+  };
+  conversationSectionsCache = {
     meId,
     groupOrder: state.groupOrder,
     entries,
-    rows: stable ? cache.rows : rows,
+    sections,
   };
-  return conversationRowsCache.rows;
+  return conversationSectionsCache.sections;
 }
 
 interface RecentBillsCache {
@@ -391,12 +474,14 @@ export function selectRecentBills(
     if (result.length >= limit) break;
     const exp = state.expenses[id];
     if (!exp || exp.status === "deleted") continue;
+    const snapshot = state.groups[exp.groupId];
+    if (snapshot !== undefined && isGroupArchived(snapshot)) continue;
     result.push({
       id: exp.id,
       title: exp.title,
       totalCents: exp.totalCents,
       occurredOn: formatOccurredOn(exp.occurredOn),
-      groupName: groupNameOf(state.groups[exp.groupId], me.id),
+      groupName: groupNameOf(snapshot, me.id),
     });
   }
   return result;
@@ -429,4 +514,38 @@ export function selectHomeRecentBills(state: AppState): RecentBillItem[] {
     bills,
   };
   return bills;
+}
+
+interface ActivityEventsCache {
+  items: GroupEvent[];
+  archivedIdsKey: string;
+  visible: GroupEvent[];
+}
+
+let activityEventsCache: ActivityEventsCache | null = null;
+
+function archivedIdsKey(groups: AppState["groups"]): string {
+  const ids: string[] = [];
+  for (const groupId in groups) {
+    if (isGroupArchived(groups[groupId])) ids.push(groupId);
+  }
+  return ids.sort().join("\n");
+}
+
+export function selectVisibleActivityEvents(state: AppState): GroupEvent[] {
+  const cache = activityEventsCache;
+  const archivedKey = archivedIdsKey(state.groups);
+  if (
+    cache !== null &&
+    cache.items === state.activity.items &&
+    cache.archivedIdsKey === archivedKey
+  ) {
+    return cache.visible;
+  }
+  const visible = state.activity.items.filter((event) => {
+    const snapshot = state.groups[event.groupId];
+    return snapshot === undefined || !isGroupArchived(snapshot);
+  });
+  activityEventsCache = { items: state.activity.items, archivedIdsKey: archivedKey, visible };
+  return visible;
 }
