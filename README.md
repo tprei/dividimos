@@ -432,7 +432,7 @@ Além das tabelas, a view `current_expense_participants` explode a versão atual
 
 ## RPCs
 
-Toda leitura e escrita do app passa por uma função Postgres chamada via `supabase.rpc()`. A migration inicial revoga `EXECUTE` de `public`, `anon` e `authenticated` em todas as funções, e cada RPC ganha seu `GRANT` explícito. São 59 funções pra `authenticated`, 8 abertas também pra `anon` (salas de itens e prévias de convite), 11 só pra `service_role` (chamadas pelas rotas de API) e o resto são helpers internos e triggers, sem grant nenhum.
+Toda leitura e escrita do app passa por uma função Postgres chamada via `supabase.rpc()`. A migration inicial revoga `EXECUTE` de `public`, `anon` e `authenticated` em todas as funções, e cada RPC ganha seu `GRANT` explícito. São 59 funções pra `authenticated`, 8 abertas também pra `anon` (salas de itens e prévias de convite e de claim), 11 só pra `service_role` (chamadas pelas rotas de API) e o resto são helpers internos e triggers, sem grant nenhum.
 
 Todo RPC que mexe no ledger (contas e liquidações) segue a mesma ordem, na mesma transação:
 
