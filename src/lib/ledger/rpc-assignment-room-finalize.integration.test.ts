@@ -714,5 +714,195 @@ describe.skipIf(!isIntegrationTestReady)(
       });
       expect(expenseCount).toBe(current.room.status === "finalized" ? 1 : 0);
     });
+
+    function singleExpenseArgs(clientId: string, groupId: string, payer: TestUser) {
+      return {
+        p_client_id: clientId,
+        p_group_id: groupId,
+        p_occurred_on: "2026-09-19",
+        p_title: "Despesa fora da sala",
+        p_merchant_name: "",
+        p_expense_type: "single_amount" as const,
+        p_total_cents: 1000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: {
+          items: [],
+          participants: [{ kind: "user", userId: payer.id }],
+          shares: [1000],
+          payers: [{ participantIndex: 0, amountCents: 1000 }],
+          itemAssignments: null,
+        },
+      };
+    }
+
+    it("keeps room ids out of strangers' expense client ids", async () => {
+      const strangerGroup = await createGroupWithMembers(
+        selected,
+        [],
+        "Grupo do estranho"
+      );
+      const args = roomArgs(host);
+      const created = await createRoom(hostClient, args);
+      const strangerExpense = singleExpenseArgs(
+        args.p_room_id,
+        strangerGroup,
+        selected
+      );
+      expect(
+        await expectRpcError(
+          selectedClient.rpc("create_expense", strangerExpense)
+        )
+      ).toContain("invalid_argument");
+
+      const openControl = await selectedClient.rpc("create_expense", {
+        ...strangerExpense,
+        p_client_id: crypto.randomUUID(),
+      });
+      expect(openControl.error).toBeNull();
+
+      const token = memberToken();
+      const joined = await rpcRoom(selectedClient, "join_assignment_room", {
+        p_room_id: args.p_room_id,
+        p_join_token: args.p_join_token,
+        p_member_token: token,
+        p_display_name: "",
+      });
+      let current = await claim(
+        hostClient,
+        args.p_room_id,
+        null,
+        created.room.items[0].id,
+        created.room.selfParticipantId,
+        created.room.items[0].revision,
+        60_000
+      );
+      current = await claim(
+        selectedClient,
+        args.p_room_id,
+        token,
+        current.room.items[0].id,
+        joined.room.selfParticipantId,
+        current.room.items[0].revision,
+        60_000
+      );
+      const closed = await closeRoom(
+        hostClient,
+        args.p_room_id,
+        current.room.revision
+      );
+
+      expect(
+        await expectRpcError(
+          selectedClient.rpc("create_expense", strangerExpense)
+        )
+      ).toContain("invalid_argument");
+
+      const closedControl = await selectedClient.rpc("create_expense", {
+        ...strangerExpense,
+        p_client_id: crypto.randomUUID(),
+      });
+      expect(closedControl.error).toBeNull();
+
+      const result = await finalize(
+        hostClient,
+        args.p_room_id,
+        closed.room.revision,
+        expensePayload(closed)
+      );
+      expect(result.room.room.status).toBe("finalized");
+      const expenses = await withPg(async (db) => {
+        const rows = await db.query(
+          "select count(*)::int as count from public.expenses where client_id = $1",
+          [args.p_room_id]
+        );
+        return rows.rows[0].count as number;
+      });
+      expect(expenses).toBe(1);
+    });
+
+    it("rolls back create_expense_with_group for a room id client", async () => {
+      const args = roomArgs(host);
+      await createRoom(hostClient, args);
+      const ghostArgs = {
+        p_client_id: args.p_room_id,
+        p_group_name: "Grupo fantasma",
+        p_member_ids: [],
+        p_occurred_on: "2026-09-19",
+        p_title: "Despesa fora da sala",
+        p_merchant_name: "",
+        p_expense_type: "single_amount" as const,
+        p_total_cents: 1000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: {
+          items: [],
+          participants: [{ kind: "user", userId: selected.id }],
+          shares: [1000],
+          payers: [{ participantIndex: 0, amountCents: 1000 }],
+          itemAssignments: null,
+        },
+      };
+      const groupsBefore = await withPg(async (db) => {
+        const rows = await db.query(
+          "select count(*)::int as count from public.groups where creator_id = $1",
+          [selected.id]
+        );
+        return rows.rows[0].count as number;
+      });
+      expect(
+        await expectRpcError(
+          selectedClient.rpc("create_expense_with_group", ghostArgs)
+        )
+      ).toContain("invalid_argument");
+      const groupsAfter = await withPg(async (db) => {
+        const rows = await db.query(
+          "select count(*)::int as count from public.groups where creator_id = $1",
+          [selected.id]
+        );
+        return rows.rows[0].count as number;
+      });
+      expect(groupsAfter).toBe(groupsBefore);
+      const control = await selectedClient.rpc("create_expense_with_group", {
+        ...ghostArgs,
+        p_client_id: crypto.randomUUID(),
+      });
+      expect(control.error).toBeNull();
+      const groupsWithControl = await withPg(async (db) => {
+        const rows = await db.query(
+          "select count(*)::int as count from public.groups where creator_id = $1",
+          [selected.id]
+        );
+        return rows.rows[0].count as number;
+      });
+      expect(groupsWithControl).toBe(groupsBefore + 1);
+    });
+
+    it("refuses the host reusing an open room id as an expense client id", async () => {
+      const ownGroup = await createGroupWithMembers(host, [], "Grupo do anfitrião");
+      const args = roomArgs(host);
+      await createRoom(hostClient, args);
+      expect(
+        await expectRpcError(
+          hostClient.rpc(
+            "create_expense",
+            singleExpenseArgs(args.p_room_id, ownGroup, host)
+          )
+        )
+      ).toContain("invalid_argument");
+      const expenses = await withPg(async (db) => {
+        const rows = await db.query(
+          "select count(*)::int as count from public.expenses where client_id = $1",
+          [args.p_room_id]
+        );
+        return rows.rows[0].count as number;
+      });
+      expect(expenses).toBe(0);
+      const control = await hostClient.rpc(
+        "create_expense",
+        singleExpenseArgs(crypto.randomUUID(), ownGroup, host)
+      );
+      expect(control.error).toBeNull();
+    });
   }
 );
