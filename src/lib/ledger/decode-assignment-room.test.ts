@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decodeAnnounceAssignmentRoomResult,
   decodeAssignmentRoomCompletion,
   decodeAssignmentRoomSummary,
   decodeAssignmentRoomView,
@@ -300,6 +301,24 @@ describe("decodeOpenAssignmentRooms", () => {
     expect(decoded).toMatchObject({
       ok: false,
       issue: { code: "invalid_wire", path: ["nextCursor"] },
+    });
+  });
+});
+
+describe("decodeAnnounceAssignmentRoomResult", () => {
+  it("decodes the event id", () => {
+    const decoded = decodeAnnounceAssignmentRoomResult({ eventId: 9 });
+    expect(decoded).toMatchObject({ ok: true, value: { eventId: 9 } });
+  });
+
+  it("rejects unknown or missing keys", () => {
+    expect(decodeAnnounceAssignmentRoomResult({ eventId: 9, extra: 1 })).toMatchObject({
+      ok: false,
+      issue: { code: "invalid_wire", path: ["extra"] },
+    });
+    expect(decodeAnnounceAssignmentRoomResult({})).toMatchObject({
+      ok: false,
+      issue: { code: "invalid_wire", path: ["eventId"] },
     });
   });
 });

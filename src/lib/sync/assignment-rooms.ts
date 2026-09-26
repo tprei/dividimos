@@ -10,6 +10,7 @@ import type {
   MutationAck,
 } from "@/types/ledger";
 import {
+  decodeAnnounceAssignmentRoomResult,
   decodeAssignmentRoomCompletion,
   decodeAssignmentRoomGuestClaimResult,
   decodeAssignmentRoomView,
@@ -19,8 +20,10 @@ import {
   useAssignmentRoomStore,
   type AssignmentRoomAttempt,
 } from "@/stores/assignment-room-store";
+import { useAppStore } from "@/stores/app-store";
 import { getAuthGeneration, getSupabase, rpc } from "./client";
-import { LedgerError } from "./errors";
+import { LedgerError, type LedgerErrorCode } from "./errors";
+import { notify } from "./mutations";
 import { refreshGroup } from "./refresh";
 
 interface StoredRoomCredentials {
@@ -50,6 +53,11 @@ export interface JoinAssignmentRoomInput {
   displayName: string;
 }
 
+export interface EnterGroupAssignmentRoomInput {
+  groupId: string;
+  roomId: string;
+}
+
 export interface RemoveAssignmentRoomParticipantInput {
   roomId: string;
   participantId: string;
@@ -74,6 +82,14 @@ const CREDENTIAL_PREFIX = "dividimos.assignment-room.";
 const JOIN_TOKEN = /^armj1_[A-Za-z0-9_-]{43}$/;
 const MEMBER_TOKEN = /^armm1_[A-Za-z0-9_-]{43}$/;
 const topics = new Map<string, string>();
+
+const ENTER_REFRESH_GROUP_CODES: Partial<Record<LedgerErrorCode, true>> = {
+  invalid_token: true,
+  not_a_member: true,
+  room_closed: true,
+  room_cancelled: true,
+  room_not_found: true,
+};
 
 function storage(): Storage {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -242,6 +258,11 @@ function forgetAssignmentRoomJoinToken(roomId: string): void {
   writeCredentials(roomId, memberToken ? { memberToken } : {});
 }
 
+function forgetAssignmentRoomMemberToken(roomId: string): void {
+  const joinToken = readCredentials(roomId).joinToken;
+  writeCredentials(roomId, joinToken ? { joinToken } : {});
+}
+
 export function clearAssignmentRoomAccess(roomId: string): void {
   try {
     forgetAssignmentRoomCredentials(roomId);
@@ -260,6 +281,23 @@ function mayBeLostResponse(error: unknown): boolean {
     error instanceof LedgerError &&
     (error.code === "network" || error.code === "unknown")
   );
+}
+
+export async function announceAssignmentRoom(roomId: string): Promise<void> {
+  const result = await rpc(
+    "announce_assignment_room",
+    { p_room_id: roomId },
+    decodeAnnounceAssignmentRoomResult
+  );
+  notify(result.eventId);
+}
+
+function announceRoomToGroup(
+  input: CreateAssignmentRoomInput,
+  view: AssignmentRoomView
+): void {
+  if (input.groupTarget.kind !== "existing") return;
+  void announceAssignmentRoom(view.room.id).catch(() => undefined);
 }
 
 export async function createAssignmentRoom(
@@ -284,11 +322,15 @@ export async function createAssignmentRoom(
       decodeAssignmentRoomView
     );
     publish(view, attempt, authGeneration);
+    announceRoomToGroup(input, view);
     return view;
   } catch (error) {
     if (mayBeLostResponse(error)) {
       const recovered = await refreshAssignmentRoom(roomId).catch(() => null);
-      if (recovered) return recovered;
+      if (recovered) {
+        announceRoomToGroup(input, recovered);
+        return recovered;
+      }
       throw error;
     }
     clearAssignmentRoomAccess(roomId);
@@ -332,6 +374,77 @@ export async function joinAssignmentRoom(
       throw error;
     }
     clearAssignmentRoomAccess(input.roomId);
+    throw error;
+  }
+}
+
+export async function enterGroupAssignmentRoom(
+  input: EnterGroupAssignmentRoomInput
+): Promise<void> {
+  const authGeneration = getAuthGeneration();
+  const markJoined = () => {
+    if (getAuthGeneration() !== authGeneration) return;
+    useAppStore
+      .getState()
+      .markOpenAssignmentRoomJoined(input.groupId, input.roomId);
+  };
+  const existingMemberToken = readCredentials(input.roomId).memberToken;
+  if (existingMemberToken) {
+    try {
+      await rpc(
+        "refresh_assignment_room_member",
+        { p_room_id: input.roomId, p_member_token: existingMemberToken },
+        decodeAssignmentRoomView
+      );
+      markJoined();
+      return;
+    } catch (error) {
+      if (!(error instanceof LedgerError && error.code === "invalid_token")) {
+        throw error;
+      }
+      forgetAssignmentRoomMemberToken(input.roomId);
+    }
+  }
+  const memberToken = randomToken("armm1");
+  writeCredentials(input.roomId, {
+    ...readCredentials(input.roomId),
+    memberToken,
+  });
+  try {
+    await rpc(
+      "enter_group_assignment_room",
+      { p_room_id: input.roomId, p_member_token: memberToken },
+      decodeAssignmentRoomView
+    );
+    writeCredentials(input.roomId, {
+      ...readCredentials(input.roomId),
+      memberToken,
+    });
+    markJoined();
+  } catch (error) {
+    if (
+      error instanceof LedgerError &&
+      ENTER_REFRESH_GROUP_CODES[error.code] === true
+    ) {
+      void refreshGroup(input.groupId).catch(() => undefined);
+    }
+    if (mayBeLostResponse(error)) {
+      const recovered = await rpc(
+        "refresh_assignment_room_member",
+        { p_room_id: input.roomId, p_member_token: memberToken },
+        decodeAssignmentRoomView
+      ).catch(() => null);
+      if (recovered !== null) {
+        writeCredentials(input.roomId, {
+          ...readCredentials(input.roomId),
+          memberToken,
+        });
+        markJoined();
+        return;
+      }
+      throw error;
+    }
+    forgetAssignmentRoomMemberToken(input.roomId);
     throw error;
   }
 }

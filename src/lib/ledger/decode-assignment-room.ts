@@ -640,3 +640,18 @@ export function decodeOpenAssignmentRooms(
   if (!keys.ok) return keys;
   return arrayOf(raw.rooms, [...path, "rooms"], decodeOpenAssignmentRoom);
 }
+
+export interface AnnounceAssignmentRoomResult {
+  eventId: number;
+}
+
+export function decodeAnnounceAssignmentRoomResult(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<AnnounceAssignmentRoomResult, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["eventId"], path);
+  if (!keys.ok) return keys;
+  const eventId = int(raw.eventId, [...path, "eventId"]);
+  return eventId.ok ? ok({ eventId: eventId.value }) : eventId;
+}

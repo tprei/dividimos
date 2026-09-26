@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssignmentRoomView } from "@/types/assignment-room";
+import type { AssignmentRoomView, OpenAssignmentRoom } from "@/types/assignment-room";
 import { LedgerError } from "./errors";
 
 const mocks = vi.hoisted(() => ({
   authGeneration: 1,
   rpc: vi.fn(),
-  refreshGroup: vi.fn(),
+  refreshGroup: vi.fn(() => Promise.resolve()),
+  notify: vi.fn(),
 }));
 
 vi.mock("./client", () => ({
@@ -13,11 +14,14 @@ vi.mock("./client", () => ({
   rpc: mocks.rpc,
 }));
 vi.mock("./refresh", () => ({ refreshGroup: mocks.refreshGroup }));
+vi.mock("./mutations", () => ({ notify: mocks.notify }));
 
 import {
   cancelAssignmentRoom,
   claimAssignmentRoomGuest,
   clearAssignmentRoomAccess,
+  createAssignmentRoom,
+  enterGroupAssignmentRoom,
   finalizeAssignmentRoom,
   getAssignmentRoomJoinToken,
   getAssignmentRoomMemberToken,
@@ -26,13 +30,17 @@ import {
   resetAssignmentRoomRuntime,
   rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
+  type CreateAssignmentRoomInput,
 } from "./assignment-rooms";
+
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
+import { useAppStore } from "@/stores/app-store";
 
 const ROOM_ID = "00000000-0000-4000-8000-000000000001";
 const ITEM_ID = "00000000-0000-4000-8000-000000000002";
 const PARTICIPANT_ID = "00000000-0000-4000-8000-000000000003";
 const JOIN_TOKEN = `armj1_${"A".repeat(43)}`;
+const OTHER_ROOM_ID = "00000000-0000-4000-8000-000000000009";
 
 function view(revision: number, status: "open" | "cancelled" = "open"): AssignmentRoomView {
   return {
@@ -40,8 +48,8 @@ function view(revision: number, status: "open" | "cancelled" = "open"): Assignme
     room: {
       id: ROOM_ID,
       revision,
-      status,
       title: "Almoço",
+      status,
       occurredOn: "2026-09-19",
       serviceFeeBasisPoints: 0,
       fixedFeeCents: 0,
@@ -74,12 +82,31 @@ function decodeThrough<T>(value: T) {
   };
 }
 
+function createInput(
+  groupTarget: CreateAssignmentRoomInput["groupTarget"],
+): CreateAssignmentRoomInput {
+  return {
+    groupTarget,
+    header: {
+      title: "Almoço",
+      occurredOn: "2026-09-19",
+      serviceFeeBasisPoints: 0,
+      fixedFeeCents: 0,
+    },
+    items: [],
+    participants: [],
+  };
+}
+
 describe("assignment room sync", () => {
   beforeEach(() => {
     localStorage.clear();
     mocks.authGeneration = 1;
+
     mocks.rpc.mockReset();
     mocks.refreshGroup.mockReset();
+    mocks.notify.mockReset();
+    useAppStore.getState().reset();
     resetAssignmentRoomRuntime();
   });
 
@@ -412,5 +439,220 @@ describe("assignment room sync", () => {
       "claim_assignment_room_guest",
       "get_assignment_room",
     ]);
+  });
+
+  it("reuses a stored member token by refreshing instead of re-entering", async () => {
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ memberToken: `armm1_${"H".repeat(43)}` }),
+    );
+    mocks.rpc.mockImplementation(decodeThrough(view(4)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID });
+
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "refresh_assignment_room_member",
+    ]);
+    expect(mocks.refreshGroup).not.toHaveBeenCalled();
+  });
+
+  it("falls through to one fresh enter when the stored token was rotated elsewhere", async () => {
+    const rotated = `armm1_${"I".repeat(43)}`;
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: JOIN_TOKEN, memberToken: rotated }),
+    );
+    mocks.rpc
+      .mockRejectedValueOnce(new LedgerError("invalid_token"))
+      .mockImplementationOnce(decodeThrough(view(2)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID });
+
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "refresh_assignment_room_member",
+      "enter_group_assignment_room",
+    ]);
+    expect(mocks.rpc.mock.calls[1]?.[1]).toEqual({
+      p_room_id: ROOM_ID,
+      p_member_token: expect.stringMatching(/^armm1_[A-Za-z0-9_-]{43}$/),
+    });
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).not.toBe(rotated);
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toBe(JOIN_TOKEN);
+  });
+
+  it("refreshes the group when the room state refuses the entry", async () => {
+    mocks.rpc.mockRejectedValueOnce(new LedgerError("room_closed"));
+
+    await expect(
+      enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID })
+    ).rejects.toMatchObject({ code: "room_closed" });
+
+    expect(mocks.refreshGroup).toHaveBeenCalledOnce();
+    expect(mocks.refreshGroup).toHaveBeenCalledWith("group-1");
+    expect(localStorage.getItem(`dividimos.assignment-room.${ROOM_ID}`)).toBeNull();
+  });
+
+  it("refreshes the group when a fresh enter is denied for a removed participant", async () => {
+    mocks.rpc.mockRejectedValueOnce(new LedgerError("invalid_token"));
+
+    await expect(
+      enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID })
+    ).rejects.toMatchObject({ code: "invalid_token" });
+
+    expect(mocks.refreshGroup).toHaveBeenCalledOnce();
+    expect(mocks.refreshGroup).toHaveBeenCalledWith("group-1");
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toBeNull();
+  });
+
+  it("keeps the stored join token when the room refuses the entry", async () => {
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: JOIN_TOKEN }),
+    );
+    mocks.rpc.mockRejectedValueOnce(new LedgerError("room_closed"));
+
+    await expect(
+      enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID })
+    ).rejects.toMatchObject({ code: "room_closed" });
+
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toBe(JOIN_TOKEN);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toBeNull();
+  });
+
+  it("keeps the stored join token when entering succeeds", async () => {
+    localStorage.setItem(
+      `dividimos.assignment-room.${ROOM_ID}`,
+      JSON.stringify({ joinToken: JOIN_TOKEN }),
+    );
+    mocks.rpc.mockImplementationOnce(decodeThrough(view(2)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID });
+
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toBe(JOIN_TOKEN);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toMatch(
+      /^armm1_[A-Za-z0-9_-]{43}$/
+    );
+  });
+
+  it("leaves an existing room-store entry untouched when entering succeeds", async () => {
+    useAssignmentRoomStore.getState().install(view(2));
+    mocks.rpc.mockImplementationOnce(decodeThrough(view(4)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID });
+
+    expect(
+      useAssignmentRoomStore.getState().rooms[ROOM_ID]?.view?.room.revision
+    ).toBe(2);
+  });
+
+  it("creates no room-store entry when entering an untracked room", async () => {
+    mocks.rpc.mockImplementationOnce(decodeThrough(view(2)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: OTHER_ROOM_ID });
+
+    expect(useAssignmentRoomStore.getState().rooms[OTHER_ROOM_ID]).toBeUndefined();
+  });
+
+  it("leaves an existing room-store entry when the room refuses the entry", async () => {
+    useAssignmentRoomStore.getState().install(view(2));
+    mocks.rpc.mockRejectedValueOnce(new LedgerError("room_closed"));
+
+    await expect(
+      enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID })
+    ).rejects.toMatchObject({ code: "room_closed" });
+
+    expect(
+      useAssignmentRoomStore.getState().rooms[ROOM_ID]?.view?.room.revision
+    ).toBe(2);
+  });
+
+  it("recovers a lost enter response with the persisted member capability", async () => {
+    mocks.rpc
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockImplementationOnce(decodeThrough(view(3)));
+
+    await expect(
+      enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID })
+    ).resolves.toBeUndefined();
+
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "enter_group_assignment_room",
+      "refresh_assignment_room_member",
+    ]);
+    expect(getAssignmentRoomMemberToken(ROOM_ID)).toMatch(
+      /^armm1_[A-Za-z0-9_-]{43}$/
+    );
+  });
+
+  it("marks the room joined in the cached group list after entering", async () => {
+    const listed: OpenAssignmentRoom = {
+      id: ROOM_ID,
+      groupId: "group-1",
+      status: "open",
+      revision: 1,
+      title: "Almoço",
+      occurredOn: "2026-09-19",
+      totalCents: 100,
+      host: { id: "user-host", handle: "ana", name: "Ana", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-19T12:00:00.000Z",
+      itemCount: 2,
+      ownedItemCount: 0,
+      claimers: [],
+      expenseId: null,
+      joined: false,
+    };
+    useAppStore.setState({ openAssignmentRoomsByGroupId: { "group-1": [listed] } });
+    mocks.rpc.mockImplementationOnce(decodeThrough(view(2)));
+
+    await enterGroupAssignmentRoom({ groupId: "group-1", roomId: ROOM_ID });
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId["group-1"]).toEqual([
+      { ...listed, joined: true },
+    ]);
+  });
+
+  it("announces a created existing-group room without gating the create", async () => {
+    mocks.rpc
+      .mockImplementationOnce(decodeThrough(view(2)))
+      .mockImplementationOnce(decodeThrough({ eventId: 9 }));
+
+    const created = await createAssignmentRoom(
+      createInput({ kind: "existing", groupId: "group-1" }),
+    );
+
+    expect(created).toEqual(view(2));
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "create_assignment_room",
+      "announce_assignment_room",
+    ]);
+    expect(mocks.rpc.mock.calls[1]?.[1]).toEqual({ p_room_id: ROOM_ID });
+    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(9));
+  });
+
+  it("keeps a create successful when the announcement fails", async () => {
+    mocks.rpc
+      .mockImplementationOnce(decodeThrough(view(2)))
+      .mockRejectedValueOnce(new LedgerError("room_closed"));
+
+    await expect(
+      createAssignmentRoom(createInput({ kind: "existing", groupId: "group-1" }))
+    ).resolves.toEqual(view(2));
+
+    await vi.waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "announce_assignment_room",
+        { p_room_id: ROOM_ID },
+        expect.any(Function),
+      ),
+    );
+  });
+
+  it("does not announce a room created outside an existing group", async () => {
+    mocks.rpc.mockImplementationOnce(decodeThrough(view(2)));
+
+    await createAssignmentRoom(createInput({ kind: "new", name: "Conta" }));
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 });
