@@ -16,6 +16,7 @@ import {
   createGroupWithMembers,
   createTestUsers,
   expectRpcError,
+  getBalances,
   rpcDecoded,
   withPg,
   type TestUser,
@@ -903,6 +904,124 @@ describe.skipIf(!isIntegrationTestReady)(
         singleExpenseArgs(crypto.randomUUID(), ownGroup, host)
       );
       expect(control.error).toBeNull();
+    });
+
+    it("keeps the room bill active when the invited joiner declines", async () => {
+      const groupId = await createGroupWithMembers(host, [selected], "Grupo da sala");
+      const [stranger] = await createTestUsers(1);
+      const strangerClient = authenticateAs(stranger);
+      const { args, closed } = await closedAccountRoom(strangerClient, {
+        kind: "existing",
+        groupId,
+      });
+      const result = await finalize(
+        hostClient,
+        args.p_room_id,
+        closed.room.revision,
+        expensePayload(closed)
+      );
+      expect(result.ack.groupId).toBe(groupId);
+
+      const decline = await strangerClient.rpc("decline_invitation", { p_group_id: groupId });
+      expect(decline.error).toBeNull();
+
+      const after = await withPg(async (db) => {
+        const expense = (
+          await db.query<{
+            status: string; current_version_no: number; declined_user_ids: string[];
+          }>(
+            "select status, current_version_no, declined_user_ids from public.expenses where client_id = $1",
+            [args.p_room_id]
+          )
+        ).rows[0];
+        const memberships = (
+          await db.query<{ count: number }>(
+            "select count(*)::int as count from public.group_members where group_id = $1 and user_id = $2",
+            [groupId, stranger.id]
+          )
+        ).rows[0].count;
+        const participants = (
+          await db.query<{ kind: string; share_cents: number; paid_cents: number }>(
+            "select kind, share_cents::int, paid_cents::int from public.current_expense_participants where expense_id = $1 order by participant_index",
+            [result.ack.expenseId]
+          )
+        ).rows;
+        const payload = (
+          await db.query<{
+            payload: { participants: Array<{ kind: string; userId?: string; displayName?: string }> };
+          }>(
+            "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+            [result.ack.expenseId]
+          )
+        ).rows[0]?.payload;
+        return { expense, payload, memberships, ledgerRows: participants };
+      });
+      expect(after.expense.status).toBe("active");
+      expect(after.expense.current_version_no).toBe(2);
+      expect(after.expense.declined_user_ids).toEqual([]);
+      expect(after.memberships).toBe(0);
+      expect(
+        after.payload.participants.some((p) => p.kind === "user" && p.userId === host.id)
+      ).toBe(true);
+      const converted = after.payload.participants.find((p) => p.kind === "guest");
+      expect(converted?.displayName).toBe(stranger.name);
+
+      const guestLedgerRow = after.ledgerRows.find((row) => row.kind === "guest");
+      expect(guestLedgerRow).toBeDefined();
+      const balances = await getBalances(groupId);
+      expect(balances.reduce((sum, row) => sum + row.net_cents, 0)).toBe(0);
+      const guestBalance = balances.find((row) => row.kind === "guest");
+      expect(guestBalance?.net_cents).toBe(-guestLedgerRow!.share_cents);
+      const hostLedgerRow = after.ledgerRows.find((row) => row.kind === "user");
+      const hostBalance = balances.find(
+        (row) => row.kind === "user" && row.participant_id === host.id
+      );
+      expect(hostBalance?.net_cents).toBe(hostLedgerRow!.paid_cents - hostLedgerRow!.share_cents);
+
+      const roomExpenseId = result.ack.expenseId!;
+      const stored = (
+        await withPg(async (db) =>
+          db.query<{
+            p_expense_type: "itemized" | "single_amount";
+            p_total_cents: number;
+            p_service_fee_bps: number;
+            p_fixed_fee_cents: number;
+            p_payload: Json;
+          }>(
+            "select ev.expense_type as \"p_expense_type\", ev.total_cents as \"p_total_cents\", " +
+              "ev.service_fee_bps as \"p_service_fee_bps\", ev.fixed_fee_cents as \"p_fixed_fee_cents\", ev.payload as \"p_payload\" " +
+              "from public.expenses e join public.expense_versions ev " +
+              "on ev.expense_id = e.id and ev.version_no = e.current_version_no where e.id = $1",
+            [roomExpenseId]
+          )
+        )
+      ).rows[0]!;
+      const editAck = await rpcDecoded(
+        hostClient,
+        "edit_expense",
+        {
+          p_expense_id: roomExpenseId,
+          p_expected_version_no: 2,
+          p_occurred_on: "2026-09-19",
+          p_title: "Conta da sala revisada",
+          p_merchant_name: "",
+          ...stored,
+        },
+        decodeMutationAck
+      );
+      expect(editAck.expenseId).toBe(roomExpenseId);
+      const afterEdit = (
+        await withPg(async (db) =>
+          db.query<{ title: string; version_no: number }>(
+            "select ev.title, e.current_version_no as version_no from public.expenses e " +
+              "join public.expense_versions ev on ev.expense_id = e.id and ev.version_no = e.current_version_no " +
+              "where e.id = $1",
+            [roomExpenseId]
+          )
+        )
+      ).rows[0]!;
+      expect(afterEdit.title).toBe("Conta da sala revisada");
+      expect(afterEdit.version_no).toBe(3);
     });
   }
 );

@@ -90,6 +90,7 @@ stateDiagram-v2
 ### Grupos, convites e convidados
 
 - **Confirmação mútua.** Convide por `@handle`. A pessoa já pode entrar nas contas, mas só vê saldos e conversa do grupo depois de aceitar.
+- **Recusar não apaga conta.** Recusar um convite não apaga as contas dos outros: a sua parte vira um convidado com o seu nome e quem pagou pode editar ou mandar o link de claim. Se você aparece como quem pagou, a conta é anulada.
 - **Link e QR de convite.** Um link ativo por grupo, com validade e limite de usos opcionais. No Android, o link abre direto no app. Dá pra disparar o convite no WhatsApp pra vários contatos de uma vez.
 - **Convidados sem conta.** Coloque alguém na conta só pelo nome. Um link ou QR de claim guarda a parte até a pessoa criar conta, e aí o saldo passa pra ela.
 - **Leitor de convite.** **Entrar em sala** abre um leitor que reconhece QR de sala, de grupo, de perfil e de convidado.

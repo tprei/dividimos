@@ -662,9 +662,9 @@ describe.skipIf(!isIntegrationTestReady)(
 );
 
 describe.skipIf(!isIntegrationTestReady)(
-  "a guest on an expense invalidated by a decline",
+  "a guest on an expense touched by a decline",
   () => {
-    it("cannot be claimed once the decline clears the expense participants", async () => {
+    it("keeps the guest claimable and turns the decliner's share into a guest", async () => {
       const [payer, invitee, stranger] = await createTestUsers(3);
       const payerClient = authenticateAs(payer);
       const { groupId } = await createGroup(payer, "Recusa com convidado", [invitee.id]);
@@ -698,20 +698,103 @@ describe.skipIf(!isIntegrationTestReady)(
 
       await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
 
-      const code = await expectRpcError(
-        Promise.resolve(authenticateAs(stranger).rpc("claim_guest", { p_token: token })),
-      );
-      expect(code).toBe("expense_deleted");
-
-      const memberCount = await withPg(async (client) => {
-        const rows = await client.query<{ count: number }>(
-          "select count(*)::int as count from public.group_members " +
-            "where group_id = $1 and user_id = $2",
-          [groupId, stranger.id],
+      const afterDecline = await withPg(async (client) => {
+        const expense = await client.query<{
+          status: string;
+          current_version_no: number;
+        }>(
+          "select status, current_version_no from public.expenses where id = $1",
+          [created.expenseId],
         );
-        return rows.rows[0]?.count ?? 0;
+        const memberships = await client.query<{ count: number }>(
+          "select count(*)::int as count from public.group_members where group_id = $1 and user_id = $2",
+          [groupId, invitee.id],
+        );
+        const { rows: versionRows } = await client.query<{ payload: unknown }>(
+          "select payload from public.expense_versions where expense_id = $1 and version_no = 2",
+          [created.expenseId],
+        );
+        return {
+          expense: expense.rows[0],
+          memberships: memberships.rows[0].count,
+          payload: versionRows[0]?.payload,
+        };
       });
-      expect(memberCount).toBe(0);
+      expect(afterDecline.expense.status).toBe("active");
+      expect(afterDecline.expense.current_version_no).toBe(2);
+      expect(afterDecline.memberships).toBe(0);
+      expect(afterDecline.payload).toMatchObject({
+        participants: [
+          { kind: "user", userId: payer.id },
+          { kind: "guest", displayName: invitee.name },
+          { kind: "guest", guestId: guest.guestId, displayName: "Convidada" },
+        ],
+      });
+
+      const ack = await rpc<ClaimAck>(authenticateAs(stranger), "claim_guest", {
+        p_token: token,
+      });
+      expect(ack.expenseId).toBe(created.expenseId);
+      expect(ack.groupId).toBe(groupId);
+
+      const balances = await getBalances(groupId);
+      const netOf = (userId: string): number | undefined =>
+        balances.find((row) => row.kind === "user" && row.participant_id === userId)?.net_cents;
+      expect(netOf(payer.id)).toBe(4000);
+      expect(netOf(stranger.id)).toBe(-2000);
+      expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-2000);
+
+      const claimedDetail = await getExpenseDetail(payerClient, created.expenseId);
+      const claimed = claimedDetail.participants.find((p) => p.participantIndex === 2);
+      expect(claimed?.kind).toBe("user");
+      expect(claimed?.user?.id).toBe(stranger.id);
+    });
+
+    it("keeps balances correct when the declined bill has a claimed guest", async () => {
+      const [payer, invitee, stranger] = await createTestUsers(3);
+      const payerClient = authenticateAs(payer);
+      const { groupId } = await createGroup(payer, "Recusa com convidado reivindicado", [
+        invitee.id,
+      ]);
+
+      const created = await createExpense(payer, {
+        groupId,
+        title: "Churrasco",
+        totalCents: 3000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: payer.id },
+            { kind: "user", userId: invitee.id },
+            { kind: "guest", guestId: null, displayName: "Convidada" },
+          ],
+          shares: [1000, 1000, 1000],
+          payers: [{ participantIndex: 0, amountCents: 3000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const detail = await getExpenseDetail(payerClient, created.expenseId);
+      const guest = detail.current.payload.participants[2];
+      if (guest.kind !== "guest" || !guest.guestId) {
+        throw new Error("Fixture failure: guest was not materialized");
+      }
+      const issued = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guest.guestId,
+      });
+      await rpc<ClaimAck>(authenticateAs(stranger), "claim_guest", {
+        p_token: issued.token,
+      });
+
+      await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
+
+      const balances = await getBalances(groupId);
+      const netOf = (userId: string): number | undefined =>
+        balances.find((row) => row.kind === "user" && row.participant_id === userId)?.net_cents;
+      expect(netOf(payer.id)).toBe(2000);
+      expect(netOf(stranger.id)).toBe(-1000);
+      expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-1000);
+      expect(balances.reduce((sum, row) => sum + row.net_cents, 0)).toBe(0);
     });
 
     it("rejects claiming a guest when claimant is excluded and leaves all facts unchanged", async () => {
