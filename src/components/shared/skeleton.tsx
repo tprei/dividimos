@@ -2,20 +2,21 @@ import { cn } from "@/lib/utils";
 
 interface SkeletonProps {
   className?: string;
-  variant?: "pulse" | "shimmer";
+  /** `static` holds still: a placeholder for something not asked for yet, not something loading. */
+  variant?: "pulse" | "shimmer" | "static";
 }
+
+const skeletonMotion: Record<NonNullable<SkeletonProps["variant"]>, string> = {
+  pulse: "motion-safe:animate-pulse",
+  shimmer: "bg-[length:200%_100%] bg-[linear-gradient(90deg,var(--muted),var(--card),var(--muted))] motion-safe:[animation:shimmer_1.8s_ease-in-out_infinite]",
+  static: "",
+};
 
 export function Skeleton({ className, variant = "pulse" }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"
-      className={cn(
-        "rounded-lg bg-muted motion-reduce:animate-none",
-        variant === "shimmer"
-          ? "bg-[length:200%_100%] bg-[linear-gradient(90deg,var(--muted),var(--card),var(--muted))] motion-safe:[animation:shimmer_1.8s_ease-in-out_infinite]"
-          : "motion-safe:animate-pulse",
-        className,
-      )}
+      className={cn("rounded-lg bg-muted motion-reduce:animate-none", skeletonMotion[variant], className)}
     />
   );
 }
