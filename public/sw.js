@@ -1,10 +1,16 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const SHELL_CACHE = `dividimos-shell-${CACHE_VERSION}`;
+const AVATAR_CACHE = `dividimos-avatars-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
+
+// Cap on cached optimized images. Each avatar photo has a few width variants
+// (srcSet per device pixel ratio), so a few hundred entries comfortably covers
+// an account's contacts while keeping storage bounded.
+const AVATAR_CACHE_LIMIT = 300;
 
 // Assets to precache on install — keep this list small and static.
 const PRECACHE_URLS = [
@@ -48,7 +54,7 @@ self.addEventListener("install", (event) => {
 // ── Activate ─────────────────────────────────────────────────────────
 // Clean up old caches from previous versions.
 self.addEventListener("activate", (event) => {
-  const CURRENT_CACHES = new Set([STATIC_CACHE, RUNTIME_CACHE, SHELL_CACHE]);
+  const CURRENT_CACHES = new Set([STATIC_CACHE, RUNTIME_CACHE, SHELL_CACHE, AVATAR_CACHE]);
   event.waitUntil(
     caches
       .keys()
@@ -93,6 +99,16 @@ const NAVIGATION_TIMEOUT_MS = 8000;
 
 function isOutage(response) {
   return !response || TRANSIENT_STATUSES.has(response.status);
+}
+
+// Evicts the oldest entries (Cache API keys iterate in creation order) once
+// the avatar cache grows past its cap.
+async function trimAvatarCache() {
+  const cache = await caches.open(AVATAR_CACHE);
+  const keys = await cache.keys();
+  await Promise.all(
+    keys.slice(0, Math.max(0, keys.length - AVATAR_CACHE_LIMIT)).map((key) => cache.delete(key)),
+  );
 }
 
 /**
@@ -190,6 +206,32 @@ self.addEventListener("fetch", (event) => {
       fetchWithDeadline(request).then((response) =>
         isOutage(response) ? caches.match(OFFLINE_URL) : response,
       ),
+    );
+    return;
+  }
+
+  // Optimized images (only avatars use the optimizer today) are requested with
+  // a stable URL per photo and width, so a cache-first pass here makes repeat
+  // views instant instead of paying a network round trip every time the shell
+  // re-renders. Bounded by AVATAR_CACHE_LIMIT; a version bump wipes it.
+  if (request.destination === "image" && url.pathname === "/_next/image") {
+    event.respondWith(
+      caches
+        .open(AVATAR_CACHE)
+        .then(async (cache) => {
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          const response = await fetch(request);
+          if (response.ok) {
+            const write = cache
+              .put(request, response.clone())
+              .then(trimAvatarCache);
+            if (typeof event.waitUntil === "function") {
+              event.waitUntil(write);
+            }
+          }
+          return response;
+        }),
     );
     return;
   }

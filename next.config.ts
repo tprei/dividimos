@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
         hostname: "*.googleusercontent.com",
       },
     ],
+    // Avatar URLs are Google OAuth photos stored once in users.avatar_url and
+    // never rewritten, so an optimized /_next/image response can stay fresh far
+    // longer than the 4-hour default. Next serves max-age of the larger of this
+    // TTL and the upstream Cache-Control (node_modules/next/dist/docs, image.md).
+    minimumCacheTTL: 2678400, // 31 days
   },
   experimental: {
     optimizePackageImports: [
