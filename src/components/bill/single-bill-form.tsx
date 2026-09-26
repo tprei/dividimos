@@ -4,7 +4,6 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
-import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { AmountField } from "@/components/bill/single-bill/amount-field";
 import { consumptionSeed } from "@/components/bill/single-bill/division-state";
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
@@ -12,6 +11,7 @@ import {
   profileToUser,
   useGroupResolution,
 } from "@/components/bill/single-bill/use-group-resolution";
+import { PayerSplit } from "@/components/bill/split/payer-split";
 import { SplitEditor, type SplitPerson } from "@/components/bill/split/split-editor";
 import { SplitSummary } from "@/components/bill/split/split-summary";
 import { usePayerSplit } from "@/components/bill/split/use-payer-split";
@@ -19,7 +19,6 @@ import { useSplitDraft } from "@/components/bill/split/use-split-draft";
 import { DetailsStep, initialStartProgress } from "@/components/bill/wizard/details-step";
 import { WizardFooter } from "@/components/bill/wizard/wizard-footer";
 import { WizardSteps } from "@/components/bill/wizard/wizard-steps";
-import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Button } from "@/components/ui/button";
@@ -325,35 +324,23 @@ export function SingleBillForm({
 
       {step === 2 && (
         <div className="space-y-4 px-4 py-3">
-          <p className="flex items-baseline justify-between gap-3 px-1 text-sm">
-            <span className="text-muted-foreground">Total</span>
-            <Money cents={totalCents} className="text-base" />
-          </p>
-          <section aria-labelledby="single-payers" className="space-y-1.5">
-            <h2 id="single-payers" className="px-1 text-xs font-semibold text-muted-foreground">
-              Quem pagou
-            </h2>
-            {store.guests.length > 0 && (
-              <p className="px-1 text-xs text-muted-foreground">{GUEST_PAYER_NOTICE}</p>
-            )}
-            <SplitEditor
-              label="Quem pagou"
-              people={splitPeople.filter((person) => !person.isGuest)}
-              mode={payers.draft.mode}
-              onModeChange={payers.setMode}
-              included={payers.draft.included}
-              onToggle={payers.toggle}
-              basisPointsById={payers.draft.percent.shares}
-              centsById={payers.centsById}
-              onShareChange={payers.setShare}
-              completable={payers.completable}
-              onComplete={payers.complete}
-              onSplitEvenly={payers.canSplitEvenly ? payers.splitEvenly : null}
-              emptyText="Escolha quem pagou."
-              shareVerb="pagou"
-              remainderCents={payers.remainderCents}
-            />
-          </section>
+          <PayerSplit
+            payers={splitPeople.filter((person) => !person.isGuest)}
+            totalCents={totalCents}
+            totalNote={null}
+            hasGuests={store.guests.length > 0}
+            mode={payers.draft.mode}
+            onModeChange={payers.setMode}
+            included={payers.draft.included}
+            onToggle={payers.toggle}
+            basisPointsById={payers.draft.percent.shares}
+            centsById={payers.centsById}
+            onShareChange={payers.setShare}
+            completable={payers.completable}
+            onComplete={payers.complete}
+            onSplitEvenly={payers.canSplitEvenly ? payers.splitEvenly : null}
+            remainderCents={payers.remainderCents}
+          />
           <SplitSummary
             rows={splitPeople.map((person) => ({
               ...person,

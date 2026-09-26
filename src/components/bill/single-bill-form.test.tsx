@@ -246,6 +246,30 @@ describe("SingleBillForm payers", () => {
     expect(screen.getByRole("button", { name: "Salvar conta" })).toBeDisabled();
     expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain("Escolha quem pagou.");
   });
+
+  it("states the only account holder paid it all, with nothing to edit, and saves the full total", async () => {
+    const store = useBillStore.getState();
+    store.removeParticipant(userBob.id);
+    store.addGuest("Marina");
+    renderForm();
+    next();
+    next();
+
+    expect(screen.getByText("Você pagou")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Como dividir: Quem pagou" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Quem pagou" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /pagou/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(useBillStore.getState().payers.map((payer) => [payer.userId, payer.amountCents])).toEqual([
+        [userAlice.id, 10000],
+      ]),
+    );
+    expect(screen.getByRole("button", { name: "Salvar conta" })).toBeEnabled();
+    const result = buildExpensePayload(useBillStore.getState(), "2026-09-25");
+    expect(result.ok && result.value.payload.payers).toEqual([{ participantIndex: 0, amountCents: 10000 }]);
+  });
 });
 
 describe("SingleBillForm submit", () => {
