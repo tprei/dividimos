@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { BrazilSection } from "@/components/landing/brazil-section";
 import { FxProvider } from "@/components/landing/click-fx";
 import { FaqSection } from "@/components/landing/faq-section";
@@ -12,6 +13,10 @@ import { SecuritySection } from "@/components/landing/security-section";
 import { WaysSection } from "@/components/landing/ways-section";
 import { cn } from "@/lib/utils";
 import styles from "@/components/landing/landing.module.css";
+
+export const metadata: Metadata = {
+  title: { absolute: "Dividimos · racha a conta e paga no Pix" },
+};
 
 export default function LandingPage() {
   return (
