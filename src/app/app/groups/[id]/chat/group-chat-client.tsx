@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
+import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -36,6 +37,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const router = useRouter();
   const { accept, pendingGroupId } = useInvitationActions();
   const me = useAppStore((state) => state.me);
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(groupId, me?.id ?? null);
   const snapshot = useAppStore((state) => selectGroup(state, groupId));
   const conversation = useAppStore((state) => state.conversations[groupId]);
   const loadedRef = useRef<Set<string>>(new Set());
@@ -251,6 +253,8 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           acknowledgeThroughId={readableThroughId}
           onRenderedThrough={handleRenderedThrough}
           onLoadMore={handleLoadMore}
+          pendingRoomId={pendingRoomId}
+          onOpenRoom={openRoom}
         />
       </div>
       {paymentOpen && paymentCounterparties.length > 0 && (
