@@ -648,6 +648,7 @@ export type Database = {
       group_members: {
         Row: {
           accepted_at: string | null
+          archived_at: string | null
           created_at: string
           group_id: string
           invited_by: string | null
@@ -656,6 +657,7 @@ export type Database = {
         }
         Insert: {
           accepted_at?: string | null
+          archived_at?: string | null
           created_at?: string
           group_id: string
           invited_by?: string | null
@@ -664,6 +666,7 @@ export type Database = {
         }
         Update: {
           accepted_at?: string | null
+          archived_at?: string | null
           created_at?: string
           group_id?: string
           invited_by?: string | null
@@ -1071,6 +1074,12 @@ export type Database = {
         }
         Returns: Json
       }
+      archive_group: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: Json
+      }
       assert_dm_pair_allowed: {
         Args: {
           p_group_id: string
@@ -1131,6 +1140,10 @@ export type Database = {
         Returns: Json
       }
       bootstrap_overview: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      bootstrap_overview_v2: {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
@@ -1463,6 +1476,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_group_overview_v2: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: Json
+      }
       get_my_expenses: {
         Args: {
           p_before_created_at?: string
@@ -1591,6 +1610,13 @@ export type Database = {
         Args: {
           p_expense_id: string
           p_version_no: number
+        }
+        Returns: Json
+      }
+      ledger_group_lifecycle_json: {
+        Args: {
+          p_group_id: string
+          p_viewer: string
         }
         Returns: Json
       }
@@ -1788,6 +1814,12 @@ export type Database = {
           p_actor_id: string
           p_emoji: string
           p_photo_id: string
+        }
+        Returns: Json
+      }
+      unarchive_group: {
+        Args: {
+          p_group_id: string
         }
         Returns: Json
       }
