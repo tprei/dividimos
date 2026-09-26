@@ -1,21 +1,24 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
+import * as React from "react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { buildDateShortcuts, toIsoDate } from "@/lib/date-shortcuts";
+import { haptics } from "@/hooks/use-haptics";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export interface DateFieldProps {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  id?: string
-  max?: string
-  min?: string
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  id?: string;
+  max?: string;
+  min?: string;
   /** "subtle": a text-sized trigger that reads "Hoje", "Ontem" or the day. */
-  variant?: "field" | "subtle"
+  variant?: "field" | "subtle";
 }
 
 const MONTH_NAMES = [
@@ -31,9 +34,9 @@ const MONTH_NAMES = [
   "outubro",
   "novembro",
   "dezembro",
-] as const
+] as const;
 
-const WEEKDAY_LETTERS = ["D", "S", "T", "Q", "Q", "S", "S"] as const
+const WEEKDAY_LETTERS = ["D", "S", "T", "Q", "Q", "S", "S"] as const;
 
 const WEEKDAY_NAMES = [
   "domingo",
@@ -43,88 +46,91 @@ const WEEKDAY_NAMES = [
   "quinta",
   "sexta",
   "sábado",
-] as const
+] as const;
 
 interface CalendarView {
-  year: number
-  month: number
+  year: number;
+  month: number;
 }
 
 interface IsoDate {
-  year: number
-  month: number
-  day: number
+  year: number;
+  month: number;
+  day: number;
 }
 
 interface DayCell {
-  iso: string
-  dayNumber: number
-  disabled: boolean
+  iso: string;
+  dayNumber: number;
+  disabled: boolean;
+  /** Day of the month before or after the one on view, shown muted. */
+  adjacent: boolean;
 }
 
 function parseIso(value: string): IsoDate | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
-  if (!match) return null
-  const year = Number(match[1])
-  const month = Number(match[2]) - 1
-  const day = Number(match[3])
-  const date = new Date(year, month, day)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
   if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-    return null
+    return null;
   }
-  return { year, month, day }
-}
-
-function toIso(date: Date): string {
-  const year = String(date.getFullYear()).padStart(4, "0")
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+  return { year, month, day };
 }
 
 function shiftIso(value: string, days: number): string {
-  const parts = parseIso(value)
-  if (!parts) return value
-  return toIso(new Date(parts.year, parts.month, parts.day + days))
+  const parts = parseIso(value);
+  if (!parts) return value;
+  return toIsoDate(new Date(parts.year, parts.month, parts.day + days));
 }
 
 function initialView(value: string): CalendarView {
-  const parts = parseIso(value)
-  if (parts) return { year: parts.year, month: parts.month }
-  const now = new Date()
-  return { year: now.getFullYear(), month: now.getMonth() }
+  const parts = parseIso(value);
+  if (parts) return { year: parts.year, month: parts.month };
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() };
 }
 
 function shiftView(view: CalendarView, months: number): CalendarView {
-  const date = new Date(view.year, view.month + months, 1)
-  return { year: date.getFullYear(), month: date.getMonth() }
+  const date = new Date(view.year, view.month + months, 1);
+  return { year: date.getFullYear(), month: date.getMonth() };
 }
 
 function daysInMonth(view: CalendarView): number {
-  return new Date(view.year, view.month + 1, 0).getDate()
+  return new Date(view.year, view.month + 1, 0).getDate();
 }
 
 function inView(iso: string, view: CalendarView): boolean {
-  const parts = parseIso(iso)
-  if (!parts) return false
-  return parts.year === view.year && parts.month === view.month
+  const parts = parseIso(iso);
+  if (!parts) return false;
+  return parts.year === view.year && parts.month === view.month;
 }
 
+// Always six week rows: a month that fits in four must not make the dialog
+// shorter, or the month arrows jump between taps.
 function buildWeeks(
   view: CalendarView,
   isDayDisabled: (iso: string) => boolean,
-): Array<Array<DayCell | null>> {
-  const leadingBlanks = new Date(view.year, view.month, 1).getDay()
-  const cells: Array<DayCell | null> = Array.from({ length: leadingBlanks }, () => null)
-  for (let day = 1; day <= daysInMonth(view); day += 1) {
-    const iso = toIso(new Date(view.year, view.month, day))
-    cells.push({ iso, dayNumber: day, disabled: isDayDisabled(iso) })
+): Array<Array<DayCell>> {
+  const start = new Date(view.year, view.month, 1 - new Date(view.year, view.month, 1).getDay());
+  const weeks: Array<Array<DayCell>> = [];
+  for (let week = 0; week < 6; week += 1) {
+    const row: DayCell[] = [];
+    for (let day = 0; day < 7; day += 1) {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7 + day);
+      const iso = toIsoDate(date);
+      row.push({
+        iso,
+        dayNumber: date.getDate(),
+        disabled: isDayDisabled(iso),
+        adjacent: date.getMonth() !== view.month,
+      });
+    }
+    weeks.push(row);
   }
-  const weeks: Array<Array<DayCell | null>> = []
-  for (let start = 0; start < cells.length; start += 7) {
-    weeks.push(cells.slice(start, start + 7))
-  }
-  return weeks
+  return weeks;
 }
 
 function monthHasEnabledDay(
@@ -132,66 +138,85 @@ function monthHasEnabledDay(
   isDayDisabled: (iso: string) => boolean,
 ): boolean {
   for (let day = 1; day <= daysInMonth(view); day += 1) {
-    if (!isDayDisabled(toIso(new Date(view.year, view.month, day)))) return true
+    if (!isDayDisabled(toIsoDate(new Date(view.year, view.month, day)))) return true;
   }
-  return false
+  return false;
+}
+
+/** One visual state per day: fill beats the today ring beats the mutes. */
+function dayCellClass(state: {
+  selected: boolean;
+  isToday: boolean;
+  adjacent: boolean;
+  weekend: boolean;
+}): string {
+  if (state.selected) return "bg-primary font-bold text-primary-foreground hover:bg-primary/80";
+  if (state.isToday) return "ring-2 ring-primary text-primary-text";
+  if (state.adjacent) return "text-muted-foreground/50";
+  if (state.weekend) return "text-muted-foreground";
+  return "text-foreground";
 }
 
 export function DateField(props: DateFieldProps): React.JSX.Element {
-  const { label, value, onChange, id, max, min, variant = "field" } = props
-  const [open, setOpen] = React.useState(false)
-  const [view, setView] = React.useState<CalendarView>(() => initialView(value))
-  const [focusRequest, setFocusRequest] = React.useState<{ iso: string; seq: number } | null>(null)
-  const gridRef = React.useRef<HTMLDivElement | null>(null)
-  const seqRef = React.useRef(0)
-  const titleId = React.useId()
+  const { label, value, onChange, id, max, min, variant = "field" } = props;
+  const [open, setOpen] = React.useState(false);
+  const [view, setView] = React.useState<CalendarView>(() => initialView(value));
+  const [focusRequest, setFocusRequest] = React.useState<{ iso: string; seq: number } | null>(null);
+  const [monthDirection, setMonthDirection] = React.useState(1);
+  const reduceMotion = useReducedMotion();
+  const gridRef = React.useRef<HTMLDivElement | null>(null);
+  const seqRef = React.useRef(0);
+  const titleId = React.useId();
 
-  const today = toIso(new Date())
+  const today = toIsoDate(new Date());
   const isDayDisabled = (iso: string) =>
-    (min !== undefined && iso < min) || (max !== undefined && iso > max)
+    (min !== undefined && iso < min) || (max !== undefined && iso > max);
+  const shortcuts = buildDateShortcuts(today).filter((shortcut) => !isDayDisabled(shortcut.iso));
 
   const focusIsoFor = (targetView: CalendarView): string | null => {
-    if (!isDayDisabled(value) && inView(value, targetView)) return value
-    if (!isDayDisabled(today) && inView(today, targetView)) return today
+    if (!isDayDisabled(value) && inView(value, targetView)) return value;
+    if (!isDayDisabled(today) && inView(today, targetView)) return today;
     for (const week of buildWeeks(targetView, isDayDisabled)) {
       for (const cell of week) {
-        if (cell && !cell.disabled) return cell.iso
+        if (!cell.disabled) return cell.iso;
       }
     }
-    return null
-  }
+    return null;
+  };
 
-  const weeks = buildWeeks(view, isDayDisabled)
-  const rovingIso = focusRequest?.iso ?? focusIsoFor(view)
-  const canGoPrev = monthHasEnabledDay(shiftView(view, -1), isDayDisabled)
-  const canGoNext = monthHasEnabledDay(shiftView(view, 1), isDayDisabled)
+  const weeks = buildWeeks(view, isDayDisabled);
+  const rovingIso = focusRequest?.iso ?? focusIsoFor(view);
+  const canGoPrev = monthHasEnabledDay(shiftView(view, -1), isDayDisabled);
+  const canGoNext = monthHasEnabledDay(shiftView(view, 1), isDayDisabled);
 
   const requestFocus = (iso: string) => {
-    seqRef.current += 1
-    setFocusRequest({ iso, seq: seqRef.current })
-  }
+    seqRef.current += 1;
+    setFocusRequest({ iso, seq: seqRef.current });
+  };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen)
+    setOpen(nextOpen);
     if (nextOpen) {
-      const targetView = initialView(value)
-      setView(targetView)
-      const target = focusIsoFor(targetView)
-      if (target) requestFocus(target)
+      const targetView = initialView(value);
+      setView(targetView);
+      const target = focusIsoFor(targetView);
+      if (target) requestFocus(target);
     }
-  }
+  };
 
   const shiftMonth = (months: number) => {
-    const targetView = shiftView(view, months)
-    setView(targetView)
-    const target = focusIsoFor(targetView)
-    if (target) requestFocus(target)
-  }
+    const targetView = shiftView(view, months);
+    setMonthDirection(months >= 0 ? 1 : -1);
+    setView(targetView);
+    const target = focusIsoFor(targetView);
+    if (target) requestFocus(target);
+  };
 
   const pick = (iso: string) => {
-    onChange(iso)
-    setOpen(false)
-  }
+    haptics.selectionChanged();
+    onChange(iso);
+    setOpen(false);
+  };
 
   const handleGridKeyDown = (event: React.KeyboardEvent) => {
     const deltas: Record<string, number> = {
@@ -199,40 +224,43 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
       ArrowRight: 1,
       ArrowUp: -7,
       ArrowDown: 7,
-    }
-    const delta = deltas[event.key]
-    if (delta === undefined) return
-    event.preventDefault()
-    const startIso = focusRequest?.iso ?? focusIsoFor(view) ?? today
-    let cursor = startIso
-    let next: string | null = null
+    };
+    const delta = deltas[event.key];
+    if (delta === undefined) return;
+    event.preventDefault();
+    const startIso = focusRequest?.iso ?? focusIsoFor(view) ?? today;
+    let cursor = startIso;
+    let next: string | null = null;
     for (let step = 0; step < 366; step += 1) {
-      cursor = shiftIso(cursor, delta)
+      cursor = shiftIso(cursor, delta);
       if (!isDayDisabled(cursor)) {
-        next = cursor
-        break
+        next = cursor;
+        break;
       }
     }
-    if (!next) return
-    const targetView = initialView(next)
-    if (targetView.year !== view.year || targetView.month !== view.month) {
-      setView(targetView)
+    if (!next) return;
+    // Six rows always span three months, so a day already on screen must not flip the page.
+    const onGrid = next >= weeks[0][0].iso && next <= weeks[5][6].iso;
+    if (!onGrid) {
+      setMonthDirection(delta >= 0 ? 1 : -1);
+      setView(initialView(next));
     }
-    requestFocus(next)
-  }
+    requestFocus(next);
+  };
 
   React.useEffect(() => {
-    if (!open || !focusRequest) return
-    const button = gridRef.current?.querySelector<HTMLButtonElement>(
-      `[data-iso="${focusRequest.iso}"]`,
-    )
-    button?.focus()
-  }, [open, focusRequest])
+    if (!open || !focusRequest) return;
+    const monthGrid = gridRef.current?.querySelector<HTMLElement>(
+      `[data-month="${view.year}-${view.month}"]`,
+    );
+    const button = monthGrid?.querySelector<HTMLButtonElement>(`[data-iso="${focusRequest.iso}"]`);
+    button?.focus();
+  }, [open, focusRequest, view]);
 
-  const parts = parseIso(value)
+  const parts = parseIso(value);
   const displayValue = parts
     ? `${String(parts.day).padStart(2, "0")}/${String(parts.month + 1).padStart(2, "0")}/${String(parts.year).padStart(4, "0")}`
-    : value
+    : value;
   const friendlyValue =
     value === today
       ? "Hoje"
@@ -240,7 +268,9 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
         ? "Ontem"
         : parts && String(parts.year) === today.slice(0, 4)
           ? `${parts.day} de ${MONTH_NAMES[parts.month].slice(0, 3)}`
-          : displayValue
+          : displayValue;
+
+  const monthKey = `${view.year}-${view.month}`;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -257,95 +287,128 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
         {variant === "subtle" && <CalendarDays className="size-4 shrink-0" aria-hidden="true" />}
         {variant === "subtle" ? friendlyValue : displayValue}
       </DialogTrigger>
-      <DialogContent showCloseButton={false} className="w-82 max-w-[calc(100%-1rem)] gap-3 p-2">
-        <div className="flex items-center justify-between gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Mês anterior"
-            disabled={!canGoPrev}
-            onClick={() => shiftMonth(-1)}
-          >
-            <ChevronLeft />
-          </Button>
-          <DialogTitle id={titleId} className="flex-1 text-center text-sm font-bold">
-            {MONTH_NAMES[view.month]} de {view.year}
-          </DialogTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Próximo mês"
-            disabled={!canGoNext}
-            onClick={() => shiftMonth(1)}
-          >
-            <ChevronRight />
-          </Button>
+      <DialogContent
+        showCloseButton={false}
+        initialFocus={() =>
+          gridRef.current?.querySelector<HTMLButtonElement>('[data-iso][tabindex="0"]') ?? true
+        }
+        className="w-82 max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0"
+      >
+        <div className="gradient-mesh border-b border-primary/20 bg-primary/15 px-1 pt-1 pb-3 dark:bg-primary/10">
+          <div className="flex items-center justify-between gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Mês anterior"
+              disabled={!canGoPrev}
+              onClick={() => shiftMonth(-1)}
+            >
+              <ChevronLeft />
+            </Button>
+            <DialogTitle
+              id={titleId}
+              className="flex-1 text-center text-base font-bold first-letter:uppercase"
+            >
+              {MONTH_NAMES[view.month]} de {view.year}
+            </DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Próximo mês"
+              disabled={!canGoNext}
+              onClick={() => shiftMonth(1)}
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+          <div role="group" aria-label="Atalhos de data" className="flex gap-1.5 px-1.5 pt-1">
+            {shortcuts.map((shortcut) => {
+              const selected = shortcut.iso === value;
+              return (
+                <button
+                  key={shortcut.label}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => pick(shortcut.iso)}
+                  className={cn(
+                    "relative h-9 flex-auto rounded-full border px-2.5 text-xs font-semibold whitespace-nowrap transition-colors outline-none after:absolute after:inset-x-0 after:-inset-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:active:scale-100",
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : "border-primary/25 bg-card text-foreground hover:border-primary/50",
+                  )}
+                >
+                  {shortcut.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div ref={gridRef} role="grid" aria-labelledby={titleId} className="space-y-1">
+        <div ref={gridRef} role="grid" aria-labelledby={titleId} className="p-2">
           <div role="row" className="grid grid-cols-7">
             {WEEKDAY_LETTERS.map((letter, index) => (
               <div
                 key={letter + String(index)}
                 role="columnheader"
                 aria-label={WEEKDAY_NAMES[index]}
-                className="flex h-7 items-center justify-center text-xs font-semibold text-muted-foreground"
+                className={cn(
+                  "flex h-7 items-center justify-center text-xs font-semibold",
+                  index === 0 || index === 6 ? "text-primary-text/70" : "text-muted-foreground",
+                )}
               >
                 {letter}
               </div>
             ))}
           </div>
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} role="row" className="grid grid-cols-7">
-              {week.map((cell, dayIndex) =>
-                cell ? (
-                  <div
-                    key={cell.iso}
-                    role="gridcell"
-                    aria-selected={cell.iso === value}
-                    className="flex justify-center"
-                  >
-                    <button
-                      type="button"
-                      data-iso={cell.iso}
-                      tabIndex={cell.iso === rovingIso ? 0 : -1}
-                      aria-label={`${cell.dayNumber} de ${MONTH_NAMES[view.month]} de ${view.year}`}
-                      aria-current={cell.iso === today ? "date" : undefined}
-                      disabled={cell.disabled}
-                      onClick={() => pick(cell.iso)}
-                      onKeyDown={handleGridKeyDown}
-                      className={cn(
-                        "inline-flex h-11 w-full min-w-11 items-center justify-center rounded-xl text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                        cell.iso === value &&
-                          "bg-primary text-primary-foreground hover:bg-primary/80",
-                        cell.iso !== value &&
-                          cell.iso === today &&
-                          "border border-primary text-primary",
-                      )}
-                    >
-                      {cell.dayNumber}
-                    </button>
-                  </div>
-                ) : (
-                  <div key={`${weekIndex}-${dayIndex}`} />
-                ),
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isDayDisabled(today)}
-            onClick={() => pick(today)}
+          <motion.div
+            key={monthKey}
+            data-month={monthKey}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 12 * monthDirection }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
           >
-            Hoje
-          </Button>
+            {weeks.map((week) => (
+              <div key={week[0].iso} role="row" className="grid grid-cols-7">
+                {week.map((cell, dayIndex) => {
+                  const cellDate = parseIso(cell.iso);
+                  const isWeekend = dayIndex === 0 || dayIndex === 6;
+                  const selected = cell.iso === value;
+                  return (
+                    <div
+                      key={cell.iso}
+                      role="gridcell"
+                      aria-selected={selected}
+                      className="flex justify-center"
+                    >
+                      <button
+                        type="button"
+                        data-iso={cell.iso}
+                        tabIndex={cell.iso === rovingIso ? 0 : -1}
+                        aria-label={
+                          cellDate
+                            ? `${cell.dayNumber} de ${MONTH_NAMES[cellDate.month]} de ${cellDate.year}`
+                            : cell.iso
+                        }
+                        aria-current={cell.iso === today ? "date" : undefined}
+                        disabled={cell.disabled}
+                        onClick={() => pick(cell.iso)}
+                        onKeyDown={handleGridKeyDown}
+                        className={cn(
+                          "inline-flex h-11 w-full min-w-11 items-center justify-center rounded-xl text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40",
+                          dayCellClass({ selected, isToday: cell.iso === today, adjacent: cell.adjacent, weekend: isWeekend }),
+                        )}
+                      >
+                        {cell.dayNumber}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </motion.div>
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
