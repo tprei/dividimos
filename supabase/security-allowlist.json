@@ -59,6 +59,11 @@
       "authenticated": false,
       "note": "Internal exact allocator used only by room finalization."
     },
+    "public.assignment_room_summary_json(p_room_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal room-summary serializer; reachable only through membership-checked reads and the internal group broadcast."
+    },
     "public.assignment_room_topic_allowed(p_topic text)": {
       "anon": true,
       "authenticated": true,
@@ -278,6 +283,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_conversation_v2(p_group_id uuid, p_message_before_created_at timestamp with time zone, p_message_before_id uuid, p_event_before_created_at timestamp with time zone, p_event_before_id bigint, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; serves the assignment_room_opened event with its live room summary to builds that know the kind."
     },
     "public.get_expense(p_expense_id uuid)": {
       "anon": false,

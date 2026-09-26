@@ -454,7 +454,7 @@ flowchart LR
 
 | Contexto | RPCs | Quem chama |
 |----------|------|------------|
-| Leitura | `bootstrap_overview`, `get_group_overview`, `get_group_expenses`, `get_expense_context`, `get_settlement`, `get_my_expenses`, `get_activity`, `get_conversation`, `get_vendor_charges` | `src/lib/sync/bootstrap.ts` e `refresh.ts` |
+| Leitura | `bootstrap_overview`, `get_group_overview`, `get_group_expenses`, `get_expense_context`, `get_settlement`, `get_my_expenses`, `get_activity`, `get_conversation`, `get_conversation_v2`, `get_vendor_charges` | `src/lib/sync/bootstrap.ts` e `refresh.ts` |
 | | `get_my_profile` | `src/lib/auth.ts` |
 | Contas | `create_expense`, `create_expense_with_group`, `edit_expense`, `delete_expense`, `restore_expense` | `src/lib/sync/mutations.ts` |
 | Liquidação | `record_settlement`, `void_settlement`, `send_nudge` | `mutations-group.ts` |
@@ -790,6 +790,8 @@ Os testes sintéticos (`e2e/synthetic/*.spec.ts`) percorrem jornadas reais pela 
 **Salas de itens**: uma sala prepara um cupom escaneado. O anfitrião cria a sala com os itens e um token de entrada; quem tem o link entra (`join_assignment_room`, logado ou como convidado com nome) e recebe um token de membro. As marcações ficam em ticks (120 por milésimo de unidade), então metade, um terço e quantidades exatas dividem sem arredondar. Cada marcação manda a `revision` esperada do item, e as ações do anfitrião mandam a da sala, então uma corrida falha com `stale_version`. `close_assignment_room` exige todos os itens com dono. `finalize_assignment_room` refaz o payload canônico a partir das marcações, exige que o payload do cliente seja idêntico, convida pro grupo de destino quem entrou com conta e cria a conta usando o id da sala como `client_id`. Quem entrou sem conta reivindica a parte depois com `claim_assignment_room_guest`.
 
 Quando a sala aponta pra um grupo existente, quem já é membro aceito do grupo não precisa do link: `list_open_assignment_rooms` lista as salas abertas do grupo, e `enter_group_assignment_room` confere se a pessoa é membro e emite o mesmo token de membro que o link emite. O link com QR continua valendo pra quem está de fora.
+
+Cada sala de grupo existente tem um resumo único (`assignment_room_summary_json`, com progresso de itens e avatares de quem já marcou): as entradas de `list_open_assignment_rooms` e o evento `assignment_room_opened` servido pelo novo `get_conversation_v2` carregam esse resumo, e toda mutação da sala o publica como evento `assignment_room` no tópico `group:<id>`, então o card do chat e a lista de contas abertas mostram o progresso ao vivo.
 
 O anfitrião anuncia a sala com `announce_assignment_room`, que grava o evento `assignment_room_opened` (um por sala, idempotente) e dispara o push "abriu a conta" pros membros aceitos, menos quem abriu.
 
