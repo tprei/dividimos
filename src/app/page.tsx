@@ -6,6 +6,7 @@ import { Hero } from "@/components/landing/hero";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
+import { WaysSection } from "@/components/landing/ways-section";
 import { cn } from "@/lib/utils";
 import styles from "@/components/landing/landing.module.css";
 
@@ -24,6 +25,7 @@ export default function LandingPage() {
           <HowItWorksSection />
           <GuestSection />
           <GroupSection />
+          <WaysSection />
           <section
             className="py-20 sm:py-28"
             style={{ background: "linear-gradient(to bottom, transparent, oklch(0.78 0.16 75 / 8%) 40%, oklch(0.78 0.16 75 / 15%))" }}
