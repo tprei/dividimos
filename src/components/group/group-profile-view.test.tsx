@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { GroupInfoContent } from "./group-info-content";
-import { refreshGroup } from "@/lib/sync/refresh";
+import { GroupProfileView } from "./group-profile-view";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupAvatar, GroupSnapshot, Me } from "@/types/ledger";
 
@@ -19,11 +18,6 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
-}));
-
-vi.mock("@/lib/sync/refresh", () => ({
-  refreshGroup: vi.fn(),
-  loadMoreExpenses: vi.fn(),
 }));
 
 vi.mock("@/lib/sync/mutations-group", () => ({
@@ -107,37 +101,42 @@ function snapshot(avatar: GroupAvatar): GroupSnapshot {
   };
 }
 
-function seedLoaded(avatar: GroupAvatar = { kind: "initials" }) {
-  useAppStore.setState({
-    hydrated: true,
-    me,
-    groups: { [groupId]: snapshot(avatar) },
-    groupOrder: [groupId],
-  });
+function renderProfile(avatar: GroupAvatar = { kind: "initials" }) {
+  const onClose = vi.fn();
+  const onShowMembers = vi.fn();
+  render(
+    <GroupProfileView
+      groupId={groupId}
+      snapshot={snapshot(avatar)}
+      meId={me.id}
+      onClose={onClose}
+      onShowMembers={onShowMembers}
+      onDepart={vi.fn()}
+    />,
+  );
+  return { onClose, onShowMembers };
 }
 
 beforeEach(() => {
   useAppStore.getState().reset();
+  useAppStore.setState({ hydrated: true, me });
   vi.clearAllMocks();
-  vi.mocked(refreshGroup).mockResolvedValue(undefined);
 });
 
-describe("GroupInfoContent", () => {
-  it("shows the group identity and what the group has spent", () => {
-    seedLoaded();
-
-    render(<GroupInfoContent groupId={groupId} />);
+describe("GroupProfileView", () => {
+  it("shows the group identity and what the group has spent", async () => {
+    const { onShowMembers } = renderProfile();
+    const user = userEvent.setup();
 
     expect(screen.getByRole("heading", { name: "Viagem", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", "/app/groups/g1?tab=membros");
-    const spending = screen.getByTestId("group-spending");
-    expect(spending).toHaveTextContent("120,00");
+    expect(screen.getByTestId("group-spending")).toHaveTextContent("120,00");
+
+    await user.click(screen.getByRole("button", { name: /2 pessoas/ }));
+    expect(onShowMembers).toHaveBeenCalledOnce();
   });
 
   it("shows the group photo as a full-bleed hero that carries the identity", () => {
-    seedLoaded({ kind: "photo", photoId: "photo-9" });
-
-    render(<GroupInfoContent groupId={groupId} />);
+    renderProfile({ kind: "photo", photoId: "photo-9" });
 
     const photo = screen.getByAltText("Viagem");
     expect(photo).toHaveAttribute("src", expect.stringContaining("/avatar?photoId="));
@@ -154,23 +153,19 @@ describe("GroupInfoContent", () => {
   });
 
   it("carries the same identity header for a group without a photo", async () => {
-    seedLoaded({ kind: "emoji", emoji: "🍕" });
+    const { onClose } = renderProfile({ kind: "emoji", emoji: "🍕" });
     const user = userEvent.setup();
-
-    render(<GroupInfoContent groupId={groupId} />);
 
     const heading = screen.getByRole("heading", { name: "Viagem", level: 1 });
     const hero = within(heading.closest("section") as HTMLElement);
     expect(hero.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
     await user.click(hero.getByRole("button", { name: "Voltar" }));
-    expect(routerMock.push).toHaveBeenCalledWith("/app/groups/g1");
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("opens the avatar editor from the group avatar", async () => {
-    seedLoaded();
+    renderProfile();
     const user = userEvent.setup();
-
-    render(<GroupInfoContent groupId={groupId} />);
 
     await user.click(screen.getByRole("button", { name: "Foto do grupo" }));
 

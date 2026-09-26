@@ -42,7 +42,7 @@ test.describe("Layout gutters on a small phone", () => {
       `/app/groups/${group.id}`,
       `/app/groups/${group.id}?tab=contas`,
       `/app/groups/${group.id}?tab=membros`,
-      `/app/groups/${group.id}/info`,
+      `/app/groups/${group.id}?view=info`,
       `/app/bill/${expense.id}`,
       "/app/bills",
       "/app/activity",
