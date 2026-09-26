@@ -81,6 +81,8 @@ If Graphite is available, use Graphite from the first branch onward. Do not crea
 
 Use plain Git only when Graphite is unavailable, when the human explicitly prefers plain Git, or when Graphite is blocked and the human accepts the fallback.
 
+Merging is a separate, human-authorized step that follows the same tool choice; see `Merging And Branch Cleanup` below before merging anything.
+
 ## Plain Git Workflow
 
 Use this when Graphite is unavailable or the author prefers plain Git:
@@ -146,6 +148,30 @@ gt submit --cli --edit
 
 This recovery path is acceptable, but agents should avoid needing it by using `gt create` from the start when Graphite is available.
 
+## Merging And Branch Cleanup
+
+Merging is human-authorized, always. Prefer `Merge N` from Graphite for stacks: it is the only merge that automatically restacks and resubmits the branches above the ones that land. A GitHub merge does not do this — Graphite's automatic restacking explicitly does not work for merges done on GitHub, so `gt submit` never makes a `gh` merge stack-aware.
+
+When a human authorizes a plain GitHub merge instead, merge one PR at a time, from the bottom of the stack upward:
+
+1. Merge the bottom PR without deleting its branch. Never pass `--delete-branch` or `-d` to `gh pr merge`: deleting a base branch auto-closes every child PR that targets it.
+2. Confirm the merge landed.
+3. Restack and resubmit the remaining branches with the tracked workflow the stack already uses (`gt sync`, `gt restack`, `gt submit --cli --edit`, or the plain Git equivalent).
+4. Verify on GitHub that the new bottom PR targets `main` and every descendant PR targets its proper parent.
+5. Wait for fresh CI and human review before merging the next PR.
+
+Stop merging if any branch is untracked or its parent is invalid — a known failure after an interrupted `gt sync`. Inspect the actual refs and repair the parent relationships with `gt track <branch> --parent <parent>`, then verify the stack with `gt log --stack` before resuming. Never replace this repair with resets, cherry-picks, or force pushes.
+
+One writer per stack. Worktrees share Git refs and Graphite metadata, so restacking the same stack from two worktrees corrupts it.
+
+Before deleting any branch — merged or not — query GitHub for open PRs targeting it:
+
+```bash
+gh api --paginate "repos/OWNER/REPO/pulls?base=BRANCH&state=open&per_page=100"
+```
+
+If the query returns any PR, fails, or cannot be completed in full, the branch must not be deleted.
+
 ## Review Rules
 
 - Keep each PR under 1,000 changed lines, excluding generated code.
@@ -153,7 +179,7 @@ This recovery path is acceptable, but agents should avoid needing it by using `g
 - Multiple commits per PR are fine while developing.
 - Each PR must be understandable in isolation and reviewable in order.
 - CI must pass for the PR being merged.
-- Merge from the bottom of the stack upward.
+- Merge from the bottom of the stack upward, one PR at a time, following `Merging And Branch Cleanup` above.
 - Human review is required for every PR.
 - A PR that changes rendering carries before/after evidence. Capture "before" from the PR's parent branch with the same seeded data, viewport, and theme; capture "after" from the PR head. Original bug-report screenshots are context, not a controlled before.
 - Publish that evidence as one secret gist per PR (`gh gist create evidence.md gallery.html --desc "..."`, no `--public`) with the images embedded as data URLs, and link it from the PR body. Screenshots never get committed to the repo.
@@ -168,3 +194,5 @@ This recovery path is acceptable, but agents should avoid needing it by using `g
 - Do not depend on the Graphite dashboard for reviewer context.
 - Do not push to `main`.
 - Do not merge PRs unless a human explicitly asks.
+- Never pass `--delete-branch` or `-d` to `gh pr merge`, and never delete a stack branch without the open-PR query in `Merging And Branch Cleanup`.
+- If `gt` reports an untracked branch or an invalid parent, stop and repair with `gt track`; never reset, cherry-pick, or force-push instead.

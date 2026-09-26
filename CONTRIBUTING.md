@@ -25,6 +25,8 @@ Stacked diffs are encouraged for larger work because they preserve review qualit
 
 Use the standard workflow in `agent-guidance/writing/STACKED_DIFFS.md`. The GitHub-visible PR structure is the standard. Graphite CLI is the preferred helper when available, especially for coding agents, but plain Git is fine when it produces the same branch shape, PR titles, and PR descriptions.
 
+Merging and cleanup follow "Merging And Branch Cleanup" in `agent-guidance/writing/STACKED_DIFFS.md`: merges are human-authorized, one PR at a time from the bottom up; never `gh pr merge --delete-branch`/`-d` — deleting a base branch auto-closes the child PRs targeting it; after each merge, restack, resubmit, and verify the remaining PR bases before the next merge; and query GitHub for open PRs targeting a branch before deleting it.
+
 ## CI
 
 CI is the main feedback loop for preventing regressions. It runs on every pull request and on every push to `main`.
