@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { InvitationCard } from "@/components/groups/invitation-card";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
-import { GroupRowSkeleton } from "@/components/shared/skeleton";
+import { GroupsSkeleton } from "@/components/groups/groups-skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isBotGroup } from "@/lib/bot-group";
@@ -128,15 +128,7 @@ export function GroupsListContent() {
   };
 
   if (!hydrated) {
-    return (
-      <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
-        {[1, 2, 3, 4].map((item) => (
-          <div key={item} className="rounded-2xl border bg-card">
-            <GroupRowSkeleton />
-          </div>
-        ))}
-      </div>
-    );
+    return <GroupsSkeleton />;
   }
 
   return (
