@@ -657,6 +657,17 @@
     animation: intro-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  @media (width >= 64rem) {
+    .intro-dot > i,
+    .intro-dot[aria-current="true"] > i {
+      width: 40px;
+      height: 6px;
+    }
+    .intro-dot[data-past] > i {
+      background: color-mix(in oklab, var(--primary) 45%, var(--border));
+    }
+  }
+
   .intro-enter-up {
     animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
