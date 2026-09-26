@@ -692,7 +692,7 @@ Validação sintética agendada contra o deploy de produção, a cada 30 minutos
 
 ## CI
 
-Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada checagem.
+Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada checagem. Nos PRs, um push novo cancela os runs do push anterior que ainda estão na fila ou rodando (`concurrency` agrupado pelo número do PR); pushes na `main` nunca são cancelados.
 
 | Workflow | Quando | O que checa |
 |----------|--------|-------------|
@@ -701,14 +701,14 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 | `synthetic.yml` | PR, push na `main` | Sintéticos Playwright contra Supabase local e um build de produção, no Desktop Chrome, iPhone 13 (WebKit) e Pixel 5 |
 | `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
 | `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
-| `android.yml` | PR, push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
+| `android.yml` | PR que mexe em `android/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
 | `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
 | `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
 | `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |
 
 ### Secrets do build Android (`.github/workflows/android.yml`)
 
-Pull requests só compilam um build debug, sem secrets de assinatura. Pushes na `main` geram um AAB release assinado com o projeto Android nativo do Capacitor.
+Pull requests que mexem no Android (mesmos caminhos da tabela acima) só compilam um build debug, sem secrets de assinatura. Pushes na `main` geram um AAB release assinado com o projeto Android nativo do Capacitor.
 
 **Secrets obrigatórios do job de release**:
 - `ANDROID_KEYSTORE_BASE64`: keystore de release (`.jks`) em Base64

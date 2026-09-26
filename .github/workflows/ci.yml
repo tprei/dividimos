@@ -8,10 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  checks:
+    name: Test, typecheck, lint, build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -22,67 +27,36 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci --ignore-scripts
-      - run: npm test
+      - id: install
+        run: npm ci --ignore-scripts
+
+      # The later checks run even when an earlier one failed so one run
+      # reports every failure at once. Nothing is marked continue-on-error:
+      # a failed step still fails the job.
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx tsc --noEmit
+
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+      - name: Unit tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm test
 
       - name: Migration history checker tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node --test scripts/check-migration-history.test.mjs scripts/verify-migrations.test.mjs scripts/check-migration-safety.test.mjs scripts/ambient/report.test.mjs scripts/ambient/sinks/telegram.test.mjs
 
-  typecheck:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci --ignore-scripts
-
-      - run: npx tsc --noEmit
-
-  lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci --ignore-scripts
-
-      - run: npm run lint
-
-  # tsc accepts code that `next build` rejects: route exports, client/server
-  # boundaries and static analysis only run here. Without this job a PR can be
-  # green and still leave main unbuildable.
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci --ignore-scripts
-
-      # Placeholder values with the right shape: the build reads these at
-      # module scope, it never contacts Supabase.
-      - run: npm run build
+      # tsc accepts code that `next build` rejects: route exports, client/server
+      # boundaries and static analysis only run here. Without this step a PR
+      # can be green and still leave main unbuildable.
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # Placeholder values with the right shape: the build reads these at
+        # module scope, it never contacts Supabase.
+        run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: build-anon-key

@@ -23,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# pull_request_target reads this block from the base branch's copy, so the
+# cancellation only takes effect once this file is merged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   migration-history:
     if: github.event_name == 'pull_request_target'
