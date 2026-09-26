@@ -5,7 +5,6 @@ import {
   cubicBezier,
   motion,
   useMotionValue,
-  useReducedMotion,
   useTransform,
   type AnimationPlaybackControls,
 } from "framer-motion";
@@ -19,6 +18,7 @@ import {
   type MouseEvent,
 } from "react";
 import { haptics } from "@/hooks/use-haptics";
+import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { formatBRL } from "@/lib/currency";
 import {
   INTRO_DEFAULT_SHARERS,
@@ -193,7 +193,7 @@ function onActivateKey(event: KeyboardEvent, activate: () => void) {
 }
 
 export function SplitScene({ stage, onSettle, onBusy }: IntroSceneProps) {
-  const still = useReducedMotion() === true;
+  const still = useMediaQuery(REDUCED_MOTION_QUERY);
   const clipId = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const previousStage = useRef<IntroSceneStage | null>(null);
@@ -201,12 +201,12 @@ export function SplitScene({ stage, onSettle, onBusy }: IntroSceneProps) {
   const [state, setState] = useState<SplitState>(() =>
     stage === "rest" ? replayState(true) : replayState(still),
   );
-  const [trackedStage, setTrackedStage] = useState(stage);
+  const [tracked, setTracked] = useState({ stage, still });
   const settle = useEffectEvent(onSettle);
 
-  if (trackedStage !== stage) {
-    setTrackedStage(stage);
-    setState((previous) => stateForStage(previous, trackedStage, stage, still));
+  if (tracked.stage !== stage || tracked.still !== still) {
+    setTracked({ stage, still });
+    setState((previous) => stateForStage(previous, tracked.stage, stage, still));
   }
 
   useEffect(() => {
