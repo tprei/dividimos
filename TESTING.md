@@ -69,7 +69,7 @@ npm run test:synthetic:ios
 npm run test:synthetic:android
 ```
 
-The mobile projects need WebKit installed once: `npx playwright install --with-deps chromium webkit`. CI runs all three projects as a matrix axis.
+The mobile projects need WebKit installed once: `npx playwright install --with-deps chromium webkit`. CI runs all three projects in each of two shards against one local Supabase and one production server, with three workers shared across the projects. Copies of the same test therefore share a database: never pass a fixed `handle` to `seed.createUser`, because handles are unique.
 
 A second actor inside a synthetic test must come from the `newSession` fixture, not `browser.newContext()`. The raw call drops the project's device profile, so on the iPhone project every actor except the first would silently run at a desktop viewport.
 
@@ -104,8 +104,8 @@ import { test, expect } from "../fixtures";
 
 test("user can see their group", async ({ page, seed, loginAs }) => {
   // 1. Seed test data — each test creates its own users and groups
-  const alice = await seed.createUser({ handle: "alice" });
-  const bob = await seed.createUser({ handle: "bob" });
+  const alice = await seed.createUser({ name: "Alice" });
+  const bob = await seed.createUser({ name: "Bob" });
   const group = await seed.createGroup(alice.id, [bob.id], "Almoço");
 
   // 2. Authenticate as a seeded user (sets session cookies directly)
@@ -147,8 +147,8 @@ To test interactions between two users (e.g., Alice creates, Bob views), use sep
 import { test, expect, loginInContext } from "../fixtures";
 
 test("bob sees alice's expense", async ({ page, seed, loginAs, browser }) => {
-  const alice = await seed.createUser({ handle: "alice" });
-  const bob = await seed.createUser({ handle: "bob" });
+  const alice = await seed.createUser({ name: "Alice" });
+  const bob = await seed.createUser({ name: "Bob" });
   const group = await seed.createGroup(alice.id, [bob.id]);
 
   await seed.createExpense(group.id, alice.id, [alice.id, bob.id]);

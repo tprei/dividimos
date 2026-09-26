@@ -11,10 +11,10 @@ test.describe("Profile lookup", () => {
     seed,
     loginAs,
   }) => {
-    const alice = await seed.createUser({ name: "Alice Lookup", handle: "alice_lookup" });
+    const alice = await seed.createUser({ name: "Alice Lookup" });
     await loginAs(alice, { navigate: false });
 
-    const response = await page.request.get("/api/users/lookup?handle=alice_lookup");
+    const response = await page.request.get(`/api/users/lookup?handle=${alice.handle}`);
     expect(response.status()).toBe(200);
     const body = (await response.json()) as {
       profile: {
@@ -27,7 +27,7 @@ test.describe("Profile lookup", () => {
     };
     expect(body.profile).toEqual({
       id: alice.id,
-      handle: "alice_lookup",
+      handle: alice.handle,
       name: "Alice Lookup",
       avatarUrl: null,
       isBot: false,
@@ -54,7 +54,7 @@ test.describe("Profile lookup", () => {
     seed,
     loginAs,
   }) => {
-    const alice = await seed.createUser({ name: "Alice Direct", handle: "alice_direct" });
+    const alice = await seed.createUser({ name: "Alice Direct" });
     await loginAs(alice, { navigate: false });
 
     const response = await page.request.post(
@@ -64,7 +64,7 @@ test.describe("Profile lookup", () => {
           apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
           authorization: `Bearer ${alice.accessToken}`,
         },
-        data: { p_handle: "alice_direct" },
+        data: { p_handle: alice.handle },
       },
     );
     expect(response.status()).toBeGreaterThanOrEqual(400);
