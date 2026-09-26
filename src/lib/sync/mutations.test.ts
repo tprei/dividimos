@@ -11,7 +11,7 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { rpc, rpcVoid } from "./client";
-import { LedgerError } from "./errors";
+import { LedgerError, ledgerErrorMessage } from "./errors";
 import { loadConversation, refreshExpense, refreshGroup } from "./refresh";
 import {
   createExpense,
@@ -36,6 +36,7 @@ import {
   deactivateInviteLink,
   declineInvitation,
   deleteGroup,
+  dmErrorMessage,
   getOrCreateDm,
   inviteMember,
   createGuestClaimToken,
@@ -1561,6 +1562,22 @@ describe("mutations", () => {
       resolve();
       await Promise.all([first, second]);
       expect(rpcVoid).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("dmErrorMessage", () => {
+    it("uses dm-specific copy for member_excluded and the ledger copy otherwise", () => {
+      expect(dmErrorMessage(new LedgerError("member_excluded"))).toBe(
+        "Essa pessoa não está aceitando conversas suas.",
+      );
+
+      expect(dmErrorMessage(new LedgerError("user_not_found"))).toBe(
+        ledgerErrorMessage(new LedgerError("user_not_found")),
+      );
+
+      const fallback = ledgerErrorMessage(new Error("offline"));
+      expect(dmErrorMessage(new Error("offline"))).toBe(fallback);
+      expect(dmErrorMessage("some string")).toBe(fallback);
     });
   });
 
