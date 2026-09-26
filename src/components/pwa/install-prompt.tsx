@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Smartphone, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Smartphone } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
-import { SectionCard } from "@/components/ui/section-card";
 import { Capacitor } from "@capacitor/core";
 import {
   Dialog,
@@ -51,26 +49,21 @@ function detectPlatform(): "ios" | "android" | null {
   return null;
 }
 
-export function InstallPrompt({
-  variant = "icon",
-}: {
-  variant?: "icon" | "card";
-}) {
+/** `badge` adds the pulsing dot the home header uses to draw the eye. */
+export function InstallPrompt({ badge = false }: { badge?: boolean }) {
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [platform, setPlatform] = useState<"ios" | "android" | null>(null);
 
   const installed = useRef(false);
-  const dismissed = useRef(false);
 
   useEffect(() => {
     // Visibility is recomputed, never written during render: an iPhone that
     // launched from the home screen must not show an install button even when
     // its display-mode query disagrees with navigator.standalone.
     const sync = () => {
-      const installable =
-        !dismissed.current && !installed.current && isInstallableBrowser();
+      const installable = !installed.current && isInstallableBrowser();
       setVisible(installable);
       setPlatform(installable ? detectPlatform() : null);
       if (!installable) {
@@ -140,44 +133,19 @@ export function InstallPrompt({
 
   return (
     <>
-      {variant === "icon" ? (
-        <IconButton aria-label="Instalar no celular" onClick={handleClick}>
-          <Smartphone className="size-4" aria-hidden="true" />
-        </IconButton>
-      ) : (
-        <SectionCard className="relative space-y-3 p-4 pr-14">
-          <div className="flex items-start gap-3">
-            <Smartphone
-              className="mt-0.5 size-5 shrink-0 text-primary"
-              aria-hidden="true"
-            />
-            <div>
-              <p className="text-sm font-semibold">Dividimos no celular</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Suas contas a um toque.
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClick}
-            aria-label="Instalar no celular"
-          >
-            Instalar
-          </Button>
-          <IconButton
-            className="absolute top-2 right-2"
-            aria-label="Dispensar instalação"
-            onClick={() => {
-              dismissed.current = true;
-              setVisible(false);
-            }}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </IconButton>
-        </SectionCard>
-      )}
+      <IconButton
+        aria-label="Instalar no celular"
+        onClick={handleClick}
+        className="relative rounded-full"
+      >
+        <Smartphone className="size-5" aria-hidden="true" />
+        {badge && (
+          <span aria-hidden="true" className="absolute right-2 top-2 flex size-2.5">
+            <span className="absolute inset-0 rounded-full bg-destructive motion-safe:animate-ping" />
+            <span className="relative size-2.5 rounded-full bg-destructive ring-2 ring-background" />
+          </span>
+        )}
+      </IconButton>
 
       <Dialog open={showGuide} onOpenChange={setShowGuide}>
         <DialogContent className="max-w-sm">
