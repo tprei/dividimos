@@ -84,6 +84,9 @@ function snapshot(avatar: GroupAvatar): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
     overview: {
       avatar,
       spending: {

@@ -85,6 +85,9 @@ function snapshot(
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
@@ -653,6 +656,32 @@ describe("applyGroup", () => {
   });
 });
 
+describe("setGroupArchivedAt", () => {
+  it("replaces the snapshot so selector caches bust", () => {
+    const original = snapshot("g1", []);
+    useAppStore.setState({ groups: { g1: original }, groupOrder: ["g1"] });
+
+    useAppStore.getState().setGroupArchivedAt("g1", "2026-09-10T08:00:00.000Z");
+
+    const state = useAppStore.getState();
+    expect(state.groups.g1).not.toBe(original);
+    expect(state.groups.g1?.archivedAt).toBe("2026-09-10T08:00:00.000Z");
+    expect(state.groups.g1?.members).toBe(original.members);
+    expect(state.groupOrder).toEqual(["g1"]);
+  });
+
+  it("clears the timestamp with null and ignores absent groups", () => {
+    const original = snapshot("g1", [], { archivedAt: "2026-09-10T08:00:00.000Z" });
+    useAppStore.setState({ groups: { g1: original }, groupOrder: ["g1"] });
+
+    useAppStore.getState().setGroupArchivedAt("g1", null);
+    expect(useAppStore.getState().groups.g1?.archivedAt).toBeNull();
+
+    useAppStore.getState().setGroupArchivedAt("missing", "2026-09-10T08:00:00.000Z");
+    expect(useAppStore.getState().groups.missing).toBeUndefined();
+  });
+});
+
 describe("reset", () => {
   it("restores the initial state, keeps hydrated and clears persisted storage", () => {
     useAppStore.getState().applyBootstrap({
@@ -872,6 +901,41 @@ describe("migrateAppState", () => {
 
     expect(migrated.me?.isBot).toBe(false);
     expect(migrated.groups.g1?.members[0]?.user.isBot).toBe(false);
+  });
+
+  it("backfills the archive lifecycle fields on snapshots persisted before version 7", () => {
+    const legacyGroup: Record<string, unknown> = { ...snapshot("g1", []) };
+    delete legacyGroup.archivedAt;
+    delete legacyGroup.financialHistorySharedAt;
+    delete legacyGroup.formerMembers;
+
+    const migrated = migrateAppState({
+      groups: { g1: legacyGroup },
+      groupOrder: ["g1"],
+    });
+
+    expect(migrated.groups.g1?.archivedAt).toBeNull();
+    expect(migrated.groups.g1?.financialHistorySharedAt).toBeNull();
+    expect(migrated.groups.g1?.formerMembers).toEqual([]);
+  });
+
+  it("keeps persisted lifecycle values when present", () => {
+    const archivedSnapshot = snapshot("g1", [], {
+      archivedAt: "2026-09-10T08:00:00.000Z",
+      financialHistorySharedAt: "2026-09-09T08:00:00.000Z",
+      formerMembers: [{ id: "u2", handle: "bob", name: "Bob", avatarUrl: null, isBot: false }],
+    });
+
+    const migrated = migrateAppState({
+      groups: { g1: archivedSnapshot },
+      groupOrder: ["g1"],
+    });
+
+    expect(migrated.groups.g1?.archivedAt).toBe("2026-09-10T08:00:00.000Z");
+    expect(migrated.groups.g1?.financialHistorySharedAt).toBe("2026-09-09T08:00:00.000Z");
+    expect(migrated.groups.g1?.formerMembers).toEqual([
+      { id: "u2", handle: "bob", name: "Bob", avatarUrl: null, isBot: false },
+    ]);
   });
 });
 

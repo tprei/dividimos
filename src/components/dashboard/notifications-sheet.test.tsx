@@ -63,6 +63,9 @@ function snapshot(id = "g1"): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-09-18T12:00:00.000Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
 }
 

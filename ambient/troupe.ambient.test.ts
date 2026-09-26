@@ -7,7 +7,7 @@ import {
   decodeGroupSnapshot,
 } from "../src/lib/ledger/decode";
 import { transfersFromBalances } from "../src/lib/ledger/transfers";
-import type { BalanceRow, GroupSnapshot, WireIssue } from "../src/types/ledger";
+import type { BalanceRow, WireGroupSnapshot, WireIssue } from "../src/types/ledger";
 import {
   BOT_SPECS,
   ensureTroupe,
@@ -58,7 +58,7 @@ function must<T>(result: ValidationResult<T, WireIssue>): T {
   return result.value;
 }
 
-async function snapshotFor(actorId: string): Promise<GroupSnapshot> {
+async function snapshotFor(actorId: string): Promise<WireGroupSnapshot> {
   const client = await troupe.seed.authenticateAs(actorId);
   const { data, error } = await client.rpc("get_group", {
     p_group_id: troupe.groupId,

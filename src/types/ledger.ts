@@ -301,7 +301,26 @@ export interface GroupSnapshot {
   lastActivityAt: string | null;
   expenseCount: number;
   pairwiseEdges: Transfer[];
+  archivedAt: string | null;
+  financialHistorySharedAt: string | null;
+  formerMembers: UserProfile[];
   overview?: GroupOverviewData;
+}
+
+export type WireGroupSnapshot = Omit<
+  GroupSnapshot,
+  "archivedAt" | "financialHistorySharedAt" | "formerMembers"
+>;
+
+export interface WireBootstrap {
+  me: Me;
+  groups: WireGroupSnapshot[];
+  serverTime: string;
+}
+
+export interface GroupArchiveAck {
+  groupId: string;
+  archivedAt: string | null;
 }
 
 export interface Bootstrap {

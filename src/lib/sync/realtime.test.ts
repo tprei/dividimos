@@ -68,6 +68,9 @@ const baseSnapshot: GroupSnapshot = {
   lastMessage: null,
   lastActivityAt: "2026-09-01T10:00:00.000Z",
   pairwiseEdges: [],
+  archivedAt: null,
+  financialHistorySharedAt: null,
+  formerMembers: [],
 };
 
 const incomingMessage: ChatMessage = {
@@ -394,7 +397,7 @@ describe("startRealtime", () => {
   }
 
   function bootstrapReads(): number {
-    return rpcMock.mock.calls.filter(([name]) => name === "bootstrap_overview").length;
+    return rpcMock.mock.calls.filter(([name]) => name === "bootstrap_overview_v2").length;
   }
 
   it("opens the user channel with the membership event once me exists", () => {

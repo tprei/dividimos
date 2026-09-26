@@ -107,6 +107,9 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
       { fromKind: "user", fromId: "user-4", toId: "user-3", amountCents: 7900 },
       { fromKind: "user", fromId: "user-4", toId: "user-2", amountCents: 1100 },
     ],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
     ...overrides,
   };
 }

@@ -1,7 +1,6 @@
 import type { ValidationResult } from "@/lib/expense-money";
 import type {
   BalanceRow,
-  Bootstrap,
   ChatMessage,
   ChatLastMessage,
   PageCursor,
@@ -15,7 +14,6 @@ import type {
   GroupEvent,
   GroupKind,
   GroupMember,
-  GroupSnapshot,
   GuestClaimResolution,
   GuestClaimStatus,
   InviteLink,
@@ -31,6 +29,8 @@ import type {
   Transfer,
   VendorCharge,
   VendorChargeStatus,
+  WireBootstrap,
+  WireGroupSnapshot,
   WireIssue,
 } from "@/types/ledger";
 import {
@@ -579,7 +579,7 @@ const GROUP_SNAPSHOT_KEYS = [
 export function decodeGroupSnapshot(
   raw: unknown,
   path: Path = [],
-): ValidationResult<GroupSnapshot, WireIssue> {
+): ValidationResult<WireGroupSnapshot, WireIssue> {
   if (!isRecord(raw)) return fail(path);
   const k = exactKeys(raw, GROUP_SNAPSHOT_KEYS, path);
   if (!k.ok) return k;
@@ -647,7 +647,7 @@ const BOOTSTRAP_KEYS = ["me", "groups", "serverTime"] as const;
 export function decodeBootstrap(
   raw: unknown,
   path: Path = [],
-): ValidationResult<Bootstrap, WireIssue> {
+): ValidationResult<WireBootstrap, WireIssue> {
   if (!isRecord(raw)) return fail(path);
   const k = exactKeys(raw, BOOTSTRAP_KEYS, path);
   if (!k.ok) return k;

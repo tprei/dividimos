@@ -131,6 +131,9 @@ function snapshotOf(state: ServerState): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
 }
 
@@ -255,7 +258,7 @@ describe("optimistic mutations under interleaved responses", () => {
                 return [];
               case "get_expense_context":
                 return { detail: detailOf(server), assignmentRoom: null };
-              case "get_group_overview":
+              case "get_group_overview_v2":
                 return snapshotOf(server);
               case "get_expense":
                 return detailOf(server);

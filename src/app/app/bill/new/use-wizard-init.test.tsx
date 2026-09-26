@@ -71,6 +71,9 @@ function groupSnapshot(): GroupSnapshot {
     lastActivityAt: "2026-01-01T00:00:00Z",
     expenseCount: 0,
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
   };
 }
 

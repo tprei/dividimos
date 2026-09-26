@@ -26,6 +26,7 @@ import {
 } from "./mutations";
 import {
   acceptInvitation,
+  archiveGroup,
   claimGuest,
   cancelVendorCharge,
   clearPendingVendorChargeCancellations,
@@ -44,6 +45,7 @@ import {
   retryPendingVendorChargeCancellations,
   recordVendorCharge,
   removeMember,
+  unarchiveGroup,
   updateProfile,
 } from "./mutations-group";
 
@@ -131,6 +133,9 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
 }
 
@@ -1285,6 +1290,100 @@ describe("mutations", () => {
       await expect(leaving).rejects.toThrow();
       expect(useAppStore.getState().groups).toEqual({});
       expect(refreshGroup).not.toHaveBeenCalled();
+    });
+
+    it("archives optimistically and applies the ack timestamp", async () => {
+      const snapshot = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: snapshot },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({
+        groupId: "g1",
+        archivedAt: "2026-09-10T08:00:00.000Z",
+      });
+      await archiveGroup("g1");
+
+      expect(useAppStore.getState().groups.g1?.archivedAt).toBe("2026-09-10T08:00:00.000Z");
+      expect(rpc).toHaveBeenCalledWith(
+        "archive_group",
+        { p_group_id: "g1" },
+        expect.any(Function),
+      );
+    });
+
+    it("restores the prior archive state when archiving fails", async () => {
+      const snapshot = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: snapshot },
+        groupOrder: ["g1"],
+      });
+
+      const failing = Promise.withResolvers<unknown>();
+      vi.mocked(rpc).mockImplementationOnce(() => failing.promise);
+      const pending = archiveGroup("g1");
+      expect(useAppStore.getState().groups.g1?.archivedAt).not.toBeNull();
+
+      failing.reject(new LedgerError("outstanding_balance"));
+      await expect(pending).rejects.toMatchObject({ code: "outstanding_balance" });
+
+      const restored = useAppStore.getState().groups.g1;
+      expect(restored?.archivedAt).toBeNull();
+      expect(restored).toEqual(snapshot);
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
+    });
+
+    it("unarchives optimistically and restores the archived timestamp when it fails", async () => {
+      const snapshot = makeGroupSnapshot("g1");
+      snapshot.archivedAt = "2026-09-10T08:00:00.000Z";
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: snapshot },
+        groupOrder: ["g1"],
+      });
+
+      const failing = Promise.withResolvers<unknown>();
+      vi.mocked(rpc).mockImplementationOnce(() => failing.promise);
+      const pending = unarchiveGroup("g1");
+      expect(useAppStore.getState().groups.g1?.archivedAt).toBeNull();
+
+      failing.reject(new LedgerError("network"));
+      await expect(pending).rejects.toMatchObject({ code: "network" });
+      expect(useAppStore.getState().groups.g1?.archivedAt).toBe("2026-09-10T08:00:00.000Z");
+      expect(useAppStore.getState().groups.g1).toEqual(snapshot);
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", archivedAt: null });
+      await unarchiveGroup("g1");
+      expect(useAppStore.getState().groups.g1?.archivedAt).toBeNull();
+    });
+
+    it("keeps a refresh that landed before the ack and does not re-archive the group", async () => {
+      const snapshot = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: snapshot },
+        groupOrder: ["g1"],
+      });
+
+      const ack = Promise.withResolvers<unknown>();
+      vi.mocked(rpc).mockImplementationOnce(() => ack.promise);
+      const pending = archiveGroup("g1");
+      expect(useAppStore.getState().groups.g1?.archivedAt).not.toBeNull();
+
+      useAppStore.getState().setGroupArchivedAt("g1", null);
+
+      ack.resolve({ groupId: "g1", archivedAt: "2026-09-10T08:00:00.000Z" });
+      await pending;
+
+      expect(useAppStore.getState().groups.g1?.archivedAt).toBeNull();
     });
 
     it("keeps the previous account's profile out of the store after a switch", async () => {
