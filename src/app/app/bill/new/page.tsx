@@ -15,6 +15,7 @@ import type { ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import { ReplaceDraftDialog } from "@/components/bill/wizard/replace-draft-dialog";
+import { NewBillSkeleton } from "@/components/bill/wizard/new-bill-skeleton";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
@@ -827,7 +828,7 @@ function NewBillPageContent() {
 
 export default function NewBillPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<NewBillSkeleton />}>
       <NewBillPageContent />
     </Suspense>
   );
