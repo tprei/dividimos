@@ -6,6 +6,8 @@ export const springs = {
   soft: { type: "spring", stiffness: 200, damping: 20 } as Transition,
   bouncy: { type: "spring", stiffness: 500, damping: 15 } as Transition,
   sheet: { type: "spring", damping: 25, stiffness: 300 } as Transition,
+  /** Slightly overdamped: big surfaces (hero, view swaps) settle without bounce. */
+  reveal: { type: "spring", stiffness: 260, damping: 34 } as Transition,
 };
 
 const durations = { fast: 0.12, base: 0.2, slow: 0.32 } as const;
