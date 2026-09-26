@@ -41,7 +41,7 @@ test.describe("Expenses with a pending invitee", () => {
     expect(members?.[0]?.status).toBe("invited");
   });
 
-  test("declining the invitation invalidates the shared expense", async ({
+  test("declining the invitation turns the invitee's share into a guest", async ({
     page,
     seed,
     loginAs,
@@ -68,11 +68,12 @@ test.describe("Expenses with a pending invitee", () => {
       .from("expenses")
       .select("id, status")
       .eq("id", expense.id);
-    expect(rows?.[0]?.status).toBe("deleted");
+    expect(rows?.[0]?.status).toBe("active");
 
     await loginAs(alice);
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("Conta recusada")).not.toBeVisible();
+    await page.getByRole("radio", { name: "Contas" }).click();
+    await expect(page.getByText("Conta recusada").first()).toBeVisible();
   });
 });

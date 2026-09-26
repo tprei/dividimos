@@ -1738,7 +1738,7 @@ WHERE (
         expect(message).toContain("counterparty_not_member");
       });
 
-      it("invalidates only the expenses naming the decliner", async () => {
+      it("keeps the decliner's bill alive as a guest share and the others untouched", async () => {
         const [creator, invitee, other] = await createTestUsers(3);
         const { groupId } = await createGroup(creator, "Recusa", [invitee.id, other.id]);
         await acceptInvitation(other, groupId);
@@ -1757,25 +1757,46 @@ WHERE (
         await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
 
         const statuses = await withPg(async (pg) => {
-          const result = await pg.query<{ id: string; status: string }>(
-            "select id, status from public.expenses where group_id = $1",
+          const result = await pg.query<{
+            id: string;
+            status: string;
+            current_version_no: number;
+          }>(
+            "select id, status, current_version_no from public.expenses where group_id = $1",
             [groupId],
           );
-          return new Map(result.rows.map((row) => [row.id, row.status]));
+          return new Map(result.rows.map((row) => [row.id, row]));
         });
-        expect(statuses.get(withInvitee.expenseId)).toBe("deleted");
-        expect(statuses.get(withoutInvitee.expenseId)).toBe("active");
+        expect(statuses.get(withInvitee.expenseId)).toMatchObject({
+          status: "active",
+          current_version_no: 2,
+        });
+        expect(statuses.get(withoutInvitee.expenseId)).toMatchObject({
+          status: "active",
+          current_version_no: 1,
+        });
+
+        const converted = (
+          await withPg(async (pg) =>
+            pg.query<{
+              payload: { participants: Array<{ kind: string; userId?: string; displayName?: string }> };
+            }>(
+              "select payload from public.expense_versions where expense_id = $1 and version_no = 2",
+              [withInvitee.expenseId],
+            )
+          )
+        ).rows[0]?.payload?.participants;
+        expect(converted?.[0]).toEqual({ kind: "user", userId: creator.id });
+        expect(converted?.[1]?.kind).toBe("guest");
+        expect(converted?.[1]?.displayName).toBe(invitee.name);
 
         const balances = await getBalances(groupId);
         expect(balances.some((row) => row.participant_id === invitee.id)).toBe(false);
-        expect(balances.find((row) => row.participant_id === other.id)?.net_cents).toBe(-3000);
-
-        const invalidated = await rpc<{ participants: unknown[] }>(
-          authenticateAs(creator),
-          "get_expense",
-          { p_expense_id: withInvitee.expenseId },
-        );
-        expect(invalidated.participants).toEqual([]);
+        const netOf = (userId: string): number | undefined =>
+          balances.find((row) => row.kind === "user" && row.participant_id === userId)?.net_cents;
+        expect(netOf(creator.id)).toBe(5000);
+        expect(netOf(other.id)).toBe(-3000);
+        expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-2000);
 
         const snapshot = await rpc<{ recentExpenses: Array<{ id: string; myShareCents: number }> }>(
           authenticateAs(creator),
@@ -1783,7 +1804,7 @@ WHERE (
           { p_group_id: groupId },
         );
         const summary = snapshot.recentExpenses.find((row) => row.id === withInvitee.expenseId);
-        expect(summary?.myShareCents).toBe(0);
+        expect(summary?.myShareCents).toBe(2000);
       });
     });
 
