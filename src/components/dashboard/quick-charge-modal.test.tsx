@@ -92,7 +92,7 @@ describe("QuickChargeModal", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Copiar código Pix")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Copiar código" })).toBeInTheDocument();
     });
 
     const storeCharges = useAppStore.getState().vendorCharges;
@@ -335,7 +335,7 @@ describe("QuickChargeModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     const copyButton = await waitFor(() => {
-      const button = screen.getByRole("button", { name: /Copiar código Pix/i });
+      const button = screen.getByRole("button", { name: "Copiar código" });
       expect(button).toBeEnabled();
       return button;
     });
@@ -348,7 +348,9 @@ describe("QuickChargeModal", () => {
       );
     });
     expect(haptics.error).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("00020126580014br.gov.bcb.pix")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Código Pix copia e cola" })).toHaveValue(
+      "00020126580014br.gov.bcb.pix",
+    );
     expect(copyButton).toBeEnabled();
   });
 
@@ -361,7 +363,7 @@ describe("QuickChargeModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gerar QR" }));
 
     const copyButton = await waitFor(() => {
-      const button = screen.getByRole("button", { name: /Copiar código Pix/i });
+      const button = screen.getByRole("button", { name: "Copiar código" });
       expect(button).toBeEnabled();
       return button;
     });
