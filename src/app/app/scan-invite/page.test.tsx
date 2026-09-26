@@ -18,12 +18,15 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/bill/qr-scanner-view", () => ({
-  QrScannerView: ({ onDecode }: { onDecode: (data: string) => void }) => (
-    <button
-      type="button"
-      aria-label="decodificar"
-      onClick={() => onDecode(decodeHolder.payload)}
-    />
+  QrScannerView: ({ onDecode, collapsed, onExpand }: { onDecode: (data: string) => void; collapsed?: boolean; onExpand?: () => void }) => (
+    <div data-testid="scanner" data-collapsed={String(Boolean(collapsed))}>
+      <button
+        type="button"
+        aria-label="decodificar"
+        onClick={() => onDecode(decodeHolder.payload)}
+      />
+      {collapsed && <button type="button" onClick={onExpand}>Mostrar câmera</button>}
+    </div>
   ),
 }));
 
@@ -70,6 +73,30 @@ describe("ScanInvitePage router", () => {
     await user.type(field, TOKEN);
     await user.click(screen.getByRole("button", { name: "Abrir convite" }));
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/app/groups/g-manual"));
+  });
+
+  it("folds the camera away while a code is typed and brings it back after", async () => {
+    const user = userEvent.setup();
+    render(<ScanInvitePage />);
+    const scanner = screen.getByTestId("scanner");
+    const field = screen.getByLabelText("Link ou código");
+
+    await user.click(field);
+    expect(scanner).toHaveAttribute("data-collapsed", "true");
+    await user.type(field, "abc");
+    await user.pointer({ keys: "[MouseLeft>]", target: screen.getByRole("button", { name: "Abrir convite" }) });
+    expect(field).toHaveFocus();
+    expect(scanner).toHaveAttribute("data-collapsed", "true");
+    await user.pointer({ keys: "[/MouseLeft]" });
+
+    await user.click(screen.getByRole("button", { name: "Mostrar câmera" }));
+    expect(scanner).toHaveAttribute("data-collapsed", "false");
+    expect(field).not.toHaveFocus();
+
+    await user.click(field);
+    await user.tab();
+    await user.tab();
+    expect(scanner).toHaveAttribute("data-collapsed", "false");
   });
 
   it("joins the group and navigates to it when a group invite is scanned", async () => {
@@ -144,5 +171,29 @@ describe("ScanInvitePage router", () => {
       expect(toast.error).toHaveBeenCalledWith("Não achamos esse perfil.");
     });
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("remounts the camera expanded after dismissing a profile submitted by Enter", async () => {
+    const user = userEvent.setup();
+    mocks.lookupUserByHandle.mockResolvedValueOnce({
+      id: "user-8",
+      handle: "beltrano",
+      name: "Beltrano Souza",
+      avatarUrl: null,
+      isBot: false,
+    });
+    render(<ScanInvitePage />);
+
+    const field = screen.getByLabelText("Link ou código");
+    await user.click(field);
+    expect(screen.getByTestId("scanner")).toHaveAttribute("data-collapsed", "true");
+
+    await user.type(field, `${PROD}/u/beltrano{Enter}`);
+
+    expect(await screen.findByText("Beltrano Souza")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByTestId("scanner")).toHaveAttribute("data-collapsed", "false");
   });
 });
