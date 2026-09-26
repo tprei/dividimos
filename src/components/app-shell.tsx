@@ -82,7 +82,7 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
               onClick={() => haptics.tap()}
               className={cn(
                 "relative flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:w-full md:py-3 compact:md:w-auto compact:md:py-0",
-                primary && "-mt-5 md:order-first md:mt-0 md:mb-3 compact:mt-0 compact:md:order-none compact:md:mb-0",
+                primary && "-mt-5 md:order-first md:mt-0 md:mb-3 compact:mt-0 compact:md:order-none compact:md:mb-0 max-md:group-has-[[data-slot=chat-composer]]/shell:mt-0",
                 isActive ? "text-primary-text" : "text-muted-foreground",
               )}
             >
@@ -93,7 +93,7 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
               />}
               <motion.span
                 whileTap={reducedMotion ? undefined : { scale: 0.92 }}
-                className={cn("relative flex items-center justify-center", primary && "gradient-primary size-14 rounded-2xl text-gradient-foreground shadow-lg shadow-primary/20 compact:size-11")}
+                className={cn("relative flex items-center justify-center", primary && "gradient-primary size-14 rounded-2xl text-gradient-foreground shadow-lg shadow-primary/20 compact:size-11 max-md:group-has-[[data-slot=chat-composer]]/shell:size-11")}
               >
                 <item.icon aria-hidden="true" className={primary ? "size-6" : "size-5"} strokeWidth={isActive ? 2.5 : 2} />
                 {"badge" in item && <UnreadBadge count={unreadTotal} />}
@@ -490,7 +490,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
         </div>
       ) : (
-        <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background md:flex-row compact:md:flex-col">
+        <div className="group/shell relative flex h-full min-h-0 flex-col overflow-hidden bg-background md:flex-row compact:md:flex-col">
 
           <PullToRefreshIndicator
             distance={pullDistance}
@@ -532,7 +532,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <motion.div
                   animate={{ y: contentOffset }}
                   transition={pullDistance > 0 ? { duration: 0 } : springs.snappy}
-                  className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0")}
+                  className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0 has-[[data-slot=chat-composer]]:pb-0")}
                 >
                   {children}
                 </motion.div>

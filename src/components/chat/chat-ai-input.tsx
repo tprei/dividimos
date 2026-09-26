@@ -1,10 +1,15 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import {
+  ComposerDock,
+  ComposerField,
+  ComposerSendButton,
+  isImeComposing,
+} from "@/components/chat/composer";
 import { ChatDraftCard, type ChatDraftStatus } from "@/components/chat/chat-draft-card";
 import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
@@ -63,11 +68,14 @@ export function ChatAiInput(props: ChatAiInputProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Bumped on every edit: a success only clears text the user has not touched
-  // since submitting.
+  // since submitting, or text that is still exactly what was sent (an IME that
+  // commits its marked text after the send bumps this without a real edit).
   const editGenerationRef = useRef(0);
 
   const handleSubmit = useCallback(async () => {
-    const trimmed = text.trim();
+    // The field, not state, is the truth: an IME can still hold the last
+    // characters in marked text that has not reached onChange yet.
+    const trimmed = (inputRef.current?.value ?? text).trim();
     if (!trimmed) return;
 
     if (isAiMode) {
@@ -91,11 +99,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
         setSendError(outcome.message);
         return;
       }
+      const fieldHoldsSent = (inputRef.current?.value ?? "").trim() === trimmed;
       if (
-        editGenerationRef.current === submittedGeneration &&
+        (editGenerationRef.current === submittedGeneration || fieldHoldsSent) &&
         submittedGroupId === groupId
       ) {
         setText("");
+        if (inputRef.current) inputRef.current.value = "";
       }
     } catch {
       setSendError("Não foi possível enviar. Tente novamente.");
@@ -107,7 +117,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
         e.preventDefault();
         handleSubmit();
       }
@@ -152,7 +162,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
   );
 
   return (
-    <div className="shrink-0 space-y-2 bg-background px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <ComposerDock>
       <AnimatePresence mode="wait">
         {isParsing && (
           <motion.div
@@ -218,21 +228,16 @@ export function ChatAiInput(props: ChatAiInputProps) {
         )}
       </AnimatePresence>
 
-      <div
-        className={cn(
-          "flex items-center gap-1 rounded-[0.75rem] border border-border bg-card p-1 transition-colors focus-within:ring-3 focus-within:ring-ring/50",
-          isAiMode && "border-primary/60",
-        )}
-      >
+      <ComposerField active={isAiMode}>
         <IconButton
           onClick={handleSparkleToggle}
           disabled={disabled}
           data-testid="sparkle-toggle"
           title={isAiMode ? "Modo IA ativo — pressione Esc para sair" : "Ativar IA para registrar conta"}
           className={cn(
-            isAiMode || hasDraft || isParsing
-              ? "bg-primary/15 text-primary-text hover:bg-primary/20 hover:text-primary-text"
-              : "text-muted-foreground",
+            "rounded-full text-primary-text hover:text-primary-text",
+            (isAiMode || hasDraft || isParsing) &&
+              "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90",
           )}
           aria-label={isAiMode ? "Desativar IA" : "Ativar IA para contas"}
           aria-pressed={isAiMode}
@@ -265,23 +270,14 @@ export function ChatAiInput(props: ChatAiInputProps) {
           <div className="flex shrink-0 items-center">{actions}</div>
         )}
 
-        <Button
-          type="button"
-          size="icon"
+        <ComposerSendButton
           onClick={handleSubmit}
           disabled={disabled || isParsing || hasDraft || sending || !text.trim()}
+          sending={sending}
           data-testid="send-button"
-          aria-label="Enviar"
-        >
-          {sending ? (
-            <Loader2 className="animate-spin" />
-          ) : isAiMode ? (
-            <Sparkles />
-          ) : (
-            <Send />
-          )}
-        </Button>
-      </div>
-    </div>
+          aria-label={isAiMode ? "Registrar conta com IA" : "Enviar"}
+        />
+      </ComposerField>
+    </ComposerDock>
   );
 }

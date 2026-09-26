@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  ComposerDock,
+  ComposerField,
+  ComposerSendButton,
+  isImeComposing,
+} from "@/components/chat/composer";
 import { haptics } from "@/hooks/use-haptics";
 
 interface ChatInputProps {
@@ -29,7 +33,9 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
   }, []);
 
   const handleSend = useCallback(async () => {
-    const trimmed = value.trim();
+    // The field, not state, is the truth: an IME can still hold the last
+    // characters in marked text that has not reached onChange yet.
+    const trimmed = (textareaRef.current?.value ?? value).trim();
     if (!trimmed || sending || disabled) return;
 
     setSending(true);
@@ -38,6 +44,7 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
       await onSend(trimmed);
       setValue("");
       if (textareaRef.current) {
+        textareaRef.current.value = "";
         textareaRef.current.style.height = "auto";
       }
     } catch (error) {
@@ -50,7 +57,7 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
         e.preventDefault();
         handleSend();
       }
@@ -59,8 +66,8 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
   );
 
   return (
-    <div className="shrink-0 bg-background px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-      <div className="flex items-end gap-1 rounded-[0.75rem] border border-border bg-card p-1 focus-within:ring-3 focus-within:ring-ring/50">
+    <ComposerDock>
+      <ComposerField align="end">
         <textarea
           ref={textareaRef}
           value={value}
@@ -73,19 +80,16 @@ export function ChatInput({ onSend, onError, disabled, actions }: ChatInputProps
           disabled={disabled || sending}
           rows={1}
           aria-label="Mensagem"
-          className="max-h-[120px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-sm"
+          className="max-h-[120px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-3 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-sm"
         />
         {actions && value.length === 0 && <div className="flex shrink-0 items-center">{actions}</div>}
-        <Button
-          type="button"
-          size="icon"
+        <ComposerSendButton
           onClick={handleSend}
           disabled={!canSend}
+          sending={sending}
           aria-label="Enviar mensagem"
-        >
-          <Send />
-        </Button>
-      </div>
-    </div>
+        />
+      </ComposerField>
+    </ComposerDock>
   );
 }

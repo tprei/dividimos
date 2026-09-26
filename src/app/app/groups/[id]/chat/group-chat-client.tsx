@@ -272,7 +272,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
               aria-label="Registrar pagamento"
               title="Registrar pagamento"
               aria-haspopup="dialog"
-              className="text-muted-foreground"
+              className="rounded-full text-success-text hover:text-success-text"
               disabled={paymentStatus === "confirming"}
               onClick={() => {
                 if (paymentStatus === "confirming") return;
