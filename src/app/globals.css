@@ -63,6 +63,7 @@
   --color-info-text: var(--info-text);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
   --color-gold: var(--gold);
   --color-gold-foreground: var(--gold-foreground);
   --color-income: var(--income);
@@ -127,6 +128,9 @@
 
   --warning: oklch(0.75 0.15 75);
   --warning-foreground: oklch(0.25 0.05 75);
+  /* For warning text on a tint or the card; warning-foreground is only for a
+     solid bg-warning fill, and is near-invisible on dark surfaces. */
+  --warning-text: oklch(0.50 0.12 65);
 
   /* Bot-run groups. Deeper and less orange than warning, so a golden row
      reads as "the bots live here" and never as "something needs attention". */
@@ -220,6 +224,7 @@
 
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.20 0.05 75);
+  --warning-text: oklch(0.86 0.13 82);
 
   --gold: oklch(0.82 0.13 88);
   --gold-foreground: oklch(0.22 0.05 88);

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { centsToBasisPoints,
+  shareArcs,
+  type ShareArc,
   computeDivision,
   divisionForItem,
   divisionStatusText,
@@ -225,5 +227,66 @@ describe("centsToBasisPoints", () => {
 
   it("returns zero for a non-positive total", () => {
     expect(centsToBasisPoints(500, 0)).toBe(0);
+  });
+});
+
+describe("shareArcs", () => {
+  const arcAngles = (arcs: ShareArc[]) =>
+    arcs.map(({ participantId, startDegrees, sweepDegrees }) => [participantId, startDegrees, sweepDegrees]);
+
+  it("splits the circle in halves for an equal split between 2 of 3 people", () => {
+    const arcs = shareArcs(["a", "b", "c"], equalDivision(["a", "b"], 20_000));
+
+    expect(arcAngles(arcs)).toEqual([
+      ["a", 0, 180],
+      ["b", 180, 180],
+      ["c", 360, 0],
+    ]);
+    expect(arcs.map((arc) => arc.consumed)).toEqual([true, true, false]);
+    expect(arcs.map((arc) => arc.basisPoints)).toEqual([5_000, 5_000, 0]);
+  });
+
+  it("follows the row order, not the order the shares were stored in", () => {
+    const division = { mode: "fixed" as const, shares: [{ participantId: "c", cents: 785 }, { participantId: "a", cents: 149 }, { participantId: "b", cents: 66 }] };
+
+    const arcs = shareArcs(["a", "b", "c"], division);
+
+    expect(arcs.map((arc) => arc.cents)).toEqual([149, 66, 785]);
+    expect(arcs[0].startDegrees).toBe(0);
+    expect(arcs[0].sweepDegrees).toBeCloseTo(53.64, 10);
+    expect(arcs[1].startDegrees).toBeCloseTo(53.64, 10);
+    expect(arcs[1].sweepDegrees).toBeCloseTo(23.76, 10);
+    expect(arcs[2].startDegrees).toBeCloseTo(77.4, 10);
+    expect(arcs[2].startDegrees + arcs[2].sweepDegrees).toBeCloseTo(360, 10);
+    expect(arcs.map((arc) => arc.basisPoints)).toEqual([1_490, 660, 7_850]);
+  });
+
+  it("gives the remainder centavo its own sliver and still closes the circle", () => {
+    const arcs = shareArcs(["a", "b", "c"], equalDivision(["a", "b", "c"], 1_000));
+
+    expect(arcs.map((arc) => arc.cents)).toEqual([334, 333, 333]);
+    expect(arcs[0].sweepDegrees).toBeCloseTo(120.24, 10);
+    expect(arcs[1].sweepDegrees).toBeCloseTo(119.88, 10);
+    expect(arcs[2].startDegrees + arcs[2].sweepDegrees).toBeCloseTo(360, 10);
+  });
+
+  it("draws a full ring for a single consumer", () => {
+    expect(arcAngles(shareArcs(["a", "b"], equalDivision(["b"], 999)))).toEqual([
+      ["a", 0, 0],
+      ["b", 0, 360],
+    ]);
+  });
+
+  it("keeps a zero-cent share in the division without an arc", () => {
+    const division = { mode: "fixed" as const, shares: [{ participantId: "a", cents: 0 }, { participantId: "b", cents: 500 }] };
+
+    const [a, b] = shareArcs(["a", "b"], division);
+
+    expect(a).toMatchObject({ consumed: true, cents: 0, sweepDegrees: 0 });
+    expect(b).toMatchObject({ startDegrees: 0, sweepDegrees: 360 });
+  });
+
+  it("draws nothing for an item nobody took yet", () => {
+    expect(shareArcs(["a", "b"], null).every((arc) => !arc.consumed && arc.sweepDegrees === 0)).toBe(true);
   });
 });

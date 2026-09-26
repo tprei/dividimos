@@ -293,7 +293,7 @@ export function PayerStep({
                 ? "text-muted-foreground"
                 : remainingBasisPoints < 0
                   ? "text-destructive-text"
-                  : "text-warning-foreground";
+                  : "text-warning-text";
             return (
               <div className="space-y-3">
                 {participants.map((user, index) => {
@@ -370,7 +370,7 @@ export function PayerStep({
                         ? "bg-success/10 text-success-text"
                         : remainingBasisPoints < 0
                           ? "bg-destructive/10 text-destructive-text"
-                          : "bg-warning/10 text-warning-foreground",
+                          : "bg-warning/10 text-warning-text",
                     )}
                   >
                     Total: {percentLabel(totalBasisPoints)}% · {formatBRL(allocatedTotal)}
@@ -487,7 +487,7 @@ export function PayerStep({
                   exit={{ opacity: 0 }}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
                     remaining > 0
-                      ? "bg-warning/10 text-warning-foreground"
+                      ? "bg-warning/10 text-warning-text"
                       : "bg-destructive/10 text-destructive-text"
                   }`}
                 >

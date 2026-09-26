@@ -170,7 +170,7 @@ export function ChatDraftCard({
 
       {isLowConfidence && !isConfirmed && (
         <div
-          className="mt-3 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground"
+          className="mt-3 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-text"
           data-testid="low-confidence-warning"
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
