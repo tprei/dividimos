@@ -9,7 +9,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 const getOrCreateDmMock = vi.fn();
-vi.mock("@/lib/sync/mutations-group", () => ({
+vi.mock("@/lib/sync/mutations-group", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sync/mutations-group")>()),
   getOrCreateDm: (...args: unknown[]) => getOrCreateDmMock(...args),
 }));
 

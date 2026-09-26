@@ -2,8 +2,7 @@
 
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
-import { getOrCreateDm } from "@/lib/sync/mutations-group";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { dmErrorMessage, getOrCreateDm } from "@/lib/sync/mutations-group";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import type { User } from "@/types";
@@ -101,7 +100,7 @@ export function useGroupResolution({
           setCreateGroupEnabled(false);
           return { kind: "existing", groupId: dm.groupId };
         } catch (error) {
-          toast.error(ledgerErrorMessage(error));
+          toast.error(dmErrorMessage(error));
           return { kind: "invalid" };
         }
       }

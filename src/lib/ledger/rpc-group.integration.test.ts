@@ -1143,27 +1143,114 @@ WHERE (
         expect(counterpartyBalance?.net_cents).toBe(-500);
       });
 
-      it("removes the whole DM group when the invitation is declined, allowing a fresh DM", async () => {
-        const dm = await rpc<DmAck>(c5, "get_or_create_dm", {
-          p_user_id: u6.id,
+      it("removes the whole DM group when the invitation is declined, blocks the inviter's re-invite, and lets the decliner reach out", async () => {
+        const [inviter, invitee] = await createTestUsers(2);
+        const inviterClient = authenticateAs(inviter);
+        const inviteeClient = authenticateAs(invitee);
+
+        const dm = await rpc<DmAck>(inviterClient, "get_or_create_dm", {
+          p_user_id: invitee.id,
         });
         expect(dm.created).toBe(true);
 
-        const declineAck = await rpc<MutationAck>(c6, "decline_invitation", {
+        const declineAck = await rpc<MutationAck>(inviteeClient, "decline_invitation", {
           p_group_id: dm.groupId,
         });
         expect(declineAck.groupId).toBe(dm.groupId);
 
+        const optOut = await withPg(async (pg) =>
+          pg.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM public.dm_opt_outs WHERE user_id = $1 AND other_user_id = $2",
+            [invitee.id, inviter.id],
+          ),
+        );
+        expect(optOut.rows[0]?.count).toBe(1);
+
         const goneErr = await expectError(
-          c5.rpc("get_group", { p_group_id: dm.groupId }),
+          inviterClient.rpc("get_group", { p_group_id: dm.groupId }),
         );
         expect(goneErr).toBe("not_a_member");
 
-        const fresh = await rpc<DmAck>(c5, "get_or_create_dm", {
-          p_user_id: u6.id,
+        const countPairState = () =>
+          withPg(async (pg) => {
+            const members = await pg.query<{ count: number }>(
+              "SELECT count(*)::int AS count FROM public.group_members m JOIN public.groups g ON g.id = m.group_id WHERE g.kind = 'dm' AND g.dm_user_a = LEAST($1::uuid, $2::uuid) AND g.dm_user_b = GREATEST($1::uuid, $2::uuid)",
+              [inviter.id, invitee.id],
+            );
+            const invites = await pg.query<{ count: number }>(
+              "SELECT count(*)::int AS count FROM public.group_events WHERE kind = 'member_invited' AND subject_user_id = $1",
+              [invitee.id],
+            );
+            return { members: members.rows[0]?.count, invites: invites.rows[0]?.count };
+          });
+
+        const pairBefore = await countPairState();
+        expect(pairBefore.members).toBe(0);
+        expect(pairBefore.invites).toBe(0);
+
+        const blockedErr = await expectError(
+          inviterClient.rpc("get_or_create_dm", { p_user_id: invitee.id }),
+        );
+        expect(blockedErr).toBe("member_excluded");
+
+        const pairAfter = await countPairState();
+        expect(pairAfter.members).toBe(pairBefore.members);
+        expect(pairAfter.invites).toBe(pairBefore.invites);
+
+        const fresh = await rpc<DmAck>(inviteeClient, "get_or_create_dm", {
+          p_user_id: inviter.id,
         });
         expect(fresh.created).toBe(true);
         expect(fresh.groupId).not.toBe(dm.groupId);
+
+        const snap = await rpc<GroupSnapshot>(inviteeClient, "get_group", {
+          p_group_id: fresh.groupId,
+        });
+        expect(snap.members.find((m) => m.userId === invitee.id)?.status).toBe("accepted");
+        expect(snap.members.find((m) => m.userId === inviter.id)?.status).toBe("invited");
+
+        const optOutAfter = await withPg(async (pg) =>
+          pg.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM public.dm_opt_outs WHERE user_id = $1 AND other_user_id = $2",
+            [invitee.id, inviter.id],
+          ),
+        );
+        expect(optOutAfter.rows[0]?.count).toBe(0);
+      });
+
+      it("blocks the original decliner once the inviter declines the fresh DM the other way", async () => {
+        const [first, second] = await createTestUsers(2);
+        const firstClient = authenticateAs(first);
+        const secondClient = authenticateAs(second);
+
+        const dm = await rpc<DmAck>(firstClient, "get_or_create_dm", {
+          p_user_id: second.id,
+        });
+        await rpc<MutationAck>(secondClient, "decline_invitation", {
+          p_group_id: dm.groupId,
+        });
+
+        const fresh = await rpc<DmAck>(secondClient, "get_or_create_dm", {
+          p_user_id: first.id,
+        });
+        expect(fresh.created).toBe(true);
+
+        await rpc<MutationAck>(firstClient, "decline_invitation", {
+          p_group_id: fresh.groupId,
+        });
+
+        const reverseOptOut = await withPg(async (pg) =>
+          pg.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM public.dm_opt_outs WHERE user_id = $1 AND other_user_id = $2",
+            [first.id, second.id],
+          ),
+        );
+        expect(reverseOptOut.rows[0]?.count).toBe(1);
+
+        const blockedErr = await expectError(
+          secondClient.rpc("get_or_create_dm", { p_user_id: first.id }),
+        );
+        expect(blockedErr).toBe("member_excluded");
       });
 
       it("returns the same pending DM for repeated opens without flipping the counterparty to accepted", async () => {

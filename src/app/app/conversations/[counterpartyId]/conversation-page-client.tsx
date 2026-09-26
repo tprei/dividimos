@@ -31,6 +31,7 @@ import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
 import {
   acceptInvitation,
   declineInvitation,
+  dmErrorMessage,
   getOrCreateDm,
 } from "@/lib/sync/mutations-group";
 import { subscribeChat } from "@/lib/sync/realtime";
@@ -205,7 +206,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         requestedKeyRef.current = null;
         setResolveError({
           accountKey: key,
-          message: ledgerErrorMessage(error),
+          message: dmErrorMessage(error),
         });
       });
     },

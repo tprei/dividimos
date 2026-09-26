@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
-import { getOrCreateDm } from "@/lib/sync/mutations-group";
+import { dmErrorMessage, getOrCreateDm } from "@/lib/sync/mutations-group";
 import { useStartBillWithUser } from "@/components/profile/use-start-bill-with-user";
 
 interface ProfileActionProps {
@@ -23,7 +22,7 @@ export function SendMessageButton({ targetUserId }: ProfileActionProps) {
       await getOrCreateDm(targetUserId);
       router.push(`/app/conversations/${targetUserId}`);
     } catch (error) {
-      toast.error(ledgerErrorMessage(error));
+      toast.error(dmErrorMessage(error));
       setLoading(false);
     }
   };

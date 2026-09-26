@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { haptics } from "@/hooks/use-haptics";
 import { buildExpensePayload } from "@/lib/ledger/payload";
 import { createExpense, createExpenseWithGroup, editExpense } from "@/lib/sync/mutations";
-import { getOrCreateDm, inviteMember } from "@/lib/sync/mutations-group";
+import { dmErrorMessage, getOrCreateDm, inviteMember } from "@/lib/sync/mutations-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
@@ -72,7 +72,7 @@ export async function planGroup(input: GroupPlanInput): Promise<GroupPlan> {
       useBillStore.getState().updateExpense({ groupId: dm.groupId });
       return { kind: "existing", groupId: dm.groupId };
     } catch (error) {
-      toast.error(ledgerErrorMessage(error));
+      toast.error(dmErrorMessage(error));
       return { kind: "invalid" };
     }
   }

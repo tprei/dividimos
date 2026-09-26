@@ -55,6 +55,18 @@ function expectNoLeakedInternals(outcomes: readonly Settled[]): void {
   }
 }
 
+/**
+ * postgrest-js builders only send the request once subscribed, so tests that
+ * dispatch an RPC and keep racing something else first settle it through this
+ * wrapper to start the request immediately.
+ */
+function dispatchRpc(call: PromiseLike<{ data: unknown; error: { message: string } | null }>): PromiseLike<Settled> {
+  return call.then(
+    (value) => ({ ok: value.error === null, value: value.data, message: value.error?.message ?? "" }),
+    (reason) => ({ ok: false, value: null, message: String(reason) }),
+  );
+}
+
 async function rpcOk<T>(
   client: SupabaseClient,
   fn: string,
@@ -63,6 +75,37 @@ async function rpcOk<T>(
   const { data, error } = await client.rpc(fn, args);
   if (error) throw new Error(`RPC ${fn} failed: ${error.message}`);
   return data as T;
+}
+
+/**
+ * Waits until a backend running `fnName` is genuinely blocked on a lock.
+ * Used to queue the decline on the dm row before the inviter's open is even
+ * dispatched, so PostgreSQL wakes the decline first and the race cannot
+ * serialize in the harmless (open-then-decline) order.
+ *
+ * Polls pg_stat_activity on real wall-clock time: the waited-for condition is
+ * a database lock state that only surfaces through polling, so fake timers
+ * cannot drive it (same approach as db-race-barrier).
+ */
+async function waitUntilBackendWaiting(databaseUrl: string, fnName: string, timeoutMs = 4000): Promise<void> {
+  const monitor = new Client(databaseUrl);
+  await monitor.connect();
+  try {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const { rows } = await monitor.query<{ pid: number }>(
+        "select pid from pg_stat_activity where state = 'active' and wait_event_type = 'Lock' and query ILIKE $1",
+        [`%${fnName}%`],
+      );
+      if (rows.length > 0) return;
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, 2);
+      await promise;
+    }
+    throw new Error(`no backend blocked on a lock while running ${fnName}`);
+  } finally {
+    await monitor.end();
+  }
 }
 
 describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contention", () => {
@@ -1066,5 +1109,63 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
     const winnerActor = acks[0].created ? alice.id : bruno.id;
     expect(accepted[0].user_id).toBe(winnerActor);
     expect(invited[0].user_id).toBe(winnerActor === alice.id ? bruno.id : alice.id);
+  });
+
+  it("refuses the inviter with member_excluded when a decline deletes the dm row while their open waits on the lock", async () => {
+    const [inviter, decliner] = await createTestUsers(2);
+    const inviterClient = authenticateAs(inviter);
+    const declinerClient = authenticateAs(decliner);
+
+    const dm = await rpcOk<{ groupId: string; created: boolean }>(inviterClient, "get_or_create_dm", {
+      p_user_id: decliner.id,
+    });
+    expect(dm.created).toBe(true);
+
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql: LOCK_GROUP_SQL,
+        lockParams: [dm.groupId],
+        queryContains: ["decline_invitation", "get_or_create_dm"],
+        expectedRacers: 2,
+      },
+      async () => {
+        // Queue the decline on the dm row first: waitUntilBackendWaiting
+        // guarantees the decliner is ahead in the lock queue before the
+        // inviter's open is dispatched, so after the barrier releases, the
+        // decline deletes and commits before the open's locked SELECT
+        // re-checks the row.
+        const decline = dispatchRpc(
+          declinerClient.rpc("decline_invitation", { p_group_id: dm.groupId }),
+        );
+        await waitUntilBackendWaiting(databaseUrl, "decline_invitation");
+        const reopen = dispatchRpc(
+          inviterClient.rpc("get_or_create_dm", { p_user_id: decliner.id }),
+        );
+        return Promise.all([decline, reopen]);
+      },
+    );
+
+    expect(contention.observed).toBe(true);
+    const outcomes = result;
+    expectNoLeakedInternals(outcomes);
+    expect(outcomes[0].ok).toBe(true);
+    expect(outcomes[1].ok).toBe(false);
+    expect(outcomes[1].message).toBe("member_excluded");
+
+    const state = await withPg(async (client) => {
+      const groups = await client.query<{ count: number }>(
+        "select count(*)::int as count from public.groups where kind = 'dm' " +
+          "and dm_user_a = least($1::uuid, $2::uuid) and dm_user_b = greatest($1::uuid, $2::uuid)",
+        [inviter.id, decliner.id],
+      );
+      const optOuts = await client.query<{ count: number }>(
+        "select count(*)::int as count from public.dm_opt_outs where user_id = $1 and other_user_id = $2",
+        [decliner.id, inviter.id],
+      );
+      return { groups: groups.rows[0]?.count ?? 0, optOuts: optOuts.rows[0]?.count ?? 0 };
+    });
+    expect(state.groups).toBe(0);
+    expect(state.optOuts).toBe(1);
   });
 });

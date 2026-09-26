@@ -13,8 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useMe } from "@/hooks/use-me";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
-import { getOrCreateDm, lookupUserByHandle } from "@/lib/sync/mutations-group";
+import { dmErrorMessage, getOrCreateDm, lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { useAppStore } from "@/stores/app-store";
 import type { UserProfile } from "@/types/ledger";
 import { ConversationShareModal } from "./conversation-share-modal";
@@ -103,7 +102,7 @@ export function NewConversationButton({ inline = false, label }: { inline?: bool
         setOpen(false);
         router.push(`/app/conversations/${userId}`);
       } catch (error) {
-        toast.error(ledgerErrorMessage(error));
+        toast.error(dmErrorMessage(error));
       } finally {
         setCreatingId(null);
       }
