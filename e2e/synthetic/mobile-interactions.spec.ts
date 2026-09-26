@@ -55,7 +55,7 @@ test.describe("Mobile interactions", () => {
       expect(dialog.message()).toBe("Descartar este pagamento?");
       return dialog.accept();
     });
-    await page.locator('[data-slot="popover-backdrop"]').click({ position: { x: 5, y: 5 } });
+    await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 5, y: 5 } });
     await discard;
     await expect(form).toBeHidden();
 

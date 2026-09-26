@@ -75,13 +75,13 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
       .map((member) => ({
         id: member.userId,
         name: member.user.name,
+        avatarUrl: member.user.avatarUrl,
         handle: member.user.handle,
         owedByMeCents: owedByMe.get(member.userId) ?? 0,
         owedToMeCents: owedToMe.get(member.userId) ?? 0,
       }));
   }, [accepted, debtRows, me?.id]);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [paymentAnchor, setPaymentAnchor] = useState<HTMLElement | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<GroupPaymentStatus>("idle");
   const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
   const paymentKey = useRef(crypto.randomUUID());
@@ -252,7 +252,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
       </div>
       {paymentOpen && paymentCounterparties.length > 0 && (
         <GroupRegisterPaymentSheet
-          currentUserHandle={me.handle}
+          currentUser={me}
           counterparties={paymentCounterparties}
           onConfirm={handleRegisterPayment}
           onDismiss={() => {
@@ -261,7 +261,6 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           onLeavePending={() => setPaymentOpen(false)}
           status={paymentStatus}
           errorMessage={paymentError}
-          anchor={paymentAnchor}
         />
       )}
       <ChatInput
@@ -272,15 +271,14 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
             <IconButton
               aria-label="Registrar pagamento"
               title="Registrar pagamento"
-              aria-expanded={paymentOpen}
+              aria-haspopup="dialog"
               className="text-muted-foreground"
               disabled={paymentStatus === "confirming"}
-              onClick={(event) => {
+              onClick={() => {
                 if (paymentStatus === "confirming") return;
                 setPaymentStatus("idle");
                 setPaymentError(undefined);
-                setPaymentAnchor(event.currentTarget);
-                setPaymentOpen((prev) => !prev);
+                setPaymentOpen(true);
               }}
             >
               <Banknote className="size-5" />
