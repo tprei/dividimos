@@ -20,6 +20,7 @@ export type EventKind =
   | "member_left"
   | "member_removed"
   | "guest_claimed"
+  | "assignment_room_opened"
   | "nudge";
 
 export type VendorChargeStatus = "pending" | "received";

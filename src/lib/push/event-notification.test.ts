@@ -158,6 +158,7 @@ describe("categoryFor", () => {
     expect(categoryFor("nudge")).toBe("nudges");
     expect(categoryFor("member_invited")).toBe("groups");
     expect(categoryFor("guest_claimed")).toBe("groups");
+    expect(categoryFor("assignment_room_opened")).toBe("expenses");
   });
 });
 

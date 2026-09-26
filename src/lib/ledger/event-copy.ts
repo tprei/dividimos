@@ -209,6 +209,16 @@ export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string 
       return `${sentenceStart(subject)} entrou como ${displayName}`;
     }
 
+    case "assignment_room_opened": {
+      const title = resolveExpenseTitle(
+        ctx.expenseTitle,
+        event.expenseTitle,
+        event.payload?.title,
+        "a conta",
+      );
+      return `${actor} abriu a conta ${title}. Marca o que é seu!`;
+    }
+
     case "nudge": {
       const subject = resolveName(ctx.nameOf, event.subjectUserId);
       return `${actor} lembrou ${subject} de acertar as contas`;
