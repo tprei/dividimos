@@ -1106,6 +1106,12 @@ export type Database = {
         }
         Returns: Json
       }
+      assignment_room_summary_json: {
+        Args: {
+          p_room_id: string
+        }
+        Returns: Json
+      }
       assignment_room_topic_allowed: {
         Args: {
           p_topic: string
@@ -1397,6 +1403,17 @@ export type Database = {
         Returns: Json
       }
       get_conversation: {
+        Args: {
+          p_group_id: string
+          p_message_before_created_at?: string
+          p_message_before_id?: string
+          p_event_before_created_at?: string
+          p_event_before_id?: number
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      get_conversation_v2: {
         Args: {
           p_group_id: string
           p_message_before_created_at?: string

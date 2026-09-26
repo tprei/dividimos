@@ -243,11 +243,18 @@ describe.skipIf(!isIntegrationTestReady)(
       const entry = list.rooms.find((room) => room.id === newer.room.id);
       expect(entry).toBeDefined();
       expect(Object.keys(entry!).sort()).toEqual([
+        "claimers",
         "createdAt",
+        "expenseId",
+        "groupId",
         "host",
         "id",
+        "itemCount",
         "joined",
         "occurredOn",
+        "ownedItemCount",
+        "revision",
+        "status",
         "title",
         "totalCents",
       ]);
