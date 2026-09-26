@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { HeroChat } from "./hero-chat";
+import { HeroReceipt } from "./hero-receipt";
 import { Coaster, Copo, TableArtDefs } from "./table-art";
 import { ClinkBottles, FlipCap } from "./table-toys";
 import styles from "./hero-scene.module.css";
@@ -46,6 +48,8 @@ export function HeroScene() {
         <FlipCap tone="silver" className={styles.cap2} />
         <FlipCap tone="ink" className={styles.cap3} />
         <FlipCap tone="amber" className={styles.cap4} />
+        <HeroReceipt />
+        <HeroChat />
       </div>
     </div>
   );
