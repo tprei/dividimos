@@ -4,6 +4,7 @@ import type {
   ExpensePayerPayload,
   ExpenseStatus,
   ParticipantRef,
+  UserProfile,
 } from "@/types/ledger";
 
 /**
@@ -153,4 +154,31 @@ export interface SetAssignmentClaimInput {
   participantId: string;
   expectedItemRevision: number;
   ticks: number;
+}
+
+export interface AssignmentRoomClaimer {
+  participantId: string;
+  userId: string | null;
+  name: string;
+  avatarUrl: string | null;
+}
+
+export interface AssignmentRoomSummary {
+  id: string;
+  groupId: string;
+  status: AssignmentRoomStatus;
+  revision: number;
+  title: string;
+  occurredOn: string;
+  totalCents: number;
+  host: UserProfile;
+  createdAt: string;
+  itemCount: number;
+  ownedItemCount: number;
+  claimers: AssignmentRoomClaimer[];
+  expenseId: string | null;
+}
+
+export interface OpenAssignmentRoom extends AssignmentRoomSummary {
+  joined: boolean;
 }

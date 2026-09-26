@@ -8,7 +8,10 @@ import type {
   AssignmentRoomItem,
   AssignmentRoomParticipant,
   AssignmentRoomSnapshot,
+  AssignmentRoomSummary,
+  AssignmentRoomClaimer,
   AssignmentRoomView,
+  OpenAssignmentRoom,
 } from "@/types/assignment-room";
 import type {
   MutationAck,
@@ -24,12 +27,14 @@ import {
   decodeExpenseItemPayload,
   decodeExpensePayerPayload,
   decodeParticipantRef,
+  decodeUserProfile,
   decodeExpenseDetail,
   exactKeys,
   fail,
   id,
   int,
   isRecord,
+  nullableId,
   nullableStr,
   ok,
   oneOf,
@@ -108,6 +113,24 @@ const BILL_PARTICIPANT_KEYS = [
   "avatarUrl",
   "isGuest",
 ] as const;
+const ROOM_SUMMARY_KEYS = [
+  "id",
+  "groupId",
+  "status",
+  "revision",
+  "title",
+  "occurredOn",
+  "totalCents",
+  "host",
+  "createdAt",
+  "itemCount",
+  "ownedItemCount",
+  "claimers",
+  "expenseId",
+] as const;
+const OPEN_ROOM_KEYS = [...ROOM_SUMMARY_KEYS, "joined"] as const;
+const CLAIMER_KEYS = ["participantId", "userId", "name", "avatarUrl"] as const;
+const ROOM_STATUSES = ["open", "closed", "finalized", "cancelled"] as const;
 
 function decodeRoomItem(
   raw: unknown,
@@ -503,4 +526,117 @@ export function decodeExpenseContext(
     detail: detail.value,
     assignmentRoom: { id: roomId.value, hostUserId: hostUserId.value },
   });
+}
+
+function nonnegativeCount(
+  raw: unknown,
+  path: Path
+): ValidationResult<number, WireIssue> {
+  const value = int(raw, path);
+  if (!value.ok) return value;
+  return value.value >= 0 && Number.isSafeInteger(value.value) ? value : fail(path);
+}
+
+function decodeClaimer(
+  raw: unknown,
+  path: Path
+): ValidationResult<AssignmentRoomClaimer, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, CLAIMER_KEYS, path);
+  if (!keys.ok) return keys;
+  const participantId = id(raw.participantId, [...path, "participantId"]);
+  if (!participantId.ok) return participantId;
+  const userId = nullableId(raw.userId, [...path, "userId"]);
+  if (!userId.ok) return userId;
+  const name = str(raw.name, [...path, "name"]);
+  if (!name.ok) return name;
+  const avatarUrl = nullableStr(raw.avatarUrl, [...path, "avatarUrl"]);
+  if (!avatarUrl.ok) return avatarUrl;
+  return ok({
+    participantId: participantId.value,
+    userId: userId.value,
+    name: name.value,
+    avatarUrl: avatarUrl.value,
+  });
+}
+
+function decodeSummaryFields(
+  raw: Record<string, unknown>,
+  path: Path
+): ValidationResult<AssignmentRoomSummary, WireIssue> {
+  const roomId = id(raw.id, [...path, "id"]);
+  if (!roomId.ok) return roomId;
+  const groupId = id(raw.groupId, [...path, "groupId"]);
+  if (!groupId.ok) return groupId;
+  const status = oneOf(raw.status, ROOM_STATUSES, [...path, "status"]);
+  if (!status.ok) return status;
+  const revision = nonnegativeCount(raw.revision, [...path, "revision"]);
+  if (!revision.ok) return revision;
+  const title = str(raw.title, [...path, "title"]);
+  if (!title.ok) return title;
+  const occurredOn = str(raw.occurredOn, [...path, "occurredOn"]);
+  if (!occurredOn.ok) return occurredOn;
+  const totalCents = nonnegativeCount(raw.totalCents, [...path, "totalCents"]);
+  if (!totalCents.ok) return totalCents;
+  const host = decodeUserProfile(raw.host, [...path, "host"]);
+  if (!host.ok) return host;
+  const createdAt = str(raw.createdAt, [...path, "createdAt"]);
+  if (!createdAt.ok) return createdAt;
+  const itemCount = nonnegativeCount(raw.itemCount, [...path, "itemCount"]);
+  if (!itemCount.ok) return itemCount;
+  const ownedItemCount = nonnegativeCount(raw.ownedItemCount, [...path, "ownedItemCount"]);
+  if (!ownedItemCount.ok) return ownedItemCount;
+  const claimers = arrayOf(raw.claimers, [...path, "claimers"], decodeClaimer);
+  if (!claimers.ok) return claimers;
+  const expenseId = nullableId(raw.expenseId, [...path, "expenseId"]);
+  if (!expenseId.ok) return expenseId;
+  return ok({
+    id: roomId.value,
+    groupId: groupId.value,
+    status: status.value,
+    revision: revision.value,
+    title: title.value,
+    occurredOn: occurredOn.value,
+    totalCents: totalCents.value,
+    host: host.value,
+    createdAt: createdAt.value,
+    itemCount: itemCount.value,
+    ownedItemCount: ownedItemCount.value,
+    claimers: claimers.value,
+    expenseId: expenseId.value,
+  });
+}
+
+export function decodeAssignmentRoomSummary(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<AssignmentRoomSummary, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ROOM_SUMMARY_KEYS, path);
+  if (!keys.ok) return keys;
+  return decodeSummaryFields(raw, path);
+}
+
+function decodeOpenAssignmentRoom(
+  raw: unknown,
+  path: Path
+): ValidationResult<OpenAssignmentRoom, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, OPEN_ROOM_KEYS, path);
+  if (!keys.ok) return keys;
+  const summary = decodeSummaryFields(raw, path);
+  if (!summary.ok) return summary;
+  const joined = bool(raw.joined, [...path, "joined"]);
+  if (!joined.ok) return joined;
+  return ok({ ...summary.value, joined: joined.value });
+}
+
+export function decodeOpenAssignmentRooms(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<OpenAssignmentRoom[], WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["rooms"], path);
+  if (!keys.ok) return keys;
+  return arrayOf(raw.rooms, [...path, "rooms"], decodeOpenAssignmentRoom);
 }
