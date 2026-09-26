@@ -430,6 +430,44 @@ erDiagram
 
 Além das tabelas, a view `current_expense_participants` explode a versão atual de cada conta ativa em uma linha por participante; é dela que o recompute tira os saldos. O schema `guest_credentials` guarda os hashes dos tokens de claim e de sala, e o tópico de Realtime de cada sala. O bucket privado `group-avatars` guarda as fotos de grupo, com até 1 MB.
 
+## RPCs
+
+Toda leitura e escrita do app passa por uma função Postgres chamada via `supabase.rpc()`. A migration inicial revoga `EXECUTE` de `public`, `anon` e `authenticated` em todas as funções, e cada RPC ganha seu `GRANT` explícito. São 59 funções pra `authenticated`, 8 abertas também pra `anon` (salas de itens e prévias de convite), 11 só pra `service_role` (chamadas pelas rotas de API) e o resto são helpers internos e triggers, sem grant nenhum.
+
+Todo RPC que mexe no ledger (contas e liquidações) segue a mesma ordem, na mesma transação:
+
+```mermaid
+flowchart LR
+    a["current_user_id()<br/>sessão do Supabase Auth"] --> c["lock_group<br/>FOR UPDATE no grupo"]
+    c --> b["assert_member<br/>checa membership"]
+    b --> d["valida e grava o fato<br/>expense_versions, settlements"]
+    d --> e["recompute_group_balances<br/>sobe ledger_version"]
+    e --> f["emit_event<br/>linha em group_events"]
+    f --> g["realtime.send<br/>tópico do grupo"]
+```
+
+- **`SECURITY DEFINER` com `search_path = public`.** A função roda como dona das tabelas, então a checagem de membership dentro dela é a única porta. RLS está ligado sem nenhuma policy.
+- **Idempotência.** `create_expense`, `create_expense_with_group` e `send_message` recebem um `p_client_id`, e `record_settlement` um `p_operation_id`. Repetir a chamada devolve o que já foi gravado em vez de duplicar, o que torna seguro o retry do cliente offline.
+- **Concorrência otimista.** `edit_expense` recebe `p_expected_version_no`; as mutations da sala recebem `p_expected_revision`. Se alguém gravou antes, o RPC falha com `stale_version` e o cliente refaz a leitura.
+- **Erros com código.** Toda falha é `RAISE EXCEPTION` com `ERRCODE = 'P0001'` e uma mensagem estável (`not_a_member`, `stale_version`, `outstanding_balance`, `duplicate_receipt`, `room_closed`...). `codeFromMessage` em `src/lib/sync/errors.ts` converte a mensagem num `LedgerErrorCode` tipado.
+- **Respostas decodificadas.** No cliente, `rpc(name, args, decode)` em `src/lib/sync/client.ts` tipa nome e argumentos pelos tipos gerados (`src/types/database.ts`) e passa o JSON de volta por um decoder antes de chegar no store. Resposta fora do formato vira `invalid_wire`.
+
+| Contexto | RPCs | Quem chama |
+|----------|------|------------|
+| Leitura | `bootstrap_overview`, `get_group_overview`, `get_group_expenses`, `get_expense_context`, `get_settlement`, `get_my_expenses`, `get_activity`, `get_conversation`, `get_vendor_charges` | `src/lib/sync/bootstrap.ts` e `refresh.ts` |
+| | `get_my_profile` | `src/lib/auth.ts` |
+| Contas | `create_expense`, `create_expense_with_group`, `edit_expense`, `delete_expense`, `restore_expense` | `src/lib/sync/mutations.ts` |
+| Liquidação | `record_settlement`, `void_settlement`, `send_nudge` | `mutations-group.ts` |
+| Grupos e convites | `create_group`, `invite_member`, `accept_invitation`, `decline_invitation`, `remove_member`, `leave_group`, `delete_group`, `create_invite_link`, `deactivate_invite_link`, `preview_invite_link`, `join_via_link`, `get_or_create_dm` | `mutations-group.ts`, `/join/[token]` |
+| Convidados | `create_guest_claim_token`, `revoke_guest_claim_token`, `resolve_guest_claim_token`, `claim_guest` | `mutations-group.ts`, `/claim` |
+| Perfil | `complete_onboarding`, `update_profile` | `src/app/auth/onboard/actions.ts`, `mutations-group.ts` |
+| Conversas | `send_message`, `mark_read` | `mutations.ts` |
+| Cobrar rápido | `record_vendor_charge`, `confirm_vendor_charge`, `cancel_vendor_charge` | `mutations-group.ts` |
+| Sala de itens | `create_assignment_room`, `get_assignment_room`, `join_assignment_room`, `refresh_assignment_room_member`, `set_assignment_room_claim`, `remove_assignment_room_participant`, `rotate_assignment_room_join`, `claim_assignment_room_guest`, `close_assignment_room`, `cancel_assignment_room`, `finalize_assignment_room`, `get_assignment_room_completion` | `src/lib/sync/assignment-rooms.ts` |
+| Só servidor | `lookup_user_by_handle`, `set_group_avatar`, `claim_push_subscription`, `increment_rate_limit`, `cleanup_expired_rate_limit_counters` | Rotas de API com service role |
+
+Os helpers internos também moram nas migrations: `recompute_group_balances` e `group_transfers` (a projeção e a minimização), `validate_expense_payload` (a mesma regra de dinheiro de `src/lib/expense-money.ts`), `effective_expense_payload`, os `ledger_*_json` que montam as respostas, e `broadcast_group`/`broadcast_user`/`broadcast_assignment_room` que chamam `realtime.send`. As rotas de API com service role leem algumas tabelas direto (`/api/pix/generate`, `/api/notify`), porque o service role ignora RLS; nenhum código de cliente faz isso.
+
 ## Stack
 
 | Camada | Tecnologia |
