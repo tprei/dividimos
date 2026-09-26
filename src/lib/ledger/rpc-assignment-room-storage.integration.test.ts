@@ -298,6 +298,22 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       )
     ).toContain("user_not_found");
 
+    const pending = await createTestUser({ onboarded: false });
+    const pendingParticipant = roomArgs(host, {
+      p_participants: participants(host, [
+        {
+          id: crypto.randomUUID(),
+          displayName: pending.name,
+          userId: pending.id,
+        },
+      ]),
+    });
+    expect(
+      await expectRpcError(
+        hostClient.rpc("create_assignment_room", pendingParticipant)
+      )
+    ).toContain("user_not_found");
+
     const tooManyItems = roomArgs(host, {
       p_items: Array.from({ length: 101 }, (_, index) => ({
         description: `Item ${index}`,

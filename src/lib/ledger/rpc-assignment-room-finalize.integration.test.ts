@@ -454,6 +454,103 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(ledger.guests).toBe(0);
     });
 
+    it("joins a non-onboarded account as a guest and finalizes without inviting it", async () => {
+      const [pending] = await createTestUsers(1, { onboarded: false });
+      const pendingClient = authenticateAs(pending);
+      const token = memberToken();
+      const args = roomArgs(host);
+      const created = await createRoom(hostClient, args);
+      const joined = await rpcRoom(pendingClient, "join_assignment_room", {
+        p_room_id: args.p_room_id,
+        p_join_token: args.p_join_token,
+        p_member_token: token,
+        p_display_name: "",
+      });
+
+      const self = joined.room.participants.find(
+        (participant) => participant.id === joined.room.selfParticipantId,
+      );
+      expect(self).toMatchObject({ displayName: pending.name, isGuest: true });
+
+      let current = await claim(
+        hostClient,
+        args.p_room_id,
+        null,
+        created.room.items[0].id,
+        created.room.selfParticipantId,
+        created.room.items[0].revision,
+        60_000
+      );
+      current = await claim(
+        pendingClient,
+        args.p_room_id,
+        token,
+        current.room.items[0].id,
+        joined.room.selfParticipantId,
+        current.room.items[0].revision,
+        60_000
+      );
+      const closed = await closeRoom(
+        hostClient,
+        args.p_room_id,
+        current.room.revision
+      );
+      const result = await finalize(
+        hostClient,
+        args.p_room_id,
+        closed.room.revision,
+        expensePayload(closed)
+      );
+
+      const ledger = await withPg(async (db) => {
+        const participant = await db.query<{
+          user_id: string | null;
+          display_name: string;
+        }>(
+          "select user_id, display_name from public.assignment_room_participants where room_id = $1 and id = $2",
+          [args.p_room_id, joined.room.selfParticipantId]
+        );
+        const versions = await db.query<{ payload: Json }>(
+          "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+          [result.ack.expenseId]
+        );
+        const memberships = await db.query<{ user_id: string; status: string }>(
+          "select user_id, status from public.group_members where group_id = $1",
+          [result.ack.groupId]
+        );
+        const guests = await db.query<{ count: number }>(
+          "select count(*)::int as count from public.guests where expense_id = $1",
+          [result.ack.expenseId]
+        );
+        return {
+          participant: participant.rows[0] ?? null,
+          payload: versions.rows[0].payload as {
+            participants: Array<{
+              kind: string;
+              userId?: string;
+              displayName?: string;
+            }>;
+          },
+          memberships: memberships.rows,
+          guests: guests.rows[0].count,
+        };
+      });
+
+      expect(ledger.participant).toEqual({
+        user_id: null,
+        display_name: pending.name,
+      });
+      expect(ledger.payload.participants).toEqual([
+        { kind: "user", userId: host.id },
+        { kind: "guest", guestId: expect.any(String), displayName: pending.name },
+      ]);
+      expect(
+        ledger.memberships.map((row) => row.user_id)
+      ).toEqual([host.id]);
+      expect(ledger.memberships[0].status).toBe("accepted");
+      expect(ledger.guests).toBe(1);
+    });
+
     it("invites a new account into an existing group and leaves members alone", async () => {
       const groupId = await createGroupWithMembers(
         host,

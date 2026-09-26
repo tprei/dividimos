@@ -314,6 +314,124 @@ describe.skipIf(!isIntegrationTestReady)(
       });
     });
 
+    describe("non-onboarded user references", () => {
+      it("treats a non-onboarded id exactly like an unknown id", async () => {
+        const [pending] = await createTestUsers(1, { onboarded: false });
+        const randomId = crypto.randomUUID();
+
+        expect(
+          await expectError(
+            c1.rpc("create_group", {
+              p_name: "Grupo Pendente",
+              p_member_ids: [pending.id],
+            }),
+          ),
+        ).toBe("user_not_found");
+        expect(
+          await expectError(
+            c1.rpc("create_group", {
+              p_name: "Grupo Desconhecido",
+              p_member_ids: [randomId],
+            }),
+          ),
+        ).toBe("user_not_found");
+
+        const group = await rpc<MutationAck>(c1, "create_group", {
+          p_name: "Grupo Referencias",
+          p_member_ids: [],
+        });
+        expect(
+          await expectError(
+            c1.rpc("invite_member", {
+              p_group_id: group.groupId,
+              p_user_id: pending.id,
+            }),
+          ),
+        ).toBe("user_not_found");
+        expect(
+          await expectError(
+            c1.rpc("invite_member", {
+              p_group_id: group.groupId,
+              p_user_id: randomId,
+            }),
+          ),
+        ).toBe("user_not_found");
+
+        expect(
+          await expectError(c1.rpc("get_or_create_dm", { p_user_id: pending.id })),
+        ).toBe("user_not_found");
+        expect(
+          await expectError(c1.rpc("get_or_create_dm", { p_user_id: randomId })),
+        ).toBe("user_not_found");
+
+        const leftovers = await withPg((pg) =>
+          pg.query(
+            `select count(*)::int as n from groups g
+             full join group_members m on m.group_id = g.id and m.user_id = $1
+             where m.user_id = $1 or (g.kind = 'dm' and $1 in (g.dm_user_a, g.dm_user_b))`,
+            [pending.id],
+          ),
+        );
+        expect(leftovers.rows[0].n).toBe(0);
+      });
+
+      it("refuses create_expense_with_group for a non-onboarded member id", async () => {
+        const [pending] = await createTestUsers(1, { onboarded: false });
+        const before = await withPg((pg) =>
+          pg.query(
+            "select count(*)::int as n from groups where creator_id = $1",
+            [u1.id],
+          ),
+        );
+
+        expect(
+          await expectError(
+            c1.rpc("create_expense_with_group", {
+              p_client_id: crypto.randomUUID(),
+              p_group_name: "Grupo Pendente",
+              p_member_ids: [pending.id],
+              p_occurred_on: "2026-09-19",
+              p_title: "Jantar",
+              p_merchant_name: "Cantina",
+              p_expense_type: "single_amount",
+              p_total_cents: 10000,
+              p_service_fee_bps: 0,
+              p_fixed_fee_cents: 0,
+              p_payload: equalSplitPayload([u1.id, pending.id], 10000),
+              p_chave_acesso: null,
+            }),
+          ),
+        ).toBe("user_not_found");
+
+        const after = await withPg((pg) =>
+          pg.query(
+            "select count(*)::int as n from groups where creator_id = $1",
+            [u1.id],
+          ),
+        );
+        expect(after.rows[0].n).toBe(before.rows[0].n);
+      });
+
+      it("still invites and messages onboarded users", async () => {
+        const [fresh] = await createTestUsers(1);
+        const group = await rpc<MutationAck>(c1, "create_group", {
+          p_name: "Grupo Onboarded",
+          p_member_ids: [fresh.id],
+        });
+        const snap = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: group.groupId,
+        });
+        expect(
+          snap.members.find((member) => member.userId === fresh.id)?.status,
+        ).toBe("invited");
+
+        const dm = await rpc<DmAck>(c1, "get_or_create_dm", {
+          p_user_id: fresh.id,
+        });
+        expect(dm.created).toBe(true);
+      });
+    });
+
     describe("leave_group, remove_member, and delete_group", () => {
       it("enforces not_creator on remove_member", async () => {
         const groupId = await createGroupWithMembers(u1, [u2], "Removal Group");
