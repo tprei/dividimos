@@ -1,5 +1,6 @@
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { cn } from "@/lib/utils";
+import { HeroScene } from "./hero-scene";
 import { LandingLink } from "./landing-link";
 import { landingContainer } from "./landing-section";
 import styles from "./hero.module.css";
@@ -23,6 +24,7 @@ export function Hero() {
             <InstallPrompt />
           </div>
         </div>
+        <HeroScene />
       </div>
     </section>
   );

@@ -1,0 +1,489 @@
+.scene {
+  position: relative;
+  margin-top: 8px;
+  padding: 196px 0 150px;
+}
+
+.mesa {
+  position: absolute;
+  top: 40px;
+  right: -34px;
+  bottom: 150px;
+  left: -34px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slab {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 44px;
+  transform: perspective(2600px) rotateX(8deg);
+  transform-origin: 50% 100%;
+}
+
+.top {
+  overflow: hidden;
+  background:
+    linear-gradient(106deg, transparent 18%, oklch(1 0 0 / 0.2) 25%, oklch(1 0 0 / 0.05) 32%, transparent 40%),
+    radial-gradient(90% 70% at 30% 18%, oklch(1 0 0 / 0.28), transparent 60%),
+    radial-gradient(120% 90% at 70% 100%, oklch(0 0 0 / 0.07), transparent 60%),
+    var(--mesa);
+  box-shadow:
+    inset 0 0 0 3px color-mix(in oklab, var(--mesa) 78%, black),
+    inset 0 5px 0 3px oklch(1 0 0 / 0.35),
+    inset 0 0 0 26px color-mix(in oklab, var(--mesa) 88%, white),
+    inset 0 0 0 29px color-mix(in oklab, var(--mesa) 76%, black),
+    inset 0 8px 14px 29px oklch(0.4 0.1 70 / 0.12);
+}
+
+.top::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(106deg, transparent 42%, oklch(1 0 0 / 0.2) 49%, oklch(1 0 0 / 0.06) 54%, transparent 60%);
+  background-position: 130% 0;
+  background-size: 260% 100%;
+}
+
+:global(.dark) .top {
+  background:
+    linear-gradient(106deg, transparent 18%, oklch(1 0 0 / 0.08) 25%, oklch(1 0 0 / 0.02) 32%, transparent 40%),
+    radial-gradient(90% 70% at 30% 18%, oklch(1 0 0 / 0.1), transparent 60%),
+    radial-gradient(120% 90% at 70% 100%, oklch(0 0 0 / 0.14), transparent 60%),
+    var(--mesa);
+}
+
+.side {
+  translate: 0 34px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--mesa) 80%, black) calc(100% - 44px),
+    color-mix(in oklab, var(--mesa) 88%, black) calc(100% - 34px),
+    color-mix(in oklab, var(--mesa) 62%, black)
+  );
+  box-shadow: 0 26px 34px -14px oklch(0.35 0.08 65 / 0.38);
+}
+
+.legs {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  left: 0;
+  height: 120px;
+  mask-image: linear-gradient(to bottom, #000 30%, transparent 92%);
+}
+
+.leg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.legFront {
+  width: 58px;
+  clip-path: polygon(0 0, 100% 0, 84% 100%, 16% 100%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--mesa) 70%, black),
+    color-mix(in oklab, var(--mesa) 94%, white) 35%,
+    color-mix(in oklab, var(--mesa) 82%, black) 70%,
+    color-mix(in oklab, var(--mesa) 60%, black)
+  );
+}
+
+.legBack {
+  top: -18px;
+  width: 44px;
+  height: 82%;
+  clip-path: polygon(0 0, 100% 0, 86% 100%, 14% 100%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--mesa) 55%, black),
+    color-mix(in oklab, var(--mesa) 68%, black)
+  );
+}
+
+.legFrontLeft {
+  left: 24px;
+}
+
+.legFrontRight {
+  right: 24px;
+}
+
+.legBackLeft {
+  left: 18%;
+}
+
+.legBackRight {
+  right: 18%;
+}
+
+.prop {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.toy {
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottle1,
+.bottle2 {
+  transform-origin: 50% 100%;
+}
+
+.bottle1 {
+  top: 18px;
+  left: 22px;
+  width: 44px;
+}
+
+.bottle2 {
+  top: 2px;
+  right: 14px;
+  width: 60px;
+}
+
+.copo {
+  top: 100px;
+  right: 94px;
+  width: 46px;
+}
+
+.coaster {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  top: 152px;
+  right: 74px;
+  width: 86px;
+  pointer-events: none;
+}
+
+.shadowCast {
+  position: absolute;
+  z-index: 1;
+  border-radius: 45% 45% 50% 50% / 20% 20% 80% 80%;
+  background: linear-gradient(to bottom, oklch(0.32 0.09 62 / 0.34), oklch(0.32 0.09 62 / 0));
+  filter: blur(5px);
+  transform: skewX(-14deg);
+  transform-origin: top;
+  pointer-events: none;
+}
+
+:global(.dark) .shadowCast {
+  background: linear-gradient(to bottom, oklch(0.15 0.04 60 / 0.5), transparent);
+}
+
+.shadowContact {
+  position: absolute;
+  z-index: 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, oklch(0.28 0.08 60 / 0.45), transparent);
+  pointer-events: none;
+}
+
+.bottle1Contact {
+  top: 179px;
+  left: 14px;
+  width: 60px;
+  height: 16px;
+}
+
+.bottle1Cast {
+  top: 184px;
+  left: 26px;
+  width: 40px;
+  height: 60px;
+}
+
+.bottle2Contact {
+  top: 180px;
+  right: 6px;
+  width: 76px;
+  height: 18px;
+}
+
+.bottle2Cast {
+  top: 186px;
+  right: 18px;
+  width: 52px;
+  height: 60px;
+}
+
+.glassCast {
+  top: 172px;
+  right: 96px;
+  width: 42px;
+  height: 44px;
+}
+
+.drop {
+  position: absolute;
+  top: var(--y);
+  left: var(--x);
+  width: 3px;
+  height: 4.5px;
+  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: oklch(1 0 0 / 0.78);
+  box-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.3);
+  opacity: 0.75;
+}
+
+.cap1 {
+  --cap-rotate: 18deg;
+  top: 158px;
+  left: 84px;
+  width: 32px;
+}
+
+.cap2 {
+  --cap-rotate: -20deg;
+  top: 170px;
+  left: 126px;
+  width: 30px;
+}
+
+.cap3 {
+  --cap-rotate: -8deg;
+  bottom: 170px;
+  left: 30px;
+  width: 36px;
+}
+
+.cap4 {
+  display: none;
+}
+
+@media (min-width: 760px) {
+  .sceneFit {
+    width: min(100%, 720px);
+    aspect-ratio: 720 / 820;
+    margin-inline: auto;
+    container-type: inline-size;
+  }
+
+  .scene {
+    width: 720px;
+    height: 820px;
+    margin: 0;
+    padding: 0;
+    transform-origin: 0 0;
+    scale: min(1, tan(atan2(100cqw, 720px)));
+  }
+
+  .mesa {
+    top: 168px;
+    right: -86px;
+    bottom: auto;
+    left: -90px;
+    height: 552px;
+  }
+
+  .slab {
+    top: auto;
+    height: 800px;
+    border-radius: 64px;
+    transform: perspective(1800px) rotateX(32deg);
+  }
+
+  .legs {
+    height: 150px;
+  }
+
+  .legFront {
+    width: 84px;
+  }
+
+  .legBack {
+    width: 62px;
+  }
+
+  .legFrontLeft {
+    left: 46px;
+  }
+
+  .legFrontRight {
+    right: 46px;
+  }
+
+  .bottle1 {
+    top: 10px;
+    left: 356px;
+    width: 58px;
+  }
+
+  .bottle1Contact {
+    top: 222px;
+    left: 347px;
+    width: 76px;
+    height: 20px;
+  }
+
+  .bottle1Cast {
+    top: 228px;
+    left: 360px;
+    width: 52px;
+    height: 110px;
+  }
+
+  .bottle2 {
+    top: -12px;
+    right: auto;
+    left: 614px;
+    width: 74px;
+  }
+
+  .bottle2Contact {
+    top: 203px;
+    right: auto;
+    left: 604px;
+    width: 94px;
+    height: 22px;
+  }
+
+  .bottle2Cast {
+    top: 210px;
+    right: auto;
+    left: 622px;
+    width: 62px;
+    height: 120px;
+  }
+
+  .copo {
+    top: 124px;
+    right: auto;
+    left: 494px;
+    width: 60px;
+  }
+
+  .coaster {
+    top: 200px;
+    right: auto;
+    left: 469px;
+    width: 110px;
+  }
+
+  .glassCast {
+    top: 222px;
+    right: auto;
+    left: 496px;
+    width: 56px;
+    height: 70px;
+  }
+
+  .cap1 {
+    top: 236px;
+    left: 566px;
+    width: 34px;
+  }
+
+  .cap2 {
+    top: 196px;
+    left: 58px;
+    width: 30px;
+  }
+
+  .cap3 {
+    top: 600px;
+    bottom: auto;
+    left: 362px;
+    width: 36px;
+  }
+
+  .cap4 {
+    --cap-rotate: 30deg;
+    display: block;
+    top: 648px;
+    left: 668px;
+    width: 34px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .mesa {
+    left: -30px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .sceneFit {
+    width: min(100% + var(--bleed), 720px);
+    margin: 0 calc(-1 * var(--bleed)) 0 auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toy {
+    cursor: pointer;
+  }
+
+  .top::after {
+    animation: sheen 11s ease-in-out 2s infinite;
+  }
+
+  .drop {
+    animation: drip 6s ease-in var(--d) infinite;
+  }
+
+  .bottle1:hover,
+  .bottle2:hover {
+    animation: wobble 0.9s ease-in-out;
+  }
+}
+
+@keyframes sheen {
+  0%,
+  60% {
+    background-position: 130% 0;
+  }
+
+  100% {
+    background-position: -30% 0;
+  }
+}
+
+@keyframes drip {
+  0%,
+  55% {
+    transform: translateY(0);
+    opacity: 0.75;
+  }
+
+  92% {
+    transform: translateY(26px);
+    opacity: 0.55;
+  }
+
+  100% {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+}
+
+@keyframes wobble {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+
+  20% {
+    rotate: 4deg;
+  }
+
+  45% {
+    rotate: -3deg;
+  }
+
+  70% {
+    rotate: 1.5deg;
+  }
+}

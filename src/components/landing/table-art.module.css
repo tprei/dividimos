@@ -1,0 +1,89 @@
+.fill {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bubble {
+  opacity: 0.7;
+}
+
+.cap {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  rotate: var(--cap-rotate, 0deg);
+  filter: drop-shadow(0 2px 2px oklch(0.3 0.08 60 / 0.35));
+}
+
+.amber {
+  --cap-edge: oklch(0.6 0.15 60);
+  --cap-crimp: oklch(0.49 0.14 52);
+  --cap-body: oklch(0.72 0.17 58);
+  --cap-dent: oklch(0.58 0.15 55);
+}
+
+.silver {
+  --cap-edge: oklch(0.6 0.015 250);
+  --cap-crimp: oklch(0.46 0.015 250);
+  --cap-body: oklch(0.84 0.01 250);
+  --cap-dent: oklch(0.62 0.012 250);
+}
+
+.ink {
+  --cap-edge: oklch(0.3 0.05 250);
+  --cap-crimp: oklch(0.21 0.04 250);
+  --cap-body: oklch(0.38 0.05 250);
+  --cap-dent: oklch(0.27 0.04 250);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bubble {
+    animation: bubble-rise var(--t) linear var(--d) infinite;
+  }
+
+  .foam {
+    transform-origin: 35px 27px;
+    animation: foam 3.6s ease-in-out infinite alternate;
+  }
+
+  .cap:hover {
+    animation: cap-spin 0.8s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+@keyframes bubble-rise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 0.9;
+  }
+
+  85% {
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: translateY(-66px);
+    opacity: 0;
+  }
+}
+
+@keyframes foam {
+  to {
+    transform: scaleY(1.07) translateY(-0.4px);
+  }
+}
+
+@keyframes cap-spin {
+  from {
+    rotate: var(--cap-rotate, 0deg);
+  }
+
+  to {
+    rotate: calc(var(--cap-rotate, 0deg) + 360deg);
+  }
+}
