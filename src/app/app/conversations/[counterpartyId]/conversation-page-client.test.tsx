@@ -15,6 +15,7 @@ const mutationsGroup = vi.hoisted(() => ({
   getOrCreateDm: vi.fn().mockResolvedValue({ groupId: "dm-1", created: false }),
   acceptInvitation: vi.fn().mockResolvedValue({ eventId: 1 }),
   declineInvitation: vi.fn().mockResolvedValue({ eventId: 2 }),
+  unarchiveGroup: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
 
@@ -237,6 +238,23 @@ describe("ConversationPageClient", () => {
 
     await waitFor(() => {
       expect(refresh.loadConversation).toHaveBeenCalledWith("dm-1");
+    });
+  });
+
+  it("shows the archived banner and unarchives through the mutation", async () => {
+    seedDm(makeDmSnapshot({ archivedAt: "2026-09-10T08:00:00.000Z" }), {
+      messages: [],
+      events: [],
+    });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    expect(screen.getByText("Conversa arquivada")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Desarquivar" }));
+
+    await waitFor(() => {
+      expect(mutationsGroup.unarchiveGroup).toHaveBeenCalledWith("dm-1");
     });
   });
   it("does not render chat actions when the account is absent from the DM", () => {

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GroupMembersSection } from "./group-members-section";
 import { InviteByHandlePanel } from "./group-invite-panel";
+import toast from "react-hot-toast";
 import type { GroupMember, GroupSnapshot, UserProfile } from "@/types/ledger";
 
 const routerMock = vi.hoisted(() => ({
@@ -31,6 +32,8 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   lookupUserByHandle: vi.fn(),
   inviteMember: vi.fn(),
   createGuestClaimToken: vi.fn(),
+  archiveGroup: vi.fn(),
+  unarchiveGroup: vi.fn(),
 }));
 
 import {
@@ -40,6 +43,8 @@ import {
   leaveGroup,
   lookupUserByHandle,
   removeMember,
+  archiveGroup,
+  unarchiveGroup,
 } from "@/lib/sync/mutations-group";
 
 const groupId = "g1";
@@ -231,6 +236,105 @@ describe("GroupMembersSection", () => {
       expect(onDepart).toHaveBeenCalled();
       expect(routerMock.replace).toHaveBeenCalledWith("/app/groups");
     });
+  });
+
+  it("hides Excluir grupo from the creator once financial history is shared", () => {
+    render(
+      <GroupMembersSection
+        settingsOnly
+        snapshot={snapshot({ financialHistorySharedAt: "2026-01-05T00:00:00Z" })}
+        meId={creatorId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Excluir grupo/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps Excluir grupo available to the creator while financial history is unshared", () => {
+    render(
+      <GroupMembersSection
+        settingsOnly
+        snapshot={snapshot()}
+        meId={creatorId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Excluir grupo/ })).toBeInTheDocument();
+  });
+
+  it("offers Arquivar grupo at zero balance and archives through the mutation", async () => {
+    vi.mocked(archiveGroup).mockResolvedValue(undefined);
+
+    render(
+      <GroupMembersSection
+        settingsOnly
+        snapshot={snapshot()}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    const archive = screen.getByRole("button", { name: "Arquivar grupo" });
+    expect(archive).toBeEnabled();
+
+    await userEvent.click(archive);
+
+    await waitFor(() => {
+      expect(archiveGroup).toHaveBeenCalledTimes(1);
+      expect(archiveGroup).toHaveBeenCalledWith(groupId);
+    });
+    expect(unarchiveGroup).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Grupo arquivado");
+  });
+
+  it("blocks Arquivar grupo with the outstanding balance reason", async () => {
+    render(
+      <GroupMembersSection
+        settingsOnly
+        snapshot={snapshot({
+          balances: [{ kind: "user", participantId: meId, netCents: -4143 }],
+        })}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    const archive = screen.getByRole("button", { name: "Arquivar grupo" });
+    expect(archive).toBeDisabled();
+    expect(archive).toHaveAttribute("aria-describedby", "archive-balance-reason");
+    expect(screen.getByText("Acerte as contas antes de arquivar.")).toBeInTheDocument();
+
+    await userEvent.click(archive);
+
+    expect(archiveGroup).not.toHaveBeenCalled();
+    expect(unarchiveGroup).not.toHaveBeenCalled();
+  });
+
+  it("offers Desarquivar grupo for an archived group and unarchives through the mutation", async () => {
+    vi.mocked(unarchiveGroup).mockResolvedValue(undefined);
+
+    render(
+      <GroupMembersSection
+        settingsOnly
+        snapshot={snapshot({ archivedAt: "2026-01-06T00:00:00Z" })}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    const unarchive = screen.getByRole("button", { name: "Desarquivar grupo" });
+    expect(unarchive).toBeEnabled();
+
+    await userEvent.click(unarchive);
+
+    await waitFor(() => {
+      expect(unarchiveGroup).toHaveBeenCalledTimes(1);
+      expect(unarchiveGroup).toHaveBeenCalledWith(groupId);
+    });
+    expect(archiveGroup).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Grupo desarquivado");
   });
 
   it("allows sharing an invite with a guest", async () => {

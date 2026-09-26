@@ -22,7 +22,9 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { firstNameOf } from "@/lib/people";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { ArchivedGroupBanner } from "@/components/shared/archived-group-banner";
 import { haptics } from "@/hooks/use-haptics";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -557,6 +559,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         subtitle={`@${counterparty.handle}`}
         leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
       />
+      {isGroupArchived(dm) && <ArchivedGroupBanner groupId={dm.group.id} kind="conversation" />}
       {isCounterpartyPending ? (
         <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
           <p className="text-center text-xs text-muted-foreground">

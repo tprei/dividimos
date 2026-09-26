@@ -1,12 +1,18 @@
 "use client";
 
 import { motion, useReducedMotion, type PanInfo } from "framer-motion";
-import { MessageSquare, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Archive, ChevronRight, MessageSquare, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import toast from "react-hot-toast";
 import { ConversationRow } from "@/components/conversations/conversation-row";
 import { NewConversationButton } from "@/components/conversations/new-conversation-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { SwipeableArchiveRow } from "@/components/shared/swipeable-archive-row";
+import { UnreadBadge } from "@/components/shared/unread-badge";
+import { ListRow } from "@/components/ui/list-row";
+import { SectionCard } from "@/components/ui/section-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { haptics } from "@/hooks/use-haptics";
@@ -18,6 +24,8 @@ import {
 } from "@/lib/conversations";
 import { cn } from "@/lib/utils";
 import { subscribeChat } from "@/lib/sync/realtime";
+import { archiveGroup, unarchiveGroup } from "@/lib/sync/mutations-group";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
 import { selectConversationListSections } from "@/stores/app-selectors";
@@ -43,11 +51,37 @@ export function swipeTarget(current: BalanceFilter, info: Pick<PanInfo, "offset"
 
 export function ConversationsListContent() {
   const me = useMe();
-  const rows = useAppStore((state) => selectConversationListSections(state).active);
+  const archivedView = useSearchParams().get("view") === "archived";
+  const sections = useAppStore(selectConversationListSections);
+  const rows = archivedView ? sections.archived : sections.active;
+  const panStartedInRow = useRef(false);
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BalanceFilter>("all");
   const [direction, setDirection] = useState<1 | -1>(1);
+
+  const setArchivedView = (show: boolean) => {
+    const url = new URL(window.location.href);
+    if (show) {
+      url.searchParams.set("view", "archived");
+      window.history.pushState({ archivedConversations: true }, "", `${url.pathname}${url.search}`);
+    } else if (window.history.state?.archivedConversations === true) {
+      window.history.back();
+    } else {
+      url.searchParams.delete("view");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    }
+  };
+
+  const changeArchive = async (groupId: string, archived: boolean) => {
+    try {
+      await (archived ? archiveGroup(groupId) : unarchiveGroup(groupId));
+      toast.success(archived ? "Conversa arquivada" : "Conversa desarquivada");
+    } catch (error) {
+      haptics.error();
+      toast.error(ledgerErrorMessage(error));
+    }
+  };
 
   const selectFilter = (next: BalanceFilter) => {
     if (next === filter) return;
@@ -76,8 +110,11 @@ export function ConversationsListContent() {
   return (
     <div className="mx-auto max-w-lg pb-6 md:max-w-2xl">
       <ScreenHeader
-        title="Conversas"
-        action={me ? <NewConversationButton inline /> : undefined}
+        title={archivedView ? "Arquivadas" : "Conversas"}
+        subtitle={archivedView ? "Conversas arquivadas" : undefined}
+        back={archivedView}
+        onBack={() => setArchivedView(false)}
+        action={!archivedView && me ? <NewConversationButton inline /> : undefined}
       />
       <div className="px-4">
         <div className="relative">
@@ -101,15 +138,15 @@ export function ConversationsListContent() {
                 aria-selected={active}
                 onClick={() => selectFilter(key)}
                 className={cn(
-                  "relative flex h-9 min-w-0 flex-1 items-center justify-center px-1 text-sm font-semibold whitespace-nowrap outline-none transition-colors focus-visible:bg-muted [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:-top-1 [@media(pointer:coarse)]:after:h-11",
+                  "relative flex min-h-11 min-w-0 flex-1 items-center justify-center px-1 text-sm font-semibold whitespace-nowrap outline-none transition-colors focus-visible:bg-muted",
                   active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}
                 {active && (
                   <motion.span
-                    layoutId="conversation-filter-indicator"
-                    transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                    layoutId={reduceMotion ? undefined : "conversation-filter-indicator"}
+                    transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 40 }}
                     className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
                   />
                 )}
@@ -120,13 +157,37 @@ export function ConversationsListContent() {
       </div>
 
       <motion.div
-        className="min-h-[50dvh] px-4 pt-3"
+        className="min-h-[50dvh] space-y-3 px-4 pt-3"
         style={{ touchAction: "pan-y" }}
+        onPanStart={(event) => {
+          panStartedInRow.current = event.target instanceof Element && event.target.closest("[data-swipe-row]") !== null;
+        }}
         onPanEnd={(_, info) => {
+          if (panStartedInRow.current) return;
           const next = swipeTarget(filter, info);
           if (next) selectFilter(next);
         }}
       >
+        {!archivedView && sections.archived.length > 0 && (
+          <SectionCard>
+            <ListRow
+              title="Arquivadas"
+              onClick={() => setArchivedView(true)}
+              leading={
+                <span className="relative flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Archive className="size-5" aria-hidden="true" />
+                  <UnreadBadge count={sections.archivedUnreadCount} />
+                </span>
+              }
+              trailing={
+                <span className="flex items-center gap-2 text-sm tabular-nums text-muted-foreground">
+                  {sections.archived.length}
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </span>
+              }
+            />
+          </SectionCard>
+        )}
         {showFilteredEmpty ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
@@ -151,22 +212,28 @@ export function ConversationsListContent() {
             }}
             initial={reduceMotion ? false : "hidden"}
             animate="visible"
-            className="divide-y rounded-2xl border bg-card"
+            className="divide-y overflow-hidden rounded-2xl border bg-card"
           >
             {visibleRows.map((row) => (
-              <motion.li key={row.groupId} variants={staggerItem}>
-                <ConversationRow row={row} />
+              <motion.li key={row.groupId} variants={reduceMotion ? undefined : staggerItem}>
+                <SwipeableArchiveRow
+                  action={row.archiveAction}
+                  onArchive={() => void changeArchive(row.groupId, true)}
+                  onUnarchive={() => void changeArchive(row.groupId, false)}
+                >
+                  <ConversationRow row={row} />
+                </SwipeableArchiveRow>
               </motion.li>
             ))}
           </motion.ul>
         ) : (
           <div className="flex flex-col items-center">
             <EmptyState
-              icon={MessageSquare}
-              title="Nenhuma conversa"
-              description="Conversas aparecem quando você divide contas diretamente com alguém."
+              icon={archivedView ? Archive : MessageSquare}
+              title={archivedView ? "Nenhuma conversa arquivada" : "Nenhuma conversa"}
+              description={archivedView ? "As conversas que você arquivar ficam aqui." : "Conversas aparecem quando você divide contas diretamente com alguém."}
             />
-            {me && <NewConversationButton inline label="Começar conversa" />}
+            {!archivedView && me && <NewConversationButton inline label="Começar conversa" />}
           </div>
         )}
       </motion.div>

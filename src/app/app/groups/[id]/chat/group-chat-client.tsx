@@ -20,10 +20,12 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { IconButton } from "@/components/ui/icon-button";
 import { haptics } from "@/hooks/use-haptics";
 import { debtRowsForGroup, departedCounterpartyLabel } from "@/lib/ledger/debt-rows";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
+import { ArchivedGroupBanner } from "@/components/shared/archived-group-banner";
 import { selectGroup } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 import type { UserProfile } from "@/types/ledger";
@@ -241,6 +243,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           </Link>
         }
       />
+      {isGroupArchived(snapshot) && <ArchivedGroupBanner groupId={groupId} kind="group" />}
       <ChatBalanceStrip
         netCents={netCents}
         owedLabel="A receber"
