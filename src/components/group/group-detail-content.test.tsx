@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { useSyncExternalStore } from "react";
 import { GroupDetailContent } from "./group-detail-content";
 import { LedgerError } from "@/lib/sync/errors";
-import { refreshGroup } from "@/lib/sync/refresh";
+import { refreshGroup, refreshOpenAssignmentRooms } from "@/lib/sync/refresh";
+import toast from "react-hot-toast";
 import { groupReadKey, useAppStore } from "@/stores/app-store";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 
 const routerMock = vi.hoisted(() => ({
@@ -75,6 +77,7 @@ vi.mock("react-hot-toast", () => ({
 
 vi.mock("@/lib/sync/refresh", () => ({
   refreshGroup: vi.fn(),
+  refreshOpenAssignmentRooms: vi.fn(),
   loadMoreExpenses: vi.fn(),
 }));
 
@@ -87,6 +90,23 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   leaveGroup: vi.fn(),
   deleteGroup: vi.fn(),
 }));
+
+const enterRoomMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/sync/assignment-rooms", () => ({
+  enterGroupAssignmentRoom: enterRoomMock,
+}));
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
 
 vi.mock("./group-settlement-view", () => ({
   GroupSettlementView: () => <div data-testid="settlement-stub" />,
@@ -203,6 +223,29 @@ function seedLoaded() {
   });
 }
 
+function openRoom(
+  id: string,
+  overrides: Partial<OpenAssignmentRoom> = {},
+): OpenAssignmentRoom {
+  return {
+    id,
+    groupId: "group-1",
+    status: "open",
+    revision: 1,
+    title: `Conta ${id}`,
+    occurredOn: "2026-09-20",
+    totalCents: 12345,
+    host: { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false },
+    createdAt: "2026-09-21T12:00:00Z",
+    itemCount: 2,
+    ownedItemCount: 0,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   useAppStore.getState().reset();
@@ -232,6 +275,8 @@ describe("GroupDetailContent", () => {
     });
     expect(container.querySelectorAll(".animate-pulse, [class*='shimmer']")).toHaveLength(0);
     expect(refreshGroup).not.toHaveBeenCalled();
+    expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(1);
+    expect(refreshOpenAssignmentRooms).toHaveBeenCalledWith(groupId);
   });
 
   it("stops at the unavailable state when a completed read has no snapshot", () => {
@@ -424,6 +469,108 @@ describe("GroupDetailContent", () => {
     const chatLink = screen.getByRole("link", { name: "Conversa" });
     expect(chatLink.getAttribute("href")).toBe(`/app/groups/${groupId}/chat`);
     expect(screen.getByLabelText("7 mensagens não lidas")).toBeInTheDocument();
+  });
+
+  it("enters a not-joined group room through the sync layer before navigating to it", async () => {
+    seedLoaded();
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: { [groupId]: [openRoom("room-1")] },
+    });
+    const entered = Promise.withResolvers<void>();
+    enterRoomMock.mockImplementationOnce(() => entered.promise);
+
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("button", { name: /Conta room-1/ }));
+
+    expect(enterRoomMock).toHaveBeenCalledTimes(1);
+    expect(enterRoomMock).toHaveBeenCalledWith({ groupId, roomId: "room-1" });
+    expect(routerMock.push).not.toHaveBeenCalled();
+
+    entered.resolve();
+    await waitFor(() => {
+      expect(routerMock.push).toHaveBeenCalledWith("/room/room-1");
+    });
+    expect(enterRoomMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("navigates to a viewer-hosted group room without entering it", async () => {
+    seedLoaded();
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        [groupId]: [
+          openRoom("room-2", {
+            host: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: null, isBot: false },
+          }),
+        ],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("button", { name: /Conta room-2/ }));
+
+    expect(routerMock.push).toHaveBeenCalledWith("/room/room-2");
+    expect(enterRoomMock).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when entering resolves after leaving the screen", async () => {
+    seedLoaded();
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: { [groupId]: [openRoom("room-1")] },
+    });
+    const entered = Promise.withResolvers<void>();
+    enterRoomMock.mockImplementationOnce(() => entered.promise);
+
+    const user = userEvent.setup();
+    const { unmount } = render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("button", { name: /Conta room-1/ }));
+    expect(enterRoomMock).toHaveBeenCalledTimes(1);
+    unmount();
+
+    entered.resolve();
+    await entered.promise;
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it("toasts and re-enables the row when entering a room fails", async () => {
+    seedLoaded();
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: { [groupId]: [openRoom("room-1")] },
+    });
+    enterRoomMock.mockRejectedValueOnce(new LedgerError("room_closed"));
+
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("button", { name: /Conta room-1/ }));
+
+    expect(toast.error).toHaveBeenCalledWith("A escolha de itens já foi encerrada.");
+    expect(routerMock.push).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Conta room-1/ })).toBeEnabled();
+    });
+    expect(screen.getByText("Marcar meus itens")).toBeInTheDocument();
+  });
+
+  it("hides the open rooms card from an invited viewer", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: { ...me, id: "user-3", handle: "dave", name: "Dave Lima", email: "dave@example.com" },
+      groups: { [groupId]: snapshot() },
+      groupOrder: [groupId],
+      openAssignmentRoomsByGroupId: { [groupId]: [openRoom("room-1")] },
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
+    expect(screen.queryByText("Contas abertas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Conta room-1")).not.toBeInTheDocument();
   });
 
 
