@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatThread, mergeTimeline } from "./chat-thread";
+import { useAppStore } from "@/stores/app-store";
+import type { AssignmentRoomSummary } from "@/types/assignment-room";
 import type { ChatMessage, GroupEvent, UserProfile } from "@/types/ledger";
 
 process.env.TZ = "UTC";
@@ -150,5 +152,59 @@ describe("ChatThread", () => {
     const btn = screen.getByTestId("chat-load-more");
     fireEvent.click(btn);
     expect(onLoadMore).toHaveBeenCalled();
+  });
+});
+
+describe("ChatThread room-opened events", () => {
+  const summary: AssignmentRoomSummary = {
+    id: "room-1",
+    groupId: "g-1",
+    status: "open",
+    revision: 2,
+    title: "Bar do Zé",
+    occurredOn: "2026-01-01",
+    totalCents: 18260,
+    host: bob,
+    createdAt: "2026-01-01T10:00:00Z",
+    itemCount: 3,
+    ownedItemCount: 0,
+    claimers: [],
+    expenseId: null,
+  };
+  const roomEvent = makeEvent({
+    id: 9,
+    kind: "assignment_room_opened",
+    subjectUserId: null,
+    payload: { roomId: summary.id, title: summary.title, totalCents: summary.totalCents },
+    assignmentRoom: summary,
+  });
+
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("opens the room from the card with its summary", () => {
+    const onOpenRoom = vi.fn();
+    renderThread({ events: [roomEvent], onOpenRoom });
+
+    fireEvent.click(screen.getByRole("button", { name: /Marcar meus itens/ }));
+
+    expect(onOpenRoom).toHaveBeenCalledWith(summary);
+  });
+
+  it("shows the newer live summary over the one embedded in the event", () => {
+    useAppStore.getState().applyAssignmentRoomSummaries([
+      { ...summary, revision: 5, status: "cancelled" },
+    ]);
+    renderThread({ events: [roomEvent], onOpenRoom: vi.fn() });
+
+    expect(screen.getByText("Cancelada")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Marcar meus itens/ })).not.toBeInTheDocument();
+  });
+
+  it("renders no room card where rooms cannot be opened", () => {
+    renderThread({ events: [roomEvent] });
+
+    expect(screen.queryByText("Bar do Zé")).not.toBeInTheDocument();
   });
 });
