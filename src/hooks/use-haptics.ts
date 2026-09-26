@@ -6,7 +6,7 @@ function silent(fn: () => Promise<void>): void {
 
 /**
  * Plain-object haptics API — safe to call from hooks, utilities, and
- * non-component code (e.g. usePullToRefresh). Every call is fire-and-forget
+ * non-component code (e.g. usePullGesture). Every call is fire-and-forget
  * and silently no-ops on platforms without haptic support.
  */
 export const haptics = {
