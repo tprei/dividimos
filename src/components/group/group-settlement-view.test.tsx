@@ -390,6 +390,36 @@ describe("GroupSettlementView", () => {
     expect(screen.queryByText("Aguardando o convite")).not.toBeInTheDocument();
   });
 
+  it("renders a transfer to a former member with their name and no payment actions", () => {
+    const jennie = { id: "user-9", handle: "jennie", name: "Jennie Kim", avatarUrl: null, isBot: false };
+    const value = snapshot({
+      members: [
+        member("user-1", "tiago", "Tiago Silva"),
+        member("user-2", "bia", "Bia Costa"),
+      ],
+      balances: [
+        { kind: "user", participantId: "user-1", netCents: -4143 },
+        { kind: "user", participantId: "user-9", netCents: 4143 },
+      ],
+      guests: [],
+      pairwiseEdges: [
+        { fromKind: "user", fromId: "user-1", toId: "user-9", amountCents: 4143 },
+      ],
+      formerMembers: [jennie],
+    });
+    seed(value);
+
+    render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
+
+    const row = document.getElementById("transfer-user-1-user-9")!;
+    expect(within(row).getByTitle("Jennie Kim")).toBeInTheDocument();
+    expect(within(row).getByText("saiu do grupo")).toBeInTheDocument();
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pagar/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Cobrar/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-mark-paid")).not.toBeInTheDocument();
+  });
+
   it("shows only the settled state when every balance is zero", () => {
     const settled = snapshot({
       balances: [{ kind: "user", participantId: "user-1", netCents: 0 }],

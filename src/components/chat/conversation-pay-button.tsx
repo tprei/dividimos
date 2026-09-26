@@ -44,8 +44,9 @@ export function ConversationPayButton({
       ),
     [rows],
   );
+  const departed = rows.some((row) => row.counterpartyDeparted);
 
-  if (netCents === 0 && payMode === null) return null;
+  if (departed || (netCents === 0 && payMode === null)) return null;
 
   const mode: "pay" | "collect" = payMode ?? (netCents < 0 ? "pay" : "collect");
   const absAmount = Math.abs(netCents);
@@ -57,7 +58,7 @@ export function ConversationPayButton({
       <Button
         variant="outline"
         size="sm"
-        className="h-6 gap-1 rounded-[0.375rem] px-2 text-xs"
+        className="min-h-11 gap-1 rounded-md px-2 text-xs"
         aria-label={`${mode === "pay" ? "Pagar" : "Cobrar"} ${formatBRL(absAmount)}`}
         onClick={() => setPayMode(netCents < 0 ? "pay" : "collect")}
       >

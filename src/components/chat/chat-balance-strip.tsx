@@ -6,13 +6,14 @@ interface ChatBalanceStripProps {
   netCents: number;
   owedLabel: string;
   action?: ReactNode;
+  departedLabel?: string;
 }
 
-export function ChatBalanceStrip({ netCents, owedLabel, action }: ChatBalanceStripProps) {
+export function ChatBalanceStrip({ netCents, owedLabel, action, departedLabel }: ChatBalanceStripProps) {
   if (netCents === 0) return null;
   const owed = netCents > 0;
   return (
-    <div className="flex min-h-8 shrink-0 items-center justify-center gap-2 border-y border-border bg-muted/40 px-4 py-0.5">
+    <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-y border-border bg-muted/40 px-4 py-1">
       <p
         className={cn(
           "flex min-w-0 items-baseline gap-1 text-xs font-semibold",
@@ -23,6 +24,7 @@ export function ChatBalanceStrip({ netCents, owedLabel, action }: ChatBalanceStr
         <Money cents={Math.abs(netCents)} size="sm" className="text-xs" />
       </p>
       {action}
+      {departedLabel && <p className="w-full text-center text-xs text-muted-foreground">{departedLabel}</p>}
     </div>
   );
 }

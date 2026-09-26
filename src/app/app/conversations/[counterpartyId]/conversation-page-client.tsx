@@ -156,7 +156,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     !dm && resolveError?.accountKey === accountKey ? resolveError.message : null;
   const resolving = accountKey !== null && !dm && activeResolveError === null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
-  const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
+  const formerCounterparty = dm?.formerMembers.find((person) => person.id === counterpartyId);
+  const counterparty: UserProfile | null = counterpartyMember?.user ?? formerCounterparty ?? null;
+  const counterpartyDeparted = !counterpartyMember && formerCounterparty !== undefined;
   // Subscribe to stable references only: deriving the view inside the store
   // selector would return a fresh object every render and loop forever.
   const groupRead = useAppStore((s) =>
@@ -183,6 +185,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const profileById = useMemo(() => {
     const profiles = new Map<string, UserProfile>();
     for (const member of dm?.members ?? []) profiles.set(member.userId, member.user);
+    for (const person of dm?.formerMembers ?? []) {
+      if (!profiles.has(person.id)) profiles.set(person.id, person);
+    }
     return profiles;
   }, [dm]);
   const nameOf = useCallback(
@@ -562,6 +567,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         <ChatBalanceStrip
           netCents={netCents}
           owedLabel={`${firstNameOf(counterparty.name)} te deve`}
+          departedLabel={counterpartyDeparted ? `${counterparty.name} · saiu do grupo` : undefined}
           action={
             <ConversationPayButton
               groupId={dm.group.id}
@@ -601,7 +607,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         />
       </div>
       )}
-      {!isCounterpartyPending && groupId && (
+      {!isCounterpartyPending && !counterpartyDeparted && groupId && (
         <>
           <AnimatePresence>
             {chargeSheetOpen && (

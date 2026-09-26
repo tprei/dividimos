@@ -16,6 +16,7 @@ export interface SettlementPerson {
   isGuest: boolean;
   /** Invited but has not accepted: `record_settlement` rejects them either way. */
   isPending: boolean;
+  isDeparted: boolean;
 }
 
 interface ConsolidatedBalanceCardProps {
@@ -188,7 +189,7 @@ function ConsolidatedSide({
           <div
             key={entry.balance.participantId}
             role="img"
-            aria-label={`${balanceKind} de ${labels.get(entry.person.id)}: ${signedAmountLabel(entry.balance.netCents)}`}
+            aria-label={`${balanceKind} de ${labels.get(entry.person.id)}${entry.person.isDeparted ? ", saiu do grupo" : ""}: ${signedAmountLabel(entry.balance.netCents)}`}
             className={accentClass}
           />
         ))}
@@ -201,6 +202,7 @@ function ConsolidatedSide({
             className={cn("min-w-0 truncate text-xs font-medium tabular-nums", toneClass)}
           >
             {labels.get(entry.person.id)} <Money cents={Math.abs(entry.balance.netCents)} size="sm" className="text-xs" />
+            {entry.person.isDeparted && <span className="block font-normal text-muted-foreground">saiu do grupo</span>}
           </span>
         ))}
       </div>

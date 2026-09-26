@@ -19,7 +19,7 @@ import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { IconButton } from "@/components/ui/icon-button";
 import { haptics } from "@/hooks/use-haptics";
-import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
+import { debtRowsForGroup, departedCounterpartyLabel } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
 import { subscribeChat } from "@/lib/sync/realtime";
@@ -60,6 +60,9 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const profileById = useMemo(() => {
     const profiles = new Map<string, UserProfile>();
     for (const member of snapshot?.members ?? []) profiles.set(member.userId, member.user);
+    for (const person of snapshot?.formerMembers ?? []) {
+      if (!profiles.has(person.id)) profiles.set(person.id, person);
+    }
     return profiles;
   }, [snapshot]);
   const nameOf = useCallback(
@@ -71,7 +74,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     const owedByMe = new Map<string, number>();
     const owedToMe = new Map<string, number>();
     for (const row of debtRows) {
-      if (row.counterpartyKind !== "user") continue;
+      if (row.counterpartyKind !== "user" || row.counterpartyDeparted) continue;
       (row.direction === "owes" ? owedByMe : owedToMe).set(row.counterpartyId, row.amountCents);
     }
     return accepted
@@ -238,7 +241,11 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           </Link>
         }
       />
-      <ChatBalanceStrip netCents={netCents} owedLabel="Membros te devem" />
+      <ChatBalanceStrip
+        netCents={netCents}
+        owedLabel="A receber"
+        departedLabel={departedCounterpartyLabel(debtRows)}
+      />
       <div className="flex min-h-0 flex-1 flex-col justify-center">
         <ChatThread
           groupId={groupId}
