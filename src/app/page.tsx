@@ -1,11 +1,14 @@
+import { BrazilSection } from "@/components/landing/brazil-section";
 import { FxProvider } from "@/components/landing/click-fx";
-import { CTASection } from "@/components/landing/cta-section";
+import { FaqSection } from "@/components/landing/faq-section";
+import { FinalCtaSection } from "@/components/landing/final-cta-section";
 import { GroupSection } from "@/components/landing/group-section";
 import { GuestSection } from "@/components/landing/guest-section";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
+import { SecuritySection } from "@/components/landing/security-section";
 import { WaysSection } from "@/components/landing/ways-section";
 import { cn } from "@/lib/utils";
 import styles from "@/components/landing/landing.module.css";
@@ -26,14 +29,10 @@ export default function LandingPage() {
           <GuestSection />
           <GroupSection />
           <WaysSection />
-          <section
-            className="py-20 sm:py-28"
-            style={{ background: "linear-gradient(to bottom, transparent, oklch(0.78 0.16 75 / 8%) 40%, oklch(0.78 0.16 75 / 15%))" }}
-          >
-            <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
-              <CTASection />
-            </div>
-          </section>
+          <BrazilSection />
+          <SecuritySection />
+          <FaqSection />
+          <FinalCtaSection />
         </main>
         <LandingFooter />
       </FxProvider>
