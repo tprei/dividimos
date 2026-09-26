@@ -1,5 +1,7 @@
 import { FxProvider } from "@/components/landing/click-fx";
 import { CTASection } from "@/components/landing/cta-section";
+import { GroupSection } from "@/components/landing/group-section";
+import { GuestSection } from "@/components/landing/guest-section";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { LandingFooter } from "@/components/landing/landing-footer";
@@ -19,9 +21,9 @@ export default function LandingPage() {
         <LandingHeader />
         <main id="main" className="flex-1">
           <Hero />
-          <section id="como-funciona">
-            <HowItWorksSection />
-          </section>
+          <HowItWorksSection />
+          <GuestSection />
+          <GroupSection />
           <section
             className="py-20 sm:py-28"
             style={{ background: "linear-gradient(to bottom, transparent, oklch(0.78 0.16 75 / 8%) 40%, oklch(0.78 0.16 75 / 15%))" }}
