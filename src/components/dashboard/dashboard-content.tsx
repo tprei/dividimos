@@ -17,7 +17,8 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
-import { useScreenHeaderActions } from "@/components/shared/screen-header-actions";
+import { RefreshButton } from "@/components/shared/refresh-button";
+import { useScreenHeaderActions, useScreenRefresh } from "@/components/shared/screen-header-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListRow } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
@@ -106,6 +107,7 @@ export function DashboardContent() {
   );
 
   const headerActions = useScreenHeaderActions();
+  const screenRefresh = useScreenRefresh();
   if (!hydrated || !me) {
     return (
       <div className="px-4 py-6">
@@ -234,6 +236,9 @@ export function DashboardContent() {
       <header className="flex items-center justify-between pt-4 compact:pt-2">
         <Logo size="sm" />
         <div className="flex items-center gap-1">
+          {screenRefresh && (
+            <RefreshButton refreshing={screenRefresh.refreshing} onRefresh={screenRefresh.refresh} />
+          )}
           <IconButton
             nativeButton={false}
             role="link"
