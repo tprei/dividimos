@@ -4,14 +4,28 @@ on:
   push:
     branches: [main]
   pull_request:
+    paths:
+      - android/**
+      - capacitor.config.ts
+      - package.json
+      - package-lock.json
+      - .github/workflows/android.yml
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # PR gate: proves the Android project still assembles. No signing secrets
   # and no upload — a broken manifest, resource or Gradle change is red here
-  # instead of on main.
+  # instead of on main. PRs that touch none of the paths above skip the
+  # workflow: the web assets are a placeholder out/index.html and the app
+  # loads https://www.dividimos.ai per capacitor.config.ts, so only those
+  # inputs change what Gradle assembles. The ruleset on main has no required
+  # status checks, so a skipped workflow blocks nothing.
   compile:
     name: Android compiles
     if: github.event_name == 'pull_request'

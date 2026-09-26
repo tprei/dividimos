@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: Detect SQL changes
@@ -271,7 +275,7 @@ jobs:
       - name: Start Supabase (applies every migration in order)
         run: |
           for attempt in 1 2 3; do
-            if timeout 8m supabase start; then
+            if timeout 8m supabase start -x vector,imgproxy,logflare,edge-runtime,studio,postgres-meta,mailpit; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
