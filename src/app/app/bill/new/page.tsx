@@ -11,7 +11,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
-import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
+import type { ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import { ReplaceDraftDialog } from "@/components/bill/wizard/replace-draft-dialog";

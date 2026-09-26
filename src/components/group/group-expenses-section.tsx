@@ -7,7 +7,7 @@ import type { GroupMember } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
-import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
+import { VoiceBillReview, type ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-auth";
@@ -99,7 +99,6 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
 
   const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
     setVoiceResult(result);
-    setShowVoiceInput(false);
     setVoiceError(null);
   }, []);
 
@@ -185,6 +184,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
 
   const handleVoiceCancel = useCallback(() => {
     setVoiceResult(null);
+    setShowVoiceInput(false);
   }, []);
 
   return (
@@ -204,20 +204,17 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
             className="gap-2"
             aria-label="Adicionar conta por voz"
             aria-expanded={showVoiceInput}
-            onClick={() => { haptics.selectionChanged(); setShowVoiceInput(!showVoiceInput); }}
+            disabled={voiceResult !== null}
+            onClick={() => {
+              haptics.selectionChanged();
+              const next = !showVoiceInput;
+              setShowVoiceInput(next);
+              if (!next) setVoiceError(null);
+            }}
           >
             <Mic className="h-4 w-4" />
           </Button>
         </div>
-
-        {voiceResult && (
-          <VoiceExpenseModal
-            result={voiceResult}
-            groupMembers={modalMembers}
-            onConfirm={handleVoiceConfirm}
-            onCancel={handleVoiceCancel}
-          />
-        )}
 
         <DiscardDraftDialog
           open={discardDialogOpen}
@@ -237,8 +234,16 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
               onResult={handleVoiceResult}
               onError={handleVoiceError}
               onRecordStart={handleVoiceRecordStart}
+              review={voiceResult ? (
+                <VoiceBillReview
+                  result={voiceResult}
+                  groupMembers={modalMembers}
+                  onConfirm={handleVoiceConfirm}
+                  onCancel={handleVoiceCancel}
+                />
+              ) : undefined}
             />
-            {voiceError && (
+            {voiceError && !voiceResult && (
               <p className="text-center text-sm text-destructive">{voiceError}</p>
             )}
           </div>

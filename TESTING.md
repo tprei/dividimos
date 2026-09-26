@@ -4,7 +4,7 @@ Dividimos has three layers of automated tests: **unit**, **integration**, and **
 
 ## Unit Tests
 
-Fast, isolated tests for pure logic and component rendering. Vitest runs `*.test.ts` in the `node` environment and `*.test.tsx` in happy-dom with jest-dom, React Testing Library cleanup, and the Framer Motion mock (`src/test/setup-dom.ts`). A test that needs `window`, `document`, `navigator`, or a React render is a `.test.tsx`, even without JSX: under `node` a module that checks `typeof window` quietly takes its server branch.
+Fast, isolated tests for pure logic and component rendering. Run in Vitest with happy-dom.
 
 ```bash
 npm run test            # run once
@@ -69,7 +69,7 @@ npm run test:synthetic:ios
 npm run test:synthetic:android
 ```
 
-The mobile projects need WebKit installed once: `npx playwright install --with-deps chromium webkit`. CI runs all three projects in each of two shards against one local Supabase and one production server, with three workers shared across the projects. Copies of the same test therefore share a database: never pass a fixed `handle` to `seed.createUser`, because handles are unique.
+The mobile projects need WebKit installed once: `npx playwright install --with-deps chromium webkit`. CI runs all three projects as a matrix axis.
 
 A second actor inside a synthetic test must come from the `newSession` fixture, not `browser.newContext()`. The raw call drops the project's device profile, so on the iPhone project every actor except the first would silently run at a desktop viewport.
 
@@ -104,8 +104,8 @@ import { test, expect } from "../fixtures";
 
 test("user can see their group", async ({ page, seed, loginAs }) => {
   // 1. Seed test data — each test creates its own users and groups
-  const alice = await seed.createUser({ name: "Alice" });
-  const bob = await seed.createUser({ name: "Bob" });
+  const alice = await seed.createUser({ handle: "alice" });
+  const bob = await seed.createUser({ handle: "bob" });
   const group = await seed.createGroup(alice.id, [bob.id], "Almoço");
 
   // 2. Authenticate as a seeded user (sets session cookies directly)
@@ -147,8 +147,8 @@ To test interactions between two users (e.g., Alice creates, Bob views), use sep
 import { test, expect, loginInContext } from "../fixtures";
 
 test("bob sees alice's expense", async ({ page, seed, loginAs, browser }) => {
-  const alice = await seed.createUser({ name: "Alice" });
-  const bob = await seed.createUser({ name: "Bob" });
+  const alice = await seed.createUser({ handle: "alice" });
+  const bob = await seed.createUser({ handle: "bob" });
   const group = await seed.createGroup(alice.id, [bob.id]);
 
   await seed.createExpense(group.id, alice.id, [alice.id, bob.id]);
@@ -346,7 +346,7 @@ Tests voice expense capture, microphone permissions, speech-to-text streaming, a
   - Engine choice: `src/lib/speech-engine.ts` (`pickSpeechEngine` — Web Speech is never used on Apple mobile WebKit, where recording + `/api/voice/transcribe` is used instead)
   - Android Native Speech: `src/lib/capacitor/speech.ts` (`startNativeListening` via `@capgo/capacitor-speech-recognition`)
   - UI Button: `src/components/bill/voice-expense-button.tsx` (hook exposes `phase` and `level` for the recording UI)
-  - Review Modal: `src/components/bill/voice-expense-modal.tsx` (`VoiceExpenseModal`)
+  - Review Ticket: `src/components/bill/voice-bill-review.tsx` (`VoiceBillReview` — editable "Confira sua conta" ticket under the mic card)
   - API Routes: `src/app/api/voice/parse/route.ts`, `src/app/api/voice/transcribe/route.ts`
   - Parser: `src/lib/voice-expense-parser.ts`
   - Transcriber: `src/lib/voice-transcription.ts` (Gemini audio → PT-BR text)
@@ -371,7 +371,7 @@ Tests voice expense capture, microphone permissions, speech-to-text streaming, a
   7. Observe interim transcript streaming in real-time beneath the button.
   8. Tap **"Toque pra parar"** (or allow silence detection to automatically stop).
   9. Observe request sent to `/api/voice/parse` and response handled.
-  10. Observe `VoiceExpenseModal` opening:
+  10. Observe the `VoiceBillReview` ticket ("Confira sua conta") opening under the mic card:
       - Title parsed (e.g. "Almoço no restaurante").
       - Amount parsed into Brazilian Real (e.g. "R$ 85,00").
       - Expense type categorized (single amount vs itemized).
@@ -380,7 +380,7 @@ Tests voice expense capture, microphone permissions, speech-to-text streaming, a
 - **Expected Observable Outcomes**:
   - Real-time Portuguese speech-to-text transcript displays during recording.
   - Gemini parses expense parameters accurately from unstructured voice command.
-  - `VoiceExpenseModal` allows human review and manual override before hydrating into store.
+  - `VoiceBillReview` allows human review and manual override before hydrating into store.
 
 ---
 

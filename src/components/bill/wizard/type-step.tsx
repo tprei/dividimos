@@ -8,7 +8,7 @@ import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
-import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
+import { VoiceBillReview, type ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import { Button } from "@/components/ui/button";
 import { processReceiptScan } from "@/lib/process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
@@ -116,6 +116,8 @@ export function TypeStep({
     if (!accountChanged) return;
     resetScanState();
     setVoiceResult(null);
+    setShowVoiceInput(false);
+    setVoiceError(null);
     setShowScanner(false);
   }, [accountChanged, resetScanState]);
 
@@ -195,7 +197,6 @@ export function TypeStep({
 
   const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
     setVoiceResult(result);
-    setShowVoiceInput(false);
     setVoiceError(null);
   }, []);
 
@@ -210,6 +211,7 @@ export function TypeStep({
 
   const handleVoiceCancel = useCallback(() => {
     setVoiceResult(null);
+    setShowVoiceInput(false);
   }, []);
 
   if (scanResult) {
@@ -256,17 +258,6 @@ export function TypeStep({
     );
   }
 
-  if (voiceResult) {
-    return (
-      <VoiceExpenseModal
-        result={voiceResult}
-        groupMembers={groupMembers}
-        onConfirm={onVoiceConfirm}
-        onCancel={handleVoiceCancel}
-      />
-    );
-  }
-
   if (showVoiceInput) {
     return (
       <div className="space-y-4">
@@ -276,8 +267,16 @@ export function TypeStep({
           onResult={handleVoiceResult}
           onError={handleVoiceError}
           onRecordStart={handleVoiceRecordStart}
+          review={voiceResult ? (
+            <VoiceBillReview
+              result={voiceResult}
+              groupMembers={groupMembers}
+              onConfirm={onVoiceConfirm}
+              onCancel={handleVoiceCancel}
+            />
+          ) : undefined}
         />
-        {voiceError && (
+        {!voiceResult && voiceError && (
           <motion.p
             role="alert"
             initial={{ opacity: 0 }}
@@ -287,13 +286,15 @@ export function TypeStep({
             {voiceError}
           </motion.p>
         )}
-        <Button
-          variant="ghost"
-          className="w-full"
-          onClick={() => { setShowVoiceInput(false); setVoiceError(null); }}
-        >
-          Voltar
-        </Button>
+        {!voiceResult && (
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => { setShowVoiceInput(false); setVoiceError(null); }}
+          >
+            Voltar
+          </Button>
+        )}
       </div>
     );
   }

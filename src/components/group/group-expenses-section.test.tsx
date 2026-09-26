@@ -26,10 +26,6 @@ vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("@/components/bill/voice-expense-modal", () => ({
-  VoiceExpenseModal: () => null,
-}));
-
 const groupId = "g1";
 
 function expense(id: string, title: string, overrides: Partial<ExpenseSummary> = {}): ExpenseSummary {
