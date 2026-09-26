@@ -78,22 +78,15 @@ beforeEach(() => {
 });
 
 describe("ItemizedBillForm Participantes section", () => {
-  it("opens with the bill name, date, group, and people inline", () => {
-    renderForm();
-    expect(screen.getByLabelText("Nome da conta")).toHaveValue("");
-    expect(screen.getByRole("button", { name: /Data/ })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Por @handle" })).toBeInTheDocument();
-  });
-
   it("blocks Continuar until the bill has a name and two people", () => {
-    prepareStore("", false);
+    prepareStore("Churrasco", false);
     renderForm();
     const continuar = screen.getByRole("button", { name: "Continuar" });
     expect(continuar).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "Churrasco" } });
-    expect(continuar).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Adicione quem divide com você.");
+    fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "" } });
+    expect(screen.getByRole("status")).toHaveTextContent("Dê um nome pra conta.");
+    fireEvent.change(screen.getByLabelText("Nome da conta"), { target: { value: "Churrasco" } });
     act(() => useBillStore.getState().addParticipant(userBob));
     expect(continuar).toBeEnabled();
     fireEvent.click(continuar);

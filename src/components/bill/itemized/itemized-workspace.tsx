@@ -136,14 +136,17 @@ export function ItemizedWorkspace({
         onAssignSelected={onAssignSelected}
       />
       <div ref={footerRef} className="mt-auto">
-        <WizardFooter
-          onBack={current > 0 ? () => onSectionChange(ITEMIZED_SECTIONS[current - 1]) : null}
-          onContinue={() => (lastStep ? onSubmit() : onSectionChange(ITEMIZED_SECTIONS[current + 1]))}
-          continueLabel={lastStep ? (isEditing ? "Salvar alterações" : "Salvar conta") : "Continuar"}
-          disabled={blocked !== null}
-          reason={blocked}
-          loading={submitting}
-        />
+        {/* The start questions answer themselves; the footer waits for the people. */}
+        {(current > 0 || details.progress.phase === "people") && (
+          <WizardFooter
+            onBack={current > 0 ? () => onSectionChange(ITEMIZED_SECTIONS[current - 1]) : null}
+            onContinue={() => (lastStep ? onSubmit() : onSectionChange(ITEMIZED_SECTIONS[current + 1]))}
+            continueLabel={lastStep ? (isEditing ? "Salvar alterações" : "Salvar conta") : "Continuar"}
+            disabled={blocked !== null}
+            reason={blocked}
+            loading={submitting}
+          />
+        )}
       </div>
       <ScrollHint targetRef={footerRef} />
     </>

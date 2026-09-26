@@ -12,7 +12,7 @@ export interface WizardStepsProps {
 
 export function WizardSteps({ steps, current }: WizardStepsProps) {
   return (
-    <ol aria-label="Etapas da conta" className="flex items-center gap-1.5 px-4 pb-1">
+    <ol aria-label="Etapas da conta" className="flex items-center gap-1.5 px-4 pb-1 keyboard:hidden">
       {steps.map((label, index) => {
         const state = index < current ? "done" : index === current ? "current" : "upcoming";
         const last = index === steps.length - 1;

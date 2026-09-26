@@ -80,7 +80,7 @@ export function selectDraftForType(
     billStore.createExpense("", "single_amount");
     return;
   }
-  billStore.createExpense("Nova conta", "itemized", undefined, pendingGroupId ?? undefined);
+  billStore.createExpense("", "itemized", undefined, pendingGroupId ?? undefined);
 }
 
 export interface WizardInitInput {

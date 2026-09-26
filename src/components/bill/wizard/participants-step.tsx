@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Plus, UserPlus, Users, Users2, X } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectionMark } from "@/components/ui/selection-mark";
 import { haptics } from "@/hooks/use-haptics";
-import { popIn } from "@/lib/animations";
+import { fade, popIn } from "@/lib/animations";
+import { cn } from "@/lib/utils";
 import type { User } from "@/types";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
@@ -56,7 +57,9 @@ export function ParticipantsStep({
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [guestNameInput, setGuestNameInput] = useState("");
+  const [addedGuest, setAddedGuest] = useState(false);
   const [pickingContacts, setPickingContacts] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   const handlePickContacts = async () => {
     setPickingContacts(true);
@@ -136,7 +139,7 @@ export function ParticipantsStep({
       <AnimatePresence>
         {showAddGuest && (
           <motion.div
-            variants={popIn}
+            variants={reduceMotion ? fade : popIn}
             initial="hidden"
             animate="visible"
             exit="exit"
@@ -147,26 +150,32 @@ export function ParticipantsStep({
                 e.preventDefault();
                 const name = guestNameInput.trim();
                 if (!name) return;
+                haptics.tap();
                 onAddGuest(name);
                 setGuestNameInput("");
+                setShowAddGuest(false);
+                setAddedGuest(true);
               }}
               className="flex gap-2"
             >
               <Input
                 type="text"
+                aria-label="Nome do convidado"
                 placeholder="Nome do convidado"
                 value={guestNameInput}
                 onChange={(e) => setGuestNameInput(e.target.value)}
                 autoFocus
+                autoComplete="off"
+                enterKeyHint="done"
                 className="flex-1"
               />
-              <Button type="submit" size="sm" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
+              <Button type="submit" size="icon-lg" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
                 <Plus className="size-4" aria-hidden="true" />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-lg"
                 aria-label="Cancelar convidado"
                 onClick={() => {
                   setShowAddGuest(false);
@@ -254,32 +263,49 @@ export function ParticipantsStep({
               </button>
             </div>
           ))}
-          {guests.map((g) => (
-            <div key={g.id} className="flex min-h-12 items-center gap-2.5 px-3">
-              <GuestAvatar id={g.id} name={g.name} size="sm" />
-              <p className="min-w-0 flex-1 truncate text-sm font-semibold" title={g.name}>
-                {g.name}
-              </p>
-              <Chip tone="guest">Convidado</Chip>
-              <button
-                type="button"
-                onClick={() => {
-                  haptics.selectionChanged();
-                  onRemoveGuest(g.id);
-                }}
-                aria-label={`Remover ${g.name}`}
-                className="flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive-text"
+          <AnimatePresence initial={false}>
+            {guests.map((g) => (
+              <motion.div
+                key={g.id}
+                variants={reduceMotion ? fade : popIn}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="flex min-h-12 items-center gap-2.5 px-3"
               >
-                <X className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-          ))}
+                <GuestAvatar id={g.id} name={g.name} size="sm" />
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold" title={g.name}>
+                  {g.name}
+                </p>
+                <Chip tone="guest">Convidado</Chip>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptics.selectionChanged();
+                    onRemoveGuest(g.id);
+                  }}
+                  aria-label={`Remover ${g.name}`}
+                  className="flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive-text"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       </div>
 
       {showAddActions && (
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowAddParticipant(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11"
+            onClick={() => {
+              setAddedGuest(false);
+              setShowAddParticipant(true);
+            }}
+          >
             <UserPlus className="size-4" aria-hidden="true" />
             Por @handle
           </Button>
@@ -287,6 +313,7 @@ export function ParticipantsStep({
             <Button
               variant="outline"
               size="sm"
+              className="h-11"
               onClick={handlePickContacts}
               disabled={pickingContacts}
             >
@@ -294,9 +321,18 @@ export function ParticipantsStep({
               Dos contatos do celular
             </Button>
           )}
-          <Button variant="outline" size="sm" className="border-dashed" onClick={() => setShowAddGuest(true)}>
-            <Users className="size-4" aria-hidden="true" />
-            Adicionar convidado
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn("h-11", addedGuest ? "border-primary/50 bg-primary/10 text-primary-text" : "border-dashed")}
+            onClick={() => setShowAddGuest(true)}
+          >
+            {addedGuest ? (
+              <Plus className="size-4" aria-hidden="true" />
+            ) : (
+              <Users className="size-4" aria-hidden="true" />
+            )}
+            {addedGuest ? "Mais um convidado" : "Adicionar convidado"}
           </Button>
         </div>
       )}

@@ -26,7 +26,7 @@ function createBaselineItemized(): DraftInspectionState {
     id: "exp-itemized",
     groupId: "",
     creatorId: meId,
-    title: "Nova conta",
+    title: "",
     expenseType: "itemized",
     totalAmount: 0,
     serviceFeePercent: 10,
@@ -106,6 +106,12 @@ describe("hasMeaningfulDraft", () => {
 
   it("returns false for fresh itemized baseline", () => {
     expect(hasMeaningfulDraft(createBaselineItemized(), meId)).toBe(false);
+  });
+
+  it("returns false for an untouched itemized draft saved with the old 'Nova conta' title", () => {
+    const state = createBaselineItemized();
+    state.expense = state.expense && { ...state.expense, title: "Nova conta" };
+    expect(hasMeaningfulDraft(state, meId)).toBe(false);
   });
 
   it("returns false for fresh single_amount baseline", () => {

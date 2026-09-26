@@ -25,6 +25,8 @@ test.describe("Bill Creation Flow", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
     await page.getByLabel("Nome da conta").fill(title);
+    await page.getByLabel("Nome da conta").press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill("bob_test");
     await page.getByRole("button", { name: "Buscar handle" }).click();
@@ -41,6 +43,8 @@ test.describe("Bill Creation Flow", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Vários itens/ }).click();
     await page.getByLabel("Nome da conta").fill("Pizzaria");
+    await page.getByLabel("Nome da conta").press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill("bob_test");
     await page.getByRole("button", { name: "Buscar handle" }).click();
@@ -56,8 +60,10 @@ test.describe("Bill Creation Flow", () => {
     await page.goto("/app/bill/new");
     await page.getByRole("button", { name: /Valor único/ }).click();
     await page.getByLabel("Nome da conta").fill("Conta do grupo");
-    await page.getByRole("combobox", { name: "Grupo", exact: true }).click();
-    await page.getByRole("option", { name: "Novo grupo…" }).click();
+    await page.getByLabel("Nome da conta").press("Enter");
+    await page.getByRole("button", { name: "Pular" }).click();
+    await page.getByRole("button", { name: /^Grupo:/ }).click();
+    await page.getByRole("button", { name: /Novo grupo/ }).click();
     await page.getByLabel("Nome do grupo", { exact: true }).fill("Jantar de amigos");
     await page.getByRole("button", { name: "Fechar" }).click();
     await page.getByRole("button", { name: "Sair e guardar" }).click();

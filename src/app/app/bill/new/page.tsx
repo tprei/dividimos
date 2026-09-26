@@ -19,6 +19,7 @@ import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { hasMeaningfulDraft } from "@/lib/bill-draft";
+import { defaultGroupName as defaultGroupNameOf } from "@/lib/people";
 import { DraftResumeBanner } from "@/components/bill/wizard/draft-resume-banner";
 import {
   DiscardDraftDialog,
@@ -298,16 +299,10 @@ function NewBillPageContent() {
     [me, scanGroup, setScanDraftContext],
   );
 
-  const defaultGroupName = useMemo(() => {
-    const names = [
-      ...store.participants.map((p) => p.name.split(" ")[0]),
-      ...store.guests.map((g) => g.name.split(" ")[0]),
-    ];
-    if (names.length === 0) return "";
-    return names.length <= 3
-      ? names.join(" e ")
-      : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
-  }, [store.participants, store.guests]);
+  const defaultGroupName = useMemo(
+    () => defaultGroupNameOf([...store.participants, ...store.guests].map((person) => person.name)),
+    [store.participants, store.guests],
+  );
 
   const applyTypeSelect = useCallback(
     (type: ExpenseType) => {
@@ -688,7 +683,7 @@ function NewBillPageContent() {
         groups={groupSnapshots}
         selectedGroupId={selectedGroupId}
         createGroupEnabled={createGroupEnabled}
-        createGroupName={createGroupName || defaultGroupName}
+        createGroupName={createGroupName}
         hasContactPicker={hasContactPicker}
         onSelectGroup={handleSelectGroup}
         onToggleCreateGroup={setCreateGroupEnabled}

@@ -94,6 +94,15 @@ export function firstNameOf(name: string): string {
   return trimmed.split(/\s+/)[0];
 }
 
+/** The name a group created from these people gets when nobody types one: "Ana e Bia", "Ana, Bia +2". */
+export function defaultGroupName(names: string[]): string {
+  const firstNames = names.map(firstNameOf);
+  if (firstNames.length === 0) return "";
+  return firstNames.length <= 3
+    ? firstNames.join(" e ")
+    : `${firstNames.slice(0, 2).join(", ")} +${firstNames.length - 2}`;
+}
+
 export function avatarToneIndex(id: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {

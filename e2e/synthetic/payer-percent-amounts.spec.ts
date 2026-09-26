@@ -15,8 +15,9 @@ test.describe("Itemized payer split balances percentages as you type", () => {
 
     await page.getByRole("button", { name: /Vários itens/ }).click();
     await page.getByLabel("Nome da conta").fill("Conta detalhada");
-    await page.getByRole("combobox", { name: "Grupo", exact: true }).click();
-    await page.getByRole("option", { name: "Grupo Percentual" }).click();
+    await page.getByLabel("Nome da conta").press("Enter");
+    await page.getByRole("button", { name: "Hoje", exact: true }).click();
+    await page.getByRole("button", { name: /Grupo Percentual/ }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
 
     await page.getByRole("textbox", { name: "Taxa de serviço (%)" }).fill("0");

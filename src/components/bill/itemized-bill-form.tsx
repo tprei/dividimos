@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { ITEMIZED_SECTIONS, ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
 import type { SplitPerson } from "@/components/bill/split/split-editor";
 import { usePayerSplit } from "@/components/bill/split/use-payer-split";
+import { initialStartProgress } from "@/components/bill/wizard/details-step";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { assignedDivisionForItem } from "@/lib/item-division";
-import { displayNames } from "@/lib/people";
+import { defaultGroupName, displayNames } from "@/lib/people";
+import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
@@ -96,6 +98,9 @@ export function ItemizedBillForm({
     })),
   );
   const [section, setSection] = useState<ItemizedSectionKey>(initialSection);
+  const [startProgress, setStartProgress] = useState(() =>
+    initialStartProgress(useBillStore.getState().expense?.title ?? ""),
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [serviceFeeInput, setServiceFeeInput] = useState(() =>
     serviceFeeText(store.expense?.serviceFeeBasisPoints ?? 0),
@@ -169,6 +174,11 @@ export function ItemizedBillForm({
   });
   const others = store.participants.filter((participant) => participant.id !== me.id);
   const dmEligible = others.length === 1 && store.guests.length === 0;
+  const defaultGroupLabel = defaultGroupName(people.map((person) => person.name));
+  // Matches the default the submit plans: with only the user in the bill the
+  // own name is not yet what the group will be called.
+  const createGroupFallback = people.length > 1 ? defaultGroupLabel : "";
+  const groupsPending = useAppStore((s) => s.bootstrapStatus === "idle" || s.bootstrapStatus === "loading");
   const selectedGroup = groups.find((snapshot) => snapshot.group.id === selectedGroupId) ?? null;
   const inviteeNames = selectedGroup
     ? others
@@ -257,6 +267,7 @@ export function ItemizedBillForm({
             groups,
             onSelect: handleGroupSelect,
             createValue: createGroupName,
+            createFallback: createGroupFallback,
             onCreateValueChange: onCreateGroupName,
             createGroupEnabled,
             onToggleCreateGroup,
@@ -266,6 +277,9 @@ export function ItemizedBillForm({
             inviteeNames.length > 0
               ? `${inviteeNames.join(", ")} ${inviteeNames.length > 1 ? "serão convidados" : "será convidado"} ao grupo.`
               : null,
+          progress: startProgress,
+          onProgressChange: setStartProgress,
+          groupsPending,
         }}
         participants={participantsStepProps}
         payment={{

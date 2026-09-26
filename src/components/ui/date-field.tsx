@@ -4,10 +4,11 @@ import * as React from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 
-import { buildDateShortcuts, toIsoDate } from "@/lib/date-shortcuts";
+import { buildDateShortcuts, friendlyDateLabel, toIsoDate } from "@/lib/date-shortcuts";
 import { haptics } from "@/hooks/use-haptics";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export interface DateFieldProps {
@@ -17,9 +18,21 @@ export interface DateFieldProps {
   id?: string;
   max?: string;
   min?: string;
-  /** "subtle": a text-sized trigger that reads "Hoje", "Ontem" or the day. */
-  variant?: "field" | "subtle";
+  /**
+   * "subtle": a text-sized trigger that reads "Hoje", "Ontem" or the day.
+   * "chip": a pill that sits beside date shortcuts; it reads "Outro dia"
+   * while a shortcut holds the value, and fills with the day otherwise.
+   */
+  variant?: "field" | "subtle" | "chip";
 }
+
+const TRIGGER_CLASSES = {
+  field:
+    "flex h-11 w-full min-w-0 items-center rounded-[0.5rem] border border-input bg-card px-3 text-left text-base tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 md:text-sm",
+  subtle:
+    "relative inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[0.5rem] px-2 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:top-1/2 [@media(pointer:coarse)]:after:h-11 [@media(pointer:coarse)]:after:-translate-y-1/2",
+  chip: "inline-flex h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:active:scale-100",
+} as const;
 
 const MONTH_NAMES = [
   "janeiro",
@@ -178,7 +191,7 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
     if (!isDayDisabled(today) && inView(today, targetView)) return today;
     for (const week of buildWeeks(targetView, isDayDisabled)) {
       for (const cell of week) {
-        if (!cell.disabled) return cell.iso;
+        if (!cell.disabled && !cell.adjacent) return cell.iso;
       }
     }
     return null;
@@ -261,14 +274,10 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
   const displayValue = parts
     ? `${String(parts.day).padStart(2, "0")}/${String(parts.month + 1).padStart(2, "0")}/${String(parts.year).padStart(4, "0")}`
     : value;
-  const friendlyValue =
-    value === today
-      ? "Hoje"
-      : value === shiftIso(today, -1)
-        ? "Ontem"
-        : parts && String(parts.year) === today.slice(0, 4)
-          ? `${parts.day} de ${MONTH_NAMES[parts.month].slice(0, 3)}`
-          : displayValue;
+  const onShortcut = shortcuts.some((shortcut) => shortcut.iso === value);
+  let triggerText = friendlyDateLabel(value, today);
+  if (variant === "field") triggerText = displayValue;
+  else if (variant === "chip" && onShortcut) triggerText = "Outro dia";
 
   const monthKey = `${view.year}-${view.month}`;
 
@@ -278,14 +287,16 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
         id={id}
         data-slot="date-field-trigger"
         aria-label={label}
-        className={
-          variant === "subtle"
-            ? "relative inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[0.5rem] px-2 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:inset-x-0 [@media(pointer:coarse)]:after:top-1/2 [@media(pointer:coarse)]:after:h-11 [@media(pointer:coarse)]:after:-translate-y-1/2"
-            : "flex h-11 w-full min-w-0 items-center rounded-[0.5rem] border border-input bg-card px-3 text-left text-base tabular-nums transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 md:text-sm"
-        }
+        className={cn(
+          TRIGGER_CLASSES[variant],
+          variant === "chip" &&
+            (onShortcut
+              ? "border-dashed border-border bg-card text-foreground hover:border-primary/50"
+              : "border-primary bg-primary text-primary-foreground"),
+        )}
       >
-        {variant === "subtle" && <CalendarDays className="size-4 shrink-0" aria-hidden="true" />}
-        {variant === "subtle" ? friendlyValue : displayValue}
+        {variant !== "field" && <CalendarDays className="size-4 shrink-0" aria-hidden="true" />}
+        {triggerText}
       </DialogTrigger>
       <DialogContent
         showCloseButton={false}
@@ -324,25 +335,17 @@ export function DateField(props: DateFieldProps): React.JSX.Element {
             </Button>
           </div>
           <div role="group" aria-label="Atalhos de data" className="flex gap-1.5 px-1.5 pt-1">
-            {shortcuts.map((shortcut) => {
-              const selected = shortcut.iso === value;
-              return (
-                <button
-                  key={shortcut.label}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => pick(shortcut.iso)}
-                  className={cn(
-                    "relative h-9 flex-auto rounded-full border px-2.5 text-xs font-semibold whitespace-nowrap transition-colors outline-none after:absolute after:inset-x-0 after:-inset-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:active:scale-100",
-                    selected
-                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                      : "border-primary/25 bg-card text-foreground hover:border-primary/50",
-                  )}
-                >
-                  {shortcut.label}
-                </button>
-              );
-            })}
+            {shortcuts.map((shortcut) => (
+              <ChoiceChip
+                key={shortcut.label}
+                size="sm"
+                selected={shortcut.iso === value}
+                onClick={() => pick(shortcut.iso)}
+                className="flex-auto"
+              >
+                {shortcut.label}
+              </ChoiceChip>
+            ))}
           </div>
         </div>
         <div ref={gridRef} role="grid" aria-labelledby={titleId} className="p-2">

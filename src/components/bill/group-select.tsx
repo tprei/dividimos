@@ -17,6 +17,8 @@ export interface GroupSelectProps {
   groups: GroupSnapshot[];
   onSelect: (groupId: string | null) => void;
   createValue: string;
+  /** The name a new group gets when this field stays empty; empty while no other people are in the bill yet. */
+  createFallback?: string;
   onCreateValueChange: (name: string) => void;
   createGroupEnabled: boolean;
   onToggleCreateGroup: (enabled: boolean) => void;
