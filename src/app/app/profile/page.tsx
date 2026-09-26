@@ -23,7 +23,7 @@ import { PixKeyDialog } from "@/components/profile/pix-key-dialog";
 import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { Skeleton } from "@/components/shared/skeleton";
+import { ProfileSkeleton } from "@/components/profile/profile-skeleton";
 import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -64,18 +64,7 @@ export default function ProfilePage() {
   };
 
   if (!me) {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-16 w-16 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-4 w-48" />
-          </div>
-        </div>
-        <Skeleton className="h-24 rounded-2xl" />
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
   return (
