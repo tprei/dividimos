@@ -11,7 +11,12 @@ import {
   decodeUserProfile,
 } from "@/lib/ledger/decode";
 import { maskPixKey } from "@/lib/pix";
-import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
+import { nameToHandle } from "@/lib/handle";
+import {
+  adminClient,
+  isIntegrationTestReady,
+  registerTestUser,
+} from "@/test/integration-setup";
 import {
   authenticateAs,
   createGroupWithMembers,
@@ -300,6 +305,271 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
         "email",
       ),
     ).resolves.toEqual({ kind: "completed" });
+  });
+});
+
+describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
+  const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const reservedHandles = [
+    "ajuda",
+    "admin",
+    "dividimos_oficial",
+    "admin1",
+    "sup0rte",
+    "suporte_oficial",
+    "pix",
+    "pix1",
+    "root1",
+    "pix_oficial",
+    "o_suporte",
+    "the_admin",
+    "bancocentral_br",
+  ];
+
+  let challenger: TestUser;
+  let challengerClient: SupabaseClient<Database>;
+  let holder: TestUser;
+  let holderClient: SupabaseClient<Database>;
+
+  beforeAll(async () => {
+    [challenger, holder] = await Promise.all([
+      createTestUser({ onboarded: false }),
+      createTestUser(),
+    ]);
+    challengerClient = authenticateAs(challenger);
+    holderClient = authenticateAs(holder);
+
+    // Sign-up predates the reservations: the holder got the handle directly.
+    const { error } = await adminClient!
+      .from("users")
+      .update({ handle: `suporte_${runId}` })
+      .eq("id", holder.id);
+    expect(error).toBeNull();
+  });
+
+  it("refuses reserved handles on complete_onboarding", async () => {
+    for (const handle of reservedHandles) {
+      await expect(
+        expectRpcError(
+          challengerClient.rpc("complete_onboarding", {
+            p_handle: handle,
+            p_name: "Desafiante",
+            p_pix_key_encrypted: encryptPixKey("challenger@example.com"),
+            p_pix_key_hint: "challenger@example.com",
+            p_pix_key_type: "email",
+          }),
+        ),
+      ).resolves.toBe("handle_taken");
+    }
+  });
+
+  it("refuses reserved handles on update_profile", async () => {
+    for (const handle of reservedHandles) {
+      await expect(
+        expectRpcError(
+          challengerClient.rpc("update_profile", {
+            p_handle: handle,
+            p_name: "Desafiante",
+          }),
+        ),
+      ).resolves.toBe("handle_taken");
+    }
+  });
+
+  it("accepts an ana_oficial variant on onboarding and on a profile update", async () => {
+    const claimed = await createTestUser({ onboarded: false });
+    const claimedClient = authenticateAs(claimed);
+    const official = `ana_oficial_${runId}`;
+    await expect(
+      completeOnboarding(
+        claimedClient,
+        official,
+        "Ana Oficial",
+        encryptPixKey("ana@example.com"),
+        "ana@example.com",
+        "email",
+      ),
+    ).resolves.toEqual({ kind: "completed" });
+
+    const { data, error } = await claimedClient.rpc("update_profile", {
+      p_handle: official,
+      p_name: "Ana Oficial",
+    });
+    expect(error).toBeNull();
+    expect(must(decodeMe(data))).toMatchObject({
+      handle: official,
+      name: "Ana Oficial",
+    });
+  });
+
+  it("keeps non-reserved lookalike handles available", async () => {
+    for (const handle of ["admilson", "maria_silva", "usuario", `ana_oficial_${runId}`]) {
+      const { data, error } = await adminClient!.rpc("is_reserved_handle", {
+        p_handle: handle,
+      });
+      expect(error).toBeNull();
+      expect(data).toBe(false);
+    }
+  });
+
+  it("lets a holder of a reserved handle save their profile keeping it", async () => {
+    const held = `suporte_${runId}`;
+    const { data, error } = await holderClient.rpc("update_profile", {
+      p_name: "Suporte Antigo",
+      p_handle: held,
+    });
+    expect(error).toBeNull();
+    expect(must(decodeMe(data))).toMatchObject({
+      handle: held,
+      name: "Suporte Antigo",
+    });
+
+    const upper = await holderClient.rpc("update_profile", {
+      p_name: "Suporte Antigo 2",
+      p_handle: held.toUpperCase(),
+    });
+    expect(upper.error).toBeNull();
+    expect(must(decodeMe(upper.data))).toMatchObject({
+      handle: held,
+      name: "Suporte Antigo 2",
+    });
+  });
+
+  it("answers validation errors before any handle_taken", async () => {
+    await expect(
+      expectRpcError(
+        challengerClient.rpc("update_profile", {
+          p_handle: "suporte",
+          p_notification_preferences: [],
+        }),
+      ),
+    ).resolves.toBe("invalid_notification_preferences");
+  });
+
+  it("lets a legacy user finish onboarding keeping their reserved handle", async () => {
+    const legacy = await createTestUser({ onboarded: false });
+    const held = `admin_${runId}`;
+    const { error: setError } = await adminClient!
+      .from("users")
+      .update({ handle: held })
+      .eq("id", legacy.id);
+    expect(setError).toBeNull();
+
+    await expect(
+      completeOnboarding(
+        authenticateAs(legacy),
+        held,
+        "Admin de Verdade",
+        encryptPixKey("legacy@example.com"),
+        "legacy@example.com",
+        "email",
+      ),
+    ).resolves.toEqual({ kind: "completed" });
+
+    const { data, error } = await adminClient!
+      .from("users")
+      .select("handle")
+      .eq("id", legacy.id)
+      .single();
+    expect(error).toBeNull();
+    expect(data!.handle).toBe(held);
+  });
+
+  const handleFor = async (email: string, fullName?: string): Promise<string> => {
+    const { data: authData, error: authError } = await adminClient!
+      .auth.admin.createUser({
+        email,
+        email_confirm: true,
+        ...(fullName === undefined ? {} : { user_metadata: { full_name: fullName } }),
+      });
+    if (authError || !authData.user) {
+      throw new Error(`Failed to create auth user: ${authError?.message}`);
+    }
+    registerTestUser(authData.user.id);
+
+    const { data, error } = await adminClient!
+      .from("users")
+      .select("handle")
+      .eq("id", authData.user.id)
+      .single();
+    expect(error).toBeNull();
+    return data!.handle;
+  };
+
+  it("derives the automatic handle from the display name, not the email", async () => {
+    const testId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+    const emailLocal = `x${testId}`;
+    const named = await handleFor(
+      `${emailLocal}@${testId}.test.dividimos.local`,
+      `João Álvaro ${testId}`,
+    );
+    expect(named).toBe(nameToHandle(`João Álvaro ${testId}`));
+    expect(named).not.toContain(emailLocal);
+
+    const reserved = await handleFor(
+      `suporte2@${testId}.test.dividimos.local`,
+      "Suporte",
+    );
+    expect(reserved).toMatch(/^usuario\d*$/);
+
+    const dona = `Dona Maria Cipriano ${testId}`;
+    const first = await handleFor(
+      `dona1@${testId}.test.dividimos.local`,
+      dona,
+    );
+    expect(first).toBe(nameToHandle(dona));
+    const second = await handleFor(
+      `dona2@${testId}.test.dividimos.local`,
+      dona,
+    );
+    expect(second).not.toBe(first);
+    expect(second).toMatch(new RegExp(`^${first.slice(0, 26)}\\d+$`));
+
+    const anonymous = await handleFor(`anon@${testId}.test.dividimos.local`);
+    expect(anonymous).toMatch(/^usuario\d*$/);
+  });
+
+  it("gives two sequentially signed-up users with the same name distinct handles", async () => {
+    const shared = `Gêmea Bem ${runId}`;
+    const base = nameToHandle(shared);
+    expect(base.length).toBeLessThanOrEqual(26);
+
+    const h1 = await handleFor(`gemea1@${runId}.test.dividimos.local`, shared);
+    const h2 = await handleFor(`gemea2@${runId}.test.dividimos.local`, shared);
+
+    expect(h1).toBe(base);
+    expect(h2).not.toBe(h1);
+    expect(h2.startsWith(base)).toBe(true);
+  });
+
+  it("derives the same handle as nameToHandle across scripts, spaces, and lengths", async () => {
+    const parityNames = [
+      `João Álvaro ${runId}`,
+      `Åsa Ýmir ${runId}`,
+      `Čedomir Šarš ${runId}`,
+      `Ana\u00a0Maria ${runId}`,
+      `😀 Festa ${runId}`,
+      `Ana   Espaços   Dobros ${runId}`,
+      `123 João ${runId}`,
+      `Áb ${"a".repeat(6)}çõ ${runId}`,
+      `Áb Áb Áb Áb Áb Áb Áb Áb Áb Áb Áb Áb ${runId}`,
+    ];
+    for (const [i, name] of parityNames.entries()) {
+      const handle = await handleFor(
+        `parity${i}@${runId}.test.dividimos.local`,
+        name,
+      );
+      expect(handle.startsWith(nameToHandle(name))).toBe(true);
+    }
+
+    for (const short of ["ab", "😀😀"]) {
+      const handle = await handleFor(
+        `short${short.replace(/[^a-z]/g, "")}@${runId}.test.dividimos.local`,
+        short,
+      );
+      expect(handle).toMatch(/^usuario\d*$/);
+    }
   });
 });
 
