@@ -22,6 +22,7 @@ import { useScreenHeaderActions, useScreenRefresh } from "@/components/shared/sc
 import { IconButton } from "@/components/ui/icon-button";
 import { ListRow } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
+import { AmountHeroCard } from "@/components/shared/amount-hero-card";
 import { displayNames } from "@/lib/people";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { haptics } from "@/hooks/use-haptics";
@@ -230,6 +231,9 @@ export function DashboardContent() {
   };
 
   const firstName = me.name.split(" ")[0] ?? me.name;
+  let balanceLabel = "Tudo acertado";
+  if (net > 0) balanceLabel = "A receber no total";
+  else if (net < 0) balanceLabel = "Você deve no total";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 pb-8 compact:space-y-3">
@@ -273,41 +277,16 @@ export function DashboardContent() {
         aria-label="Seu saldo"
         className="space-y-3 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-3 md:space-y-0"
       >
-        <SectionCard className="gradient-mesh p-5" data-tour="balance-card">
-          <p className="text-sm font-semibold text-muted-foreground">
-            {net > 0
-              ? "A receber no total"
-              : net < 0
-              ? "Você deve no total"
-              : "Tudo acertado"}
-          </p>
-          <Money
-            cents={net}
-            size="hero"
-            tone="auto"
-            className="mt-2 block leading-tight"
-          />
-          {homeMode !== "first-use" && (
-            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3">
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">A pagar</p>
-                <Money
-                  cents={owesTotal}
-                  size="sm"
-                  tone={owesTotal > 0 ? "negative" : "neutral"}
-                />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">A receber</p>
-                <Money
-                  cents={owedTotal}
-                  size="sm"
-                  tone={owedTotal > 0 ? "positive" : "neutral"}
-                />
-              </div>
-            </div>
-          )}
-        </SectionCard>
+        <AmountHeroCard
+          data-tour="balance-card"
+          label={balanceLabel}
+          cents={net}
+          tone="auto"
+          details={homeMode === "first-use" ? [] : [
+            { label: "A pagar", value: <Money cents={owesTotal} size="sm" tone={owesTotal > 0 ? "negative" : "neutral"} /> },
+            { label: "A receber", value: <Money cents={owedTotal} size="sm" tone={owedTotal > 0 ? "positive" : "neutral"} /> },
+          ]}
+        />
         <div
           className="grid grid-cols-3 gap-2 md:grid-cols-1 md:content-start"
           data-tour="quick-actions"
