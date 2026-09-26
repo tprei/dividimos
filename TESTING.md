@@ -342,12 +342,15 @@ Tests the Android address book permission lifecycle (deny, allow) and contact in
 Tests voice expense capture, microphone permissions, speech-to-text streaming, and Gemini natural language parsing.
 
 - **Surfaces & File Paths**:
-  - Web Speech API hook: `src/hooks/use-voice-input.ts` (`SpeechRecognition` / `webkitSpeechRecognition`)
+  - Voice hook: `src/hooks/use-voice-input.ts` (native/Capacitor, Web Speech, and MediaRecorder engines)
+  - Engine choice: `src/lib/speech-engine.ts` (`pickSpeechEngine` — Web Speech is never used on Apple mobile WebKit, where recording + `/api/voice/transcribe` is used instead)
   - Android Native Speech: `src/lib/capacitor/speech.ts` (`startNativeListening` via `@capgo/capacitor-speech-recognition`)
-  - UI Button: `src/components/bill/voice-expense-button.tsx`
+  - UI Button: `src/components/bill/voice-expense-button.tsx` (hook exposes `phase` and `level` for the recording UI)
   - Review Modal: `src/components/bill/voice-expense-modal.tsx` (`VoiceExpenseModal`)
-  - API Route: `src/app/api/voice/parse/route.ts`
+  - API Routes: `src/app/api/voice/parse/route.ts`, `src/app/api/voice/transcribe/route.ts`
   - Parser: `src/lib/voice-expense-parser.ts`
+  - Transcriber: `src/lib/voice-transcription.ts` (Gemini audio → PT-BR text)
+  - Client sync: `src/lib/sync/voice.ts` (`parseVoiceExpenseCommand`, `transcribeVoiceAudio`)
 - **Prerequisites**:
   - Physical device or workstation with functioning microphone hardware.
   - Microphone permissions available.

@@ -159,6 +159,7 @@ describe("useVoiceInput", () => {
   });
   it("cancels a native start that has not settled yet", async () => {
     nativeSpeechAvailable.mockReturnValue(true);
+    nativeSpeechSupported.mockResolvedValue(true);
     const { promise, resolve } = Promise.withResolvers<{
       kind: "started";
       stop: () => Promise<void>;
@@ -167,6 +168,9 @@ describe("useVoiceInput", () => {
     startNativeListening.mockReturnValue(promise);
 
     const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {});
+    expect(result.current.engine).toBe("native");
+
     act(() => result.current.startListening());
     act(() => result.current.stopListening());
 
@@ -177,6 +181,41 @@ describe("useVoiceInput", () => {
 
     expect(nativeStop).toHaveBeenCalledOnce();
     expect(result.current.isListening).toBe(false);
+  });
+
+  it("reports no support and ignores start while the native probe is pending", async () => {
+    nativeSpeechAvailable.mockReturnValue(true);
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    nativeSpeechSupported.mockImplementation(() => promise);
+
+    const { result } = renderHook(() => useVoiceInput());
+    expect(result.current.isSupported).toBe(false);
+    expect(result.current.engine).toBe("none");
+
+    act(() => result.current.startListening());
+    expect(startNativeListening).not.toHaveBeenCalled();
+    expect(result.current.isListening).toBe(false);
+
+    await act(async () => {
+      resolve(true);
+    });
+    expect(result.current.isSupported).toBe(true);
+    expect(result.current.engine).toBe("native");
+  });
+
+  it("starts through the picked web engine when the native probe reports no recognizer", async () => {
+    nativeSpeechAvailable.mockReturnValue(true);
+    nativeSpeechSupported.mockResolvedValue(false);
+
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {});
+    expect(result.current.engine).toBe("web-speech");
+
+    act(() => result.current.startListening());
+
+    expect(startNativeListening).not.toHaveBeenCalled();
+    expect(mockInstance.start).toHaveBeenCalled();
+    expect(result.current.isListening).toBe(true);
   });
 
   it("auto-stops after 3s silence", () => {
@@ -458,5 +497,373 @@ describe("useVoiceInput", () => {
     expect(result.current.transcript).toBe("uber");
     expect(result.current.interimTranscript).toBe("");
     expect(result.current.isListening).toBe(false);
+  });
+});
+
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+
+const TRANSCRIBE_HEADERS = { "content-type": "application/json" };
+
+function transcriptResponse(transcript: string): Response {
+  return new Response(JSON.stringify({ transcript }), {
+    status: 200,
+    headers: TRANSCRIBE_HEADERS,
+  });
+}
+
+interface MockRecorderInstance {
+  state: string;
+  mimeType: string;
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  ondataavailable: ((event: { data: Blob }) => void) | null;
+  onstop: (() => void) | null;
+  onerror: (() => void) | null;
+}
+
+describe("useVoiceInput recorder engine", () => {
+  let recorderInstances: MockRecorderInstance[];
+  let analyserAmplitude: number;
+  let getUserMediaMock: ReturnType<typeof vi.fn>;
+  let mockTrack: { stop: ReturnType<typeof vi.fn> };
+  let mockStream: { getTracks: () => { stop: ReturnType<typeof vi.fn> }[] };
+  const MockMediaRecorder = vi.fn(function (
+    this: unknown,
+    _stream: MediaStream,
+    options?: { mimeType?: string },
+  ) {
+    const instance: MockRecorderInstance = {
+      state: "inactive",
+      mimeType: options?.mimeType ?? "audio/mp4",
+      start: vi.fn(function (this: MockRecorderInstance) {
+        this.state = "recording";
+      }),
+      stop: vi.fn(function (this: MockRecorderInstance) {
+        if (this.state === "inactive") return;
+        this.state = "inactive";
+        this.ondataavailable?.({
+          data: new Blob(["x"], { type: this.mimeType }),
+        });
+        this.onstop?.();
+      }),
+      ondataavailable: null,
+      onstop: null,
+      onerror: null,
+    };
+    recorderInstances.push(instance);
+    return instance;
+  }) as unknown as {
+    new (
+      stream?: MediaStream,
+      options?: { mimeType?: string },
+    ): MockRecorderInstance;
+    isTypeSupported: (type: string) => boolean;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    recorderInstances = [];
+    analyserAmplitude = 0;
+    mockTrack = { stop: vi.fn() };
+    mockStream = { getTracks: () => [mockTrack] };
+    getUserMediaMock = vi.fn(async () => mockStream);
+
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(
+        (cb: FrameRequestCallback): number =>
+          window.setTimeout(() => cb(Date.now()), 16) as unknown as number,
+      ),
+    );
+    vi.stubGlobal(
+      "cancelAnimationFrame",
+      vi.fn((id: number) => window.clearTimeout(id)),
+    );
+
+    MockMediaRecorder.isTypeSupported = (type: string) =>
+      ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].includes(type);
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "MediaRecorder", {
+      value: MockMediaRecorder,
+      writable: true,
+      configurable: true,
+    });
+    class MockAudioContext {
+      state = "running";
+      destination = {};
+      sampleRate = 48000;
+      createMediaStreamSource() {
+        return { connect: vi.fn(), disconnect: vi.fn() };
+      }
+      createAnalyser() {
+        return {
+          fftSize: 1024,
+          getFloatTimeDomainData: (buffer: Float32Array) => {
+            buffer.fill(analyserAmplitude);
+          },
+        };
+      }
+      close = vi.fn(async () => undefined);
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: MockAudioContext,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: getUserMediaMock },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    Object.defineProperty(window, "MediaRecorder", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "AudioContext", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  function installAppleMobileWebKit() {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: IPHONE_UA,
+      configurable: true,
+    });
+    Object.defineProperty(window.navigator, "maxTouchPoints", {
+      value: 5,
+      configurable: true,
+    });
+  }
+
+  it("reports the recorder engine when only MediaRecorder exists", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    expect(result.current.engine).toBe("recorder");
+    expect(result.current.isSupported).toBe(true);
+  });
+
+  it("never constructs SpeechRecognition on Apple mobile WebKit", async () => {
+    installAppleMobileWebKit();
+    const { result } = renderHook(() => useVoiceInput());
+    expect(result.current.engine).toBe("recorder");
+
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    expect(MockSpeechRecognition.callCount).toBe(0);
+    expect(recorderInstances).toHaveLength(1);
+    expect(recorderInstances[0].start).toHaveBeenCalled();
+    expect(result.current.isListening).toBe(true);
+    expect(result.current.phase).toBe("listening");
+  });
+
+  it("routes a native shell whose probe reports no recognizer to the recorder", async () => {
+    installAppleMobileWebKit();
+    nativeSpeechAvailable.mockReturnValue(true);
+    nativeSpeechSupported.mockResolvedValue(false);
+
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {});
+    expect(result.current.engine).toBe("recorder");
+
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    expect(startNativeListening).not.toHaveBeenCalled();
+    expect(recorderInstances).toHaveLength(1);
+    expect(result.current.isListening).toBe(true);
+  });
+
+  it("resumes an AudioContext that starts suspended", async () => {
+    const resumeSpy = vi.fn(async () => undefined);
+    class SuspendedAudioContext {
+      state = "suspended";
+      destination = {};
+      sampleRate = 48000;
+      resume = resumeSpy;
+      createMediaStreamSource() {
+        return { connect: vi.fn(), disconnect: vi.fn() };
+      }
+      createAnalyser() {
+        return {
+          fftSize: 1024,
+          getFloatTimeDomainData: (buffer: Float32Array) => {
+            buffer.fill(analyserAmplitude);
+          },
+        };
+      }
+      close = vi.fn(async () => undefined);
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: SuspendedAudioContext,
+      writable: true,
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    expect(resumeSpy).toHaveBeenCalledOnce();
+    expect(result.current.isListening).toBe(true);
+  });
+
+  it("records, stops, transcribes and delivers the transcript", async () => {
+    const fetchMock = vi.fn<
+      (url: string, init?: { method?: string; body?: FormData }) => Promise<Response>
+    >(async () => transcriptResponse("Uber com João 25 reais"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    act(() => result.current.stopListening());
+
+    expect(result.current.phase).toBe("transcribing");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/voice/transcribe");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect(init?.body?.get("audio")).toBeInstanceOf(Blob);
+
+    await act(async () => {});
+
+    expect(result.current.transcript).toBe("Uber com João 25 reais");
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.isListening).toBe(false);
+    expect(result.current.level).toBe(0);
+  });
+
+  it("picks audio/mp4 when the browser reports support for it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => transcriptResponse("oi")));
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    expect(recorderInstances[0].mimeType).toBe("audio/mp4");
+  });
+
+  it("auto-stops once speech is followed by 1.8s of silence", async () => {
+    const fetchMock = vi.fn(async () => transcriptResponse("oi"));
+    vi.stubGlobal("fetch", fetchMock);
+    analyserAmplitude = 0.1;
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.level).toBeGreaterThan(0);
+
+    analyserAmplitude = 0;
+    act(() => vi.advanceTimersByTime(2000));
+
+    expect(recorderInstances[0].stop).toHaveBeenCalled();
+    expect(result.current.phase).toBe("transcribing");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("hard-caps a silent recording at 15 seconds", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => transcriptResponse("oi")));
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    act(() => vi.advanceTimersByTime(14_000));
+    expect(recorderInstances[0].stop).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(1_500));
+    expect(recorderInstances[0].stop).toHaveBeenCalled();
+    expect(result.current.phase).toBe("transcribing");
+  });
+
+  it("maps permission denial to the PT-BR message", async () => {
+    getUserMediaMock.mockRejectedValue(
+      Object.assign(new Error("denied"), { name: "NotAllowedError" }),
+    );
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value.catch(() => null);
+    });
+
+    expect(result.current.error).toBe(
+      "Permissão do microfone negada. Libere nas configurações do navegador.",
+    );
+    expect(result.current.isListening).toBe(false);
+    expect(result.current.phase).toBe("idle");
+  });
+
+  it("cleans up tracks and timers on unmount while listening", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => transcriptResponse("oi")));
+    const { result, unmount } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+    expect(result.current.isListening).toBe(true);
+
+    unmount();
+
+    expect(recorderInstances[0].stop).toHaveBeenCalled();
+    expect(mockTrack.stop).toHaveBeenCalled();
+    expect(() => vi.advanceTimersByTime(20_000)).not.toThrow();
+  });
+
+  it("aborts an in-flight transcription on unmount and never sets state after", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const { promise, resolve } = Promise.withResolvers<Response>();
+    const fetchMock = vi.fn((_url: unknown, init?: { signal?: AbortSignal }) => {
+      capturedSignal = init?.signal;
+      return promise;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, unmount } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value;
+    });
+
+    act(() => result.current.stopListening());
+    expect(result.current.phase).toBe("transcribing");
+
+    unmount();
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(true);
+
+    await act(async () => {
+      resolve(transcriptResponse("chegou tarde"));
+      await promise;
+    });
+
+    expect(result.current.transcript).toBe("");
+    expect(result.current.error).toBeNull();
   });
 });
