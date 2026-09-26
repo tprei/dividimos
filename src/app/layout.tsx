@@ -6,6 +6,7 @@ import { MotionProvider } from "@/components/motion-provider";
 import { RegisterSW } from "@/components/pwa/register-sw";
 import { ThemeSync } from "@/components/theme-sync";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
+import { BRAND } from "@/lib/brand";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -20,15 +21,27 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "Tira foto da notinha, manda o link no grupo e cada um marca o que consumiu. O Pix sai com o valor certinho.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(`https://www.${BRAND.domain}`),
   title: {
     default: "Dividimos",
     template: "%s | Dividimos",
   },
-  description:
-    "Split bills instantly. Scan your receipt, assign items, and settle via Pix in seconds.",
-  keywords: ["pix", "split bill", "dividir conta", "nota fiscal"],
+  description: DESCRIPTION,
+  keywords: ["pix", "dividir conta", "rachar conta"],
   authors: [{ name: "Dividimos" }],
+  openGraph: {
+    type: "website",
+    locale: "pt_BR",
+    siteName: "Dividimos",
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
