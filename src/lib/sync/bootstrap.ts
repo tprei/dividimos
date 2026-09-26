@@ -4,6 +4,7 @@ import { useAppStore } from "@/stores/app-store";
 import { getAuthGeneration, rpc } from "./client";
 
 let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
+let bootstrapPending: { generation: number; promise: Promise<void> } | null = null;
 
 async function executeBootstrap(generation: number): Promise<void> {
   const store = useAppStore.getState();
@@ -47,6 +48,31 @@ export function runBootstrap(): Promise<void> {
     bootstrapInFlight = entry;
   }
   return bootstrapInFlight.promise;
+}
+
+export function catchUpBootstrap(): Promise<void> {
+  const generation = getAuthGeneration();
+  const current = bootstrapInFlight;
+  if (current === null || current.generation !== generation) return runBootstrap();
+
+  const pending = bootstrapPending;
+  if (pending !== null && pending.generation === generation) return pending.promise;
+
+  const entry: { generation: number; promise: Promise<void> } = {
+    generation,
+    promise: current.promise
+      .catch(() => undefined)
+      .then(() => {
+        // Free the slot the moment this follow-up's read starts, not when it
+        // settles: a call made during the read must queue behind it, not share
+        // a read that already left.
+        if (bootstrapPending === entry) bootstrapPending = null;
+        if (getAuthGeneration() !== generation) return;
+        return runBootstrap();
+      }),
+  };
+  bootstrapPending = entry;
+  return entry.promise;
 }
 
 async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {

@@ -12,7 +12,7 @@ import {
   reconcileChat,
 } from "./chat-reconcile";
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
-import { runBootstrap } from "./bootstrap";
+import { catchUpBootstrap } from "./bootstrap";
 import { getAuthGeneration, getSupabase } from "./client";
 import { refreshGroup } from "./refresh";
 
@@ -162,39 +162,13 @@ function handleChatBroadcast(
   if (gapped) reconcileChat(groupId);
 }
 
-let membershipInFlight: Promise<void> | null = null;
-let membershipPending: Promise<void> | null = null;
-
-function runMembershipRefresh(): Promise<void> {
-  const task = runBootstrap().finally(() => {
-    membershipInFlight = null;
-    const followUp = membershipPending;
-    if (followUp) {
-      membershipPending = null;
-      membershipInFlight = followUp;
-    }
-  });
-  membershipInFlight = task;
-  return task;
-}
-
-function refreshMemberships(): Promise<void> {
-  const current = membershipInFlight;
-  if (!current) return runMembershipRefresh();
-
-  const scheduled = membershipPending;
-  if (scheduled) return scheduled;
-
-  const followUp = current
-    .catch(() => undefined)
-    .then(() => runMembershipRefresh());
-  membershipPending = followUp;
-  return followUp;
+function catchUpMemberships(): void {
+  void catchUpBootstrap().catch(() => {});
 }
 
 function handleMembershipBroadcast(payload: unknown): void {
   if (!parseMembershipPayload(payload)) return;
-  void refreshMemberships().catch(() => {});
+  catchUpMemberships();
 }
 
 function onRecovery(onRecovered: () => void): (status: string) => void {
@@ -210,44 +184,104 @@ function onRecovery(onRecovered: () => void): (status: string) => void {
   };
 }
 
+interface JoinPass {
+  generation: number;
+  pending: Set<symbol>;
+  tokensByGroup: Map<string, symbol>;
+  joinedGroupIds: Set<string>;
+  joinedUser: boolean;
+}
+
 export function startRealtime(): () => void {
   const channels = new Map<string, RealtimeChannel>();
   let userChannel: RealtimeChannel | null = null;
   let userChannelUserId: string | null = null;
+  let passes: JoinPass[] = [];
+  let stopped = false;
+
+  function settlePass(
+    pass: JoinPass,
+    token: symbol,
+    subscribed: boolean,
+    groupId: string | null,
+  ): void {
+    if (stopped || !pass.pending.delete(token)) return;
+    if (subscribed) {
+      if (groupId === null) pass.joinedUser = true;
+      else pass.joinedGroupIds.add(groupId);
+    }
+    if (pass.pending.size > 0) return;
+    passes = passes.filter((candidate) => candidate !== pass);
+    if (getAuthGeneration() !== pass.generation) return;
+    if (pass.joinedUser || pass.joinedGroupIds.size > 1) {
+      catchUpMemberships();
+      return;
+    }
+    const [only] = pass.joinedGroupIds;
+    if (only !== undefined) void refreshGroup(only).catch(() => {});
+  }
+
+  function dropGroupFromPasses(groupId: string): void {
+    for (const pass of passes) {
+      const token = pass.tokensByGroup.get(groupId);
+      if (token === undefined) continue;
+      pass.tokensByGroup.delete(groupId);
+      pass.joinedGroupIds.delete(groupId);
+      settlePass(pass, token, false, null);
+    }
+  }
 
   function syncChannels(): void {
+    passes = passes.filter((candidate) => candidate.generation === getAuthGeneration());
     const desiredIds = new Set(useAppStore.getState().groupOrder);
 
     for (const [id, ch] of channels) {
       if (!desiredIds.has(id)) {
+        dropGroupFromPasses(id);
         void getSupabase().removeChannel(ch);
         channels.delete(id);
       }
     }
 
+    // One catch-up per pass. Every channel created here reports a first status
+    // (SUBSCRIBED, CHANNEL_ERROR, TIMED_OUT, or CLOSED when removed), so a slow
+    // channel delays only its own pass.
+    const pass: JoinPass = {
+      generation: getAuthGeneration(),
+      pending: new Set(),
+      tokensByGroup: new Map(),
+      joinedGroupIds: new Set(),
+      joinedUser: false,
+    };
+
     for (const id of desiredIds) {
-      if (!channels.has(id)) {
-        const authGeneration = getAuthGeneration();
-        const ch = getSupabase()
-          .channel(`group:${id}`, { config: { private: true } })
-          .on("broadcast", { event: "ledger" }, ({ payload }) => {
-            handleLedgerBroadcast(id, payload);
-          })
-          .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
-            handleAssignmentRoomBroadcast(id, payload, authGeneration);
-          })
-          .on("broadcast", { event: "chat_activity" }, () => {
-            // Wakes conversation previews and unread badges through the one
-            // coalesced group refresh; never a per-event query burst.
-            void refreshGroup(id).catch(() => {});
-          })
-          .subscribe(
-            onRecovery(() => {
-              void refreshGroup(id).catch(() => {});
-            }),
-          );
-        channels.set(id, ch);
-      }
+      if (channels.has(id)) continue;
+      const token = Symbol();
+      pass.pending.add(token);
+      pass.tokensByGroup.set(id, token);
+      const authGeneration = pass.generation;
+      const handleRecovery = onRecovery(() => {
+        void refreshGroup(id).catch(() => {});
+      });
+      const ch = getSupabase()
+        .channel(`group:${id}`, { config: { private: true } })
+        .on("broadcast", { event: "ledger" }, ({ payload }) => {
+          handleLedgerBroadcast(id, payload);
+        })
+        .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
+          handleAssignmentRoomBroadcast(id, payload, authGeneration);
+        })
+        .on("broadcast", { event: "chat_activity" }, () => {
+          // Wakes conversation previews and unread badges through the one
+          // coalesced group refresh; never a per-event query burst.
+          void refreshGroup(id).catch(() => {});
+        })
+        .subscribe((status) => {
+          if (getAuthGeneration() !== authGeneration) return;
+          handleRecovery(status);
+          settlePass(pass, token, status === "SUBSCRIBED", id);
+        });
+      channels.set(id, ch);
     }
 
     const meId = useAppStore.getState().me?.id ?? null;
@@ -258,18 +292,24 @@ export function startRealtime(): () => void {
       }
       userChannelUserId = meId;
       if (meId) {
+        const token = Symbol();
+        pass.pending.add(token);
+        const authGeneration = pass.generation;
+        const handleRecovery = onRecovery(catchUpMemberships);
         userChannel = getSupabase()
           .channel(`user:${meId}`, { config: { private: true } })
           .on("broadcast", { event: "membership" }, ({ payload }) => {
             handleMembershipBroadcast(payload);
           })
-          .subscribe(
-            onRecovery(() => {
-              void refreshMemberships().catch(() => {});
-            }),
-          );
+          .subscribe((status) => {
+            if (getAuthGeneration() !== authGeneration) return;
+            handleRecovery(status);
+            settlePass(pass, token, status === "SUBSCRIBED", null);
+          });
       }
     }
+
+    if (pass.pending.size > 0) passes.push(pass);
   }
 
   let lastOrder = useAppStore.getState().groupOrder;
@@ -287,6 +327,8 @@ export function startRealtime(): () => void {
   syncChannels();
 
   return () => {
+    stopped = true;
+    passes = [];
     unsubscribe();
     if (userChannel) {
       void getSupabase().removeChannel(userChannel);
