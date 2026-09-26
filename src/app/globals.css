@@ -536,6 +536,33 @@
     opacity: 0;
   }
 
+  .intro-slot:focus,
+  .intro-reset:focus {
+    outline: none;
+  }
+  .intro-slot-ring {
+    opacity: 0;
+  }
+  .intro-slot:focus-visible > .intro-slot-ring {
+    opacity: 1;
+  }
+  .intro-reset {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.25s ease,
+      visibility 0s 0.25s;
+  }
+  .intro-reset[data-on] {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.25s ease;
+  }
+  .intro-reset:focus-visible .intro-reset-bg {
+    stroke: var(--ring);
+    stroke-width: 2.5;
+  }
+
   .intro-enter-up {
     animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
