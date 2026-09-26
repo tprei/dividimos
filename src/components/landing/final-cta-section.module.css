@@ -1,0 +1,78 @@
+.stage {
+  position: relative;
+  padding: clamp(44px, 6vw, 64px) clamp(16px, 8vw, 120px) clamp(54px, 7vw, 72px);
+}
+
+.table {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 44px;
+  background:
+    linear-gradient(106deg, transparent 18%, oklch(1 0 0 / 0.2) 25%, oklch(1 0 0 / 0.05) 32%, transparent 40%),
+    radial-gradient(90% 70% at 30% 18%, oklch(1 0 0 / 0.26), transparent 60%),
+    var(--mesa);
+  box-shadow:
+    0 7px 0 color-mix(in oklab, var(--mesa) 70%, black),
+    0 30px 60px oklch(0.45 0.13 70 / 0.26),
+    inset 0 0 0 3px color-mix(in oklab, var(--mesa) 78%, black),
+    inset 0 5px 0 3px oklch(1 0 0 / 0.3),
+    inset 0 0 0 20px color-mix(in oklab, var(--mesa) 88%, white),
+    inset 0 0 0 23px color-mix(in oklab, var(--mesa) 76%, black);
+  rotate: -1.4deg;
+}
+
+.cap1 {
+  --cap-rotate: 14deg;
+  top: 22px;
+  left: 9%;
+  width: 34px;
+}
+
+.cap2 {
+  --cap-rotate: -12deg;
+  right: 9%;
+  bottom: 24px;
+  width: 36px;
+}
+
+.paper {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin-inline: auto;
+  filter: drop-shadow(0 18px 30px oklch(0.3 0.08 60 / 0.28)) drop-shadow(0 2px 2px oklch(0.3 0.08 60 / 0.14));
+  rotate: -0.6deg;
+}
+
+.sheet {
+  padding: clamp(36px, 6vw, 56px) 20px clamp(46px, 6vw, 60px);
+  border-radius: 6px 6px 0 0;
+  background: var(--receipt);
+  color: var(--receipt-ink);
+  text-align: center;
+  mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 16px 100%;
+}
+
+.title {
+  margin-bottom: 24px;
+  font-size: clamp(32px, 7vw, 48px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+@media (min-width: 900px) {
+  .cap1 {
+    top: 42%;
+    left: 4%;
+    width: 44px;
+  }
+
+  .cap2 {
+    top: 30%;
+    right: 5%;
+    bottom: auto;
+    width: 46px;
+  }
+}
