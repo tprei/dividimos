@@ -328,7 +328,6 @@ describe("DashboardContent", () => {
     expect(pixProps.current?.recipientUserId).toBe(carol.id);
     expect(pixProps.current?.groupId).toBe("g1");
     expect(pixProps.current?.recipientName).toBe(carol.name);
-    expect(pixProps.current?.amountCents).toBe(5000);
     expect(pixProps.current?.mode).toBe("pay");
 
     const onMarkPaid = pixProps.current?.onMarkPaid as (cents: number) => Promise<void>;
@@ -358,7 +357,6 @@ describe("DashboardContent", () => {
     await waitFor(() => expect(pixProps.current).not.toBeNull());
     expect(pixProps.current?.recipientUserId).toBe(me.id);
     expect(pixProps.current?.groupId).toBe("g1");
-    expect(pixProps.current?.amountCents).toBe(5000);
     expect(pixProps.current?.mode).toBe("collect");
   });
 

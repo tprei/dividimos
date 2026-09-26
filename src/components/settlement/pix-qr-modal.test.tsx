@@ -18,13 +18,14 @@ vi.mock("@/hooks/use-haptics", () => ({
   },
 }));
 
+const toastDefault = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
 vi.mock("react-hot-toast", () => ({
-  default: {
+  default: Object.assign((message: string) => toastDefault(message), {
     error: (message: string) => toastError(message),
     success: (message: string) => toastSuccess(message),
-  },
+  }),
 }));
 
 vi.mock("next/link", () => ({
@@ -45,12 +46,68 @@ import { qrToCanvas } from "@/lib/qr";
 import { haptics } from "@/hooks/use-haptics";
 import { PixQrModal } from "./pix-qr-modal";
 import { formatBRL } from "@/lib/currency";
+import { useAppStore } from "@/stores/app-store";
+import type { Me } from "@/types/ledger";
+
+const storeMe: Me = {
+  id: "user-me",
+  handle: "me",
+  name: "Me User",
+  avatarUrl: null,
+  isBot: false,
+  email: "me@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
+
+/** Seeds the store group the fetch-variant modal reads its live amount from. */
+function seedLiveGroup(
+  netMe: number,
+  netCounterparty: number,
+  extraBalances: { participantId: string; netCents: number }[] = [],
+) {
+  useAppStore.setState({
+    me: storeMe,
+    groups: {
+      "group-456": {
+        group: {
+          id: "group-456",
+          kind: "group",
+          name: "Grupo Teste",
+          creatorId: storeMe.id,
+          dmUserA: null,
+          dmUserB: null,
+          ledgerVersion: 1,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        members: [],
+        balances: [
+          { kind: "user", participantId: storeMe.id, netCents: netMe },
+          { kind: "user", participantId: "user-123", netCents: netCounterparty },
+          ...extraBalances.map((row) => ({ kind: "user" as const, ...row })),
+        ],
+        guests: [],
+        settlements: [],
+        recentExpenses: [],
+        expenseCount: 0,
+        lastEventId: 0,
+        unreadCount: 0,
+        lastMessage: null,
+        lastActivityAt: "2026-01-02T00:00:00Z",
+        pairwiseEdges: [],
+      },
+    },
+    groupOrder: ["group-456"],
+  });
+}
 
 const defaultProps = {
   open: true,
   onClose: vi.fn(),
   recipientName: "Bob Santos",
-  amountCents: 10000,
+  counterpartyId: "user-123",
   recipientUserId: "user-123",
   groupId: "group-456",
   onMarkPaid: vi.fn(),
@@ -65,10 +122,13 @@ beforeEach(() => {
     status: 200,
     json: () => Promise.resolve({ copiaECola: "pix-payload" }),
   });
+  useAppStore.getState().reset();
+  seedLiveGroup(-10000, 10000);
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 async function readyButton(name: RegExp) {
@@ -311,13 +371,15 @@ describe("PixQrModal", () => {
   });
 
   it("asks for receipt confirmation in collect mode", async () => {
+    seedLiveGroup(10000, -10000);
     render(<PixQrModal {...defaultProps} mode="collect" />);
 
     expect(await readyButton(/Já recebi/i)).toBeEnabled();
   });
 
   it("snaps slider to round amount and triggers haptic tick", () => {
-    render(<PixQrModal {...defaultProps} amountCents={50000} />);
+    seedLiveGroup(-50000, 50000);
+    render(<PixQrModal {...defaultProps} />);
 
     const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
 
@@ -327,7 +389,8 @@ describe("PixQrModal", () => {
   });
 
   it("handles exact 1-centavo slider values and keyboard navigation without snapback", () => {
-    render(<PixQrModal {...defaultProps} amountCents={12154} />);
+    seedLiveGroup(-12154, 12154);
+    render(<PixQrModal {...defaultProps} />);
 
     const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
     expect(slider).toHaveAttribute("step", "1");
@@ -363,7 +426,8 @@ describe("PixQrModal", () => {
 
 
   it("hides the Metade pill for totals under R$ 2,00", () => {
-    render(<PixQrModal {...defaultProps} amountCents={150} />);
+    seedLiveGroup(-150, 150);
+    render(<PixQrModal {...defaultProps} />);
 
     expect(screen.queryByRole("button", { name: /Metade/ })).not.toBeInTheDocument();
   });
@@ -647,7 +711,8 @@ describe("PixQrModal", () => {
   });
 
   it("renders amount chips enabled with aria-pressed reflecting selection", () => {
-    render(<PixQrModal {...defaultProps} amountCents={10000} />);
+    seedLiveGroup(-10000, 10000);
+    render(<PixQrModal {...defaultProps} />);
 
     const tudoBtn = screen.getByRole("button", { name: "Tudo" });
     const metadeBtn = screen.getByRole("button", { name: "Metade" });
@@ -710,6 +775,7 @@ describe("PixQrModal", () => {
   });
 
   it("renders the collect QR without a disclosure", async () => {
+    seedLiveGroup(10000, -10000);
     render(<PixQrModal {...defaultProps} mode="collect" />);
 
     await waitFor(() => {
@@ -718,6 +784,227 @@ describe("PixQrModal", () => {
     expect(
       screen.queryByRole("button", { name: /Mostrar QR code/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("switches to the settled state when the counterparty settles while the modal is open", async () => {
+    render(<PixQrModal {...defaultProps} />);
+
+    expect(
+      screen.getByRole("slider", { name: /Valor do pagamento/i }),
+    ).toBeInTheDocument();
+
+    act(() => {
+      seedLiveGroup(0, 0);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tudo certo!")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Não há nada pendente com/)).toBeInTheDocument();
+    expect(screen.queryByText(/já registrou/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Agora é/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Já paguei/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fechar" })).toBeEnabled();
+    expect(haptics.success).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the same neutral copy in collect mode once the debt clears", async () => {
+    render(<PixQrModal {...defaultProps} mode="collect" />);
+
+    act(() => {
+      seedLiveGroup(0, 0);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Não há nada pendente com/),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Agora é/)).not.toBeInTheDocument();
+  });
+
+  it("names the flipped debt when the balance reverses while open", async () => {
+    render(<PixQrModal {...defaultProps} />);
+
+    act(() => {
+      seedLiveGroup(5000, -5000);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tudo certo!")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Não há nada pendente com/)).toBeInTheDocument();
+    expect(screen.getByText(/Agora é/)).toBeInTheDocument();
+    expect(screen.getByText(/quem te/)).toBeInTheDocument();
+    expect(screen.getByText("R$ 50,00")).toBeInTheDocument();
+  });
+
+  it("mirrors the flipped-debt copy in collect mode", async () => {
+    render(<PixQrModal {...defaultProps} mode="collect" />);
+
+    act(() => {
+      seedLiveGroup(-5000, 5000);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Tudo certo!")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Agora é você quem deve/)).toBeInTheDocument();
+    expect(screen.getByText("R$ 50,00")).toBeInTheDocument();
+  });
+
+  it("clamps the displayed amount while the live outstanding is lower and restores the choice when it grows", () => {
+    render(<PixQrModal {...defaultProps} />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    expect(slider).toHaveAttribute("max", "10000");
+    expect(slider).toHaveValue("10000");
+
+    fireEvent.change(slider, { target: { value: "5000" } });
+    expect(slider).toHaveValue("5000");
+
+    act(() => {
+      seedLiveGroup(-4000, 4000);
+    });
+    expect(slider).toHaveAttribute("max", "4000");
+    expect(slider).toHaveValue("4000");
+
+    act(() => {
+      seedLiveGroup(-9000, 9000);
+    });
+    expect(slider).toHaveAttribute("max", "9000");
+    expect(slider).toHaveValue("5000");
+  });
+
+  it("stays payable at the net cap when a reroute dissolves the pair edge", () => {
+    // Minimized graph pairs user-d→user-123 150 and me→user-c 50: no edge
+    // towards user-123 remains, but the RPC still accepts me paying them up
+    // to min(50, 150), so the modal must not read as settled.
+    seedLiveGroup(-50, 150, [
+      { participantId: "user-c", netCents: 50 },
+      { participantId: "user-d", netCents: -150 },
+    ]);
+
+    render(<PixQrModal {...defaultProps} />);
+
+    expect(screen.queryByText("Tudo certo!")).not.toBeInTheDocument();
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    expect(slider).toHaveAttribute("max", "50");
+    expect(slider).toHaveValue("50");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(50));
+    expect(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/i }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the paying state while the user's own settlement is in flight", async () => {
+    const pending = Promise.withResolvers<void>();
+    const onMarkPaid = vi.fn(() => {
+      seedLiveGroup(0, 0);
+      return pending.promise;
+    });
+    render(<PixQrModal {...defaultProps} onMarkPaid={onMarkPaid} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Registrando...")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Tudo certo!")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Não há nada pendente/)).not.toBeInTheDocument();
+    expect(haptics.success).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pending.resolve();
+    });
+  });
+
+  it("restores the requested amount after a failed payment rolls back", async () => {
+    const onClose = vi.fn();
+    const onMarkPaid = vi.fn().mockImplementation(async () => {
+      seedLiveGroup(0, 0);
+      seedLiveGroup(-10000, 10000);
+      throw new LedgerError("network");
+    });
+    render(
+      <PixQrModal {...defaultProps} onClose={onClose} onMarkPaid={onMarkPaid} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/i }),
+    );
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        "Sem conexão. Você pode tentar de novo quando a internet voltar.",
+      );
+    });
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    expect(slider).toHaveValue("10000");
+    expect(slider).toHaveAttribute("max", "10000");
+    expect(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/i }),
+    ).toBeEnabled();
+
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("toasts a neutral nudge when the ledger rejects the amount", async () => {
+    const onMarkPaid = vi.fn().mockRejectedValue(new LedgerError("amount_exceeds_debt"));
+    render(<PixQrModal {...defaultProps} onMarkPaid={onMarkPaid} />);
+
+    fireEvent.click(await readyButton(/Já paguei/i));
+
+    await waitFor(() => {
+      expect(toastDefault).toHaveBeenCalledWith("O valor mudou. Confira e tente de novo.");
+    });
+    expect(toastError).not.toHaveBeenCalled();
+    expect(haptics.error).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Já paguei/i })).toBeEnabled();
+  });
+
+  it("does not send an over-max amount and never surfaces the overpay RPC error", async () => {
+    const onMarkPaid = vi.fn().mockRejectedValue(
+      new LedgerError("amount_exceeds_debt"),
+    );
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ copiaECola: "br-code-10000" }),
+    });
+
+    render(<PixQrModal {...defaultProps} onMarkPaid={onMarkPaid} />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Já paguei|Registrar pagamento/ }),
+      ).toBeEnabled();
+    });
+
+    act(() => {
+      seedLiveGroup(-4000, 4000);
+    });
+    expect(slider).toHaveValue("4000");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Já paguei|Registrar pagamento/ }),
+    );
+
+    await waitFor(() => {
+      expect(onMarkPaid).toHaveBeenCalledWith(4000, expect.any(String));
+    });
+    await waitFor(() => {
+      expect(toastError).not.toHaveBeenCalled();
+    });
+    expect(haptics.error).not.toHaveBeenCalled();
   });
 
 });

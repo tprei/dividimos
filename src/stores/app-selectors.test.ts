@@ -17,6 +17,7 @@ import {
   selectHomeRecentBills,
   selectMyDebts,
   selectMyExpenseRows,
+  selectPairEdgeCents,
   selectPendingInvitations,
   selectRecentBills,
   selectTransfers,
@@ -141,6 +142,40 @@ describe("selectTransfers", () => {
 
     expect(after).not.toBe(before);
     expect(after).toEqual(before);
+  });
+});
+
+describe("selectPairEdgeCents", () => {
+  it("returns the minimized edge amount in the requested direction", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { balances: [balance("user-1", -500), balance("user-2", 500)] }) },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectPairEdgeCents(useAppStore.getState(), "g1", "user-1", "user-2")).toBe(500);
+    expect(selectPairEdgeCents(useAppStore.getState(), "g1", "user-2", "user-1")).toBe(0);
+  });
+
+  it("returns 0 when a reroute dissolves the pair edge while the debt survives", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", {
+          balances: [
+            balance("user-a", -50),
+            balance("user-b", 150),
+            balance("user-c", 50),
+            balance("user-d", -150),
+          ],
+        }),
+      },
+      groupOrder: ["g1"],
+    });
+
+    // Greedy pairs D→B 150 and A→C 50; no A→B edge exists.
+    expect(selectPairEdgeCents(useAppStore.getState(), "g1", "user-a", "user-b")).toBe(0);
+    expect(selectPairEdgeCents(useAppStore.getState(), "g1", "user-d", "user-b")).toBe(150);
   });
 });
 

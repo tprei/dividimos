@@ -518,7 +518,6 @@ export function DashboardContent() {
           recipientName={names.get(pixTarget.debt.counterpartyId) ?? pixTarget.debt.counterpartyName}
           counterpartyId={pixTarget.debt.counterpartyId}
           counterpartyAvatarUrl={pixTarget.debt.counterpartyAvatarUrl}
-          amountCents={pixTarget.debt.amountCents}
           recipientUserId={
             pixTarget.mode === "pay" ? pixTarget.debt.counterpartyId : me.id
           }

@@ -16,12 +16,11 @@ vi.mock("@/components/settlement/pix-qr-modal", () => ({
   PixQrModal: (props: Record<string, unknown>) => {
     pixModalProps.push(props);
     const onMarkPaid = props.onMarkPaid as (cents: number) => Promise<void>;
-    const amountCents = props.amountCents as number;
     return (
       <button
         type="button"
         data-testid="mock-mark-paid"
-        onClick={() => void onMarkPaid(amountCents)}
+        onClick={() => void onMarkPaid(1234)}
       >
         mock-pay
       </button>
@@ -187,7 +186,6 @@ describe("GroupSettlementView", () => {
     expect(modalProps.recipientName).toBe("Carlos Souza");
     expect(modalProps.recipientUserId).toBe("user-3");
     expect(modalProps.groupId).toBe(groupId);
-    expect(modalProps.amountCents).toBe(5900);
 
     await user.click(screen.getByTestId("mock-mark-paid"));
 
@@ -196,7 +194,7 @@ describe("GroupSettlementView", () => {
         groupId,
         fromUserId: "user-1",
         toUserId: "user-3",
-        amountCents: 5900,
+        amountCents: 1234,
       });
     });
   });
@@ -227,7 +225,7 @@ describe("GroupSettlementView", () => {
         groupId,
         fromUserId: "user-1",
         toUserId: "user-2",
-        amountCents: 2100,
+        amountCents: 1234,
       });
     });
   });

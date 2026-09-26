@@ -32,7 +32,9 @@ export function ConversationPayButton({
   counterpartyName,
   rows,
 }: ConversationPayButtonProps) {
-  const [showPix, setShowPix] = useState(false);
+  // Direction frozen at open: the modal tracks the live amount itself, so a
+  // balance that clears mid-flight must not flip the payment around.
+  const [payMode, setPayMode] = useState<"pay" | "collect" | null>(null);
 
   const netCents = useMemo(
     () =>
@@ -43,9 +45,9 @@ export function ConversationPayButton({
     [rows],
   );
 
-  if (netCents === 0) return null;
+  if (netCents === 0 && payMode === null) return null;
 
-  const mode: "pay" | "collect" = netCents < 0 ? "pay" : "collect";
+  const mode: "pay" | "collect" = payMode ?? (netCents < 0 ? "pay" : "collect");
   const absAmount = Math.abs(netCents);
   const recipientUserId = mode === "pay" ? counterpartyId : meId;
 
@@ -57,20 +59,19 @@ export function ConversationPayButton({
         size="sm"
         className="h-6 gap-1 rounded-[0.375rem] px-2 text-xs"
         aria-label={`${mode === "pay" ? "Pagar" : "Cobrar"} ${formatBRL(absAmount)}`}
-        onClick={() => setShowPix(true)}
+        onClick={() => setPayMode(netCents < 0 ? "pay" : "collect")}
       >
         {mode === "pay" ? <ArrowUpRight className="size-3.5" /> : <ArrowDownLeft className="size-3.5" />}
         {mode === "pay" ? "Pagar" : "Cobrar"}
       </Button>
 
-      {showPix && (
+      {payMode !== null && (
         <PixQrModal
           open
-          onClose={() => setShowPix(false)}
+          onClose={() => setPayMode(null)}
           recipientName={counterpartyName}
           counterpartyId={counterpartyId}
           counterpartyAvatarUrl={rows[0]?.counterpartyAvatarUrl}
-          amountCents={absAmount}
           recipientUserId={recipientUserId}
           groupId={groupId}
           mode={mode}
@@ -83,7 +84,7 @@ export function ConversationPayButton({
               amountCents,
             });
           }}
-          onSettlementComplete={() => setShowPix(false)}
+          onSettlementComplete={() => setPayMode(null)}
         />
       )}
     </>
