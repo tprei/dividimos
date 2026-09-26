@@ -420,6 +420,8 @@
   --food-glass: oklch(0.95 0.05 125 / .75);
   --food-lime-rim: oklch(0.95 0.06 128);
   --paper-edge: oklch(0.88 0.008 80);
+  --qr-card-edge: oklch(0.9 0.006 250);
+  --qr-plate: oklch(0.97 0.01 190);
   --coin-ink: oklch(0.47 0.10 70);
   --ink: oklch(0.26 0.02 250);
   --ink-soft: oklch(0.50 0.02 250);
