@@ -357,6 +357,19 @@ describe("GroupDetailContent", () => {
     expect(routerMock.push).not.toHaveBeenCalled();
   });
 
+  it("toggles between the group and its profile on back-to-back pulls", async () => {
+    seedLoaded();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    for (let round = 0; round < 3; round++) {
+      pullDown(screen.getByTestId("settlement-stub"), 320);
+      expect(window.location.search).toBe("?view=info");
+
+      pullDown(screen.getByRole("heading", { name: "Viagem", level: 1 }), 320);
+      await waitFor(() => expect(window.location.search).toBe(""));
+    }
+  });
+
   it("goes back through history exactly once when the profile it pushed is closed twice in a row", async () => {
     seedLoaded();
     const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
