@@ -243,6 +243,7 @@ export function DashboardContent() {
           {screenRefresh && (
             <RefreshButton refreshing={screenRefresh.refreshing} onRefresh={screenRefresh.refresh} />
           )}
+          <InstallPrompt badge />
           <IconButton
             nativeButton={false}
             role="link"
@@ -323,7 +324,6 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
-      <InstallPrompt variant="card" />
       <NotificationPrompt />
 
       <div className="space-y-6 empty:hidden" data-tour="debt-lists">
