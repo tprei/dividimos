@@ -426,6 +426,11 @@ export async function enterGroupAssignmentRoom(
       error instanceof LedgerError &&
       ENTER_REFRESH_GROUP_CODES[error.code] === true
     ) {
+      if (error.code === "invalid_token" && getAuthGeneration() === authGeneration) {
+        useAppStore
+          .getState()
+          .setAssignmentRoomAccess([{ roomId: input.roomId, access: "removed" }]);
+      }
       void refreshGroup(input.groupId).catch(() => undefined);
     }
     if (mayBeLostResponse(error)) {

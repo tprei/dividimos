@@ -528,4 +528,64 @@ describe("startRealtime", () => {
     channel.emitStatus("SUBSCRIBED");
     expect(runBootstrap).toHaveBeenCalledTimes(1);
   });
+
+  describe("assignment_room broadcasts", () => {
+    const roomSummary = {
+      id: "00000000-0000-4000-8000-000000000021",
+      groupId: "group-1",
+      status: "open",
+      revision: 4,
+      title: "Bar do Zé",
+      occurredOn: "2026-09-25",
+      totalCents: 18260,
+      host: { id: "00000000-0000-4000-8000-000000000022", handle: "bruno", name: "Bruno", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-25T20:00:00.000Z",
+      itemCount: 3,
+      ownedItemCount: 1,
+      claimers: [
+        { participantId: "00000000-0000-4000-8000-000000000023", userId: null, name: "Ana", avatarUrl: null },
+      ],
+      expenseId: null,
+    };
+
+    function groupChannel(): FakeChannel {
+      const channel = createdChannels.find((c) => c.topic === "group:group-1");
+      if (!channel) throw new Error("group channel not opened");
+      return channel;
+    }
+
+    it("patches the store from a room summary, tolerating the transport id", () => {
+      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+      stop = startRealtime();
+
+      groupChannel().emit("assignment_room", { room: roomSummary, id: "transport-1" });
+
+      expect(useAppStore.getState().assignmentRoomSummaries[roomSummary.id]).toEqual(roomSummary);
+      expect(refreshGroup).not.toHaveBeenCalled();
+    });
+
+    it("drops malformed payloads and summaries for another group", () => {
+      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+      stop = startRealtime();
+      const channel = groupChannel();
+
+      channel.emit("assignment_room", { room: { ...roomSummary, revision: "4" } });
+      channel.emit("assignment_room", { room: roomSummary, extra: true });
+      channel.emit("assignment_room", { room: { ...roomSummary, groupId: "group-2" } });
+      channel.emit("assignment_room", null);
+
+      expect(useAppStore.getState().assignmentRoomSummaries).toEqual({});
+    });
+
+    it("ignores room summaries once the signed-in account changed", () => {
+      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+      stop = startRealtime();
+      const channel = groupChannel();
+
+      authState.generation = 1;
+      channel.emit("assignment_room", { room: roomSummary });
+
+      expect(useAppStore.getState().assignmentRoomSummaries).toEqual({});
+    });
+  });
 });

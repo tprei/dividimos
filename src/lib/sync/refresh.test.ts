@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExpenseDetail, GroupSnapshot, Me, Settlement } from "@/types/ledger";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type { Conversation, ExpenseDetail, GroupSnapshot, Me, Settlement } from "@/types/ledger";
+import type { AssignmentRoomSummary, OpenAssignmentRoom } from "@/types/assignment-room";
 import {
   expensePageReadKey,
   expenseReadKey,
@@ -13,6 +13,7 @@ import { rpc } from "./client";
 import {
   invalidateSyncReads,
   loadActivity,
+  loadConversation,
   loadMoreExpenses,
   refreshExpense,
   refreshGroup,
@@ -474,6 +475,68 @@ describe("refreshExpense", () => {
     });
   });
 });
+describe("loadConversation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    useAppStore.getState().reset();
+    useAppStore.setState({ me: ME, groups: { g1: snapshot("g1", 2) } });
+  });
+
+  it("reads the v2 conversation and keeps each room event's summary", async () => {
+    const listed = openRoom();
+    const summary: AssignmentRoomSummary = {
+      id: listed.id,
+      groupId: listed.groupId,
+      status: "closed",
+      revision: 5,
+      title: listed.title,
+      occurredOn: listed.occurredOn,
+      totalCents: listed.totalCents,
+      host: listed.host,
+      createdAt: listed.createdAt,
+      itemCount: listed.itemCount,
+      ownedItemCount: listed.ownedItemCount,
+      claimers: listed.claimers,
+      expenseId: listed.expenseId,
+    };
+    const conversation: Conversation = {
+      messages: [],
+      messageCursor: null,
+      messagesComplete: true,
+      events: [
+        {
+          id: 7,
+          groupId: "g1",
+          actorId: ME.id,
+          kind: "assignment_room_opened",
+          expenseId: null,
+          settlementId: null,
+          subjectUserId: null,
+          payload: { roomId: summary.id },
+          createdAt: "2026-09-19T12:00:00.000Z",
+          actor: null,
+          expenseTitle: null,
+          assignmentRoom: summary,
+        },
+      ],
+      eventCursor: null,
+      eventsComplete: true,
+      readWatermark: null,
+    };
+    vi.mocked(rpc).mockResolvedValue(conversation);
+
+    await loadConversation("g1");
+
+    expect(rpc).toHaveBeenCalledWith(
+      "get_conversation_v2",
+      expect.objectContaining({ p_group_id: "g1" }),
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().assignmentRoomSummaries[summary.id]).toEqual(summary);
+  });
+});
+
 describe("loadActivity", () => {
   beforeEach(() => {
     clientState.authGeneration = 0;

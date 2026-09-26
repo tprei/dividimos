@@ -1,5 +1,8 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { decodeChatMessage } from "@/lib/ledger/decode";
+import { decodeAssignmentRoomSummary } from "@/lib/ledger/decode-assignment-room";
+import { exactKeys, isRecord } from "@/lib/ledger/decode-expense";
+import type { AssignmentRoomSummary } from "@/types/assignment-room";
 import { useAppStore } from "@/stores/app-store";
 import type { AppState } from "@/stores/app-store";
 import { mergeConversation } from "@/stores/app-store-merge";
@@ -121,6 +124,24 @@ function handleLedgerBroadcast(groupId: string, payload: unknown): void {
   }
 }
 
+export function parseAssignmentRoomBroadcast(raw: unknown): AssignmentRoomSummary | null {
+  if (!isRecord(raw)) return null;
+  if (!exactKeys(raw, ["room"], [], ["id"]).ok) return null;
+  const decoded = decodeAssignmentRoomSummary(raw.room);
+  return decoded.ok ? decoded.value : null;
+}
+
+function handleAssignmentRoomBroadcast(
+  groupId: string,
+  payload: unknown,
+  authGeneration: number,
+): void {
+  if (getAuthGeneration() !== authGeneration) return;
+  const room = parseAssignmentRoomBroadcast(payload);
+  if (room === null || room.groupId !== groupId) return;
+  useAppStore.getState().applyAssignmentRoomSummaries([room]);
+}
+
 function handleChatBroadcast(
   groupId: string,
   payload: unknown,
@@ -206,10 +227,14 @@ export function startRealtime(): () => void {
 
     for (const id of desiredIds) {
       if (!channels.has(id)) {
+        const authGeneration = getAuthGeneration();
         const ch = getSupabase()
           .channel(`group:${id}`, { config: { private: true } })
           .on("broadcast", { event: "ledger" }, ({ payload }) => {
             handleLedgerBroadcast(id, payload);
+          })
+          .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
+            handleAssignmentRoomBroadcast(id, payload, authGeneration);
           })
           .on("broadcast", { event: "chat_activity" }, () => {
             // Wakes conversation previews and unread badges through the one

@@ -9,7 +9,12 @@ import type {
   AssignmentRoomExpenseMetadata,
   ExpenseContext,
 } from "@/lib/ledger/decode-assignment-room";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type {
+  AssignmentRoomAccess,
+  AssignmentRoomAccessEntry,
+  AssignmentRoomSummary,
+  OpenAssignmentRoom,
+} from "@/types/assignment-room";
 import type {
   Bootstrap,
   ChargePage,
@@ -110,6 +115,8 @@ interface AppStateData {
   expenseDetails: Record<string, ExpenseDetail>;
   assignmentRoomsByExpenseId: Record<string, AssignmentRoomExpenseMetadata>;
   openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]>;
+  assignmentRoomSummaries: Record<string, AssignmentRoomSummary>;
+  assignmentRoomAccess: Record<string, AssignmentRoomAccess>;
   activity: {
     items: GroupEvent[];
     oldestId: number | null;
@@ -161,6 +168,8 @@ export interface AppState extends AppStateData {
   setBootstrapError(code: LedgerErrorCode): void;
   applyGroup(s: GroupSnapshot): void;
   applyOpenAssignmentRooms(groupId: string, rooms: OpenAssignmentRoom[]): void;
+  applyAssignmentRoomSummaries(summaries: AssignmentRoomSummary[]): void;
+  setAssignmentRoomAccess(entries: AssignmentRoomAccessEntry[]): void;
   markOpenAssignmentRoomJoined(groupId: string, roomId: string): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
@@ -195,6 +204,8 @@ const initialData: AppStateData = {
   expenseDetails: {},
   assignmentRoomsByExpenseId: {},
   openAssignmentRoomsByGroupId: {},
+  assignmentRoomSummaries: {},
+  assignmentRoomAccess: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
   activityViewedAt: {},
   settlementDetails: {},
@@ -629,6 +640,14 @@ export const useAppStore = create<AppState>()(
             ...state.openAssignmentRoomsByGroupId,
           };
           delete openAssignmentRoomsByGroupId[groupId];
+          const assignmentRoomSummaries: Record<string, AssignmentRoomSummary> = {};
+          const assignmentRoomAccess: Record<string, AssignmentRoomAccess> = {};
+          for (const [id, summary] of Object.entries(state.assignmentRoomSummaries)) {
+            if (summary.groupId === groupId) continue;
+            assignmentRoomSummaries[id] = summary;
+            const access = state.assignmentRoomAccess[id];
+            if (access !== undefined) assignmentRoomAccess[id] = access;
+          }
           const settlementDetails: Record<string, Settlement> = {};
           for (const [id, settlement] of Object.entries(state.settlementDetails)) {
             if (settlement.groupId !== groupId) settlementDetails[id] = settlement;
@@ -642,6 +661,8 @@ export const useAppStore = create<AppState>()(
             expenseDetails,
             assignmentRoomsByExpenseId,
             openAssignmentRoomsByGroupId,
+            assignmentRoomSummaries,
+            assignmentRoomAccess,
             settlementDetails,
           };
         }),
@@ -649,19 +670,91 @@ export const useAppStore = create<AppState>()(
       applyOpenAssignmentRooms: (groupId, rooms) =>
         set((state) => {
           if (state.groups[groupId] === undefined) return {};
+          const assignmentRoomSummaries = { ...state.assignmentRoomSummaries };
+          for (const room of rooms) {
+            const cached = assignmentRoomSummaries[room.id];
+            if (cached === undefined || room.revision > cached.revision) {
+              assignmentRoomSummaries[room.id] = room;
+            }
+          }
+          const list = rooms
+            .map((room) => {
+              const cached = assignmentRoomSummaries[room.id];
+              return cached !== undefined && cached.revision > room.revision
+                ? { ...cached, joined: room.joined }
+                : room;
+            })
+            .filter((room) => room.status === "open");
+          const assignmentRoomAccess = { ...state.assignmentRoomAccess };
+          for (const room of list) {
+            if (room.joined) assignmentRoomAccess[room.id] = "joined";
+          }
           return {
+            assignmentRoomSummaries,
+            assignmentRoomAccess,
             openAssignmentRoomsByGroupId: {
               ...state.openAssignmentRoomsByGroupId,
-              [groupId]: rooms,
+              [groupId]: list,
             },
           };
         }),
 
+      applyAssignmentRoomSummaries: (summaries) =>
+        set((state) => {
+          const assignmentRoomSummaries = { ...state.assignmentRoomSummaries };
+          let openAssignmentRoomsByGroupId = state.openAssignmentRoomsByGroupId;
+          const meId = state.me?.id ?? null;
+          for (const summary of summaries) {
+            const cached = assignmentRoomSummaries[summary.id];
+            if (cached !== undefined && summary.revision <= cached.revision) continue;
+            assignmentRoomSummaries[summary.id] = summary;
+            const rooms = openAssignmentRoomsByGroupId[summary.groupId];
+            if (rooms === undefined) continue;
+            const listed = rooms.find((room) => room.id === summary.id);
+            if (listed === undefined) continue;
+            if (summary.status !== "open") {
+              openAssignmentRoomsByGroupId = {
+                ...openAssignmentRoomsByGroupId,
+                [summary.groupId]: rooms.filter((room) => room.id !== summary.id),
+              };
+              continue;
+            }
+            const selfClaimed =
+              meId !== null &&
+              summary.claimers.some((claimer) => claimer.userId === meId);
+            openAssignmentRoomsByGroupId = {
+              ...openAssignmentRoomsByGroupId,
+              [summary.groupId]: rooms.map((room) =>
+                room.id === summary.id ? { ...summary, joined: room.joined || selfClaimed } : room,
+              ),
+            };
+          }
+          return { assignmentRoomSummaries, openAssignmentRoomsByGroupId };
+        }),
+
+      setAssignmentRoomAccess: (entries) =>
+        set((state) => {
+          const assignmentRoomAccess = { ...state.assignmentRoomAccess };
+          for (const { roomId, access } of entries) {
+            if (access === "none") {
+              delete assignmentRoomAccess[roomId];
+            } else {
+              assignmentRoomAccess[roomId] = access;
+            }
+          }
+          return { assignmentRoomAccess };
+        }),
+
       markOpenAssignmentRoomJoined: (groupId, roomId) =>
         set((state) => {
+          const assignmentRoomAccess: Record<string, AssignmentRoomAccess> = {
+            ...state.assignmentRoomAccess,
+            [roomId]: "joined",
+          };
           const rooms = state.openAssignmentRoomsByGroupId[groupId];
-          if (rooms === undefined) return {};
+          if (rooms === undefined) return { assignmentRoomAccess };
           return {
+            assignmentRoomAccess,
             openAssignmentRoomsByGroupId: {
               ...state.openAssignmentRoomsByGroupId,
               [groupId]: rooms.map((room) =>

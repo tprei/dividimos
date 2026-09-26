@@ -1,4 +1,5 @@
 import type { PixKeyType, NotificationCategory, NotificationPreferences } from "@/types";
+import type { AssignmentRoomAccess, AssignmentRoomSummary } from "@/types/assignment-room";
 
 export type { PixKeyType, NotificationCategory, NotificationPreferences };
 
@@ -231,6 +232,8 @@ export interface GroupEvent {
   createdAt: string;
   actor: UserProfile | null;
   expenseTitle: string | null;
+  assignmentRoom?: AssignmentRoomSummary | null;
+  assignmentRoomAccess?: AssignmentRoomAccess;
 }
 
 export interface ChatMessage {
