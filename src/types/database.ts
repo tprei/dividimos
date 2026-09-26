@@ -1801,6 +1801,7 @@ export type Database = {
         | "member_removed"
         | "guest_claimed"
         | "nudge"
+        | "assignment_room_opened"
       expense_status: "active" | "deleted"
       expense_type: "itemized" | "single_amount"
       group_kind: "group" | "dm"
