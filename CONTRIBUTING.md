@@ -32,7 +32,7 @@ CI is the main feedback loop for preventing regressions. It runs on every pull r
 CI currently runs:
 
 - `npm run lint` — ESLint with `--max-warnings 0` (`.github/workflows/ci.yml`).
-- `npm test` — unit tests via Vitest + happy-dom (`.github/workflows/ci.yml`).
+- `npm test` — unit tests via Vitest: `*.test.ts` under `node`, `*.test.tsx` under happy-dom (`.github/workflows/ci.yml`).
 - `npx tsc --noEmit` — type check (`.github/workflows/ci.yml`).
 - `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase and a production build of the app (`npm run build` + `npm run start`), on PRs and on `main` alike. The same job asserts `/api/dev/login` answers 404 on that production server, so dev login can never be what makes the suite pass (`.github/workflows/synthetic.yml`).
