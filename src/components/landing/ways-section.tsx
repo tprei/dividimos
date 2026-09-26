@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Mic, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChargeDemo } from "./charge-demo";
 import { LandingSection, SectionHeading } from "./landing-section";
 import { TextDemo } from "./text-demo";
+import { VoiceDemo } from "./voice-demo";
 import styles from "./ways.module.css";
 
 interface WayCardProps {
@@ -38,6 +40,22 @@ export function WaysSection() {
           hint="Experimenta"
         >
           <TextDemo />
+        </WayCard>
+        <WayCard
+          toneClass={styles.voice}
+          icon={<Mic aria-hidden="true" strokeWidth={2.2} />}
+          title="Fala que ele anota"
+          hint="Toca no mic"
+        >
+          <VoiceDemo />
+        </WayCard>
+        <WayCard
+          toneClass={styles.charge}
+          icon={<Zap aria-hidden="true" strokeWidth={2.2} />}
+          title="Cobrar rápido"
+          hint="Aperta aí"
+        >
+          <ChargeDemo />
         </WayCard>
       </div>
     </LandingSection>
