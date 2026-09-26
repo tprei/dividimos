@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
-import { ChatRailRow, formatChatTime, type ChatRailMarker } from "@/components/chat/chat-rail-row";
+import { ChatRailRow, formatChatTime, type ChatRailMarker, type RailPerson } from "@/components/chat/chat-rail-row";
 import { displayNames } from "@/lib/people";
 import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/chat-date-separator";
 import { EventCard } from "@/components/chat/event-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
-import type { ChatMessage, EventKind, ExpenseSummary, GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
+import type { ChatMessage, EventKind, ExpenseSummary, GroupEvent, Settlement, SettlementStatus, UserProfile } from "@/types/ledger";
 
 const STATUS_BY_EVENT_KIND: Partial<Record<EventKind, SettlementStatus>> = {
   settlement_recorded: "confirmed",
@@ -51,10 +51,35 @@ function isSameRun(
   );
 }
 
-function eventMarker(event: GroupEvent): ChatRailMarker {
+function eventPeopleIds(event: GroupEvent): string[] {
+  const ids: string[] = [];
+  const push = (id: string | null | undefined) => {
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  if (event.kind === "member_invited") {
+    push(event.actorId);
+    if (Array.isArray(event.payload.userIds)) {
+      for (const id of event.payload.userIds) {
+        if (typeof id === "string") push(id);
+      }
+    }
+    push(event.subjectUserId);
+  } else if (event.kind === "member_removed" || event.kind === "nudge") {
+    push(event.actorId);
+    push(event.subjectUserId);
+  } else {
+    push(event.subjectUserId ?? event.actorId);
+  }
+  return ids;
+}
+
+function eventMarker(
+  event: GroupEvent,
+  peopleMarker: (ids: string[]) => ChatRailMarker,
+): ChatRailMarker {
   if (event.kind.startsWith("expense_")) return { kind: "expense" };
   if (event.kind.startsWith("settlement_")) return { kind: "payment" };
-  return { kind: "system" };
+  return peopleMarker(eventPeopleIds(event));
 }
 
 interface ChatThreadProps {
@@ -68,6 +93,8 @@ interface ChatThreadProps {
   showSenderNames?: boolean;
   loading?: boolean;
   hasMore?: boolean;
+  /** Resolves full profiles for people an event names but the thread payload does not carry. */
+  profileOf?: (userId: string) => UserProfile | undefined;
   /** Server-confirmed contiguous boundary this thread may acknowledge. */
   acknowledgeThroughId?: string | null;
   /** Fires once that boundary is actually present in the rendered timeline. */
@@ -86,6 +113,7 @@ export function ChatThread({
   showSenderNames = true,
   loading,
   hasMore,
+  profileOf,
   acknowledgeThroughId,
   onRenderedThrough,
   onLoadMore,
@@ -97,6 +125,18 @@ export function ChatThread({
 
   const items = mergeTimeline(messages, events);
   const senderNames = displayNames([...messages.map(({ sender }) => sender), ...events.flatMap(({ actor }) => actor ? [actor] : [])], { style: "short", viewerId: meId });
+  const peopleMarker = (ids: string[]): ChatRailMarker => {
+    const people: RailPerson[] = ids.map((id) => {
+      const profile = profileOf?.(id) ?? events.find((event) => event.actor?.id === id)?.actor;
+      return {
+        id,
+        name: profile?.name ?? nameOf(id),
+        avatarUrl: profile?.avatarUrl ?? null,
+        isBot: profile?.isBot ?? false,
+      };
+    });
+    return people.length > 0 ? { kind: "people", people } : { kind: "system" };
+  };
 
   const scrollToBottom = useCallback(() => {
     const element = scrollRef.current;
@@ -182,28 +222,28 @@ export function ChatThread({
         const showSeparator = shouldShowDateSeparator(item.at, previous?.at);
         const membershipEvent = item.kind === "event" && (item.event.kind === "member_joined" || item.event.kind === "member_left");
         if (membershipEvent && previous?.kind === "event" && previous.event.kind === item.event.kind && !showSeparator) return null;
-        const memberNames: string[] = [];
+        const memberIds: string[] = [];
         if (membershipEvent) {
           for (let cursor = index; cursor < items.length; cursor += 1) {
             const candidate = items[cursor];
             if (candidate.kind !== "event" || candidate.event.kind !== item.event.kind || shouldShowDateSeparator(candidate.at, item.at)) break;
             const id = candidate.event.subjectUserId ?? candidate.event.actorId;
-            if (id) memberNames.push(senderNames.get(id) ?? nameOf(id));
+            if (id && !memberIds.includes(id)) memberIds.push(id);
           }
         }
         const continuesRun = item.kind === "message" && isSameRun(previous, item.message);
         const spaced = !showSeparator && previous !== undefined && !continuesRun;
+        const settlementId = item.kind === "event" ? item.event.settlementId : null;
+        const settlement = settlementId ? settlements.find((s) => s.id === settlementId) ?? null : null;
+        const latestStatus = settlementId ? latestSettlementStatus.get(settlementId) ?? null : null;
         let marker: ChatRailMarker;
         if (item.kind === "event") {
-          marker = eventMarker(item.event);
+          marker = memberIds.length > 1 ? peopleMarker(memberIds) : eventMarker(item.event, peopleMarker);
+          if (marker.kind === "payment" && (item.event.kind === "settlement_voided" || (settlement?.status ?? latestStatus) === "voided")) {
+            marker = { kind: "message" };
+          }
         } else if (item.message.senderId !== meId && !continuesRun) {
-          marker = {
-            kind: "avatar",
-            id: item.message.senderId,
-            name: item.message.sender.name,
-            avatarUrl: item.message.sender.avatarUrl,
-            isBot: item.message.sender.isBot,
-          };
+          marker = { kind: "people", people: [item.message.sender] };
         } else {
           marker = { kind: "message" };
         }
@@ -216,15 +256,15 @@ export function ChatThread({
                   message={item.message}
                   isOwn={item.message.senderId === meId}
                   senderLabel={
-                    showSenderNames && marker.kind === "avatar"
+                    showSenderNames && marker.kind === "people"
                       ? senderNames.get(item.message.senderId)
                       : undefined
                   }
                 />
-              ) : membershipEvent && memberNames.length > 1 ? (
-                <div className="flex min-h-6 max-w-80 items-baseline gap-2 pr-3">
+              ) : membershipEvent && memberIds.length > 1 ? (
+                <div className="flex min-h-6 items-baseline gap-2">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    {new Intl.ListFormat("pt-BR").format(memberNames)} {item.event.kind === "member_joined" ? "entraram" : "saíram"}
+                    {new Intl.ListFormat("pt-BR").format(memberIds.map((id) => senderNames.get(id) ?? nameOf(id)))} {item.event.kind === "member_joined" ? "entraram" : "saíram"}
                   </p>
                   <time dateTime={item.at} className="shrink-0 text-2xs leading-4 tabular-nums text-muted-foreground">
                     {formatChatTime(item.at)}
@@ -235,16 +275,8 @@ export function ChatThread({
                   event={item.event}
                   groupId={groupId}
                   meId={meId}
-                  settlement={
-                    item.event.settlementId
-                      ? settlements.find((s) => s.id === item.event.settlementId) ?? null
-                      : null
-                  }
-                  latestStatus={
-                    item.event.settlementId
-                      ? latestSettlementStatus.get(item.event.settlementId) ?? null
-                      : null
-                  }
+                  settlement={settlement}
+                  latestStatus={latestStatus}
                   nameOf={nameOf}
                   myShareCents={expenses.find((expense) => expense.id === item.event.expenseId)?.myShareCents}
                 />

@@ -180,15 +180,16 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     0,
   );
 
-  const nameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const member of dm?.members ?? []) map.set(member.userId, member.user.name);
-    return map;
+  const profileById = useMemo(() => {
+    const profiles = new Map<string, UserProfile>();
+    for (const member of dm?.members ?? []) profiles.set(member.userId, member.user);
+    return profiles;
   }, [dm]);
   const nameOf = useCallback(
-    (userId: string) => nameById.get(userId) ?? "Alguém",
-    [nameById],
+    (userId: string) => profileById.get(userId)?.name ?? "Alguém",
+    [profileById],
   );
+  const profileOf = useCallback((userId: string) => profileById.get(userId), [profileById]);
 
   const requestDm = useCallback(
     (key: string) => {
@@ -591,6 +592,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           settlements={dm.settlements}
           expenses={dm.recentExpenses}
           nameOf={nameOf}
+          profileOf={profileOf}
           showSenderNames={false}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}

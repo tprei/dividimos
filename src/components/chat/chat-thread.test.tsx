@@ -120,6 +120,29 @@ describe("ChatThread", () => {
     expect(screen.queryByText("Bob")).toBeNull();
   });
 
+  it("stacks the inviter and first invitee on the rail and counts the rest", () => {
+    const people: Record<string, UserProfile> = {
+      "user-3": { ...bob, id: "user-3", name: "Carla Dias" },
+      "user-4": { ...bob, id: "user-4", name: "Davi Lima" },
+      "user-5": { ...bob, id: "user-5", name: "Eva Nunes" },
+    };
+    const invite = makeEvent({
+      kind: "member_invited",
+      subjectUserId: null,
+      payload: { userIds: ["user-3", "user-4", "user-5"] },
+    });
+    renderThread({
+      events: [invite],
+      nameOf: (id) => people[id]?.name ?? "Bob Silva",
+      profileOf: (id) => people[id],
+    });
+    expect(screen.getByText("Bob Silva convidou Carla Dias, Davi Lima e Eva Nunes")).toBeDefined();
+    expect(screen.getByText("BS")).toBeDefined();
+    expect(screen.getByText("CD")).toBeDefined();
+    expect(screen.queryByText("DL")).toBeNull();
+    expect(screen.getByText("+2")).toBeDefined();
+  });
+
   it("calls onLoadMore when clicking Carregar anteriores button", () => {
     const onLoadMore = vi.fn();
     const msg = makeMessage();

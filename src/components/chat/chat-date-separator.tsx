@@ -1,5 +1,7 @@
 "use client";
 
+import { Clock } from "lucide-react";
+
 function formatDateLabel(dateStr: string): string {
   const date = new Date(dateStr);
   const today = new Date();
@@ -22,16 +24,17 @@ interface ChatDateSeparatorProps {
 
 export function ChatDateSeparator({ date }: ChatDateSeparatorProps) {
   return (
-    <div className="flex items-center justify-center py-3">
-      <span className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
+    <div className="relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2.5 py-2.5 before:absolute before:inset-y-0 before:left-3 before:w-px before:-translate-x-1/2 before:bg-border">
+      <div aria-hidden="true" className="relative">
+        <span className="absolute top-1/2 left-1/2 flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground ring-3 ring-background">
+          <Clock className="size-3" />
+        </span>
+      </div>
+      <span className="self-center text-xs font-semibold text-muted-foreground">
         {formatDateLabel(date)}
       </span>
     </div>
   );
-}
-
-function calendarDateUtc(dateStr: string): string {
-  return new Date(dateStr).toISOString().slice(0, 10);
 }
 
 export function shouldShowDateSeparator(
@@ -39,5 +42,8 @@ export function shouldShowDateSeparator(
   previousDate: string | undefined,
 ): boolean {
   if (!previousDate) return true;
-  return calendarDateUtc(currentDate) !== calendarDateUtc(previousDate);
+  return (
+    new Date(currentDate).toISOString().slice(0, 10) !==
+    new Date(previousDate).toISOString().slice(0, 10)
+  );
 }
