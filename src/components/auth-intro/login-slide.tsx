@@ -14,7 +14,7 @@ export function LoginSlide({ stage }: LoginSlideProps) {
   const [intro] = useState(() => stage === "play");
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center-safe overflow-y-auto overscroll-none px-5.5 pt-3 pb-2 touch-pan-y touch-pinch-zoom intro-landscape:flex-row intro-landscape:flex-wrap intro-landscape:content-center-safe intro-landscape:justify-center intro-landscape:gap-x-7">
+    <div className="flex h-full w-full flex-col items-center justify-center-safe overflow-y-auto overscroll-none px-5.5 pt-3 pb-2 touch-pan-y touch-pinch-zoom intro-landscape:flex-row intro-landscape:flex-wrap intro-landscape:content-center-safe intro-landscape:justify-center intro-landscape:gap-x-7 lg:px-12 lg:py-8">
       <LoginBrand stage={stage} />
       <AuthPanel className={cn(intro && "intro-enter-up [animation-delay:90ms]")} />
     </div>

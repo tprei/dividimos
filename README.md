@@ -114,7 +114,7 @@ stateDiagram-v2
 - **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão.
 - **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
 - **Tema.** Claro, escuro ou o do sistema.
-- **Apresentação na primeira visita.** Quem abre `/auth` pela primeira vez no aparelho vê três slides animados (ler a notinha, marcar quem comeu o quê, cobrar por Pix) antes do login. Links com destino, como convites, e a volta de um login que falhou vão direto pro login.
+- **Apresentação na primeira visita.** Quem abre `/auth` pela primeira vez no aparelho vê três slides animados (ler a notinha, marcar quem comeu o quê, cobrar por Pix) antes do login. Links com destino, como convites, e a volta de um login que falhou vão direto pro login. Em telas largas, a apresentação roda em loop ao lado do login.
 - **Tour guiado.** Na primeira sessão, um tour apresenta **Seu saldo**, **Ações rápidas**, **Quem deve o quê** e a navegação.
 - **Bots verificados.** Contas de plataforma ganham o selo **Bot verificado**, e grupos só de bots ganham selo dourado. Só o servidor liga essa marca.
 
