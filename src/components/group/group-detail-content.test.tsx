@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useSyncExternalStore } from "react";
 import { GroupDetailContent } from "./group-detail-content";
 import { LedgerError } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
@@ -14,12 +15,48 @@ const routerMock = vi.hoisted(() => ({
   back: vi.fn(),
 }));
 
-const searchParamsMock = vi.hoisted(() => ({ value: new URLSearchParams() }));
+const URL_CHANGE = "test:urlchange";
+
+function subscribeToUrl(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  window.addEventListener(URL_CHANGE, notify);
+  return () => {
+    window.removeEventListener("popstate", notify);
+    window.removeEventListener(URL_CHANGE, notify);
+  };
+}
+
+function useLocationSearchParams() {
+  return new URLSearchParams(useSyncExternalStore(subscribeToUrl, () => window.location.search));
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
-  useSearchParams: () => searchParamsMock.value,
+  useSearchParams: () => useLocationSearchParams(),
 }));
+
+/** Next syncs history.pushState/replaceState into useSearchParams; so does this. */
+function syncHistoryWithSearchParams() {
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = window.history[method].bind(window.history);
+    vi.spyOn(window.history, method).mockImplementation((data, unused, url) => {
+      original(data, unused, url);
+      window.dispatchEvent(new Event(URL_CHANGE));
+    });
+  }
+}
+
+function pullDown(target: HTMLElement, travel: number) {
+  act(() => {
+    fireEvent.touchStart(target, { touches: [{ identifier: 1, clientX: 100, clientY: 100 }] });
+  });
+  act(() => {
+    fireEvent.touchMove(target, { touches: [{ identifier: 1, clientX: 100, clientY: 100 + travel }] });
+  });
+  act(() => {
+    fireEvent.touchEnd(target);
+  });
+}
 
 const mockAccept = vi.fn();
 const mockDecline = vi.fn();
@@ -167,10 +204,12 @@ function seedLoaded() {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   useAppStore.getState().reset();
   inviteModalProps.length = 0;
   vi.clearAllMocks();
-  searchParamsMock.value = new URLSearchParams();
+  window.history.replaceState(null, "", `/app/groups/${groupId}`);
+  syncHistoryWithSearchParams();
   vi.mocked(refreshGroup).mockResolvedValue(undefined);
 });
 
@@ -265,7 +304,7 @@ describe("GroupDetailContent", () => {
   });
 
 
-  it("routes the header avatar and title to the group profile", async () => {
+  it("opens the group profile in place from the header avatar", async () => {
     seedLoaded();
     useAppStore.setState((state) => ({
       groups: {
@@ -280,14 +319,83 @@ describe("GroupDetailContent", () => {
     const user = userEvent.setup();
     render(<GroupDetailContent groupId={groupId} />);
 
-    expect(screen.getByRole("link", { name: "Ver perfil do grupo" })).toHaveAttribute(
-      "href",
-      `/app/groups/${groupId}/info`,
-    );
-    expect(screen.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
+    const [avatarButton] = screen.getAllByRole("button", { name: "Ver perfil do grupo" });
+    expect(within(avatarButton).getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
 
-    await user.click(screen.getByRole("button", { name: "Ver perfil do grupo" }));
-    expect(routerMock.push).toHaveBeenCalledWith(`/app/groups/${groupId}/info`);
+    await user.click(avatarButton);
+
+    expect(window.history.pushState).toHaveBeenCalledOnce();
+    expect(window.location.search).toBe("?view=info");
+    expect(screen.getByRole("heading", { name: "Viagem", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Seções do grupo" })).not.toBeInTheDocument();
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it("opens the group profile from a deliberate pull down the top of the screen", () => {
+    seedLoaded();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    pullDown(screen.getByTestId("settlement-stub"), 90);
+    expect(window.location.search).toBe("");
+
+    pullDown(screen.getByTestId("settlement-stub"), 320);
+    expect(window.location.search).toBe("?view=info");
+    expect(screen.getByRole("button", { name: /4 pessoas/ })).toBeInTheDocument();
+  });
+
+  it("closes a deep-linked profile with a pull and stays on the group", () => {
+    seedLoaded();
+    window.history.replaceState(null, "", `/app/groups/${groupId}?view=info`);
+    render(<GroupDetailContent groupId={groupId} />);
+
+    const heading = screen.getByRole("heading", { name: "Viagem", level: 1 });
+    pullDown(heading, 320);
+
+    expect(window.location.pathname).toBe(`/app/groups/${groupId}`);
+    expect(window.location.search).toBe("");
+    expect(screen.getByRole("radio", { name: "Saldos" })).toBeInTheDocument();
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it("goes back through history exactly once when the profile it pushed is closed twice in a row", async () => {
+    seedLoaded();
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getAllByRole("button", { name: "Ver perfil do grupo" })[0]);
+    const voltar = screen.getByRole("button", { name: "Voltar" });
+    await user.click(voltar);
+    await user.click(voltar);
+
+    expect(back).toHaveBeenCalledOnce();
+    expect(window.history.replaceState).not.toHaveBeenCalled();
+  });
+
+  it("still opens the profile by pulling on the tabs after the @handle panel was left open on Membros", async () => {
+    seedLoaded();
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("radio", { name: "Membros" }));
+    await user.click(screen.getByRole("button", { name: "Convidar por @handle" }));
+    await user.click(screen.getByRole("radio", { name: "Saldos" }));
+
+    pullDown(screen.getByRole("radio", { name: "Saldos" }), 320);
+
+    expect(window.location.search).toBe("?view=info");
+  });
+
+  it("returns from the profile to the Membros tab through the people row", async () => {
+    seedLoaded();
+    window.history.replaceState(null, "", `/app/groups/${groupId}?view=info`);
+    const user = userEvent.setup();
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await user.click(screen.getByRole("button", { name: /4 pessoas/ }));
+
+    expect(window.location.search).toBe("");
+    expect(screen.getByRole("radio", { name: "Membros" })).toBeChecked();
   });
 
   it("links to the group chat with an unread count", () => {
@@ -333,7 +441,7 @@ describe("GroupDetailContent", () => {
 
   it("opens the Membros tab straight from a ?tab=membros deep link", () => {
     seedLoaded();
-    searchParamsMock.value = new URLSearchParams("tab=membros");
+    window.history.replaceState(null, "", `/app/groups/${groupId}?tab=membros`);
 
     render(<GroupDetailContent groupId={groupId} />);
 
