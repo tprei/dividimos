@@ -78,7 +78,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const view: GroupView = searchParams.get("view") === "info" ? "profile" : "main";
   const reduced = useReducedMotion() ?? false;
   const { keyboardOpen } = useAppViewport();
-  const [viewTransitioning, setViewTransitioning] = useState(false);
   const { accept, decline, pendingGroupId } = useInvitationActions();
   const [confirmDecline, setConfirmDecline] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
@@ -131,9 +130,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
       ? avatarButtonRef.current
       : screenRef.current?.querySelector<HTMLElement>('[data-slot="group-hero"] [aria-label="Voltar"]');
     target?.focus({ preventScroll: true });
-    setViewTransitioning(true);
-    const timer = window.setTimeout(() => setViewTransitioning(false), 450);
-    return () => window.clearTimeout(timer);
   }, [view]);
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
@@ -311,7 +307,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
   const invitePanelOpen = showInvitePanel && canInvite && tab === "membros" && view === "main";
-  const gestureEnabled = !keyboardOpen && !viewTransitioning && !showInviteModal && !invitePanelOpen;
+  const gestureEnabled = !keyboardOpen && !showInviteModal && !invitePanelOpen;
   return (
     <GroupPullReveal
       ref={screenRef}
