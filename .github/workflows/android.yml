@@ -61,6 +61,24 @@ jobs:
       - name: Assemble debug APK
         run: cd android && ./gradlew assembleDebug
 
+      - name: Reject advertising permissions
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          PERMISSIONS=$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest permissions "$APK")
+          printf '%s\n' "$PERMISSIONS"
+          for forbidden in \
+            com.google.android.gms.permission.AD_ID \
+            android.permission.ACCESS_ADSERVICES_AD_ID \
+            android.permission.ACCESS_ADSERVICES_ATTRIBUTION \
+            android.permission.ACCESS_ADSERVICES_TOPICS \
+            android.permission.ACCESS_ADSERVICES_CUSTOM_AUDIENCE; do
+            if grep -qxF "$forbidden" <<<"$PERMISSIONS"; then
+              echo "::error::$forbidden is in the merged manifest; Play's Advertising ID and Data safety answers say the app has none."
+              exit 1
+            fi
+          done
+
   build:
     name: Signed release bundle
     if: github.event_name == 'push'
@@ -212,6 +230,17 @@ jobs:
           if actual != expected:
               raise SystemExit(f"bundle manifest metadata mismatch: {actual!r} != {expected!r}")
           PY
+          for forbidden in \
+            com.google.android.gms.permission.AD_ID \
+            android.permission.ACCESS_ADSERVICES_AD_ID \
+            android.permission.ACCESS_ADSERVICES_ATTRIBUTION \
+            android.permission.ACCESS_ADSERVICES_TOPICS \
+            android.permission.ACCESS_ADSERVICES_CUSTOM_AUDIENCE; do
+            if grep -qF "android:name=\"$forbidden\"" "$MANIFEST"; then
+              echo "::error::$forbidden is in the merged manifest; Play's Advertising ID and Data safety answers say the app has none."
+              exit 1
+            fi
+          done
 
           jarsigner -verify -strict -verbose:summary -certs \
             -keystore android/app/release.jks \
