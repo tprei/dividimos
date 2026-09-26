@@ -32,19 +32,19 @@ function GhostAvatars({ count }: { count: number }) {
 }
 
 /** `fillKey` is null while the line is still a ghost; a new key replays the fill-in. */
-function Row({ label, fillKey, children, ghost }: { label: string; fillKey: string | null; children: ReactNode; ghost: ReactNode }) {
+export function Row({ label, fillKey, children, ghost, className, valueClassName }: { label: string; fillKey: string | null; children: ReactNode; ghost?: ReactNode; className?: string; valueClassName?: string }) {
   const reduceMotion = useReducedMotion();
   return (
-    <div className="flex min-h-12 items-center justify-between gap-4 py-2">
+    <div className={cn("flex min-h-12 items-center justify-between gap-4 py-2", className)}>
       <dt className="shrink-0 text-sm text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 justify-end">
+      <dd className={cn("flex min-w-0 justify-end", valueClassName)}>
         {fillKey === null ? (
           <>
             {ghost}
             <span className="sr-only">a definir</span>
           </>
         ) : (
-          <motion.span
+          <motion.div
             key={fillKey}
             initial={{ opacity: 0, y: reduceMotion ? 0 : 4 }}
             animate={{ opacity: 1, y: 0 }}
@@ -52,7 +52,7 @@ function Row({ label, fillKey, children, ghost }: { label: string; fillKey: stri
             className="flex min-w-0 items-center justify-end gap-2"
           >
             {children}
-          </motion.span>
+          </motion.div>
         )}
       </dd>
     </div>
@@ -77,6 +77,18 @@ function PeopleFill({ people }: { people: string[] }) {
   );
 }
 
+export function VoiceBillTicket({ title = "Prévia da conta", children }: { title?: string; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="overflow-hidden rounded-2xl border border-border bg-card">
+      <header className="flex items-center gap-2 px-4 pt-3.5 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        <ReceiptText className="size-3.5" aria-hidden="true" />
+        {title}
+      </header>
+      <dl className="divide-y divide-dashed divide-border px-4">{children}</dl>
+    </section>
+  );
+}
+
 /**
  * The bill voice will fill, drawn as a ticket stub. Each line starts as a
  * ghost and turns real the moment the words for it are heard, so people see
@@ -85,27 +97,21 @@ function PeopleFill({ people }: { people: string[] }) {
 export function VoiceBillPreview({ sketch, state }: VoiceBillPreviewProps) {
   const skeleton = state === "active" ? "pulse" : "static";
   return (
-    <section aria-label="Prévia da conta" className="overflow-hidden rounded-2xl border border-border bg-card">
-      <header className="flex items-center gap-2 px-4 pt-3.5 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        <ReceiptText className="size-3.5" aria-hidden="true" />
-        Prévia da conta
-      </header>
-      <dl className="divide-y divide-dashed divide-border px-4">
-        <Row label="O quê" fillKey={sketch.title} ghost={<Skeleton variant={skeleton} className={cn("h-4 w-28", GHOST_BAR)} />}>
-          <span className="truncate text-base font-semibold">{sketch.title}</span>
-        </Row>
-        <Row label="Quanto" fillKey={sketch.amountCents === null ? null : String(sketch.amountCents)} ghost={<Skeleton variant={skeleton} className={cn("h-5 w-20", GHOST_BAR)} />}>
-          <Money cents={sketch.amountCents ?? 0} className="text-lg font-bold" />
-        </Row>
-        <Row
-          label="Com quem"
-          fillKey={sketch.people.length > 0 ? sketch.people.join("|") : null}
-          ghost={<GhostAvatars count={3} />}
-        >
-          <PeopleFill people={sketch.people} />
-        </Row>
-      </dl>
-    </section>
+    <VoiceBillTicket>
+      <Row label="O quê" fillKey={sketch.title} ghost={<Skeleton variant={skeleton} className={cn("h-4 w-28", GHOST_BAR)} />}>
+        <span className="truncate text-base font-semibold">{sketch.title}</span>
+      </Row>
+      <Row label="Quanto" fillKey={sketch.amountCents === null ? null : String(sketch.amountCents)} ghost={<Skeleton variant={skeleton} className={cn("h-5 w-20", GHOST_BAR)} />}>
+        <Money cents={sketch.amountCents ?? 0} className="text-lg font-bold" />
+      </Row>
+      <Row
+        label="Com quem"
+        fillKey={sketch.people.length > 0 ? sketch.people.join("|") : null}
+        ghost={<GhostAvatars count={3} />}
+      >
+        <PeopleFill people={sketch.people} />
+      </Row>
+    </VoiceBillTicket>
   );
 }
 
