@@ -234,6 +234,11 @@
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
     },
+    "public.enter_group_assignment_room(p_room_id uuid, p_member_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership RPC; admits an accepted group member by membership and stores only the member token digest."
+    },
     "public.enforce_assignment_room_immutability()": {
       "anon": false,
       "authenticated": false,
@@ -378,6 +383,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.list_open_assignment_rooms(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership RPC; lists the group's open existing-target rooms with host profiles only."
     },
     "public.ledger_chat_message_json(p_message_id uuid)": {
       "anon": false,

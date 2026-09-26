@@ -1346,6 +1346,13 @@ export type Database = {
         }
         Returns: number
       }
+      enter_group_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+        }
+        Returns: Json
+      }
       expense_change_summary: {
         Args: {
           p_expense_id: string
@@ -1593,6 +1600,12 @@ export type Database = {
       ledger_user_profile_json: {
         Args: {
           p_user_id: string
+        }
+        Returns: Json
+      }
+      list_open_assignment_rooms: {
+        Args: {
+          p_group_id: string
         }
         Returns: Json
       }
