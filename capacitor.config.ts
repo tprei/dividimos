@@ -13,12 +13,13 @@ function getDevServerUrl(): string {
 const config: CapacitorConfig = {
   appId: "ai.dividimos.app",
   appName: "Dividimos",
-  webDir: "out",
+  webDir: "native-shell",
 
   server: {
     url: getDevServerUrl(),
     cleartext: devMode,
     allowNavigation: ["www.dividimos.ai"],
+    ...(devMode ? {} : { errorPath: "offline.html" }),
   },
 
   android: {
