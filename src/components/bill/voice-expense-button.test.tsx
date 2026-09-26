@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { VoiceExpenseButton } from "./voice-expense-button";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 
@@ -47,7 +47,7 @@ describe("VoiceExpenseButton", () => {
   it("renders nothing when voice is not supported", () => {
     mockVoiceInput.isSupported = false;
     const { container } = render(
-      <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} />,
+      <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={vi.fn()} />,
     );
     expect(container.innerHTML).toBe("");
   });
@@ -56,17 +56,175 @@ describe("VoiceExpenseButton", () => {
   it("shows transcript in card while listening", () => {
     mockVoiceInput.isListening = true;
     mockVoiceInput.transcript = "uber com João";
-    render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} />);
+    render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={vi.fn()} />);
     expect(screen.getByText(/uber com João/)).toBeInTheDocument();
   });
 
   it("shows voice error while listening", () => {
     mockVoiceInput.isListening = true;
     mockVoiceInput.error = "Permissão do microfone negada.";
-    render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} />);
+    render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={vi.fn()} />);
     expect(
       screen.getByText("Permissão do microfone negada."),
     ).toBeInTheDocument();
+  });
+
+  describe("review slot", () => {
+    it("renders the parsed review in place of the live preview when the mic is idle", () => {
+      render(
+        <VoiceExpenseButton
+          preview
+          onResult={vi.fn()}
+          onError={vi.fn()}
+          onRecordStart={vi.fn()}
+          review={<div data-testid="voice-review" />}
+        />,
+      );
+
+      expect(screen.getByTestId("voice-review")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: "Prévia da conta" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Conta entendida");
+      expect(
+        screen.getByRole("button", { name: "Gravar novamente" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides the review and shows the live preview while recording", () => {
+      mockVoiceInput.isListening = true;
+      render(
+        <VoiceExpenseButton
+          preview
+          onResult={vi.fn()}
+          onError={vi.fn()}
+          onRecordStart={vi.fn()}
+          review={<div data-testid="voice-review" />}
+        />,
+      );
+
+      expect(screen.queryByTestId("voice-review")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Prévia da conta" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Gravar novamente" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps the live preview while parsing and swaps in the review after the parse lands", async () => {
+      const parsed: VoiceExpenseResult = {
+        title: "Uber",
+        amountCents: 2500,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      };
+      const { promise: parsePending, resolve: resolveFetch } = Promise.withResolvers<Response>();
+      vi.spyOn(globalThis, "fetch").mockReturnValue(parsePending);
+
+      mockVoiceInput.isListening = true;
+      const review = <div data-testid="voice-review" />;
+      const { rerender } = render(
+        <VoiceExpenseButton
+          preview
+          onResult={vi.fn()}
+          onError={vi.fn()}
+          onRecordStart={vi.fn()}
+          review={review}
+        />,
+      );
+
+      mockVoiceInput.isListening = false;
+      mockVoiceInput.transcript = "uber 25 reais";
+      rerender(
+        <VoiceExpenseButton
+          preview
+          onResult={vi.fn()}
+          onError={vi.fn()}
+          onRecordStart={vi.fn()}
+          review={review}
+        />,
+      );
+
+      expect(screen.queryByTestId("voice-review")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Prévia da conta" }),
+      ).toBeInTheDocument();
+
+      resolveFetch(
+        new Response(JSON.stringify(parsed), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("voice-review")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("region", { name: "Prévia da conta" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("record lifecycle", () => {
+    const parsed: VoiceExpenseResult = {
+      title: "Uber",
+      amountCents: 2500,
+      expenseType: "single_amount",
+      items: [],
+      participants: [],
+      merchantName: null,
+    };
+
+    it("signals onRecordStart instead of onError when the mic is tapped", () => {
+      const onRecordStart = vi.fn();
+      const onError = vi.fn();
+      render(
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={onRecordStart} />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Gravar conta" }));
+
+      expect(onRecordStart).toHaveBeenCalledOnce();
+      expect(onError).not.toHaveBeenCalled();
+      expect(mockVoiceInput.startListening).toHaveBeenCalledOnce();
+    });
+
+    it("drops a parse that resolves after the button unmounted", async () => {
+      const { promise: parsePending, resolve: resolveFetch } = Promise.withResolvers<Response>();
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockReturnValue(parsePending);
+
+      const onResult = vi.fn();
+      const onError = vi.fn();
+      mockVoiceInput.isListening = true;
+      const { rerender, unmount } = render(
+        <VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />,
+      );
+
+      mockVoiceInput.isListening = false;
+      mockVoiceInput.transcript = "uber 25 reais";
+      rerender(<VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledOnce();
+      });
+
+      unmount();
+      await act(async () => {
+        resolveFetch(
+          new Response(JSON.stringify(parsed), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+
+      expect(onResult).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
   });
 
 
@@ -104,6 +262,7 @@ describe("VoiceExpenseButton", () => {
           members={members}
           onResult={onResult}
           onError={onError}
+        onRecordStart={vi.fn()}
         />,
       );
 
@@ -119,6 +278,7 @@ describe("VoiceExpenseButton", () => {
           members={members}
           onResult={onResult}
           onError={onError}
+        onRecordStart={vi.fn()}
         />,
       );
 
@@ -282,7 +442,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.transcript = "";
 
       const { rerender } = render(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       // Stop with empty transcript and no error
@@ -291,7 +451,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.error = null;
 
       rerender(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       expect(onError).toHaveBeenCalledWith(
@@ -306,7 +466,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.transcript = "";
 
       const { rerender } = render(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       // Stop with empty transcript but a voice error already present
@@ -315,7 +475,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.error = "Permissão do microfone negada.";
 
       rerender(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       expect(onError).not.toHaveBeenCalled();
@@ -329,7 +489,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.transcript = "some text";
 
       render(
-        <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={vi.fn()} />,
       );
 
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -341,7 +501,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.isListening = true;
 
       const { rerender } = render(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       mockVoiceInput.isListening = false;
@@ -349,7 +509,7 @@ describe("VoiceExpenseButton", () => {
       mockVoiceInput.error = null;
 
       rerender(
-        <VoiceExpenseButton onResult={vi.fn()} onError={onError} />,
+        <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
 
       expect(onError).toHaveBeenCalledWith(

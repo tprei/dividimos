@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { Loader2, Mic, MicOff, Square } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { haptics } from "@/hooks/use-haptics";
 import { parseVoiceExpenseCommand } from "@/lib/sync/voice";
@@ -17,8 +17,12 @@ interface VoiceExpenseButtonProps {
   members?: MemberContext[];
   onResult: (result: VoiceExpenseResult) => void;
   onError: (message: string) => void;
+  /** A new recording started; the caller drops any parsed bill and error it holds. */
+  onRecordStart: () => void;
   /** Full-screen step: add the live bill preview and example phrases under the mic. */
   preview?: boolean;
+  /** Shown under the mic card in place of the live preview once a parsed bill is ready; not rendered while recording or busy. */
+  review?: ReactNode;
 }
 
 function statusLabel(
@@ -26,10 +30,12 @@ function statusLabel(
   transcribing: boolean,
   parsing: boolean,
   attempted: boolean,
+  reviewing: boolean,
 ): string {
   if (recording) return "Ouvindo…";
   if (transcribing) return "Entendendo…";
   if (parsing) return "Entendendo sua conta…";
+  if (reviewing) return "Conta entendida";
   if (attempted) return "Tentar novamente";
   return "Falar conta";
 }
@@ -38,7 +44,9 @@ export function VoiceExpenseButton({
   members,
   onResult,
   onError,
+  onRecordStart,
   preview = false,
+  review,
 }: VoiceExpenseButtonProps) {
   const {
     isListening,
@@ -56,23 +64,33 @@ export function VoiceExpenseButton({
   const [parsing, setParsing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const wasListeningRef = useRef(false);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const transcribing = phase === "transcribing";
   const recording = isListening && !transcribing;
   const busy = parsing || transcribing;
+  const reviewing = review != null && !recording && !busy;
 
   const parseTranscript = useCallback(
     async (text: string) => {
       setParsing(true);
       try {
         const result = await parseVoiceExpenseCommand({ text: text.trim(), members });
+        if (!aliveRef.current) return;
         haptics.success();
         onResult(result);
       } catch (err) {
+        if (!aliveRef.current) return;
         haptics.error();
         onError(err instanceof Error ? err.message : "Erro ao processar comando de voz");
       } finally {
-        setParsing(false);
+        if (aliveRef.current) setParsing(false);
       }
     },
     [members, onResult, onError],
@@ -92,9 +110,11 @@ export function VoiceExpenseButton({
   if (!isSupported) return null;
   let micAriaLabel = "Gravar conta";
   if (attempted) micAriaLabel = "Tentar novamente";
+  if (reviewing) micAriaLabel = "Gravar novamente";
   if (recording) micAriaLabel = "Parar gravação";
-  const message = statusLabel(recording, transcribing, parsing, attempted);
+  const message = statusLabel(recording, transcribing, parsing, attempted, reviewing);
   let hint = preview ? "O que foi, quanto e com quem" : "“Uber com João, 25 reais”";
+  if (reviewing) hint = "Toque no microfone para gravar de novo";
   if (recording) hint = "Toque para parar e revisar";
   let meterState: VoiceMeterState = "idle";
   if (recording) meterState = "listening";
@@ -124,7 +144,7 @@ export function VoiceExpenseButton({
             onClick={() => {
               haptics.tap();
               if (recording) stopListening();
-              else { setAttempted(true); onError(""); startListening(); }
+              else { setAttempted(true); onRecordStart(); startListening(); }
             }}
             className="relative size-14 rounded-full shadow-sm">
             {micIcon}
@@ -150,15 +170,18 @@ export function VoiceExpenseButton({
     </motion.div>
   );
 
-  if (!preview) return card;
   return (
     <div className="space-y-4">
       {card}
-      <VoiceBillPreview
-        sketch={sketchVoiceBill(`${transcript} ${interimTranscript}`)}
-        state={recording || busy ? "active" : "idle"}
-      />
-      <VoiceExamples />
+      {reviewing ? review : preview && (
+        <>
+          <VoiceBillPreview
+            sketch={sketchVoiceBill(`${transcript} ${interimTranscript}`)}
+            state={recording || busy ? "active" : "idle"}
+          />
+          <VoiceExamples />
+        </>
+      )}
     </div>
   );
 }

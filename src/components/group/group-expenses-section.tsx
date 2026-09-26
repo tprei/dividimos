@@ -103,6 +103,11 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
     setVoiceError(null);
   }, []);
 
+  const handleVoiceRecordStart = useCallback(() => {
+    setVoiceResult(null);
+    setVoiceError(null);
+  }, []);
+
   const handleVoiceError = useCallback((message: string) => {
     setVoiceError(message);
   }, []);
@@ -231,6 +236,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
               members={voiceMembers}
               onResult={handleVoiceResult}
               onError={handleVoiceError}
+              onRecordStart={handleVoiceRecordStart}
             />
             {voiceError && (
               <p className="text-center text-sm text-destructive">{voiceError}</p>

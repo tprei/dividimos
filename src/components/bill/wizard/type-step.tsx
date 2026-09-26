@@ -199,6 +199,11 @@ export function TypeStep({
     setVoiceError(null);
   }, []);
 
+  const handleVoiceRecordStart = useCallback(() => {
+    setVoiceResult(null);
+    setVoiceError(null);
+  }, []);
+
   const handleVoiceError = useCallback((message: string) => {
     setVoiceError(message);
   }, []);
@@ -270,6 +275,7 @@ export function TypeStep({
           members={groupMembers.map((m) => ({ handle: m.handle, name: m.name }))}
           onResult={handleVoiceResult}
           onError={handleVoiceError}
+          onRecordStart={handleVoiceRecordStart}
         />
         {voiceError && (
           <motion.p
