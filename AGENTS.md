@@ -164,12 +164,17 @@ Tests should verify behavior, not implementation details. Prefer a few clear tes
 - CI must pass before merge.
 - Human review is required.
 - AI review can assist, but cannot approve its own work.
+- Merging requires explicit human authorization; agents never merge PRs on their own, including "to unblock" a stack.
+- Never pass `--delete-branch` or `-d` to `gh pr merge`: deleting a merged base branch auto-closes every child PR that targets it.
+- Before deleting any branch, query GitHub for open PRs targeting it; any result, failed, or incomplete query forbids the deletion. See `agent-guidance/writing/STACKED_DIFFS.md`, "Merging And Branch Cleanup".
 
 ## Stacked Diffs
 
 For large work, follow `agent-guidance/writing/STACKED_DIFFS.md`.
 
 Use Graphite CLI for stack management when it is available. If it is unavailable, use plain Git. Either way, the output must be normal GitHub PRs with the standard stack section, position-prefixed titles, passing CI, and human review.
+
+Merging follows "Merging And Branch Cleanup" in that guide: merges are human-authorized and happen bottom-up, one PR at a time. `gh pr merge --delete-branch`/`-d` is forbidden. Graphite submission does not make a GitHub merge stack-aware — after each merge, restack, resubmit, and verify the remaining PR bases before the next merge. Repair untracked or invalid parents with `gt track`, never with resets, cherry-picks, or force pushes. One writer per stack; worktrees share refs and metadata.
 
 ## Documentation
 
