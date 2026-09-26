@@ -128,38 +128,42 @@ describe("GroupInfoContent", () => {
 
     render(<GroupInfoContent groupId={groupId} />);
 
-    expect(screen.getByRole("heading", { name: "Viagem", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Viagem", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /2 pessoas/ })).toHaveAttribute("href", "/app/groups/g1?tab=membros");
     const spending = screen.getByTestId("group-spending");
     expect(spending).toHaveTextContent("120,00");
   });
 
-  it("expands the group photo into a full-bleed hero that carries the identity", async () => {
+  it("shows the group photo as a full-bleed hero that carries the identity", () => {
     seedLoaded({ kind: "photo", photoId: "photo-9" });
-    const user = userEvent.setup();
 
     render(<GroupInfoContent groupId={groupId} />);
-
-    const expand = screen.getByRole("button", { name: "Ampliar imagem do grupo" });
-    expect(expand).toHaveAttribute("aria-expanded", "false");
-
-    await user.click(expand);
-
-    const collapsed = screen.getByRole("button", { name: "Recolher imagem do grupo" });
-    expect(collapsed).toHaveAttribute("aria-expanded", "true");
 
     const photo = screen.getByAltText("Viagem");
     expect(photo).toHaveAttribute("src", expect.stringContaining("/avatar?photoId="));
 
-    // Expanded, the photo is the header: the name, the member line and the
-    // only back control all sit on top of the image, not in a row above it.
+    // The photo is the header: the name, the member line and the only back
+    // control all sit on top of the image, not in a row above it.
     const hero = photo.closest("section");
     expect(hero).not.toBeNull();
     const inHero = within(hero as HTMLElement);
     expect(inHero.getByRole("heading", { name: "Viagem" })).toBeInTheDocument();
-    expect(inHero.getByText(/membros · desde/)).toBeInTheDocument();
+    expect(inHero.getByText(/^2 membros · desde /)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Voltar" })).toHaveLength(1);
     expect(inHero.getByRole("button", { name: "Voltar" })).toBeInTheDocument();
+  });
+
+  it("carries the same identity header for a group without a photo", async () => {
+    seedLoaded({ kind: "emoji", emoji: "🍕" });
+    const user = userEvent.setup();
+
+    render(<GroupInfoContent groupId={groupId} />);
+
+    const heading = screen.getByRole("heading", { name: "Viagem", level: 1 });
+    const hero = within(heading.closest("section") as HTMLElement);
+    expect(hero.getByRole("img", { name: "Viagem" })).toHaveTextContent("🍕");
+    await user.click(hero.getByRole("button", { name: "Voltar" }));
+    expect(routerMock.push).toHaveBeenCalledWith("/app/groups/g1");
   });
 
   it("opens the avatar editor from the group avatar", async () => {
