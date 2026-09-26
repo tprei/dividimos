@@ -22,6 +22,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { springs } from "@/lib/animations";
 import { haptics } from "@/hooks/use-haptics";
 import { useAppViewport } from "@/hooks/use-app-viewport";
+import { PULL_IGNORE_CONTROLS, PULL_THRESHOLD, usePullGesture } from "@/hooks/use-pull-gesture";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
 import { hasNativePushConsent } from "@/lib/push/native-consent";
 import { registerNativePushToken } from "@/lib/push/native-registration";
@@ -107,21 +108,6 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
   );
 }
 
-/**
- * Nearest ancestor that actually scrolls vertically, stopping at `container`.
- * A pull that starts inside one belongs to that element, not to the shell.
- */
-function nearestScrollable(from: HTMLElement, container: HTMLElement): HTMLElement | null {
-  let node: HTMLElement | null = from;
-  while (node && node !== container) {
-    const overflowY = window.getComputedStyle(node).overflowY;
-    const scrolls = overflowY === "auto" || overflowY === "scroll";
-    if (scrolls && node.scrollHeight > node.clientHeight) return node;
-    node = node.parentElement;
-  }
-  return container;
-}
-
 /** Routes where a top-edge pull means "reload this list". */
 const PULL_TO_REFRESH_PATHS: Record<string, true> = {
   "/app": true,
@@ -131,128 +117,6 @@ const PULL_TO_REFRESH_PATHS: Record<string, true> = {
   "/app/charges": true,
   "/app/activity": true,
 };
-
-/** Controls the gesture never starts on: they own their own drag or press. */
-const PULL_BLOCKING_SELECTOR =
-  'input, textarea, select, button, a, label, [contenteditable="true"], [role="slider"], [data-no-pull]';
-
-/** Damped pull distance at which a release refreshes. */
-const PULL_THRESHOLD = 96;
-/** The damped distance approaches but never passes this. */
-const PULL_MAX = 140;
-/** Finger travel over which resistance builds; ~210px reaches the threshold. */
-const PULL_RESISTANCE = 180;
-/**
- * A scroller must have been resting at the top this long before the touch:
- * a fling that just reached the top is still the user scrolling, not pulling.
- */
-const PULL_REST_MS = 300;
-
-/**
- * `onRefresh` settles when the refresh is over.
- *
- * A pull is only a refresh when the user clearly meant one: a single finger,
- * starting on an eligible list that has been resting at its very top, moving
- * down far enough against growing resistance and released there. Everything
- * else (sliders, horizontal swipes, a second finger, a nested scroller, an
- * open overlay, scrolling back up to the top) is ordinary interaction and
- * must not reload the screen.
- */
-function usePullToRefresh(onRefresh: () => Promise<void>, enabled: boolean) {
-  const [firing, setFiring] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
-  const start = useRef({ x: 0, y: 0 });
-  const touchId = useRef<number | null>(null);
-  const isDragging = useRef(false);
-  const distance = useRef(0);
-  const lastScrollAt = useRef(Number.NEGATIVE_INFINITY);
-
-  const cancel = useCallback(() => {
-    isDragging.current = false;
-    touchId.current = null;
-    distance.current = 0;
-    setPullDistance(0);
-  }, []);
-
-  // Losing eligibility mid-gesture (navigation, keyboard, an overlay opening)
-  // must abandon the pull rather than complete it on release.
-  useEffect(() => {
-    if (!enabled) cancel();
-  }, [enabled, cancel]);
-
-  const onScroll = useCallback(() => {
-    lastScrollAt.current = performance.now();
-  }, []);
-
-  const onTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      cancel();
-      if (!enabled) return;
-      if (e.touches.length !== 1) return;
-
-      const source = e.target as HTMLElement | null;
-      if (source?.closest(PULL_BLOCKING_SELECTOR)) return;
-
-      const container = e.currentTarget as HTMLElement;
-      if (container.scrollTop >= 1) return;
-      if (performance.now() - lastScrollAt.current < PULL_REST_MS) return;
-      // A gesture that starts inside a nested scroller belongs to that
-      // scroller, even when the shell happens to be at the top.
-      if (source && nearestScrollable(source, container) !== container) return;
-
-      const touch = e.touches[0];
-      start.current = { x: touch.clientX, y: touch.clientY };
-      touchId.current = touch.identifier;
-      isDragging.current = true;
-    },
-    [cancel, enabled],
-  );
-
-  const onTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!isDragging.current) return;
-      if (e.touches.length !== 1 || e.touches[0].identifier !== touchId.current) {
-        cancel();
-        return;
-      }
-
-      const touch = e.touches[0];
-      const deltaY = touch.clientY - start.current.y;
-      const deltaX = touch.clientX - start.current.x;
-      if (deltaY <= 0 || Math.abs(deltaX) > Math.abs(deltaY)) {
-        cancel();
-        return;
-      }
-
-      const next = PULL_MAX * (1 - Math.exp(-deltaY / PULL_RESISTANCE));
-      if ((distance.current < PULL_THRESHOLD) !== (next < PULL_THRESHOLD)) haptics.selectionChanged();
-      distance.current = next;
-      setPullDistance(next);
-    },
-    [cancel],
-  );
-
-  const onTouchEnd = useCallback(async () => {
-    if (!isDragging.current) return;
-    const travelled = distance.current;
-    cancel();
-    if (travelled < PULL_THRESHOLD || !enabled) return;
-
-    haptics.impact();
-    setFiring(true);
-    try {
-      await onRefresh();
-    } finally {
-      setFiring(false);
-    }
-  }, [cancel, enabled, onRefresh]);
-
-  return {
-    firing,
-    pullDistance,
-    handlers: { onScroll, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel: cancel },
-  };
-}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -463,7 +327,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const refreshEligible =
     PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen && !refreshing;
 
-  const { firing, pullDistance, handlers: pullHandlers } = usePullToRefresh(refresh, refreshEligible);
+  // The hook reports the release synchronously; the refresh itself stays
+  // async here so the pill keeps riding the offset until the data settles.
+  const [firing, setFiring] = useState(false);
+  const onPull = useCallback(() => {
+    setFiring(true);
+    void refresh().finally(() => setFiring(false));
+  }, [refresh]);
+
+  const { distance: pullDistance, handlers: pullHandlers } = usePullGesture({
+    enabled: refreshEligible,
+    ignore: PULL_IGNORE_CONTROLS,
+    onPull,
+  });
   const reducedMotion = useReducedMotion() ?? false;
   // The content opens a gap the indicator rides in; at the threshold, and
   // while the pull's refresh runs, the gap fits the whole pill.
