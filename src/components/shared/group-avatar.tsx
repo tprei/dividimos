@@ -28,11 +28,13 @@ function PhotoAvatar({
   groupId,
   photoId,
   size,
+  eager,
 }: {
   name: string;
   groupId: string;
   photoId: string;
   size: GroupAvatarSize;
+  eager: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const handleImageError = useCallback(() => {
@@ -48,6 +50,7 @@ function PhotoAvatar({
         alt={name}
         fill
         unoptimized
+        loading={eager ? "eager" : undefined}
         sizes={`${sizePixels[size]}px`}
         className="object-cover"
         onError={handleImageError}
@@ -61,11 +64,14 @@ export function GroupAvatar({
   avatar,
   groupId,
   size = "md",
+  eager = false,
 }: {
   name: string;
   avatar?: GroupAvatarData;
   groupId: string;
   size?: GroupAvatarSize;
+  /** Header avatars are always on screen and may be a morph's source. */
+  eager?: boolean;
 }) {
   if (avatar?.kind === "emoji") {
     return (
@@ -90,6 +96,7 @@ export function GroupAvatar({
         groupId={groupId}
         photoId={avatar.photoId}
         size={size}
+        eager={eager}
       />
     );
   }
