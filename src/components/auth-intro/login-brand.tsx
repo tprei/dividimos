@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { haptics } from "@/hooks/use-haptics";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
+import { easeBack, EASE_SPRING } from "./scene-motion";
 import type { IntroSceneStage } from "./scene-stage";
 
 const CENTER_X = 120;
@@ -28,9 +29,6 @@ const GROW_BOOST = 6;
 const TAP_BOOST = 10;
 const GROW_SECONDS = 0.9;
 const SPLIT_MS = 400;
-const SPRING_EASE: [number, number, number, number] = [0.34, 1.56, 0.64, 1];
-
-const easeBack = (t: number) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
 type OrbitLayerName = "back" | "front";
 type OrbitNodes = Record<OrbitLayerName, (SVGGElement | null)[]>;
@@ -245,7 +243,7 @@ export function LoginBrand({ stage }: LoginBrandProps) {
     bump.current = animateInScope(
       mark,
       { scale: [1, 1.05, 1] },
-      { duration: 0.46, times: [0, 0.3, 1], ease: [SPRING_EASE, SPRING_EASE] },
+      { duration: 0.46, times: [0, 0.3, 1], ease: EASE_SPRING },
     );
   };
 
