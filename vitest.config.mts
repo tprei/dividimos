@@ -7,10 +7,27 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   test: {
-    environment: "happy-dom",
-    setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
-    exclude: ["src/**/*.integration.test.ts", "node_modules/**"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "node",
+          environment: "node",
+          include: ["src/**/*.test.ts"],
+          exclude: ["src/**/*.integration.test.ts", "node_modules/**"],
+          setupFiles: ["./src/test/setup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "dom",
+          environment: "happy-dom",
+          include: ["src/**/*.test.tsx"],
+          setupFiles: ["./src/test/setup.ts", "./src/test/setup-dom.ts"],
+        },
+      },
+    ],
     testTimeout: 120_000,
   },
 });

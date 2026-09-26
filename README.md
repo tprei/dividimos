@@ -741,8 +741,8 @@ O Dividimos tem três camadas de teste: **unitários**, **integração** e **sin
 
 Os testes unitários usam Vitest com React Testing Library e ficam ao lado do código, com sufixo `.test.ts`/`.test.tsx`.
 
-- **Configuração**: `vitest.config.mts` com ambiente happy-dom e os paths do tsconfig.
-- **Setup**: `src/test/setup.ts` traz os matchers do jest-dom e um mock do Framer Motion.
+- **Configuração**: `vitest.config.mts` com dois projetos: `node` para `*.test.ts` e `dom` (happy-dom) para `*.test.tsx`, ambos com os paths do tsconfig. Teste que precisa de `window`, `document` ou render do React é `.test.tsx`.
+- **Setup**: `src/test/setup.ts` mocka `server-only` e o `localStorage` para os dois projetos; `src/test/setup-dom.ts` traz os matchers do jest-dom, o cleanup do Testing Library e um mock do Framer Motion.
 - **Propriedades**: invariantes do ledger e do dinheiro rodam como propriedades do fast-check; `PROPERTY_RUNS` define o número de execuções.
 
 Os testes de integração rodam contra um Supabase local de verdade. As suites de RPC ficam em `src/lib/ledger/*.integration.test.ts`; rotas de API (`src/app/api/**`), o rate limiter (`src/lib/rate-limit*.integration.test.ts`) e invariantes gerais do ledger (`src/test/ledger-invariants.integration.test.ts`) têm as suas.

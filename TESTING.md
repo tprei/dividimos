@@ -4,7 +4,7 @@ Dividimos has three layers of automated tests: **unit**, **integration**, and **
 
 ## Unit Tests
 
-Fast, isolated tests for pure logic and component rendering. Run in Vitest with happy-dom.
+Fast, isolated tests for pure logic and component rendering. Vitest runs `*.test.ts` in the `node` environment and `*.test.tsx` in happy-dom with jest-dom, React Testing Library cleanup, and the Framer Motion mock (`src/test/setup-dom.ts`). A test that needs `window`, `document`, `navigator`, or a React render is a `.test.tsx`, even without JSX: under `node` a module that checks `typeof window` quietly takes its server branch.
 
 ```bash
 npm run test            # run once
