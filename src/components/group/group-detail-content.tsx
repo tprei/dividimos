@@ -35,10 +35,10 @@ import { IconButton } from "@/components/ui/icon-button";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { haptics } from "@/hooks/use-haptics";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { isBotGroup } from "@/lib/bot-group";
 import { fade, springs } from "@/lib/animations";
-import { enterGroupAssignmentRoom } from "@/lib/sync/assignment-rooms";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup, refreshOpenAssignmentRooms } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
@@ -93,13 +93,11 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const [tab, setTab] = useState(requestedTab !== null && TABS[requestedTab] ? requestedTab : "saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
   const departedRef = useRef(false);
   const screenRef = useRef<HTMLDivElement | null>(null);
   const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
   const prevViewRef = useRef<GroupView>(view);
   const swapping = useRef(false);
-  const mountedRef = useRef(true);
   const openRoomsRefreshRef = useRef<string | null>(null);
 
   const openProfile = useCallback(() => {
@@ -161,25 +159,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     });
   }, [groupId]);
 
-  const handleOpenRoom = useCallback(
-    async (room: OpenAssignmentRoom) => {
-      if (pendingRoomId !== null) return;
-      if (room.host.id === meId) {
-        router.push(`/room/${room.id}`);
-        return;
-      }
-      setPendingRoomId(room.id);
-      try {
-        await enterGroupAssignmentRoom({ groupId, roomId: room.id });
-        if (!mountedRef.current) return;
-        router.push(`/room/${room.id}`);
-      } catch (error) {
-        toast.error(ledgerErrorMessage(error));
-        setPendingRoomId(null);
-      }
-    },
-    [groupId, meId, pendingRoomId, router],
-  );
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(groupId, meId);
 
   useEffect(() => {
     if (!hydrated || snapshot || loadError || departedRef.current) return;
@@ -188,13 +168,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     if (read.status !== "idle") return;
     load();
   }, [hydrated, snapshot, loadError, read.status, load]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!hydrated || snapshot === undefined || openRoomsRefreshRef.current === groupId) return;
@@ -436,7 +409,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
                   rooms={openRooms}
                   viewerId={meId}
                   pendingRoomId={pendingRoomId}
-                  onOpenRoom={handleOpenRoom}
+                  onOpenRoom={openRoom}
                 />
               )}
 

@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { ClaimerAvatars, itemsWithOwnerText } from "@/components/assignment-room/claimer-avatars";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -65,6 +66,14 @@ function OpenRoomRow({
       disabled={disabled}
       title={room.title}
       subtitle={`${hostName} · ${formatOccurredOn(room.occurredOn)}`}
+      footer={
+        <span className="flex min-h-6 items-center gap-2 pl-11">
+          <ClaimerAvatars claimers={room.claimers} />
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {itemsWithOwnerText(room.ownedItemCount, room.itemCount)}
+          </span>
+        </span>
+      }
       leading={
         <UserAvatar
           id={room.host.id}

@@ -90,6 +90,24 @@ describe("OpenRoomsCard", () => {
     expect(screen.getByText(/Você ·/)).toBeInTheDocument();
   });
 
+  it("shows who already marked items under each room", () => {
+    renderCard([
+      room("r1", {
+        ownedItemCount: 1,
+        claimers: [
+          { participantId: "p1", userId: "u2", name: "Ana Souza", avatarUrl: null },
+          { participantId: "p2", userId: null, name: "Bia Convidada", avatarUrl: null },
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText("1 de 2 itens com dono")).toBeInTheDocument();
+    expect(screen.getByRole("img")).toHaveAttribute(
+      "aria-label",
+      "Marcaram itens: Ana Souza, Bia Convidada",
+    );
+  });
+
   it("disables every row while one is pending, with the busy label only on the pending row", async () => {
     const onOpenRoom = vi.fn();
     renderCard([room("r1"), room("r2")], "r1", onOpenRoom);

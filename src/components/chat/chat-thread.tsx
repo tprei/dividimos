@@ -7,6 +7,8 @@ import { ChatRailRow, formatChatTime, type ChatRailMarker, type RailPerson } fro
 import { displayNames } from "@/lib/people";
 import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/chat-date-separator";
 import { EventCard } from "@/components/chat/event-card";
+import { RoomOpenedEvent } from "@/components/chat/room-opened-event";
+import type { OpenableGroupRoom } from "@/hooks/use-open-group-room";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import type { ChatMessage, EventKind, ExpenseSummary, GroupEvent, Settlement, SettlementStatus, UserProfile } from "@/types/ledger";
@@ -100,6 +102,8 @@ interface ChatThreadProps {
   /** Fires once that boundary is actually present in the rendered timeline. */
   onRenderedThrough?: (messageId: string) => void;
   onLoadMore?: () => void;
+  pendingRoomId?: string | null;
+  onOpenRoom?: (room: OpenableGroupRoom) => void;
 }
 
 export function ChatThread({
@@ -117,6 +121,8 @@ export function ChatThread({
   acknowledgeThroughId,
   onRenderedThrough,
   onLoadMore,
+  pendingRoomId = null,
+  onOpenRoom,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -233,6 +239,23 @@ export function ChatThread({
         }
         const continuesRun = item.kind === "message" && isSameRun(previous, item.message);
         const spaced = !showSeparator && previous !== undefined && !continuesRun;
+        if (item.kind === "event" && item.event.kind === "assignment_room_opened") {
+          if (!onOpenRoom) return null;
+          const actorId = item.event.actorId;
+          return (
+            <div key={`event-${item.event.id}`}>
+              {showSeparator && <ChatDateSeparator date={item.at} />}
+              <RoomOpenedEvent
+                event={item.event}
+                meId={meId}
+                actorName={actorId ? senderNames.get(actorId) ?? nameOf(actorId) : "Alguém"}
+                spaced={spaced}
+                pendingRoomId={pendingRoomId}
+                onOpenRoom={onOpenRoom}
+              />
+            </div>
+          );
+        }
         const settlementId = item.kind === "event" ? item.event.settlementId : null;
         const settlement = settlementId ? settlements.find((s) => s.id === settlementId) ?? null : null;
         const latestStatus = settlementId ? latestSettlementStatus.get(settlementId) ?? null : null;
