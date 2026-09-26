@@ -186,6 +186,25 @@
   --avatar-tone-6: oklch(0.88 0.06 185);
   --avatar-tone-7: oklch(0.88 0.06 135);
   --avatar-foreground: oklch(0.25 0.025 250);
+
+  /* Landing page. --canvas is the warm page background, --mesa the yellow
+     plastic bar table, --receipt* the thermal paper, and --success-ink the
+     green that stays readable on that paper in both themes. --pix-* is the
+     softer Pix green used on landing buttons, and --br-* the Feito pro
+     Brasil card; both stay the same in dark mode. */
+  --canvas: oklch(0.968 0.02 85);
+  --mesa: oklch(0.84 0.15 88);
+  --receipt: oklch(0.975 0.012 85);
+  --receipt-ink: oklch(0.25 0.015 250);
+  --receipt-ink-soft: oklch(0.42 0.012 250);
+  --success-ink: oklch(0.42 0.14 155);
+  --pix-from: oklch(0.72 0.12 158);
+  --pix-to: oklch(0.63 0.12 168);
+  --pix-foreground: oklch(0.99 0 0);
+  --br-green: oklch(0.48 0.13 152);
+  --br-yellow: oklch(0.88 0.17 95);
+  --br-blue: oklch(0.40 0.13 262);
+  --phone-status: oklch(0.98 0.003 280);
 }
 
 .dark {
@@ -265,6 +284,11 @@
   --avatar-tone-6: oklch(0.35 0.055 185);
   --avatar-tone-7: oklch(0.35 0.055 135);
   --avatar-foreground: oklch(0.96 0.008 80);
+
+  --canvas: oklch(0.22 0.05 250);
+  --mesa: oklch(0.64 0.12 82);
+  --receipt: oklch(0.93 0.014 85);
+  --receipt-ink: oklch(0.27 0.015 250);
 }
 
 @keyframes shimmer {
