@@ -19,7 +19,7 @@ test.describe("Settlement void", () => {
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByRole("status")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("status").filter({ hasText: "Tudo acertado" })).toBeVisible({ timeout: 10000 });
 
     await page.goto("/app/activity");
     await page.waitForLoadState("networkidle");

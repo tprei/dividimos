@@ -117,7 +117,7 @@ test.describe("Settlement Flow", () => {
     await settledPage.goto(`/app/groups/${group.id}`);
     await settledPage.waitForLoadState("networkidle");
 
-    await expect(settledPage.getByRole("status")).toBeVisible({ timeout: 10000 });
+    await expect(settledPage.getByRole("status").filter({ hasText: "Tudo acertado" })).toBeVisible({ timeout: 10000 });
     await expect(settledPage.getByRole("region", { name: "Quem paga quem" })).toHaveCount(0);
 
     await settledCtx.close();
@@ -180,6 +180,6 @@ test.describe("Settlement Flow", () => {
     await transfers.getByRole("button", { name: /Cobrar/ }).click();
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
 
-    await expect(page.getByRole("status")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("status").filter({ hasText: "Tudo acertado" })).toBeVisible({ timeout: 15000 });
   });
 });
