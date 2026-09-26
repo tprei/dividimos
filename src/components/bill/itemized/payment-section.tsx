@@ -16,6 +16,8 @@ export interface PaymentSectionProps {
   basisPointsById: Readonly<Record<string, number>>;
   centsById: Readonly<Record<string, number>>;
   onShareChange: (id: string, value: number) => void;
+  completable: Readonly<Record<string, number>>;
+  onComplete: (id: string) => void;
   onSplitEvenly: (() => void) | null;
   remainderCents: number;
   summary: readonly SplitSummaryRow[];
@@ -35,6 +37,8 @@ export function PaymentSection({
   basisPointsById,
   centsById,
   onShareChange,
+  completable,
+  onComplete,
   onSplitEvenly,
   remainderCents,
   summary,
@@ -74,6 +78,8 @@ export function PaymentSection({
           basisPointsById={basisPointsById}
           centsById={centsById}
           onShareChange={onShareChange}
+          completable={completable}
+          onComplete={onComplete}
           onSplitEvenly={onSplitEvenly}
           emptyText="Escolha quem pagou."
           shareVerb="pagou"

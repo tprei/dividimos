@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { allocateByBasisPoints, allocateByWeights } from "@/lib/expense-money";
 import { FULL_PERCENT_BASIS_POINTS } from "@/lib/item-division";
 import {
+  completableShare,
+  completeSplitShare,
   evenSplitBalance,
   setSplitShare,
   splitBalanceFromShares,
@@ -11,6 +13,7 @@ import {
   withSplitTotal,
   type SplitBalance,
 } from "@/lib/split-balance";
+import type { ShareGesture } from "./share-slider";
 
 export type SplitMode = "equal" | "percent" | "fixed";
 
@@ -145,9 +148,34 @@ export function useSplitDraft({
     setDraft(withPeople(draft, included, totalCents));
   };
 
-  const setShare = (id: string, value: number) => {
-    if (draft.mode === "percent") setDraft({ ...draft, percent: setSplitShare(draft.percent, id, value) });
-    if (draft.mode === "fixed") setDraft({ ...draft, fixed: setSplitShare(draft.fixed, id, value) });
+  // A drag applies every value to the shares as they stood when it began, so
+  // pulling one person up and back down hands back what the others lent.
+  const dragBase = useRef<{ id: string; mode: SplitMode; balance: SplitBalance } | null>(null);
+
+  const setShare = (id: string, value: number, gesture: ShareGesture = "set") => {
+    if (draft.mode !== "percent" && draft.mode !== "fixed") return;
+    if (gesture === "end") {
+      dragBase.current = null;
+      return;
+    }
+    const current = draft.mode === "percent" ? draft.percent : draft.fixed;
+    let base = current;
+    if (gesture === "drag") {
+      const held = dragBase.current;
+      if (!held || held.id !== id || held.mode !== draft.mode) {
+        dragBase.current = { id, mode: draft.mode, balance: current };
+      }
+      base = dragBase.current?.balance ?? current;
+    } else {
+      dragBase.current = null;
+    }
+    const next = setSplitShare(base, id, value);
+    setDraft(draft.mode === "percent" ? { ...draft, percent: next } : { ...draft, fixed: next });
+  };
+
+  const complete = (id: string) => {
+    if (draft.mode === "percent") setDraft({ ...draft, percent: completeSplitShare(draft.percent, id) });
+    if (draft.mode === "fixed") setDraft({ ...draft, fixed: completeSplitShare(draft.fixed, id) });
   };
 
   const splitEvenly = () => {
@@ -159,6 +187,20 @@ export function useSplitDraft({
   };
 
   const shownBalance = draft.mode === "percent" ? draft.percent : draft.mode === "fixed" ? draft.fixed : null;
+  const completable: Record<string, number> = {};
+  if (shownBalance) {
+    for (const id of draft.included) {
+      const extra = completableShare(shownBalance, id);
+      if (extra === 0) continue;
+      // In percent mode a sliver of a basis point can round to the same centavos;
+      // offering it would be a button that changes nothing.
+      if (draft.mode === "percent") {
+        const completed = splitDraftCents({ ...draft, percent: completeSplitShare(draft.percent, id) }, totalCents);
+        if (completed[id] === centsById[id]) continue;
+      }
+      completable[id] = extra;
+    }
+  }
   const remainderCents =
     draft.included.length === 0
       ? 0
@@ -169,9 +211,12 @@ export function useSplitDraft({
     centsById,
     remainderCents,
     canSplitEvenly: shownBalance !== null && shownBalance.setByUser.length > 0,
+    /** Units (basis points or centavos) each person would gain with "Completar". */
+    completable,
     setMode,
     toggle,
     setShare,
+    complete,
     splitEvenly,
   };
 }

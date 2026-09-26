@@ -16,6 +16,10 @@
   }
 }
 
+/* Typing one person's share with the keyboard up: whatever sits above the
+   rows folds away so the focused row stays in the sliver left on screen. */
+@custom-variant split-typing (&:is([data-keyboard="open"]:has([data-split-input]:focus) *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -408,6 +412,47 @@
   input[type="range"]:active::-moz-range-thumb {
     cursor: grabbing;
     transform: scale(1.1);
+  }
+  /* Share sliders: amber fill up to the thumb's centre and a ruler under the
+     track, a tick every 10% and a taller one at each quarter. Both are inset
+     by the 11px thumb radius so a tick sits exactly under the thumb at its
+     value. `--range-value` is the share as a 0..1 fraction. */
+  input[type="range"][data-ticks] {
+    --range-thumb-radius: 11px;
+    --range-fill: calc(var(--range-thumb-radius) + (100% - 2 * var(--range-thumb-radius)) * var(--range-value, 0));
+    height: 2.75rem;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        color-mix(in oklab, var(--muted-foreground) 70%, transparent) 0 2px,
+        transparent 2px calc((100% - 2px) / 4)
+      ),
+      repeating-linear-gradient(
+        to right,
+        color-mix(in oklab, var(--muted-foreground) 40%, transparent) 0 2px,
+        transparent 2px calc((100% - 2px) / 10)
+      );
+    background-repeat: no-repeat;
+    background-position:
+      calc(var(--range-thumb-radius) - 1px) 29px,
+      calc(var(--range-thumb-radius) - 1px) 29px;
+    background-size:
+      calc(100% - 2 * var(--range-thumb-radius) + 2px) 7px,
+      calc(100% - 2 * var(--range-thumb-radius) + 2px) 4px;
+  }
+  input[type="range"][data-ticks]::-webkit-slider-runnable-track {
+    background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+    background-image: linear-gradient(to right, var(--primary) var(--range-fill), transparent var(--range-fill));
+  }
+  input[type="range"][data-ticks]::-moz-range-track {
+    background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+    background-image: linear-gradient(to right, var(--primary) var(--range-fill), transparent var(--range-fill));
+  }
+  input[type="range"][data-ticks]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+  input[type="range"][data-ticks]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
   }
 }
 

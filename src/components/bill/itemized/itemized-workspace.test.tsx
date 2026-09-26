@@ -39,6 +39,8 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
         basisPointsById: {},
         centsById: {},
         onShareChange: vi.fn(),
+        completable: {},
+        onComplete: vi.fn(),
         onSplitEvenly: null,
         remainderCents: 0,
         summary: [],
