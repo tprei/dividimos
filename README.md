@@ -97,7 +97,7 @@ stateDiagram-v2
 - **Leitor de convite.** **Entrar em sala** abre um leitor que reconhece QR de sala, de grupo, de perfil e de convidado.
 - **Página do grupo.** Avatar com emoji ou foto, **Gastos do grupo** com o total e a parte de cada um, e as abas **Saldos**, **Contas** e **Membros**.
 - **Sair e remover.** Só sai do grupo quem está com saldo zerado. O criador remove membros, e quem foi removido não volta sozinho por link.
-- **Bloquear pessoa.** Bloquear alguém corta o contato direto entre vocês: conversa 1-a-1 nova ou existente, convites de grupo, lembretes e push dessa pessoa param de chegar pra você, e ela não pode te nomear numa sala de itens. O bloqueio vale até você desbloquear; despesas, saldos e membros dos grupos que vocês dividem não mudam, e a outra pessoa não recebe aviso. Quem entra por link de sala ou resgata a parte de um convidado continua podendo, e recusas de conversa anteriores continuam valendo mesmo depois do desbloqueio.
+- **Bloquear pessoa.** Bloquear alguém corta o contato direto entre vocês: conversa 1-a-1 nova ou existente, convites de grupo, lembretes e push dessa pessoa param de chegar pra você, ela não pode te nomear numa sala de itens, e as mensagens dela nos grupos que vocês compartilham deixam de aparecer pra você. O bloqueio vale até você desbloquear; despesas, saldos e membros dos grupos que vocês dividem não mudam, e a outra pessoa não recebe aviso. Quem entra por link de sala ou resgata a parte de um convidado continua podendo, e recusas de conversa anteriores continuam valendo mesmo depois do desbloqueio.
 
 ### Conversas
 
