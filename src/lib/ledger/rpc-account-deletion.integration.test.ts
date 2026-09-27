@@ -540,16 +540,14 @@ describe.skipIf(!isIntegrationTestReady)("delete_account RPC", () => {
       return result.rows;
     });
     expect(handles).toHaveLength(1);
-    const facts = await withPg(async (pg) => {
-      const events = await pg.query("select 1 from group_events ev join group_members gm on gm.group_id = ev.group_id where gm.user_id = $1", [leaver.id]);
-      void events;
-      const memberships = await pg.query("select 1 from group_members where user_id = $1", [leaver.id]);
-      return memberships.rowCount;
+    const memberships = await withPg(async (pg) => {
+      const result = await pg.query("select 1 from group_members where user_id = $1", [leaver.id]);
+      return result.rowCount;
     });
-    expect(facts).toBe(0);
+    expect(memberships).toBe(0);
   });
 
-  it("does not reblock auth completion after a later historical balance correction", async () => {
+  it("refuses a later change that would leave a deleted account with a balance", async () => {
     const [leaver, other] = await createTestUsers(2);
     const groupId = await createGroupWithMembers(leaver, [other], "Grupo corrigido");
     const settled = await settledExpense(leaver, groupId, [leaver, other], 2000);
@@ -563,33 +561,36 @@ describe.skipIf(!isIntegrationTestReady)("delete_account RPC", () => {
 
     await deleteUser(leaver.id);
 
-    const editError = (await authenticateAs(other).rpc("edit_expense", {
-      p_expense_id: settled.expenseId,
-      p_expected_version_no: 1,
-      p_occurred_on: "2026-09-27",
-      p_title: "Correção histórica",
-      p_merchant_name: "",
-      p_expense_type: "single_amount",
-      p_total_cents: 2000,
-      p_service_fee_bps: 0,
-      p_fixed_fee_cents: 0,
-      p_payload: {
-        items: [],
-        participants: [
-          { kind: "user", userId: leaver.id },
-          { kind: "user", userId: other.id },
-        ],
-        shares: [1900, 100],
-        payers: [{ participantIndex: 1, amountCents: 2000 }],
-        itemAssignments: null,
-      },
-    })) as RpcResult<unknown>;
-    expect(editError.error).toBeNull();
-    const nonzero = await balances(groupId);
-    expect(nonzero.some((row) => row.participant_id === leaver.id && row.net_cents !== 0)).toBe(true);
+    const edit = async (shares: [number, number]) =>
+      (await authenticateAs(other).rpc("edit_expense", {
+        p_expense_id: settled.expenseId,
+        p_expected_version_no: 1,
+        p_occurred_on: "2026-09-27",
+        p_title: "Correção histórica",
+        p_merchant_name: "",
+        p_expense_type: "single_amount",
+        p_total_cents: 2000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: leaver.id },
+            { kind: "user", userId: other.id },
+          ],
+          shares,
+          payers: [{ participantIndex: 0, amountCents: 2000 }],
+          itemAssignments: null,
+        },
+      })) as RpcResult<unknown>;
 
-    const retry = await deleteUser(leaver.id);
-    expect(retry.deletedAt).not.toBeNull();
+    const refused = await edit([1900, 100]);
+    expect(refused.error?.message).toBe("deleted_account_balance");
+    expect(await balances(groupId)).toEqual([]);
+
+    const retitled = await edit([1000, 1000]);
+    expect(retitled.error).toBeNull();
+    expect(await balances(groupId)).toEqual([]);
   });
 
   it("denies anon and authenticated deletion of self or another user", async () => {
