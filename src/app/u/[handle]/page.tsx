@@ -9,6 +9,7 @@ import { Chip } from "@/components/ui/chip";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton, SplitBillButton } from "./profile-actions";
 import { ReportContentAction } from "@/components/reports/report-content-action";
+import { UserBlockAction } from "@/components/profile/user-block-action";
 import type { UserProfile } from "@/types/ledger";
 
 export default async function PublicProfilePage({
@@ -150,6 +151,7 @@ export default async function PublicProfilePage({
               messagePreview={null}
               presentation="profile"
             />
+            <UserBlockAction key={`${callerId}:${profile.id}:block`} target={profile} />
           </>
         )}
 

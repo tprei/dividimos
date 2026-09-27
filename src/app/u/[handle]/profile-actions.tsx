@@ -7,14 +7,20 @@ import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { dmErrorMessage, getOrCreateDm } from "@/lib/sync/mutations-group";
 import { useStartBillWithUser } from "@/components/profile/use-start-bill-with-user";
+import { useAppStore } from "@/stores/app-store";
 
 interface ProfileActionProps {
   targetUserId: string;
 }
 
+function useBlockedByMe(targetUserId: string): boolean {
+  return useAppStore((s) => s.blockedUsers.some((user) => user.id === targetUserId));
+}
+
 export function SendMessageButton({ targetUserId }: ProfileActionProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const blocked = useBlockedByMe(targetUserId);
 
   const handleSendMessage = async () => {
     setLoading(true);
@@ -26,6 +32,8 @@ export function SendMessageButton({ targetUserId }: ProfileActionProps) {
       setLoading(false);
     }
   };
+
+  if (blocked) return null;
 
   return (
     <Button
@@ -43,6 +51,9 @@ export function SendMessageButton({ targetUserId }: ProfileActionProps) {
 
 export function SplitBillButton({ targetUserId }: ProfileActionProps) {
   const { startBill, starting } = useStartBillWithUser();
+  const blocked = useBlockedByMe(targetUserId);
+
+  if (blocked) return null;
 
   return (
     <Button
