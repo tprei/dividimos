@@ -703,7 +703,7 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 | `synthetic.yml` | PR, push na `main` | Sintéticos Playwright contra Supabase local e um build de produção, no Desktop Chrome, iPhone 13 (WebKit) e Pixel 5; dois shards, cada um com os três projetos |
 | `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
 | `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
-| `android.yml` | PR que mexe em `android/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
+| `android.yml` | PR que mexe em `android/`, `native-shell/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
 | `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
 | `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
 | `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |
@@ -744,6 +744,8 @@ LAN_IP=192.168.0.14 scripts/cap-dev.sh android --device  # aparelho via Wi-Fi, a
 ```
 
 Precisa do JDK 21 e do platform-tools do Android SDK no `PATH`. Inspecione a WebView pelo Chrome do desktop em `chrome://inspect`. Depois de mudar o `capacitor.config.ts` ou o manifest, rode `npx cap sync android` e recompile; compilar não prova que o teclado se comporta.
+
+O app embarca só a `native-shell/offline.html` como fallback. Em builds de produção, o `server.errorPath` do Capacitor mostra a página só em falhas de rede ou erros HTTP 5xx no carregamento completo; páginas 4xx renderizam normalmente. O botão "Tentar novamente" abre `https://www.dividimos.ai/`. Depois de puxar mudanças em `native-shell/` ou `capacitor.config.ts`, rode `npx cap sync android` antes de compilar no Android Studio, porque os assets sincronizados e as flags de providers do SocialLogin ficam fora do Git. A página não tem acesso aos plugins, então o `MainActivity` fecha o app quando o usuário aperta voltar nela; sem isso o voltar recarregaria a página que falhou e cairia de novo no fallback.
 
 O iOS nativo não está inicializado neste repositório: não existe diretório `ios/`, e `scripts/cap-dev.sh ios` se recusa com essa mensagem em vez de gerar um projeto não verificado. O iOS é coberto pelo PWA no Safari e pelo projeto sintético WebKit.
 

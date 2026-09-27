@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - android/**
+      - native-shell/**
       - capacitor.config.ts
       - package.json
       - package-lock.json
@@ -22,10 +23,11 @@ jobs:
   # PR gate: proves the Android project still assembles. No signing secrets
   # and no upload — a broken manifest, resource or Gradle change is red here
   # instead of on main. PRs that touch none of the paths above skip the
-  # workflow: the web assets are a placeholder out/index.html and the app
-  # loads https://www.dividimos.ai per capacitor.config.ts, so only those
-  # inputs change what Gradle assembles. The ruleset on main has no required
-  # status checks, so a skipped workflow blocks nothing.
+  # workflow: the only bundled asset is the fallback page in native-shell/
+  # and the app loads https://www.dividimos.ai per capacitor.config.ts, so
+  # only those inputs change what Gradle assembles.
+  # The ruleset on main has no required status checks, so a skipped workflow
+  # blocks nothing.
   compile:
     name: Android compiles
     if: github.event_name == 'pull_request'
@@ -52,17 +54,6 @@ jobs:
 
       # cap sync copies the web assets and regenerates the plugin wiring, so
       # a plugin added to package.json without a native counterpart fails here.
-      - name: Create placeholder web assets
-        run: |
-          mkdir -p out
-          cat > out/index.html <<'HTML'
-          <!DOCTYPE html>
-          <html lang="pt-BR">
-            <head><meta charset="UTF-8"><title>Dividimos</title></head>
-            <body><p>Carregando...</p></body>
-          </html>
-          HTML
-
       - run: npx cap sync android
 
       # Firebase config is a release-only requirement, and the debug variant
@@ -94,17 +85,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
 
       - run: npm ci --ignore-scripts
-
-      - name: Create placeholder web assets
-        run: |
-          mkdir -p out
-          cat > out/index.html <<'HTML'
-          <!DOCTYPE html>
-          <html lang="pt-BR">
-          <head><meta charset="UTF-8"><title>Dividimos</title></head>
-          <body><p>Carregando...</p></body>
-          </html>
-          HTML
 
       - name: Inject google-services.json for FCM
         env:

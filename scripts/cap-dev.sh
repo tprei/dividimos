@@ -79,19 +79,6 @@ echo "Dev server URL for the WebView: http://$LAN_IP:3000"
 echo "Make sure 'npm run dev' is running in another terminal."
 echo ""
 
-# The Capacitor config points at a server URL in dev, but the CLI still
-# requires webDir to exist before it will sync.
-mkdir -p out
-if [ ! -f out/index.html ]; then
-  cat > out/index.html <<'HTML'
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"><title>Dividimos</title></head>
-<body><p>Carregando...</p></body>
-</html>
-HTML
-fi
-
 export CAPACITOR_DEV=true
 export LAN_IP
 
