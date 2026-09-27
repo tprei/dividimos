@@ -25,8 +25,17 @@ describe("formatRoomTicks", () => {
   it("prints a below-unit fraction only when the value lands on one", () => {
     expect(formatRoomTicks(17_142)).toBe("1/7");
     expect(formatRoomTicks(17_143)).toBe("1/7");
-    expect(formatRoomTicks(40)).toBe("≈0");
     expect(formatRoomTicks(40_400)).toBe("≈0,34");
+  });
+
+  it("never prints a leftover as zero", () => {
+    expect(formatRoomTicks(40)).toBe("<0,01");
+  });
+
+  it("keeps whole-milliunit leftovers as decimals", () => {
+    expect(formatRoomTicks(44_400)).toBe("0,37");
+    expect(formatRoomTicks(18_000)).toBe("0,15");
+    expect(formatRoomTicks(1_200)).toBe("0,01");
   });
 
   it("prints exact leftovers while their denominator stays small", () => {
@@ -186,5 +195,10 @@ describe("claimQuantityLabel", () => {
 
   it("falls back to a whole percent when no fraction is close", () => {
     expect(claimQuantityLabel(1_000, 44_400)).toBe("37%");
+  });
+
+  it("never reads a partial share as none or all of the item", () => {
+    expect(claimQuantityLabel(1_000, 400)).toBe("<1%");
+    expect(claimQuantityLabel(1_000, 119_999)).toBe(">99%");
   });
 });

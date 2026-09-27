@@ -18,6 +18,12 @@ import {
 /** Ticks in one whole item. */
 const TICKS_PER_UNIT = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
 
+/** Denominators that read as fractions rather than as an odd ratio. */
+const FAMILIAR_DENOMINATORS = new Set([2, 3, 4, 5, 6, 8, 10]);
+
+/** Largest reduced denominator still printed as an exact fraction. */
+const MAX_EXACT_DENOMINATOR = 120;
+
 /** Shares the sheet spells with a glyph instead of a plain `k/n` ratio. */
 const FRACTION_GLYPHS: Record<string, string> = {
   "1/3": "⅓",
@@ -102,12 +108,13 @@ function exactUnitFraction(
 
 /**
  * Format claim ticks as a quantity of items: `"1"`, `"1,5"`, `"1/3"`,
- * `"8/15"`, `"1/7"`, `"≈0,34"`. Reduced fractions print exactly while their
- * denominator stays at most 120; rarer sub-unit quantities fall back to the
- * guest fraction they land on, else to a two-decimal approximation. Rejects
- * values that cannot come from a decoded room, because a negative or
- * fractional tick count is a bug to surface rather than a number to round
- * away.
+ * `"8/15"`, `"1/7"`, `"≈1,29"`. Values main already printed keep their text:
+ * familiar fractions below one item, whole-milliunit decimals, then exact
+ * fractions up to 120 parts. Even-split remainders read as the fraction they
+ * land on; anything else is a two-decimal approximation that never reads as
+ * zero. Rejects values that cannot come from a decoded room, because a
+ * negative or fractional tick count is a bug to surface rather than a number
+ * to round away.
  */
 export function formatRoomTicks(ticks: number): string {
   if (!Number.isSafeInteger(ticks) || ticks < 0) {
@@ -123,14 +130,14 @@ export function formatRoomTicks(ticks: number): string {
   const denominator = TICKS_PER_UNIT / divisor;
   // Below one item a fraction is what people say out loud: "metade", "um
   // terço". Above it "1,5" reads better than "3/2".
-  if (ticks < TICKS_PER_UNIT && denominator <= 120) {
+  if (ticks < TICKS_PER_UNIT && FAMILIAR_DENOMINATORS.has(denominator)) {
     return `${numerator}/${denominator}`;
   }
   if (ticks % ROOM_TICKS_PER_MILLIUNIT === 0) {
     const milliunits = (ticks / ROOM_TICKS_PER_MILLIUNIT) as ExpenseQuantity;
     return formatExpenseQuantity(milliunits);
   }
-  if (denominator <= 120) {
+  if (denominator <= MAX_EXACT_DENOMINATOR) {
     return `${numerator}/${denominator}`;
   }
   if (ticks < TICKS_PER_UNIT) {
@@ -139,7 +146,17 @@ export function formatRoomTicks(ticks: number): string {
       return `${fraction.numerator}/${fraction.denominator}`;
     }
   }
-  return `≈${APPROX_UNITS.format(ticks / TICKS_PER_UNIT)}`;
+  const approximate = APPROX_UNITS.format(ticks / TICKS_PER_UNIT);
+  if (approximate === "0") return "<0,01";
+  return `≈${approximate}`;
+}
+
+/** Whole percent of a partial share that never reads as none or all of it. */
+function partialPercentLabel(ticks: number, capacityTicks: number): string {
+  const label = WHOLE_PERCENT.format(ticks / capacityTicks);
+  if (ticks > 0 && label === WHOLE_PERCENT.format(0)) return "<1%";
+  if (ticks < capacityTicks && label === WHOLE_PERCENT.format(1)) return ">99%";
+  return label;
 }
 
 /** Shared spoken quantity for a claim; single-line fractions are relative to its capacity. */
@@ -160,7 +177,7 @@ export function claimQuantityLabel(quantityMilliunits: number, ticks: number): s
       const ratio = `${fraction.numerator}/${fraction.denominator}`;
       return FRACTION_GLYPHS[ratio] ?? ratio;
     }
-    return WHOLE_PERCENT.format(ticks / capacity);
+    return partialPercentLabel(ticks, capacity);
   }
   return formatRoomTicks(ticks);
 }
