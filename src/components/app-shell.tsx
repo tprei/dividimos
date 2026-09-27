@@ -21,6 +21,8 @@ import { NewBillSkeleton } from "@/components/bill/wizard/new-bill-skeleton";
 import { GroupsSkeleton } from "@/components/groups/groups-skeleton";
 import { ProfileSkeleton } from "@/components/profile/profile-skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { AccountDeletionPending } from "@/components/settings/account-deletion-pending";
+import { AccountLocalWipeError, deleteAccount } from "@/lib/sync/account-deletion";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { springs } from "@/lib/animations";
@@ -163,10 +165,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const knownGood = me !== null && lastBootstrappedAccountId === me.id;
 
   const [retrying, setRetrying] = useState(false);
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
+
+  const finishDeletion = useCallback(async () => {
+    setDeletionBusy(true);
+    setDeletionError(null);
+    try {
+      const result = await deleteAccount();
+      if (result.ok) {
+        router.replace("/excluir-conta?excluida=1");
+        return;
+      }
+      setDeletionError(
+        result.code === "unauthenticated"
+          ? "Sua sessão foi encerrada. Entre de novo para verificar se a exclusão foi concluída."
+          : "Não deu para excluir sua conta do Dividimos. Tente novamente.",
+      );
+    } catch (err) {
+      if (err instanceof AccountLocalWipeError) {
+        router.replace("/excluir-conta?excluida=1&limpeza=parcial");
+        return;
+      }
+      setDeletionError("Não deu para excluir sua conta do Dividimos. Tente novamente.");
+    } finally {
+      setDeletionBusy(false);
+    }
+  }, [router]);
+
   const retryBootstrap = useCallback(() => {
     setRetrying(true);
     runBootstrap()
       .catch((err) => {
+        if (err instanceof LedgerError && err.code === "account_deleted") return;
         if (err instanceof LedgerError && err.code === "unauthenticated") {
           router.replace("/auth");
           return;
@@ -178,6 +209,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const reportBootstrapError = useCallback(
     (err: unknown) => {
+      if (err instanceof LedgerError && err.code === "account_deleted") return;
       if (err instanceof LedgerError && err.code === "unauthenticated") {
         router.replace("/auth");
         return;
@@ -312,6 +344,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ]);
       return true;
     } catch (err) {
+      if (err instanceof LedgerError && err.code === "account_deleted") return false;
       if (err instanceof LedgerError && err.code === "unauthenticated") {
         router.replace("/auth");
         return false;
@@ -372,9 +405,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? pendingSkeletonFor(pendingNavigation.href)
     : null;
 
+  const pendingDeletion = bootstrapErrorCode === "account_deleted";
+
   return (
     <>
-      {!hydrated || (!knownGood && bootstrapStatus !== "error") ? (
+      {pendingDeletion ? (
+        <AccountDeletionPending
+          busy={deletionBusy}
+          error={deletionError}
+          onRetry={() => {
+            void finishDeletion();
+          }}
+        />
+      ) : !hydrated || (!knownGood && bootstrapStatus !== "error") ? (
         <DashboardSkeleton />
       ) : !knownGood ? (
         <div className="flex h-full min-h-0 flex-col items-center justify-center">

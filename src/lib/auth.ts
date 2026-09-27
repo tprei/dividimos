@@ -7,6 +7,7 @@ import type { Me } from "@/types/ledger";
 export type AuthProfileResult =
   | { kind: "unauthenticated" }
   | { kind: "profile_missing" }
+  | { kind: "account_deleted" }
   | { kind: "read_failed" }
   | { kind: "ok"; me: Me };
 
@@ -60,7 +61,11 @@ export const resolveAuthProfile = cache(async (): Promise<AuthProfileResult> => 
     return { kind: "read_failed" };
   }
   const { data, error } = rpcResult;
-  if (error != null) return { kind: "read_failed" };
+  if (error != null) {
+    return error.message === "account_deleted"
+      ? { kind: "account_deleted" }
+      : { kind: "read_failed" };
+  }
   if (data == null) return { kind: "profile_missing" };
 
   const decoded = decodeMe(data);

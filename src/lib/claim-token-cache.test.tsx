@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  clearAllClaimTokens,
   clearClaimToken,
   readClaimToken,
   readClaimTokenEntry,
@@ -43,6 +44,18 @@ describe("claim-token-cache", () => {
 
     expect(readClaimToken("guest-1")).toBeNull();
     expect(readClaimToken("guest-2")).toBe("gst1_def");
+  });
+
+  it("clears every cached token and leaves other keys alone", () => {
+    writeClaimToken("guest-1", "gst1_abc", future());
+    writeClaimToken("guest-2", "gst1_def", future());
+    window.localStorage.setItem("dividimos-theme", "dark");
+
+    clearAllClaimTokens();
+
+    expect(readClaimToken("guest-1")).toBeNull();
+    expect(readClaimToken("guest-2")).toBeNull();
+    expect(window.localStorage.getItem("dividimos-theme")).toBe("dark");
   });
 
   it("exposes the expiry alongside the token", () => {

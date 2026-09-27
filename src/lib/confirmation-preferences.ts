@@ -22,6 +22,10 @@ function getStorageKey(userId: string): string {
   return `dividimos-prefs:${getSupabaseStorageNamespace()}:${userId}`;
 }
 
+export function removeConfirmationPreferences(userId: string): void {
+  localStorage.removeItem(getStorageKey(userId));
+}
+
 export function readConfirmationPreferences(userId: string): ConfirmationPreferences {
   if (typeof window === "undefined" || !userId) {
     return { ...DEFAULT_CONFIRMATION_PREFERENCES };

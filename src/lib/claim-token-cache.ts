@@ -59,3 +59,12 @@ export function clearClaimToken(guestId: string): void {
     return;
   }
 }
+
+export function clearAllClaimTokens(): void {
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith(KEY_PREFIX)) keys.push(key);
+  }
+  for (const key of keys) window.localStorage.removeItem(key);
+}

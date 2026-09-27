@@ -49,6 +49,20 @@ function waitForAppStoreHydration(): Promise<void> {
 
 type IdentityEvent = "SIGNED_IN" | "SIGNED_OUT";
 
+let deletionMarkerUserId: string | null = null;
+
+function sharedSignOutTeardown(signedOutUserId: string | null): void {
+  advanceAuthGeneration();
+  stopAllAssignmentRoomRealtime();
+  resetAssignmentRoomRuntime();
+  clearAllAssignmentRoomCredentials();
+  invalidateNativeRegistration();
+  invalidateSyncReads();
+  clearPendingVendorChargeCancellations();
+  clearSessionCaches();
+  void detachLocalPushForSignOut(signedOutUserId);
+}
+
 export function attachAuthListener(
   onSignedOut: () => void,
   onError: (error: unknown) => void,
@@ -74,18 +88,14 @@ export function attachAuthListener(
   const handle = (event: IdentityEvent, nextUserId: string | null) => {
     if (event === "SIGNED_OUT") {
       const signedOutUserId = priorUserId();
-      archiveCurrentDraft(signedOutUserId);
+      const completingDeletion =
+        deletionMarkerUserId !== null && deletionMarkerUserId === signedOutUserId;
+      if (!completingDeletion) {
+        archiveCurrentDraft(signedOutUserId);
+      }
       useBillStore.getState().reset();
       observedUserId = null;
-      advanceAuthGeneration();
-      stopAllAssignmentRoomRealtime();
-      resetAssignmentRoomRuntime();
-      clearAllAssignmentRoomCredentials();
-      invalidateNativeRegistration();
-      invalidateSyncReads();
-      clearPendingVendorChargeCancellations();
-      clearSessionCaches();
-      void detachLocalPushForSignOut(signedOutUserId);
+      sharedSignOutTeardown(signedOutUserId);
       useAppStore.getState().reset();
       onSignedOut();
       return;
@@ -163,6 +173,29 @@ export function attachAuthListener(
 export type SignOutResult =
   | { ok: true }
   | { ok: false; error: unknown };
+
+export async function completeAccountDeletionSignOut(
+  userId: string,
+): Promise<SignOutResult> {
+  deletionMarkerUserId = userId;
+  try {
+    sharedSignOutTeardown(userId);
+    useBillStore.getState().reset();
+    useAppStore.getState().reset();
+  } catch (error) {
+    return { ok: false, error };
+  }
+  try {
+    const { error } = await getSupabase().auth.signOut({ scope: "local" });
+    return error ? { ok: false, error } : { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+export function clearAccountDeletionMarker(): void {
+  deletionMarkerUserId = null;
+}
 
 export async function signOut(): Promise<SignOutResult> {
   try {

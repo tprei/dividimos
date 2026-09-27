@@ -58,6 +58,7 @@ export default async function ContinuePage({
 
   const profile = await resolveAuthProfile();
   if (profile.kind === "unauthenticated") authRedirect(destination);
+  if (profile.kind === "account_deleted") redirect(destination);
   if (profile.kind !== "ok") return retryPage(destination);
   if (profile.me.id !== userResult.data.user.id) return retryPage(destination);
 

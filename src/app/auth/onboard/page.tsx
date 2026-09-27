@@ -60,6 +60,7 @@ export default async function OnboardPage({
 
   const profile = await resolveAuthProfile();
   if (profile.kind === "unauthenticated") authRedirect(destination);
+  if (profile.kind === "account_deleted") redirect(destination);
   if (profile.kind !== "ok") return retryPage(destination);
   const me = profile.me;
   if (me.id !== userResult.data.user.id) return retryPage(destination);
