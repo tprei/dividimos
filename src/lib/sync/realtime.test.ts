@@ -5,7 +5,9 @@ import type { Database } from "@/types/database";
 import type { ChatMessage, GroupSnapshot, Me } from "@/types/ledger";
 import { runBootstrap } from "./bootstrap";
 import { getSupabase } from "./client";
+import { reconcileChat } from "./chat-reconcile";
 import {
+  handleChatBroadcast,
   mergeChatBroadcast,
   parseMembershipPayload,
   shouldRefreshGroup,
@@ -20,6 +22,11 @@ vi.mock("./client", () => ({
 }));
 vi.mock("./bootstrap", () => ({ runBootstrap: vi.fn() }));
 vi.mock("./refresh", () => ({ refreshGroup: vi.fn(async () => {}) }));
+vi.mock("./chat-reconcile", () => ({
+  isMalformedHint: vi.fn(() => false),
+  reconcileChat: vi.fn(),
+  invalidateChatReconciliation: vi.fn(),
+}));
 
 const meUser: Me = {
   id: "user-1",
@@ -49,6 +56,7 @@ const baseSnapshot: GroupSnapshot = {
     ledgerVersion: 5,
     createdAt: "2026-09-01T10:00:00.000Z",
   },
+  dmCounterparty: null,
   members: [],
   balances: [],
   guests: [],
@@ -68,6 +76,7 @@ const incomingMessage: ChatMessage = {
   groupId: "group-1",
   senderId: "user-2",
   content: "E aí pessoal!",
+  erased: false,
   createdAt: "2026-09-05T12:00:00.000Z",
   sender: {
     id: "user-2",
@@ -178,8 +187,10 @@ describe("mergeChatBroadcast", () => {
     expect(patch.groups?.["group-1"]?.unreadCount).toBe(1);
     expect(patch.groups?.["group-1"]?.lastMessage).toEqual({
       content: "E aí pessoal!",
+      erased: false,
       senderId: "user-2",
       createdAt: "2026-09-05T12:00:00.000Z",
+      sender: incomingMessage.sender,
     });
   });
 
@@ -238,11 +249,158 @@ describe("mergeChatBroadcast", () => {
       incomingMessage,
     );
 
-    expect(patch.conversations).toBeUndefined();
+    expect(patch.conversations?.["group-1"]?.messages).toHaveLength(1);
+    expect(patch.conversations?.["group-1"]?.messages[0]?.id).toBe(
+      incomingMessage.id,
+    );
     expect(patch.groups?.["group-1"]?.unreadCount).toBe(3);
     expect(patch.groups?.["group-1"]?.lastMessage?.content).toBe(
       "E aí pessoal!",
     );
+  });
+
+  it("replaces a held message with its erasure broadcast", () => {
+    useAppStore.setState({
+      me: meUser,
+      groups: { "group-1": baseSnapshot },
+      conversations: {
+        "group-1": {
+          messages: [incomingMessage],
+          events: [],
+          messageCursor: null,
+          messagesComplete: true,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
+        },
+      },
+    });
+
+    const erasure: ChatMessage = { ...incomingMessage, content: null, erased: true };
+    const patch = mergeChatBroadcast(useAppStore.getState(), "group-1", erasure);
+
+    expect(patch.conversations?.["group-1"]?.messages).toHaveLength(1);
+    expect(patch.conversations?.["group-1"]?.messages[0]?.erased).toBe(true);
+    expect(patch.conversations?.["group-1"]?.messages[0]?.content).toBeNull();
+    expect(patch.groups?.["group-1"]?.unreadCount).toBe(0);
+    expect(patch.groups?.["group-1"]?.lastMessage?.erased).toBe(true);
+  });
+
+  it("does not move the preview backward or bump unread for an out-of-window erasure", () => {
+    const window = [
+      { ...incomingMessage, id: "m-2", clientId: "c-2", createdAt: "2026-09-05T12:00:00.000Z" },
+      { ...incomingMessage, id: "m-3", clientId: "c-3", createdAt: "2026-09-05T13:00:00.000Z" },
+    ];
+    useAppStore.setState({
+      me: meUser,
+      groups: {
+        "group-1": {
+          ...baseSnapshot,
+          unreadCount: 4,
+          lastMessage: {
+            content: "última mensagem",
+            erased: false,
+            senderId: "user-2",
+            createdAt: "2026-09-06T12:00:00.000Z",
+            sender: incomingMessage.sender,
+          },
+        },
+      },
+      conversations: {
+        "group-1": {
+          messages: window,
+          events: [],
+          messageCursor: { createdAt: "2026-09-05T12:00:00.000Z", id: "m-2" },
+          messagesComplete: false,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
+        },
+      },
+    });
+
+    const erasure: ChatMessage = {
+      ...incomingMessage,
+      content: null,
+      erased: true,
+      createdAt: "2026-09-04T12:00:00.000Z",
+    };
+    const patch = mergeChatBroadcast(useAppStore.getState(), "group-1", erasure);
+
+    expect(patch.conversations).toBeUndefined();
+    expect(useAppStore.getState().conversations["group-1"]?.messages).toEqual(window);
+    expect(patch.groups?.["group-1"]?.unreadCount).toBe(4);
+    expect(patch.groups?.["group-1"]?.lastMessage?.content).toBe(
+      "última mensagem",
+    );
+    expect(patch.groups?.["group-1"]?.lastMessage?.erased).toBe(false);
+  });
+
+  it("does not reconcile an out-of-window erasure broadcast", () => {
+    useAppStore.setState({
+      me: meUser,
+      groups: { "group-1": baseSnapshot },
+      conversations: {
+        "group-1": {
+          messages: [
+            { ...incomingMessage, id: "m-2", clientId: "c-2", createdAt: "2026-09-05T12:00:00.000Z" },
+          ],
+          events: [],
+          messageCursor: null,
+          messagesComplete: false,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
+        },
+      },
+    });
+
+    handleChatBroadcast(
+      "group-1",
+      {
+        ...incomingMessage,
+        id: "m-1",
+        clientId: "c-1",
+        content: null,
+        erased: true,
+        createdAt: "2026-09-04T12:00:00.000Z",
+      },
+      authState.generation,
+    );
+
+    expect(vi.mocked(reconcileChat)).not.toHaveBeenCalled();
+  });
+
+  it("keeps an erased preview against an equal-timestamp cleartext copy", () => {
+    useAppStore.setState({
+      me: meUser,
+      groups: {
+        "group-1": {
+          ...baseSnapshot,
+          unreadCount: 0,
+          lastMessage: {
+            content: null,
+            erased: true,
+            senderId: "user-2",
+            createdAt: "2026-09-05T12:00:00.000Z",
+            sender: incomingMessage.sender,
+          },
+        },
+      },
+      conversations: {},
+    });
+
+    const patch = mergeChatBroadcast(
+      useAppStore.getState(),
+      "group-1",
+      incomingMessage,
+    );
+
+    expect(patch.groups?.["group-1"]?.lastMessage?.erased).toBe(true);
+    expect(patch.groups?.["group-1"]?.lastMessage?.content).toBeNull();
   });
 
   it("dedupes message by id", () => {
@@ -269,7 +427,7 @@ describe("mergeChatBroadcast", () => {
       incomingMessage,
     );
 
-    expect(patch.conversations).toBeUndefined();
+    expect(patch.conversations?.["group-1"]?.messages).toHaveLength(1);
     expect(patch.groups?.["group-1"]?.unreadCount).toBe(2);
   });
 });

@@ -8,7 +8,7 @@ import {
   isMalformedHint,
   reconcileChat,
 } from "./chat-reconcile";
-import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
+import type { ChatLastMessage, ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { runBootstrap } from "./bootstrap";
 import { getAuthGeneration, getSupabase } from "./client";
 import { refreshGroup } from "./refresh";
@@ -77,9 +77,7 @@ export function mergeChatBroadcast(
 
   const patch: Partial<AppState> = {};
 
-  if (!isDuplicate) {
-    // The shared reducer owns identity and ordering; a live row never changes
-    // either stream's cursor or completeness.
+  if (isDuplicate || !message.erased) {
     patch.conversations = {
       ...state.conversations,
       [groupId]: mergeConversation(
@@ -92,15 +90,34 @@ export function mergeChatBroadcast(
 
   const existingGroup = state.groups[groupId];
   if (existingGroup) {
+    const prior = existingGroup.lastMessage;
+    const replacesPreview =
+      prior === null ||
+      message.createdAt > prior.createdAt ||
+      (message.createdAt === prior.createdAt && (!prior.erased || message.erased));
+    const nextPreview: ChatLastMessage | null = replacesPreview
+      ? message.erased
+        ? {
+            content: null,
+            erased: true,
+            senderId: message.senderId,
+            createdAt: message.createdAt,
+            sender: message.sender,
+          }
+        : {
+            content: message.content,
+            erased: false,
+            senderId: message.senderId,
+            createdAt: message.createdAt,
+            sender: message.sender,
+          }
+      : prior;
+
     const updatedGroup: GroupSnapshot = {
       ...existingGroup,
-      lastMessage: {
-        content: message.content,
-        senderId: message.senderId,
-        createdAt: message.createdAt,
-      },
+      lastMessage: nextPreview,
       unreadCount:
-        !isDuplicate && message.senderId !== state.me?.id
+        !isDuplicate && !message.erased && message.senderId !== state.me?.id
           ? existingGroup.unreadCount + 1
           : existingGroup.unreadCount,
     };
@@ -121,7 +138,7 @@ function handleLedgerBroadcast(groupId: string, payload: unknown): void {
   }
 }
 
-function handleChatBroadcast(
+export function handleChatBroadcast(
   groupId: string,
   payload: unknown,
   authGeneration: number,
@@ -129,14 +146,15 @@ function handleChatBroadcast(
   if (getAuthGeneration() !== authGeneration) return;
   const decoded = decodeChatMessage(payload);
   if (!decoded.ok) return;
+  const message = decoded.value;
 
   // A row older than everything we hold proves a gap the live stream cannot
   // fill, so schedule one coalesced reconciliation instead of a query burst.
-  const gapped = isMalformedHint(groupId, decoded.value.createdAt);
+  const gapped = !message.erased && isMalformedHint(groupId, message.createdAt);
 
   useAppStore
     .getState()
-    .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
+    .patch((state) => mergeChatBroadcast(state, groupId, message));
 
   if (gapped) reconcileChat(groupId);
 }

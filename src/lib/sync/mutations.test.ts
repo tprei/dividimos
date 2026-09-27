@@ -101,6 +101,7 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00.000Z",
     },
+    dmCounterparty: null,
     members: [
       {
         groupId,
@@ -478,6 +479,7 @@ describe("mutations", () => {
                 groupId: "g1",
                 senderId: USER_2.id,
                 content: "Oi",
+                erased: false,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 sender: USER_2,
               },
@@ -536,6 +538,7 @@ describe("mutations", () => {
         groupId: "g1",
         senderId: ME.id,
         content: "Conta antiga",
+        erased: false,
         createdAt: "2026-01-01T00:01:00.000000Z",
         sender: ME,
       });
@@ -563,6 +566,7 @@ describe("mutations", () => {
                 groupId: "g1",
                 senderId: USER_2.id,
                 content: "Oi",
+                erased: false,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 sender: USER_2,
               },

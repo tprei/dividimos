@@ -73,6 +73,7 @@ function makeSnapshot(
       ledgerVersion: 1,
       createdAt: "",
     },
+    dmCounterparty: null,
     members: members.map((m) => ({
       groupId: id,
       userId: m.userId,

@@ -61,6 +61,7 @@ function makeSnapshot(
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: kind === "dm" ? carol : null,
     members: kind === "dm" ? [member(groupId, me), member(groupId, carol)] : [member(groupId, me), member(groupId, carol), member(groupId, dan)],
     balances: [],
     guests: [],
@@ -81,8 +82,10 @@ describe("conversationRow", () => {
     const snapshot = makeSnapshot("group", {
       lastMessage: {
         content: "Comprei o carvão",
+        erased: false,
         senderId: carol.id,
         createdAt: "2026-01-01T10:00:00Z",
+        sender: carol,
       },
     });
 
@@ -102,15 +105,19 @@ describe("conversationRow", () => {
     const ownSnapshot = makeSnapshot("dm", {
       lastMessage: {
         content: "Eu pago hoje",
+        erased: false,
         senderId: me.id,
         createdAt: "2026-01-01T10:00:00Z",
+        sender: me,
       },
     });
     const otherSnapshot = makeSnapshot("dm", {
       lastMessage: {
         content: "Pode deixar",
+        erased: false,
         senderId: carol.id,
         createdAt: "2026-01-01T10:00:00Z",
+        sender: carol,
       },
     });
 
@@ -149,8 +156,10 @@ describe("conversationRow", () => {
       members: [invitedMember, member("group-1", carol), member("group-1", dan)],
       lastMessage: {
         content: "Bem-vindo",
+        erased: false,
         senderId: carol.id,
         createdAt: "2026-01-01T10:00:00Z",
+        sender: carol,
       },
     });
 
@@ -167,6 +176,59 @@ describe("conversationRow", () => {
     expect(conversationRow(groupSnapshot, me.id)?.avatarIsBot).toBe(false);
     expect(conversationRow(dmSnapshot, me.id)?.avatarIsBot).toBe(false);
     expect(conversationRow(botDmSnapshot, me.id)?.avatarIsBot).toBe(true);
+  });
+
+  it("shows an erased last message as Mensagem apagada without leaking text", () => {
+    const groupSnapshot = makeSnapshot("group", {
+      lastMessage: {
+        content: null,
+        erased: true,
+        senderId: carol.id,
+        createdAt: "2026-01-01T10:00:00Z",
+        sender: carol,
+      },
+    });
+    const dmSnapshot = makeSnapshot("dm", {
+      lastMessage: {
+        content: null,
+        erased: true,
+        senderId: me.id,
+        createdAt: "2026-01-01T10:00:00Z",
+        sender: me,
+      },
+    });
+
+    expect(conversationRow(groupSnapshot, me.id)).toMatchObject({
+      preview: "Mensagem apagada",
+      speaker: carol,
+    });
+    expect(conversationRow(dmSnapshot, me.id)).toMatchObject({
+      preview: "Mensagem apagada",
+      previewIsMine: true,
+    });
+  });
+
+  it("keeps a DM visible through the profile projection when the counterpart membership is gone", () => {
+    const scrubbed: UserProfile = { ...carol, name: "Conta excluída" };
+    const snapshot = makeSnapshot("dm", {
+      members: [member("dm-1", me)],
+      dmCounterparty: scrubbed,
+      lastMessage: {
+        content: null,
+        erased: true,
+        senderId: carol.id,
+        createdAt: "2026-01-01T10:00:00Z",
+        sender: scrubbed,
+      },
+    });
+
+    expect(conversationRow(snapshot, me.id)).toMatchObject({
+      kind: "dm",
+      title: "Conta excluída",
+      href: "/app/conversations/user-carol",
+      statusLine: null,
+      preview: "Mensagem apagada",
+    });
   });
 });
 

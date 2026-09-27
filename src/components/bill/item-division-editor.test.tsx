@@ -352,6 +352,7 @@ describe("ItemDivisionEditor pending invite", () => {
         ledgerVersion: 1,
         createdAt: "2026-09-01T00:00:00Z",
       },
+      dmCounterparty: null,
       members: [
         {
           groupId: "g1",

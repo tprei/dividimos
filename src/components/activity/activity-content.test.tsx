@@ -74,6 +74,7 @@ const groupNormal: GroupSnapshot = {
     dmUserB: null,
     createdAt: "2026-09-01T00:00:00Z",
   },
+  dmCounterparty: null,
   members: [
     {
       groupId: "group-1",
@@ -115,6 +116,7 @@ const groupDm: GroupSnapshot = {
     dmUserB: bob.id,
     createdAt: "2026-09-01T00:00:00Z",
   },
+  dmCounterparty: bob,
   members: [
     {
       groupId: "group-dm",

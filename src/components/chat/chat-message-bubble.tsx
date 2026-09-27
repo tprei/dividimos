@@ -1,9 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { formatChatTime } from "@/components/chat/chat-rail-row";
 import { cn } from "@/lib/utils";
-import { popIn } from "@/lib/animations";
 import type { ChatMessage } from "@/types/ledger";
 
 interface ChatMessageBubbleProps {
@@ -14,7 +12,7 @@ interface ChatMessageBubbleProps {
 
 export function ChatMessageBubble({ message, isOwn, senderLabel }: ChatMessageBubbleProps) {
   return (
-    <motion.div variants={popIn} initial="hidden" animate="visible" className="flex min-w-0">
+    <div className="flex min-w-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-200">
       <div
         className={cn(
           "relative max-w-[85%] rounded-[0.75rem] border px-2.5 pt-1.5 pb-1",
@@ -26,8 +24,8 @@ export function ChatMessageBubble({ message, isOwn, senderLabel }: ChatMessageBu
         {senderLabel && (
           <p className="truncate text-xs font-semibold text-muted-foreground">{senderLabel}</p>
         )}
-        <p className="whitespace-pre-wrap break-words text-base leading-snug md:text-sm">
-          {message.content}
+        <p className={cn("whitespace-pre-wrap break-words text-base leading-snug md:text-sm", message.erased && "italic text-muted-foreground")}>
+          {message.erased ? "Mensagem apagada" : message.content}
           <span aria-hidden="true" className="inline-block w-11" />
         </p>
         <time
@@ -37,6 +35,6 @@ export function ChatMessageBubble({ message, isOwn, senderLabel }: ChatMessageBu
           {formatChatTime(message.createdAt)}
         </time>
       </div>
-    </motion.div>
+    </div>
   );
 }

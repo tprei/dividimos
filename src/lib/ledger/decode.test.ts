@@ -49,6 +49,7 @@ describe("decodeBootstrap", () => {
           ledgerVersion: 3,
           createdAt: "2026-09-01T12:00:00.000Z",
         },
+        dmCounterparty: null,
         members: [
           {
             groupId: "group-1",
@@ -112,8 +113,16 @@ describe("decodeBootstrap", () => {
         unreadCount: 0,
         lastMessage: {
           content: "See you there!",
+          erased: false,
           senderId: "user-1",
           createdAt: "2026-09-02T11:00:00.000Z",
+          sender: {
+            id: "user-1",
+            handle: "alice",
+            name: "Alice",
+            avatarUrl: null,
+            isBot: false,
+          },
         },
         lastActivityAt: "2026-09-02T11:00:00.000Z",
         pairwiseEdges: [
@@ -243,6 +252,123 @@ describe("decodeBootstrap", () => {
     if (!result.ok) {
       expect(result.issue.code).toBe("invalid_wire");
       expect(result.issue.path).toEqual(["groups", 0, "pairwiseEdges", 0, "amountCents"]);
+    }
+  });
+
+  it("tolerates a snapshot without dmCounterparty as null", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    delete invalid.groups[0].dmCounterparty;
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.groups[0].dmCounterparty).toBeNull();
+    }
+  });
+
+  it("rejects a non-DM snapshot that carries a dmCounterparty", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    invalid.groups[0].dmCounterparty = {
+      id: "user-2",
+      handle: "bob",
+      name: "Bob",
+      avatarUrl: null,
+      isBot: false,
+    };
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["groups", 0, "dmCounterparty"]);
+    }
+  });
+});
+
+describe("chat erasure wire contract", () => {
+  const message = {
+    id: "11111111-1111-1111-1111-111111111111",
+    clientId: "22222222-2222-2222-2222-222222222222",
+    groupId: "group-1",
+    senderId: "user-1",
+    content: "See you there!",
+    erased: false,
+    createdAt: "2026-09-02T11:00:00.000Z",
+    sender: {
+      id: "user-1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+    },
+  };
+
+  it("accepts an erased message with null content", () => {
+    const result = decodeChatMessage({ ...message, content: null, erased: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.erased).toBe(true);
+      expect(result.value.content).toBeNull();
+    }
+  });
+
+  it("rejects an erased message that still carries text", () => {
+    const result = decodeChatMessage({ ...message, erased: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["content"]);
+    }
+  });
+
+  it("rejects a non-erased message with null content", () => {
+    const result = decodeChatMessage({ ...message, content: null });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["content"]);
+    }
+  });
+
+  it("tolerates a message without the erased key when the content is intact", () => {
+    const invalid: Record<string, unknown> = { ...message };
+    delete invalid.erased;
+    const result = decodeChatMessage(invalid);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.erased).toBe(false);
+      expect(result.value.content).toBe("See you there!");
+    }
+  });
+
+  it("rejects a message without the erased key when the content is null", () => {
+    const invalid: Record<string, unknown> = { ...message, content: null };
+    delete invalid.erased;
+    const result = decodeChatMessage(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["content"]);
+    }
+  });
+
+  it("rejects a malformed erased value", () => {
+    const result = decodeChatMessage({ ...message, erased: "yes" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["erased"]);
+    }
+  });
+
+  it("tolerates a missing sender as null", () => {
+    const invalid: Record<string, unknown> = { ...message };
+    delete invalid.sender;
+    const result = decodeChatMessage(invalid);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.sender).toBeNull();
+    }
+  });
+
+  it("rejects a malformed sender", () => {
+    const result = decodeChatMessage({ ...message, sender: "alice" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path).toEqual(["sender"]);
     }
   });
 });
@@ -517,6 +643,7 @@ describe("additional wire decoders", () => {
       groupId: "g-1",
       senderId: "u-1",
       content: "Hello",
+      erased: false,
       createdAt: "2026-09-01T00:00:00.000Z",
       sender: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
     };

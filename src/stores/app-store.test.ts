@@ -73,6 +73,7 @@ function snapshot(
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: [],
     balances: [],
     guests: [],
@@ -89,7 +90,7 @@ function snapshot(
 }
 
 function message(id: string, clientId: string, createdAt: string): ChatMessage {
-  return { id, clientId, groupId: "g1", senderId: me.id, content: `msg ${id}`, createdAt, sender: me };
+  return { id, clientId, groupId: "g1", senderId: me.id, content: `msg ${id}`, erased: false, createdAt, sender: me };
 }
 
 function event(id: number, createdAt: string): GroupEvent {
@@ -492,6 +493,47 @@ describe("applyConversation", () => {
     expect(useAppStore.getState().conversations.g1?.messagesComplete).toBe(true);
   });
 
+  it("replaces an existing message with its erasure and rejects a stale cleartext resurrection", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      conversations: {},
+    });
+
+    const original = message("srv-1", "client-1", "2026-01-02T10:00:00Z");
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [original],
+      events: [],
+    });
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [{ ...original, content: null, erased: true }],
+      events: [],
+    });
+    let conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.messages).toHaveLength(1);
+    expect(conversation?.messages[0]?.erased).toBe(true);
+    expect(conversation?.messages[0]?.content).toBeNull();
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "head",
+      envelope: {
+        messages: [original],
+        messageCursor: null,
+        messagesComplete: true,
+        events: [],
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+      },
+    });
+    conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.messages).toHaveLength(1);
+    expect(conversation?.messages[0]?.erased).toBe(true);
+    expect(conversation?.messages[0]?.content).toBeNull();
+  });
+
   it("dedupes events by id", () => {
     useAppStore.setState({
       me,
@@ -648,7 +690,7 @@ describe("vendor charges", () => {
 });
 
 describe("migrateAppState", () => {
-  it("backfills expenseCount and pairwiseEdges on snapshots persisted before the fields existed", () => {
+  it("drops group snapshots persisted before the erased-chat contract instead of backfilling them", () => {
     const legacyGroup: Record<string, unknown> = { ...snapshot("g1", []) };
     delete legacyGroup.expenseCount;
     delete legacyGroup.pairwiseEdges;
@@ -656,25 +698,23 @@ describe("migrateAppState", () => {
     const migrated = migrateAppState({
       groups: { g1: legacyGroup },
       groupOrder: ["g1"],
-    });
+    }, 5);
 
-    expect(migrated.groups.g1?.expenseCount).toBe(0);
-    expect(migrated.groups.g1?.pairwiseEdges).toEqual([]);
-    expect(migrated.groups.g1?.group.id).toBe("g1");
-    expect(migrated.groupOrder).toEqual(["g1"]);
+    expect(migrated.groups).toEqual({});
+    expect(migrated.groupOrder).toEqual([]);
   });
 
   it("keeps the persisted authoritative count when present", () => {
     const migrated = migrateAppState({
       groups: { g1: snapshot("g1", [], { expenseCount: 4 }) },
       groupOrder: ["g1"],
-    });
+    }, 6);
 
     expect(migrated.groups.g1?.expenseCount).toBe(4);
   });
 
   it("fills missing persisted fields with initial data", () => {
-    const migrated = migrateAppState({});
+    const migrated = migrateAppState({}, 6);
 
     expect(migrated.groups).toEqual({});
     expect(migrated.me).toBeNull();
@@ -690,7 +730,7 @@ describe("migrateAppState", () => {
           complete: false,
         },
       },
-    });
+    }, 5);
 
     expect(migrated.activity.read).toEqual({ status: "idle" });
     expect(migrated.expenseLists.g1).toEqual({
@@ -704,7 +744,7 @@ describe("migrateAppState", () => {
   it("gives an activity slice persisted before read receipts existed empty id lists", () => {
     const migrated = migrateAppState({
       activity: { items: [], oldestId: null, complete: false, read: { status: "ready" } },
-    });
+    }, 5);
 
     expect(migrated.activity.readIds).toEqual([]);
     expect(migrated.activity.dismissedIds).toEqual([]);
@@ -719,6 +759,23 @@ describe("migrateAppState", () => {
       complete: false,
       total: null,
     });
+  });
+
+  it("drops cached chat projections persisted before the erased-chat contract", () => {
+    const migrated = migrateAppState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      groupOrder: ["g1"],
+      conversations: {
+        g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T10:00:00Z")] }),
+      },
+      lastBootstrapAt: "2026-01-01T00:00:00Z",
+    }, 5);
+
+    expect(migrated.groups).toEqual({});
+    expect(migrated.groupOrder).toEqual([]);
+    expect(migrated.conversations).toEqual({});
+    expect(migrated.lastBootstrapAt).toBeNull();
   });
 
   it("defaults isBot to false for users persisted before the field existed", () => {
@@ -752,10 +809,9 @@ describe("migrateAppState", () => {
           members: [legacyMember],
         },
       },
-    });
+    }, 5);
 
     expect(migrated.me?.isBot).toBe(false);
-    expect(migrated.groups.g1?.members[0]?.user.isBot).toBe(false);
   });
 });
 
@@ -844,7 +900,7 @@ describe("settlement details", () => {
       expenseLists: {},
       expenses: {},
       expenseDetails: {},
-    });
+    }, 6);
 
     expect(migrated.settlementDetails).toEqual({});
   });

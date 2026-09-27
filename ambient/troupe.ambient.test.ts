@@ -196,8 +196,8 @@ describe("bot troupe", () => {
     const msg2 = conv.messages.find((m) => m.id === id2);
     expect(msg1).toBeDefined();
     expect(msg2).toBeDefined();
-    expect(msg1?.sender.isBot).toBe(true);
-    expect(msg2?.sender.isBot).toBe(true);
+    expect(msg1?.sender?.isBot).toBe(true);
+    expect(msg2?.sender?.isBot).toBe(true);
     note(
       `${bot(troupe.bots[1].id)} and ${bot(troupe.bots[2].id)} chatted, ${bot(troupe.bots[3].id)} read both`,
     );
