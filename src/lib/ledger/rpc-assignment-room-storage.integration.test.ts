@@ -213,6 +213,48 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
     }
   });
 
+  it("keeps each line's scanned icon as immutable receipt input", async () => {
+    const iconItems = [
+      { ...items[0], icon: "pizza" },
+      {
+        description: "Guaraná",
+        quantityMilliunits: 1_000,
+        unitPriceCents: 700,
+        totalPriceCents: 700,
+      },
+    ];
+    const args = roomArgs(host, { p_items: iconItems });
+    const view = await createRoom(hostClient, args);
+    expect(view.room.items.map((item) => item.icon)).toEqual(["pizza", undefined]);
+    expect(await createRoom(hostClient, args)).toEqual(view);
+
+    const recategorized = {
+      ...args,
+      p_items: [{ ...iconItems[0], icon: "meat" }, iconItems[1]],
+    };
+    expect(
+      await expectRpcError(hostClient.rpc("create_assignment_room", recategorized))
+    ).toContain("invalid_argument");
+
+    for (const icon of ["caviar", null, 7]) {
+      const invalid = roomArgs(host, { p_items: [{ ...items[0], icon }] });
+      expect(
+        await expectRpcError(hostClient.rpc("create_assignment_room", invalid))
+      ).toContain("invalid_argument");
+    }
+
+    await withPg(async (db) => {
+      await expect(
+        db.query(
+          "update public.assignment_room_items set icon = 'beer' where room_id = $1 and ordinal = 0",
+          [args.p_room_id]
+        )
+      ).rejects.toMatchObject({
+        message: expect.stringContaining("invalid_operation"),
+      });
+    });
+  });
+
   it("validates exact receipt arithmetic and participant identities", async () => {
     const badLine = roomArgs(host, {
       p_items: [{ ...items[0], totalPriceCents: 2_499 }],

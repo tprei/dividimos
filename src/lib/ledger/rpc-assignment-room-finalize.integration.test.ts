@@ -376,6 +376,45 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(after).toBe(before);
     });
 
+    it("finalizes only with the icons the room stored", async () => {
+      const args = { ...roomArgs(host), p_items: [{ ...ITEMS[0], icon: "pizza" }] };
+      const created = await createRoom(hostClient, args);
+      const claimed = await claim(
+        hostClient,
+        args.p_room_id,
+        null,
+        created.room.items[0].id,
+        created.room.selfParticipantId,
+        created.room.items[0].revision,
+        120_000
+      );
+      const closed = await closeRoom(hostClient, args.p_room_id, claimed.room.revision);
+      const payload = expensePayload(closed);
+      expect(payload.items[0].icon).toBe("pizza");
+
+      for (const items of [[{ ...ITEMS[0], icon: "meat" }], ITEMS]) {
+        expect(
+          await expectRpcError(
+            hostClient.rpc("finalize_assignment_room", {
+              p_room_id: args.p_room_id,
+              p_expected_revision: closed.room.revision,
+              p_payload: { ...payload, items },
+            })
+          )
+        ).toContain("invalid_payload");
+      }
+
+      const result = await finalize(hostClient, args.p_room_id, closed.room.revision, payload);
+      const stored = await withPg(async (db) => {
+        const rows = await db.query(
+          "select payload->'items' as items from public.expense_versions where expense_id = $1",
+          [result.ack.expenseId]
+        );
+        return rows.rows[0].items;
+      });
+      expect(stored).toEqual([{ ...ITEMS[0], icon: "pizza" }]);
+    });
+
     it("keeps an account share and invites that account into a new group", async () => {
       const { args, closed } = await closedAccountRoom(selectedClient);
       const result = await finalize(

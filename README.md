@@ -395,6 +395,7 @@ erDiagram
         text description
         int quantity_milliunits
         int total_price_cents
+        expense_item_icon icon "nulo se não classificado"
     }
     assignment_room_participants {
         uuid room_id PK, FK

@@ -85,6 +85,7 @@ const ITEM_KEYS = [
   "unitPriceCents",
   "totalPriceCents",
 ] as const;
+const ITEM_OPTIONAL_KEYS = ["icon"] as const;
 const PARTICIPANT_KEYS = [
   "id",
   "ordinal",
@@ -139,7 +140,7 @@ function decodeRoomItem(
   path: Path
 ): ValidationResult<AssignmentRoomItem, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const keys = exactKeys(raw, ITEM_KEYS, path);
+  const keys = exactKeys(raw, ITEM_KEYS, path, ITEM_OPTIONAL_KEYS);
   if (!keys.ok) return keys;
   const expenseItem = decodeExpenseItemPayload(
     {
@@ -147,6 +148,7 @@ function decodeRoomItem(
       quantityMilliunits: raw.quantityMilliunits,
       unitPriceCents: raw.unitPriceCents,
       totalPriceCents: raw.totalPriceCents,
+      icon: raw.icon,
     },
     path
   );
