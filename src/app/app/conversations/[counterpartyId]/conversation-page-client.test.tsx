@@ -252,6 +252,35 @@ describe("ConversationPageClient", () => {
       expect(mutationsGroup.unarchiveGroup).toHaveBeenCalledWith("dm-1");
     });
   });
+
+  it("renders a deleted counterpart as read-only retained history", () => {
+    vi.mocked(mutationsGroup.getOrCreateDm).mockClear();
+    const scrubbed = { ...counterparty, name: "Conta excluída", avatarUrl: null };
+    const snapshot = makeDmSnapshot({
+      dmCounterparty: scrubbed,
+      members: [makeDmSnapshot().members[0]!],
+      lastMessage: {
+        content: null,
+        erased: true,
+        senderId: counterparty.id,
+        createdAt: "2026-01-01T10:00:00Z",
+        sender: scrubbed,
+      },
+    });
+    seedDm(snapshot, { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    expect(screen.getByText("Conta excluída")).toBeDefined();
+    expect(
+      screen.getByText("Essa pessoa não participa mais desta conversa. O histórico foi mantido."),
+    ).toBeDefined();
+    expect(screen.queryByText("@bob")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Nova cobrança" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dividir conta" })).toBeNull();
+    expect(screen.queryByPlaceholderText("Mensagem")).toBeNull();
+    expect(mutationsGroup.getOrCreateDm).not.toHaveBeenCalled();
+  });
   it("does not render chat actions when the account is absent from the DM", () => {
     const snapshot = makeDmSnapshot({
       members: [makeDmSnapshot().members[1]!],
