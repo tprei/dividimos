@@ -650,6 +650,10 @@ describe("AppShell haptics", () => {
       mockRunBootstrap.mockClear();
       const main = document.querySelector("main")!;
 
+      main.scrollTop = 24;
+      fireEvent.scroll(main);
+      now += 30;
+      main.scrollTop = 0;
       fireEvent.scroll(main);
       now += 120;
       await pullPastThreshold(main);
@@ -664,13 +668,33 @@ describe("AppShell haptics", () => {
       mockRunBootstrap.mockClear();
       const main = document.querySelector("main")!;
 
+      main.scrollTop = 24;
       fireEvent.scroll(main);
+      main.scrollTop = 0;
       now += 400;
       await pullPastThreshold(main);
 
       expect(haptics.impact).toHaveBeenCalledOnce();
       expect(mockRunBootstrap).toHaveBeenCalledOnce();
       expect(haptics.success).toHaveBeenCalledOnce();
+    });
+
+    it("refreshes after a scroll back to the top even while the edge is still bouncing", async () => {
+      mockPathname.mockReturnValue("/app");
+      render(<AppShell><div>content</div></AppShell>);
+      mockRunBootstrap.mockClear();
+      const main = document.querySelector("main")!;
+
+      main.scrollTop = 24;
+      fireEvent.scroll(main);
+      now += 400;
+      main.scrollTop = 0;
+      fireEvent.scroll(main);
+      now += 50;
+      await pullPastThreshold(main);
+
+      expect(haptics.impact).toHaveBeenCalledOnce();
+      expect(mockRunBootstrap).toHaveBeenCalledOnce();
     });
   });
 });
