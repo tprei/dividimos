@@ -1385,6 +1385,12 @@ export type Database = {
         }
         Returns: number
       }
+      erase_chat_message: {
+        Args: {
+          p_message_id: string
+        }
+        Returns: Json
+      }
       expense_change_summary: {
         Args: {
           p_expense_id: string
