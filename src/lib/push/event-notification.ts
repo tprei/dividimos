@@ -42,6 +42,7 @@ export function categoryFor(kind: GroupEventRow["kind"]): NotificationCategory {
   if (kind.startsWith("expense")) return "expenses";
   if (kind.startsWith("settlement")) return "settlements";
   if (kind === "nudge") return "nudges";
+  if (kind === "assignment_room_opened") return "expenses";
   return "groups";
 }
 

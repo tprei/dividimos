@@ -91,6 +91,7 @@ const EVENT_KINDS: readonly EventKind[] = [
   "member_left",
   "member_removed",
   "guest_claimed",
+  "assignment_room_opened",
   "nudge",
 ];
 const GUEST_CLAIM_STATUSES: readonly GuestClaimStatus[] = [
