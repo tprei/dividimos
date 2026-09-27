@@ -50,6 +50,12 @@ function normalizeError(error: unknown): LedgerError {
   return new LedgerError("unknown", { cause: error });
 }
 
+function responseError(error: unknown, status: number): LedgerError {
+  if (status === 0) return new LedgerError("network", { cause: error });
+  if (status === 401) return new LedgerError("unauthenticated", { cause: error });
+  return normalizeError(error);
+}
+
 export async function rpc<
   T,
   Fn extends keyof Functions = keyof Functions,
@@ -58,16 +64,16 @@ export async function rpc<
   args: FunctionArgs<Fn>,
   decode: (raw: unknown) => ValidationResult<T, WireIssue>,
 ): Promise<T> {
-  let result: { data: unknown; error: unknown };
+  let result: { data: unknown; error: unknown; status: number };
   try {
     const res = await getSupabase().rpc(name, args as never);
-    result = { data: res.data, error: res.error };
+    result = { data: res.data, error: res.error, status: res.status };
   } catch (caught) {
     throw normalizeError(caught);
   }
 
   if (result.error) {
-    throw normalizeError(result.error);
+    throw responseError(result.error, result.status);
   }
 
   const decoded = decode(result.data);
@@ -84,16 +90,16 @@ export async function rpcVoid<
   name: Fn,
   args: FunctionArgs<Fn>,
 ): Promise<void> {
-  let result: { error: unknown };
+  let result: { error: unknown; status: number };
   try {
     const res = await getSupabase().rpc(name, args as never);
-    result = { error: res.error };
+    result = { error: res.error, status: res.status };
   } catch (caught) {
     throw normalizeError(caught);
   }
 
   if (result.error) {
-    throw normalizeError(result.error);
+    throw responseError(result.error, result.status);
   }
 }
 
