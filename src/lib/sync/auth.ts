@@ -18,7 +18,7 @@ import {
   resetAssignmentRoomRuntime,
 } from "./assignment-rooms";
 import { stopAllAssignmentRoomRealtime } from "./assignment-room-realtime";
-import { clearAvatarCaches } from "@/lib/platform/avatar-cache";
+import { clearSessionCaches } from "@/lib/platform/session-caches";
 
 function waitForAppStoreHydration(): Promise<void> {
   if (useAppStore.getState().hydrated) {
@@ -84,7 +84,7 @@ export function attachAuthListener(
       invalidateNativeRegistration();
       invalidateSyncReads();
       clearPendingVendorChargeCancellations();
-      clearAvatarCaches();
+      clearSessionCaches();
       void detachLocalPushForSignOut(signedOutUserId);
       useAppStore.getState().reset();
       onSignedOut();

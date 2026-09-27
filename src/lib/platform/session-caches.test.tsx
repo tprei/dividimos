@@ -1,20 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearAvatarCaches } from "./avatar-cache";
+import { clearSessionCaches } from "./session-caches";
 
-describe("clearAvatarCaches", () => {
+describe("clearSessionCaches", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("deletes only the service worker's avatar caches", async () => {
+  it("deletes the avatar and app shell caches and keeps the offline page", async () => {
     const deleted: string[] = [];
     vi.stubGlobal("caches", {
       keys: async () => [
-        "dividimos-static-v7",
-        "dividimos-avatars-v7",
-        "dividimos-avatars-v6",
-        "dividimos-runtime-v7",
+        "dividimos-static-v8",
+        "dividimos-avatars-v8",
+        "dividimos-shell-v8",
+        "dividimos-shell-v7",
+        "dividimos-runtime-v8",
       ],
       delete: async (name: string) => {
         deleted.push(name);
@@ -22,10 +23,10 @@ describe("clearAvatarCaches", () => {
       },
     });
 
-    clearAvatarCaches();
+    clearSessionCaches();
 
     await vi.waitFor(() => {
-      expect(deleted).toEqual(["dividimos-avatars-v7", "dividimos-avatars-v6"]);
+      expect(deleted).toEqual(["dividimos-avatars-v8", "dividimos-shell-v8", "dividimos-shell-v7"]);
     });
   });
 
@@ -38,17 +39,17 @@ describe("clearAvatarCaches", () => {
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect(() => clearAvatarCaches()).not.toThrow();
+    expect(() => clearSessionCaches()).not.toThrow();
 
     await vi.waitFor(() => {
       expect(errorSpy).toHaveBeenCalledWith(
-        "[avatar-cache] clearing caches on sign-out failed:",
+        expect.any(String),
         expect.objectContaining({ message: "storage unavailable" }),
       );
     });
   });
 
   it("does nothing when Cache Storage is unavailable", () => {
-    expect(() => clearAvatarCaches()).not.toThrow();
+    expect(() => clearSessionCaches()).not.toThrow();
   });
 });

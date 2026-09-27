@@ -3,61 +3,222 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#FEA101" />
-  <title>Dividimos — Sem conexão</title>
+  <meta name="color-scheme" content="light dark" />
+  <title>Dividimos</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      color-scheme: light dark;
+      --room: #f6f2eb;
+      --ink: #252333;
+      --muted: #625d60;
+      --paper: #fffdf7;
+      --table: #efb54e;
+      --rim: #d59128;
+      --edge: #b77522;
+      --rule: #ddd4c5;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      min-height: 100vh;
       min-height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #F9F9FB;
-      color: #1a1d2e;
-      padding: max(1.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+      display: grid;
+      place-items: center;
+      padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      background: var(--room);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    main { width: min(100%, 408px); }
+    .brand { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 24px; font-size: 23px; font-weight: 750; letter-spacing: -.8px; }
+    .brand svg { width: 30px; height: 30px; }
+    .table {
+      position: relative;
+      isolation: isolate;
+      border: 2px solid var(--rim);
+      border-radius: 32px;
+      padding: 0 18px 30px;
+      background: radial-gradient(ellipse at 20% 0, #ffffff30, transparent 65%), var(--table);
+      box-shadow: inset 0 0 0 6px #ffffff24, inset 0 0 0 8px var(--rim), 0 9px 0 var(--edge), 0 22px 32px -18px #613e3655;
+    }
+    .scene { display: block; width: calc(100% + 20px); margin: -10px -10px -12px; height: auto; overflow: visible; pointer-events: none; }
+    .receipt {
+      position: relative;
+      padding: 25px 20px 26px;
+      background: var(--paper);
       text-align: center;
+      filter: drop-shadow(0 5px 5px #51351824);
     }
-    .brand { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
-    h1 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
+    .receipt::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      height: 8px;
+      background: linear-gradient(135deg, var(--paper) 25%, transparent 25%) -8px 0 / 16px 16px, linear-gradient(225deg, var(--paper) 25%, transparent 25%) -8px 0 / 16px 16px;
     }
-    p {
-      font-size: 1rem;
-      color: #64748b;
-      max-width: 320px;
-      line-height: 1.5;
-      margin-bottom: 1.5rem;
-    }
+    .eyebrow { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.4; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(24px, 6.8vw, 28px); line-height: 1.14; letter-spacing: -.8px; font-weight: 750; text-wrap: balance; }
+    .reason { margin: 14px 0 18px; font-size: 16px; line-height: 1.5; color: var(--muted); }
+    .saved { margin: 0 0 20px; padding-top: 17px; border-top: 1px dashed var(--rule); font-size: 14px; line-height: 1.5; font-weight: 600; }
     button {
-      background: #FEA101;
-      color: #1a1d2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 50px;
+      padding: 13px 14px;
       border: 1px solid transparent;
-      border-radius: 0.75rem;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      font-weight: 600;
+      border-radius: 12px;
+      background: #fea101;
+      color: #252333;
+      font: 650 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background .15s;
     }
-    button:hover { background: #E08E00; }
-    button:active { background: #C07800; }
-    button:focus-visible { outline: 3px solid #1a1d2e; outline-offset: 4px; }
+    button svg { width: 18px; height: 18px; flex: none; }
+    button:active { background: #e6950b; }
+    button:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+    @media (hover: hover) { button:hover { background: #f4b332; } }
     @media (prefers-color-scheme: dark) {
-      body { background: #111827; color: #f1f5f9; }
-      p { color: #b8c4d4; }
-      button:focus-visible { outline-color: #f1f5f9; }
+      :root { --room: #191b24; --ink: #f9f3e9; --muted: #c8beb3; --paper: #2c2a30; --table: #9d6b2c; --rim: #b17d37; --edge: #704820; --rule: #625951; }
+      .table { box-shadow: inset 0 0 0 6px #ffffff0c, inset 0 0 0 8px var(--rim), 0 9px 0 var(--edge), 0 22px 32px -18px #0009; }
     }
-    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+    @media (max-width: 479px) and (max-height: 680px) {
+      .brand { margin-bottom: 16px; }
+      .scene { height: 142px; margin-bottom: -4px; }
+      .receipt { padding: 18px 20px; }
+      .reason { margin: 10px 0 14px; }
+      .saved { padding-top: 13px; margin-bottom: 16px; }
+    }
+    @media (min-width: 480px) and (max-height: 540px) {
+      body { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+      main { width: min(100%, 760px); }
+      .brand { margin-bottom: 12px; font-size: 20px; }
+      .brand svg { width: 26px; height: 26px; }
+      .table { display: grid; grid-template-columns: 1fr 1.12fr; align-items: center; gap: 10px; padding: 16px 20px 23px 12px; }
+      .scene { width: 100%; margin: 0; }
+      .receipt { padding: 17px 20px 16px; }
+      .eyebrow { margin-bottom: 6px; }
+      h1 { font-size: 24px; }
+      .reason { margin: 9px 0 12px; font-size: 15px; line-height: 1.4; }
+      .saved { padding-top: 10px; margin-bottom: 12px; font-size: 13px; }
+    }
+    @media (min-width: 480px) and (max-width: 639px) and (max-height: 540px) {
+      .table { grid-template-columns: .65fr 1.35fr; padding-left: 8px; padding-right: 14px; gap: 6px; }
+      .receipt { padding: 14px; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .bubble { animation: rise 3s linear infinite; }
+      .bubble.late { animation-delay: -1.5s; }
+    }
+    @keyframes rise { from { transform: translateY(0); opacity: 0; } 20% { opacity: .8; } to { transform: translateY(-39px); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body>
-  <div class="brand">Dividimos</div>
-  <h1>Sem conexão</h1>
-  <p>Suas contas continuam aqui quando a internet voltar.</p>
-  <button onclick="location.reload()">Tentar novamente</button>
+  <main>
+    <div class="brand">
+      <svg viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="9" fill="#fea101"/><g fill="#252333"><circle cx="8" cy="15" r="2.3"/><rect x="13" y="7" width="4" height="16" rx="2"/><circle cx="22" cy="15" r="2.3"/></g></svg>
+      <span>dividimos</span>
+    </div>
+    <div class="table">
+      <!-- Offline still life: landing-page amber glass, red labels and a molded boteco table. -->
+      <svg class="scene" viewBox="0 0 360 246" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="amber" x2="1" y2="0"><stop stop-color="#45200e"/><stop offset=".35" stop-color="#98541d"/><stop offset=".65" stop-color="#693511"/><stop offset="1" stop-color="#361b12"/></linearGradient>
+          <linearGradient id="beer" x2="0" y2="1"><stop stop-color="#f6ce54"/><stop offset="1" stop-color="#d88b19"/></linearGradient>
+          <linearGradient id="shade" x2="1" y2="0"><stop stop-color="#000" stop-opacity=".2"/><stop offset=".3" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#000" stop-opacity=".25"/></linearGradient>
+          <linearGradient id="gold" x2="1" y2="0"><stop stop-color="#a77b32"/><stop offset=".4" stop-color="#f6dc89"/><stop offset="1" stop-color="#96702c"/></linearGradient>
+          <symbol id="bottle" viewBox="0 0 60 230">
+            <path d="M21.5 21V60C21.5 76 17 82 11 92C5 101 3 108 3 118V222Q3 229 10 229H50Q57 229 57 222V118C57 108 55 101 49 92C43 82 38.5 76 38.5 60V21Z" fill="url(#amber)"/>
+            <rect x="20" y="17" width="20" height="6" rx="3" fill="#71421c"/>
+            <path d="M21.5 42h17v12L30 60l-8.5-6Z" fill="#b42d26"/>
+            <path d="M22 43h16" stroke="#f6dc89" stroke-width="2"/>
+            <path d="M3 138h54v62H3Z" fill="#fff0cc"/>
+            <path d="M3 141h54M3 197h54" stroke="#b42d26" stroke-width="6"/>
+            <ellipse cx="30" cy="169" rx="17" ry="14" fill="#b42d26"/>
+            <ellipse cx="30" cy="169" rx="14" ry="11" fill="none" stroke="#f6dc89"/>
+            <path d="M22 166h16m-13 6h10" stroke="#fff0cc" stroke-width="3" stroke-linecap="round"/>
+            <path d="M3 138h54v62H3Z" fill="url(#shade)"/>
+            <path d="M9 118v14m0 73v15M25 27v12m-8 49q-5 8-7 18" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-linecap="round"/>
+            <path d="M19 9Q30 5 41 9v9H19Z" fill="url(#gold)"/>
+            <path d="M19 17h22" stroke="#926327" stroke-width="3" stroke-dasharray="1.5 1"/>
+          </symbol>
+          <symbol id="slice" viewBox="0 0 100 130">
+            <path d="M7 23Q48-4 91 23L51 119Q48 126 45 119Z" fill="#b96723"/>
+            <path d="M11 25Q49 1 87 25L48 117Z" fill="#d54a27"/>
+            <path d="M16 29Q48 10 81 29L48 108Z" fill="#f6ca62"/>
+            <path d="M9 23Q49-3 89 23" fill="none" stroke="#e7a448" stroke-width="14" stroke-linecap="round"/>
+            <path d="M12 19Q49-2 86 20" fill="none" stroke="#f6c977" stroke-width="4" stroke-linecap="round"/>
+            <g fill="#b93c28" stroke="#dc6941" stroke-width="2"><circle cx="37" cy="38" r="10"/><circle cx="60" cy="57" r="10"/><circle cx="44" cy="82" r="8"/></g>
+            <g fill="#567342"><path d="M55 29q15-4 8 9-9 2-8-9Z"/><path d="M31 59q-10 1-5 10 11-1 5-10Z"/><path d="M52 91q10-5 7 6-8 4-7-6Z"/></g>
+            <g fill="#f8e5a2"><circle cx="47" cy="52" r="3"/><circle cx="34" cy="76" r="2"/><circle cx="65" cy="36" r="2"/></g>
+          </symbol>
+        </defs>
+        <!-- Contact shadows keep everything sitting on the table, not floating. -->
+        <g fill="#623d21" opacity=".2"><ellipse cx="64" cy="188" rx="33" ry="10"/><ellipse cx="111" cy="158" rx="30" ry="8"/><ellipse cx="274" cy="151" rx="79" ry="51"/><ellipse cx="139" cy="206" rx="45" ry="12"/></g>
+        <g transform="rotate(9 111 100)"><use href="#bottle" x="91" y="3" width="40" height="154"/></g>
+        <g transform="rotate(-9 64 108)"><use href="#bottle" x="37" y="-3" width="49" height="188"/></g>
+        <!-- Two slices on a blue-rimmed plate. -->
+        <g transform="rotate(12 271 118)">
+          <ellipse cx="271" cy="128" rx="78" ry="57" fill="#c4c8bb"/>
+          <ellipse cx="271" cy="123" rx="78" ry="57" fill="#fff5d9"/>
+          <ellipse cx="271" cy="123" rx="69" ry="49" fill="none" stroke="#547981" stroke-width="3"/>
+          <ellipse cx="271" cy="123" rx="58" ry="40" fill="#ede2c5"/>
+          <use href="#slice" x="209" y="68" width="80" height="104" transform="rotate(-26 250 120)"/>
+          <use href="#slice" x="269" y="78" width="69" height="90" transform="rotate(22 300 120)"/>
+        </g>
+        <!-- The little bill already split three ways. -->
+        <g transform="translate(166 30) rotate(12)">
+          <path d="M2 4h61v92l-5-3-5 3-5-3-5 3-5-3-5 3-5-3-5 3-5-3-5 3-5-3-6 3Z" fill="#68492b" opacity=".14"/>
+          <path d="M0 0h61v92l-5-3-5 3-5-3-5 3-5-3-5 3-5-3-5 3-5-3-5 3-5-3-6 3Z" fill="#fff8e8"/>
+          <g fill="#635b50" font-family="monospace" text-anchor="middle"><text x="30" y="17" font-size="7" font-weight="700">A NOTINHA</text><text x="30" y="68" font-size="9" font-weight="700">÷ 3</text></g>
+          <path d="M10 25h41M10 53h41" stroke="#b5a58c" stroke-dasharray="2 2"/>
+          <path d="M10 34h23m8 0h10M10 42h18m13 0h10" stroke="#928574" stroke-width="2"/>
+          <g fill="#d89b35"><circle cx="20" cy="80" r="3"/><circle cx="30" cy="80" r="3"/><circle cx="40" cy="80" r="3"/></g>
+        </g>
+        <!-- Copo americano, coaster and tiny rising bubbles. -->
+        <ellipse cx="138" cy="198" rx="41" ry="14" fill="#dfbe7f" stroke="#ad864d"/>
+        <ellipse cx="138" cy="198" rx="34" ry="10" fill="none" stroke="#ad864d" stroke-dasharray="2 3"/>
+        <g transform="translate(109 111)">
+          <path d="M2 4h54l-6 80H8Z" fill="#fff9df" fill-opacity=".35"/>
+          <path d="M5 25h48l-4 57H9Z" fill="url(#beer)"/>
+          <g fill="#fff4c1"><circle class="bubble" cx="20" cy="75" r="1.7"/><circle class="bubble late" cx="36" cy="70" r="1.3"/><circle class="bubble" cx="43" cy="79" r="1"/></g>
+          <path d="M3 14Q9 7 16 12 22 5 29 11 36 5 43 11 50 6 55 13L53 26H5Z" fill="#fff7df"/>
+          <g fill="#e7d7ad"><circle cx="18" cy="18" r="2"/><circle cx="37" cy="17" r="2.5"/><circle cx="28" cy="22" r="1.5"/></g>
+          <path d="M2 4h54l-6 80H8Z" fill="none" stroke="#fff7e4" stroke-width="2"/>
+          <path d="M12 38l3 40m8-40 1 40m10-40-1 40m11-40-3 40" stroke="#fff4d3" stroke-opacity=".55" stroke-width="2"/>
+        </g>
+        <g transform="translate(227 181) rotate(-9)">
+          <path d="M0 0h56v37l-4-3-4 3-4-3-4 3-4-3-4 3-4-3-4 3-4-3-4 3-4-3-4 3-4-3-4 3Z" fill="#fff8e8"/>
+          <text x="28" y="13" text-anchor="middle" font-family="monospace" font-size="7" fill="#70604c">sua parte</text>
+          <path d="M10 21h36m-31 6h26" stroke="#b5a58c" stroke-width="2"/>
+        </g>
+        <g transform="translate(76 220) rotate(-15)"><circle r="10" fill="#ba7829"/><circle r="8" fill="#e6bb66" stroke="#876130" stroke-dasharray="2 2" stroke-width="2"/><path d="M-4 0h8" stroke="#fff2c8" stroke-width="2"/></g>
+        <g fill="#a46728" opacity=".65"><circle cx="309" cy="197" r="2"/><circle cx="317" cy="191" r="1.5"/><circle cx="298" cy="206" r="1"/></g>
+      </svg>
+      <section class="receipt" aria-labelledby="message">
+        <p class="eyebrow">Uma pausa na mesa</p>
+        <h1 id="message">Não deu pra abrir<br />o Dividimos</h1>
+        <p class="reason">Pode ser a sua conexão ou uma instabilidade do nosso lado.</p>
+        <p class="saved">Seus grupos e contas continuam salvos.</p>
+        <button type="button" id="retry">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M19.5 12a7.5 7.5 0 1 0-1.8 5M20 12a8 8 0 0 0-2-6"/></svg>
+          Tentar novamente
+        </button>
+      </section>
+    </div>
+  </main>
+  <script>
+    function retry() {
+      location.reload();
+    }
+    document.getElementById("retry").addEventListener("click", retry);
+    window.addEventListener("online", retry);
+  </script>
 </body>
 </html>

@@ -27,9 +27,9 @@ vi.mock("./mutations-group", () => ({
   clearPendingVendorChargeCancellations: vi.fn(),
 }));
 
-const mockClearAvatarCaches = vi.fn();
-vi.mock("@/lib/platform/avatar-cache", () => ({
-  clearAvatarCaches: (...args: unknown[]) => mockClearAvatarCaches(...args),
+const mockClearSessionCaches = vi.fn();
+vi.mock("@/lib/platform/session-caches", () => ({
+  clearSessionCaches: (...args: unknown[]) => mockClearSessionCaches(...args),
 }));
 
 type AuthEvent = "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "INITIAL_SESSION";
@@ -434,24 +434,24 @@ describe("sign-out push detach", () => {
   });
 });
 
-describe("avatar cache on sign-out", () => {
-  it("SIGNED_OUT drops the cached avatar photos", () => {
+describe("session caches on sign-out", () => {
+  it("SIGNED_OUT drops the session caches", () => {
     const detach = attachAuthListener(() => {}, () => {});
     useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
 
     emit("SIGNED_OUT", null);
 
-    expect(mockClearAvatarCaches).toHaveBeenCalledTimes(1);
+    expect(mockClearSessionCaches).toHaveBeenCalledTimes(1);
     detach();
   });
 
-  it("keeps the avatar caches when a different account signs in", () => {
+  it("keeps the session caches when a different account signs in", () => {
     const detach = attachAuthListener(() => {}, () => {});
     useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
 
     emit("SIGNED_IN", "user-b");
 
-    expect(mockClearAvatarCaches).not.toHaveBeenCalled();
+    expect(mockClearSessionCaches).not.toHaveBeenCalled();
     detach();
   });
 });
