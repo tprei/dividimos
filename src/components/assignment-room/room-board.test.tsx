@@ -6,40 +6,6 @@ import { RoomBoard } from "./room-board";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
 
-// The quantity editor owns its own suite; the board tests need a faithful
-// controlled stand-in that keeps the dialog name, the scoped error alert and
-// the Promise save contract observable without retesting draft behavior.
-vi.mock("./room-item-claim", () => ({
-  RoomItemClaim: ({
-    open,
-    item,
-    error,
-    onSubmit,
-  }: {
-    open: boolean;
-    item: { id: string; description: string };
-    error: { participantId: string; message: string } | null;
-    onSubmit: (participantId: string, ticks: number) => Promise<boolean>;
-  }) =>
-    open ? (
-      <section role="dialog" aria-label={item.description}>
-        <p>{item.description}</p>
-        {error && (
-          <p role="alert">
-            {error.participantId}: {error.message}
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            void onSubmit("person-a", 60_000);
-          }}
-        >
-          Confirmar quantidade
-        </button>
-      </section>
-    ) : null,
-}));
 
 const noop = () => {};
 
@@ -109,6 +75,9 @@ const boardProps = {
   joinUrl: "https://dividimos.test/room/00000000-0000-4000-8000-000000000001#secret",
   pendingItemIds: [],
   claimError: null,
+  splitError: null,
+  onSplit: async () => true,
+  onDismissSplitError: noop,
   inviteOpen: false,
   onInviteOpenChange: noop,
   inviteError: null,
@@ -216,17 +185,18 @@ describe("RoomBoard", () => {
       />,
     );
 
+    const available = screen.getByRole("region", { name: "Ainda sem dono" });
+    const mine = screen.getByRole("region", { name: "Minha parte" });
     await user.click(screen.getByRole("button", { name: "Escolher quantidade de Batata" }));
     const dialog = screen.getByRole("dialog", { name: "Batata" });
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
-    const available = screen.getByRole("region", { name: "Ainda sem dono" });
-    const mine = screen.getByRole("region", { name: "Minha parte" });
     expect(rowIn(available, "beer")).toHaveTextContent("Falta metade");
     expect(rowIn(mine, "beer")).toHaveTextContent("metade");
 
-    await user.click(within(dialog).getByRole("button", { name: "Confirmar quantidade" }));
-    expect(onClaim).toHaveBeenCalledWith("fries", "person-a", 60_000);
+    await user.click(within(dialog).getByRole("button", { name: "1" }));
+    await user.click(within(dialog).getByRole("button", { name: /^Peguei / }));
+    expect(onClaim).toHaveBeenCalledWith("fries", "person-a", 120_000, 1);
 
     rerender(
       <RoomBoard
@@ -371,22 +341,42 @@ describe("RoomBoard", () => {
     expect(onReview).toHaveBeenCalledOnce();
   });
 
-  it("expands host claims, undoes only the selected person and preserves the item revision", async () => {
+  it("expands a host row and saves its split with the item revision", async () => {
     const user = userEvent.setup();
-    const onClaim = vi.fn(async () => true);
-    const view = hostView([
-      { itemId: "beer", participantId: "person-a", ticks: 60_000 },
-      { itemId: "beer", participantId: "person-b", ticks: 30_000 },
-    ]);
-    render(<RoomBoard view={view} {...boardProps} onClaim={onClaim} />);
-    const toggle = screen.getByRole("button", { name: "Cerveja" });
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Desfazer Cerveja de Caio" }));
-    expect(onClaim).toHaveBeenCalledWith("beer", "person-b", 0, 2);
-    await user.click(screen.getByRole("button", { name: "Mudar Cerveja de Caio" }));
-    expect(screen.getByRole("dialog", { name: "Cerveja" })).toBeInTheDocument();
+    const onSplit = vi.fn(async () => true);
+    render(<RoomBoard view={hostView([])} {...boardProps} onSplit={onSplit} />);
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    const editor = screen.getByRole("form", { name: "Dividir Cerveja" });
+    await user.click(within(editor).getByRole("button", { name: "Todos" }));
+    await user.click(within(editor).getByRole("button", { name: "Salvar divisão" }));
+    expect(onSplit).toHaveBeenCalledWith("beer", [
+      { participantId: "person-a", ticks: 60_000 },
+      { participantId: "person-b", ticks: 60_000 },
+    ], 2);
+  });
+
+  it("shows a split error only inside its item's editor", async () => {
+    const user = userEvent.setup();
+    const view = hostView([]);
+    const { rerender } = render(<RoomBoard view={view} {...boardProps}
+      splitError={{ itemId: "fries", message: "Não foi possível salvar." }} />);
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    const editor = screen.getByRole("form", { name: "Dividir Cerveja" });
+    expect(within(editor).queryByRole("alert")).not.toBeInTheDocument();
+    rerender(<RoomBoard view={view} {...boardProps}
+      splitError={{ itemId: "beer", message: "Não foi possível salvar." }} />);
+    expect(within(editor).getByRole("alert")).toHaveTextContent("Não foi possível salvar.");
+  });
+
+  it("drops an item's split error when its row collapses from the header", async () => {
+    const user = userEvent.setup();
+    const onDismissSplitError = vi.fn();
+    render(<RoomBoard view={hostView([])} {...boardProps} onDismissSplitError={onDismissSplitError}
+      splitError={{ itemId: "beer", message: "Não foi possível salvar." }} />);
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    expect(screen.queryByRole("form", { name: "Dividir Cerveja" })).not.toBeInTheDocument();
+    expect(onDismissSplitError).toHaveBeenCalledOnce();
   });
 
   it("projects money by ownership and excludes removed participants from the host roster", async () => {

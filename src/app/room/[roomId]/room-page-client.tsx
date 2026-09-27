@@ -33,6 +33,7 @@ import {
   removeAssignmentRoomParticipant,
   rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
+  setAssignmentRoomItemClaims,
 } from "@/lib/sync/assignment-rooms";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { getAuthGeneration } from "@/lib/sync/client";
@@ -40,6 +41,7 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
 import type {
+  AssignmentItemShare,
   AssignmentRoomCompletion,
   AssignmentRoomView,
 } from "@/types/assignment-room";
@@ -97,6 +99,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     participantId: string;
     message: string;
   } | null>(null);
+  const [splitError, setSplitError] = useState<{ itemId: string; message: string } | null>(null);
   const [pendingParticipantIds, setPendingParticipantIds] = useState<string[]>([]);
   const [rotatingInvite, setRotatingInvite] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -340,6 +343,24 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
       return true;
     } catch (error) {
       setClaimError({ itemId, participantId, message: ledgerErrorMessage(error) });
+      return false;
+    }
+  }
+
+  async function handleSplit(
+    itemId: string,
+    shares: AssignmentItemShare[],
+    expectedItemRevision: number,
+  ): Promise<boolean> {
+    if (!view || !entry?.connected || view.role !== "host") return false;
+    if (view.room.status !== "open" && view.room.status !== "closed") return false;
+    if (shares.length === 0) return false;
+    setSplitError(null);
+    try {
+      await setAssignmentRoomItemClaims({ roomId, itemId, expectedItemRevision, shares });
+      return true;
+    } catch (error) {
+      setSplitError({ itemId, message: ledgerErrorMessage(error) });
       return false;
     }
   }
@@ -598,6 +619,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         joinUrl={joinUrl}
         pendingItemIds={entry?.pendingItemIds ?? []}
         claimError={claimError}
+        splitError={splitError}
         activity={entry?.latestActivity ?? null}
         pendingParticipantIds={pendingParticipantIds}
         rotatingInvite={rotatingInvite}
@@ -609,6 +631,8 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         onBack={editingClosed ? () => setEditingClosed(false) : () => router.back()}
         onReview={view.role === "host" && view.room.status === "closed" ? () => setEditingClosed(false) : undefined}
         onClaim={handleClaim}
+        onSplit={handleSplit}
+        onDismissSplitError={() => setSplitError(null)}
         onRotateInvite={handleRotateInvite}
         onRemoveParticipant={handleRemoveParticipant}
         onClose={handleClose}

@@ -7,6 +7,7 @@ import { RoomActivity } from "@/components/assignment-room/room-activity";
 import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "@/components/assignment-room/room-host-controls";
 import { RoomItemClaim } from "@/components/assignment-room/room-item-claim";
 import { RoomItemRow } from "@/components/assignment-room/room-item-row";
+import { RoomItemSplit } from "@/components/assignment-room/room-item-split";
 import { RoomShare } from "@/components/assignment-room/room-share";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -16,9 +17,10 @@ import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
-import { previewClaimCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
+import { previewClaimCents, previewItemSplitCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
 import { cn } from "@/lib/utils";
 import type {
+  AssignmentItemShare,
   AssignmentRoomActivity,
   AssignmentRoomItem,
   AssignmentRoomParticipant,
@@ -31,6 +33,7 @@ interface RoomBoardProps {
   joinUrl: string | null;
   pendingItemIds: string[];
   claimError: { itemId: string; participantId: string; message: string } | null;
+  splitError: { itemId: string; message: string } | null;
   activity?: AssignmentRoomActivity | null;
   pendingParticipantIds?: string[];
   rotatingInvite?: boolean;
@@ -47,6 +50,12 @@ interface RoomBoardProps {
     ticks: number,
     expectedItemRevision?: number,
   ) => Promise<boolean>;
+  onSplit: (
+    itemId: string,
+    shares: AssignmentItemShare[],
+    expectedItemRevision: number,
+  ) => Promise<boolean>;
+  onDismissSplitError: () => void;
   onRotateInvite: () => void;
   onRemoveParticipant: (participantId: string) => void;
   onClose: () => void;
@@ -60,6 +69,7 @@ export function RoomBoard({
   joinUrl,
   pendingItemIds,
   claimError,
+  splitError,
   activity = null,
   pendingParticipantIds = [],
   rotatingInvite = false,
@@ -71,6 +81,8 @@ export function RoomBoard({
   onBack,
   onReview,
   onClaim,
+  onSplit,
+  onDismissSplitError,
   onRotateInvite,
   onRemoveParticipant,
   onClose,
@@ -93,7 +105,7 @@ export function RoomBoard({
         }
       : undefined;
   const activeParticipants = useMemo(
-    () => view.room.participants.filter((participant) => !participant.removed),
+    () => view.room.participants.filter((participant) => !participant.removed).sort((left, right) => left.ordinal - right.ordinal),
     [view.room.participants],
   );
   const selfParticipantId = view.room.selfParticipantId;
@@ -129,11 +141,12 @@ export function RoomBoard({
   }, [participantById, selfParticipantId, view.room.claims, view.room.items]);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [targetParticipantId, setTargetParticipantId] = useState(selfParticipantId);
   const [editorOpen, setEditorOpen] = useState(false);
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set());
+  const [dirtyItemIds, setDirtyItemIds] = useState<Set<string>>(new Set());
+  const [savingItemIds, setSavingItemIds] = useState<Set<string>>(new Set());
+  const [focusedPeople, setFocusedPeople] = useState<Record<string, string | null>>({});
   const openTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const hostHeadingRef = useRef<HTMLHeadingElement>(null);
   const availableHeadingRef = useRef<HTMLHeadingElement>(null);
   const personalHeadingRef = useRef<HTMLHeadingElement>(null);
   const personalListRef = useRef<HTMLUListElement>(null);
@@ -160,22 +173,55 @@ export function RoomBoard({
     : null;
   const pickerParticipants = view.room.participants.filter((participant) => !participant.removed);
 
-  function openItemEditor(itemId: string, trigger: HTMLButtonElement, participantId?: string) {
+  function openItemEditor(itemId: string, trigger: HTMLButtonElement) {
     haptics.selectionChanged();
     openTriggerRef.current = trigger;
     setSelectedItemId(itemId);
-    setTargetParticipantId(participantId ?? selfParticipantId);
     setEditorOpen(true);
   }
 
-  function toggleDetails(itemId: string) {
-    haptics.selectionChanged();
-    setExpandedItemIds((current) => {
+  function setItemDirty(itemId: string, dirty: boolean) {
+    setDirtyItemIds((current) => {
+      if (current.has(itemId) === dirty) return current;
       const next = new Set(current);
-      if (next.has(itemId)) next.delete(itemId);
-      else next.add(itemId);
+      if (dirty) next.add(itemId);
+      else next.delete(itemId);
       return next;
     });
+  }
+
+  function closeItemEditor(itemId: string) {
+    setItemDirty(itemId, false);
+    if (splitError?.itemId === itemId) onDismissSplitError();
+    setExpandedItemIds((current) => {
+      const next = new Set(current);
+      next.delete(itemId);
+      return next;
+    });
+    document.querySelector<HTMLButtonElement>(`[data-item-id="${CSS.escape(itemId)}"] > button`)?.focus({ preventScroll: true });
+  }
+
+  function toggleDetails(itemId: string, participantId: string | null = null) {
+    haptics.selectionChanged();
+    if (expandedItemIds.has(itemId)) {
+      leaveBoard(() => closeItemEditor(itemId), itemId);
+      return;
+    }
+    setFocusedPeople((current) => ({ ...current, [itemId]: participantId }));
+    setExpandedItemIds((current) => new Set(current).add(itemId));
+  }
+
+  async function saveItemSplit(itemId: string, shares: AssignmentItemShare[], revision: number) {
+    setSavingItemIds((current) => new Set(current).add(itemId));
+    try {
+      return await onSplit(itemId, shares, revision);
+    } finally {
+      setSavingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
+    }
   }
 
   function getReturnFocus(): HTMLElement | null {
@@ -186,11 +232,20 @@ export function RoomBoard({
       );
       if (rowButton?.isConnected) return rowButton;
     }
-    if (view.role === "host") return hostHeadingRef.current;
     if (selectedItemId && mineRows.some((row) => row.item.id === selectedItemId)) {
       return personalHeadingRef.current;
     }
     return availableHeadingRef.current;
+  }
+
+  function leaveBoard(action: (() => void) | undefined, itemId?: string) {
+    const busy = itemId
+      ? savingItemIds.has(itemId) || pendingItemIds.includes(itemId)
+      : savingItemIds.size > 0 || pendingItemIds.length > 0;
+    if (busy) return;
+    const dirty = itemId ? dirtyItemIds.has(itemId) : dirtyItemIds.size > 0;
+    if (dirty && !window.confirm("Descartar as divisões não salvas?")) return;
+    action?.();
   }
 
   return (
@@ -199,7 +254,7 @@ export function RoomBoard({
         title={view.role === "host" ? view.room.title : "O que você consumiu?"}
         subtitle={view.role === "host" ? `Sala ${view.room.status === "open" ? "aberta" : "fechada"} · ${activeParticipants.length} na sala` : `${view.room.title} · ${activeParticipants.length} na sala`}
         back={view.role === "host"}
-        onBack={onBack}
+        onBack={onBack ? () => leaveBoard(onBack) : undefined}
         action={
           inviteVisible ? (
             <div className="flex items-center">
@@ -321,7 +376,7 @@ export function RoomBoard({
             {view.role === "host" ? (
               <section className="space-y-2" aria-labelledby="room-items-heading">
                 <div className="flex items-baseline justify-between gap-3">
-                  <h2 id="room-items-heading" ref={hostHeadingRef} tabIndex={-1} className="text-sm font-semibold">Itens</h2>
+                  <h2 id="room-items-heading" className="text-sm font-semibold">Itens</h2>
                   <p className="text-xs text-muted-foreground">{roomMoney?.unownedLineCount ?? availableRows.length} sem dono</p>
                 </div>
                 <ul className={cn("overflow-hidden divide-y rounded-2xl bg-card", itemRows.length > 0 && "border")}>
@@ -339,11 +394,32 @@ export function RoomBoard({
                       disabled={!roomEditable}
                       mode="host"
                       money={rowMoney(row.item)}
-                      claimMoney={roomMoney?.byItem[row.item.id]?.claims}
-                      selfParticipantId={selfParticipantId}
                       labels={labels}
-                      onUndoParticipant={(participantId) => { void onClaim(row.item.id, participantId, 0, row.item.revision); }}
-                      onOpen={(trigger, participantId) => openItemEditor(row.item.id, trigger, participantId)}
+                      onOpen={() => toggleDetails(row.item.id)}
+                      onFocusParticipant={(participantId) => toggleDetails(row.item.id, participantId)}
+                      editor={
+                        <RoomItemSplit
+                          item={row.item}
+                          participants={activeParticipants}
+                          claims={row.claims}
+                          selfParticipantId={selfParticipantId}
+                          labels={labels}
+                          focusParticipantId={focusedPeople[row.item.id] ?? null}
+                          pending={pendingItemIds.includes(row.item.id)}
+                          disabled={!roomEditable}
+                          error={splitError?.itemId === row.item.id ? splitError.message : null}
+                          previewCents={(shares) => {
+                            const preview = previewItemSplitCents(view.room, row.item.id, shares);
+                            return preview.ok ? preview.value : null;
+                          }}
+                          onSave={(shares, revision) => saveItemSplit(row.item.id, shares, revision)}
+                          onDirtyChange={(dirty) => setItemDirty(row.item.id, dirty)}
+                          onDismissError={() => {
+                            if (splitError?.itemId === row.item.id) onDismissSplitError();
+                          }}
+                          onClose={() => closeItemEditor(row.item.id)}
+                        />
+                      }
                     />
                   ))}
                 </ul>
@@ -411,7 +487,7 @@ export function RoomBoard({
               </>
             )}
 
-            {selectedItem && (
+            {view.role === "participant" && selectedItem && (
               <RoomItemClaim
                 open={editorOpen}
                 onOpenChange={setEditorOpen}
@@ -420,10 +496,7 @@ export function RoomBoard({
                 item={selectedItem.item}
                 claims={selectedItem.claims}
                 availableTicks={selectedItem.availableTicks}
-                targetParticipantId={targetParticipantId}
                 participants={pickerParticipants}
-                canSelectParticipant={view.role === "host"}
-                onTargetChange={setTargetParticipantId}
                 pending={pendingItemIds.includes(selectedItem.item.id)}
                 disabled={!roomEditable}
                 error={claimError && claimError.itemId === selectedItem.item.id ? { participantId: claimError.participantId, message: claimError.message } : null}
@@ -444,12 +517,11 @@ export function RoomBoard({
               />
             )}
 
-            {view.role === "host" && claimError && !editorOpen && <p role="alert" className="text-sm text-destructive-text">{claimError.message}</p>}
           </>
         )}
       </main>
-      {view.role === "host" && (view.room.status === "open" || view.room.status === "closed") && (
-        <RoomHostControls unownedLineCount={roomMoney?.unownedLineCount ?? availableRows.length} complete={Boolean(roomMoney) && roomComplete} closed={view.room.status === "closed"} disabled={hostControlsDisabled} closePending={closePending} onReturnToReview={onReview} onClose={onClose} />
+      {view.role === "host" && dirtyItemIds.size === 0 && savingItemIds.size === 0 && (view.room.status === "open" || view.room.status === "closed") && (
+        <RoomHostControls unownedLineCount={roomMoney?.unownedLineCount ?? availableRows.length} complete={Boolean(roomMoney) && roomComplete} closed={view.room.status === "closed"} disabled={hostControlsDisabled} closePending={closePending} onReturnToReview={onReview ? () => leaveBoard(onReview) : undefined} onClose={() => leaveBoard(onClose)} />
       )}
       {view.role === "participant" && !accessRemoved && (view.room.status === "open" || view.room.status === "closed") && (
         <footer className="sticky bottom-0 z-10 border-t bg-background/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">

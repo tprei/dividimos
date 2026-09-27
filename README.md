@@ -56,6 +56,7 @@ A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O an
 
 - **Entra quem tem o link.** Quem tem conta entra com o próprio nome. Quem não tem digita um nome e vincula a conta depois. Cabem até 50 pessoas.
 - **Frações de item.** Dá pra marcar o item inteiro, metade, um terço ou uma quantidade exata. Cada item mostra quanto ainda resta até a sala ficar com **Tudo com dono**.
+- **O anfitrião divide junto.** Ao abrir um item, escolhe **Igual** para dividir entre todos ou só algumas pessoas, ou **Ajustar** para mudar proporções e unidades. Os anéis nos avatares mostram cada parte. **Salvar divisão** envia as mudanças de uma vez; se alguém mudar o item enquanto ele edita, **Atualizar** recarrega a divisão antes de salvar.
 - **Ao vivo.** Cada marcação aparece pra todo mundo na hora.
 - **O anfitrião fecha e registra.** Ele fecha a sala, revisa, escolhe quem pagou e registra a conta num grupo existente ou num grupo novo. Quem entrou com conta recebe convite pro grupo. Quem entrou sem conta vira convidado e pode reivindicar a parte depois.
 - **A sala acompanha a conta.** Depois de registrada, a conta mostra a sala em **Por item**, **Por pessoa** e **Histórico**, e edições na conta chegam em quem está com a sala aberta.

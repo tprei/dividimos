@@ -58,30 +58,21 @@ async function claimQuantity(
     if ((await toggle.getAttribute("aria-expanded")) === "false") {
       await toggle.click();
     }
-    const hostClaim = card
-      .getByRole("button", { name: new RegExp(`^Mudar ${description} de `) })
-      .filter({ hasText: "Você" });
-    if (await hostClaim.isVisible()) {
-      await hostClaim.click();
+    const editor = card.getByRole("form", { name: `Dividir ${description}` });
+    await editor.getByRole("radio", { name: "Ajustar" }).click();
+    const self = editor.getByRole("button", { name: "Você", exact: true });
+    if ((await self.getAttribute("aria-pressed")) === "false") await self.click();
+    const slider = editor.getByRole("slider", { name: "Parte de Você" });
+    if ((await slider.getAttribute("max")) === "100") {
+      await editor.getByRole("button", { name: "Limpar" }).click();
+      await editor.getByRole("radio", { name: "Igual" }).click();
+      await self.click();
     } else {
-      await card
-        .getByRole("button", { name: /^(Atribuir o que sobrou|Atribuir a alguém)$/ })
-        .click();
+      await slider.press("Home");
+      for (let unit = 0; unit < Number(quantity); unit += 1) await slider.press("ArrowRight");
     }
-    const dialog = page.getByRole("dialog", { name: description });
-    await expect(dialog.getByRole("radio", { name: "Você" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    const option =
-      quantity === "1"
-        ? (await dialog.getByRole("button", { name: "Inteira", exact: true }).isVisible())
-          ? dialog.getByRole("button", { name: "Inteira", exact: true })
-          : dialog.getByRole("button", { name: "1", exact: true })
-        : dialog.getByRole("button", { name: quantity, exact: true });
-    await option.click();
-    await dialog.getByRole("button", { name: /^Dar / }).click();
-    await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
+    await editor.getByRole("button", { name: "Salvar divisão" }).click();
+    await expect(editor).toBeHidden({ timeout: ROOM_TIMEOUT });
     return;
   }
   await rowButton(page, list, description).click();
@@ -93,7 +84,7 @@ async function claimQuantity(
         : dialog.getByRole("button", { name: "1", exact: true })
       : dialog.getByRole("button", { name: quantity, exact: true });
   await option.click();
-  await dialog.getByRole("button", { name: /^(Peguei|Dar) / }).click();
+  await dialog.getByRole("button", { name: /^Peguei / }).click();
   await expect(dialog).toBeHidden({ timeout: ROOM_TIMEOUT });
 }
 
@@ -273,6 +264,26 @@ test.describe("Assignment room multi-client acceptance", () => {
         });
       }
 
+      await test.step("the host divides an unowned item among everyone", async () => {
+        const card = itemCard(page, "Itens", "Última cerveja");
+        await card.getByRole("button", { name: "Última cerveja", exact: true }).click();
+        const editor = card.getByRole("form", { name: "Dividir Última cerveja" });
+        await editor.getByRole("button", { name: "Todos" }).click();
+        await editor.getByRole("button", { name: "Salvar divisão" }).click();
+        await expect(editor).toBeHidden({ timeout: ROOM_TIMEOUT });
+        for (const guest of [guestAPage, guestBPage]) {
+          await expect(itemCard(guest, "Minha parte", "Última cerveja").getByText("⅓", { exact: true }))
+            .toBeVisible({ timeout: ROOM_TIMEOUT });
+        }
+        await card.getByRole("button", { name: "Última cerveja", exact: true }).click();
+        await editor.getByRole("button", { name: "Limpar" }).click();
+        await editor.getByRole("button", { name: "Liberar item" }).click();
+        await expect(editor).toBeHidden({ timeout: ROOM_TIMEOUT });
+        for (const guest of [guestAPage, guestBPage]) {
+          await expect(itemCard(guest, "Minha parte", "Última cerveja")).toHaveCount(0);
+        }
+      });
+
       await test.step("feels like everyone's using the same client", async () => {
         await observeRemote(
           testInfo,
@@ -451,8 +462,7 @@ test.describe("Assignment room multi-client acceptance", () => {
       await claimQuantity(page, "Itens", "Cervejas", "2");
       await claimQuantity(page, "Itens", "Petisco", "2");
 
-      // A claim is always self-made, so Caio releases his beer from his own
-      // phone, and he can only do it while the room is still open.
+      // Caio releases his beer from his own phone while the room is still open.
       const guestBBeerDialog = guestBPage.getByRole("dialog", { name: "Cervejas" });
       const releaseBeer = rowButton(guestBPage, "Minha parte", "Cervejas");
       await expect(releaseBeer).toBeEnabled({ timeout: ROOM_TIMEOUT });
