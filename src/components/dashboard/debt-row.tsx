@@ -28,7 +28,7 @@ export function DebtRowButton({
       className="block w-full min-w-0 rounded-xl text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring motion-safe:transition-transform motion-safe:active:scale-[0.97]"
       aria-label={`${
         displayName ?? row.counterpartyName
-      }, ${direction} ${formatBRL(row.amountCents)}, ${group}`}
+      }, ${direction} ${formatBRL(row.amountCents)}, ${group}${row.counterpartyDeparted ? ", saiu do grupo" : ""}`}
       onClick={(event) => onSelect(row, event.currentTarget)}
     >
       <ListRow
@@ -60,6 +60,7 @@ export function DebtRowButton({
             {row.counterpartyKind === "guest" && (
               <Chip tone="guest">Convidado</Chip>
             )}
+            {row.counterpartyDeparted && <span className="text-xs text-muted-foreground">saiu do grupo</span>}
           </span>
         }
       />

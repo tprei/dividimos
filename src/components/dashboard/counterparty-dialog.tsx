@@ -68,7 +68,7 @@ export function CounterpartyDialog({
   const group = row.isDm ? "Conversa" : row.groupName;
   const direction = row.direction === "owes" ? "Você deve" : "A receber";
   const isUserCounterparty =
-    row.counterpartyKind === "user" && row.counterpartyId !== meId;
+    row.counterpartyKind === "user" && row.counterpartyId !== meId && !row.counterpartyDeparted;
 
   async function handleInvite() {
     if (!guestExpense || inviting) return;
@@ -126,6 +126,7 @@ export function CounterpartyDialog({
             <PopoverDescription title={group} className="truncate">
               {group}
             </PopoverDescription>
+            {row.counterpartyDeparted && <p className="text-sm text-muted-foreground">saiu do grupo</p>}
             <div className="mt-3 flex items-baseline justify-between gap-3">
               <span className="text-sm text-muted-foreground">{direction}</span>
               <Money
@@ -136,6 +137,15 @@ export function CounterpartyDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
+            {row.counterpartyDeparted && (
+              <Link
+                href={`/app/groups/${row.groupId}`}
+                onClick={onClose}
+                className={buttonVariants({ variant: "outline", className: "min-h-11 w-full" })}
+              >
+                Ver grupo
+              </Link>
+            )}
             {row.counterpartyKind === "guest"
               ? guestExpense && (
                   <Button

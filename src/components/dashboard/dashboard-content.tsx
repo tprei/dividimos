@@ -491,7 +491,7 @@ export function DashboardContent() {
         </DialogContent>
       </Dialog>
 
-      {pixTarget && (
+      {pixTarget && !pixTarget.debt.counterpartyDeparted && (
         <PixQrModal
           open
           onClose={() => setPixTarget(null)}

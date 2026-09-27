@@ -84,6 +84,16 @@ export function GroupSettlementView({
         avatarUrl: member.user.avatarUrl,
         isGuest: false,
         isPending: member.status === "invited",
+        isDeparted: false,
+      })),
+      ...snapshot.formerMembers.map((person) => ({
+        id: person.id,
+        name: person.name,
+        handle: person.handle,
+        avatarUrl: person.avatarUrl,
+        isGuest: false,
+        isPending: false,
+        isDeparted: true,
       })),
       ...snapshot.guests.map((guest) => ({
         id: guest.id,
@@ -92,9 +102,10 @@ export function GroupSettlementView({
         avatarUrl: null,
         isGuest: true,
         isPending: false,
+        isDeparted: false,
       })),
     ],
-    [snapshot.members, snapshot.guests]
+    [snapshot.members, snapshot.formerMembers, snapshot.guests]
   );
 
   const peopleById = useMemo(
@@ -116,7 +127,8 @@ export function GroupSettlementView({
       (transfer.fromId === meId || transfer.toId === meId) &&
       counterparty &&
       !counterparty.isGuest &&
-      !counterparty.isPending
+      !counterparty.isPending &&
+      !counterparty.isDeparted
     );
   });
   const openTransfer = (transfer: Transfer) => {
@@ -124,7 +136,7 @@ export function GroupSettlementView({
     const counterparty = peopleById.get(
       paying ? transfer.toId : transfer.fromId
     );
-    if (!counterparty) return;
+    if (!counterparty || counterparty.isDeparted) return;
     haptics.tap();
     setChoosingTransfer(false);
     setPixTarget({
@@ -169,7 +181,7 @@ export function GroupSettlementView({
 
   // Built before the settled early return so an open modal survives the
   // moment the last balance clears and shows its own settled state.
-  const pixModal = pixTarget ? (
+  const pixModal = pixTarget && !peopleById.get(pixTarget.counterpartyId)?.isDeparted ? (
     <PixQrModal
       open
       onClose={() => setPixTarget(null)}

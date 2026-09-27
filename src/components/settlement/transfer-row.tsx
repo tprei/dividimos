@@ -39,9 +39,10 @@ export function TransferRow({
     (transfer.fromId === meId && to.isPending) ||
     (transfer.toId === meId && from.isPending);
   const guestInvolved = from.isGuest || to.isGuest;
-  const iPay = transfer.fromId === meId && !to.isPending && !guestInvolved;
+  const departedInvolved = from.isDeparted || to.isDeparted;
+  const iPay = transfer.fromId === meId && !to.isPending && !guestInvolved && !departedInvolved;
   const iReceive =
-    transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
+    transfer.toId === meId && transfer.fromKind === "user" && !from.isPending && !departedInvolved;
   const actionable = iPay || iReceive;
   let statusLabel = "Outro pagamento";
   if (iPay) statusLabel = "Pagar";
@@ -52,6 +53,7 @@ export function TransferRow({
   )
     statusLabel = "Combinar fora do app";
   else if (pendingCounterparty) statusLabel = "Aguardando o convite";
+  else if (departedInvolved) statusLabel = "saiu do grupo";
   const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(
     transfer.amountCents
   )} para ${to.name}`;
@@ -82,20 +84,19 @@ export function TransferRow({
             size="xs"
           />
         )}
-        <PersonLabel
-          name={from.name}
-          overrideName={fromLabel}
-          nameClassName="text-sm"
-        />
+        <div className="min-w-0">
+          <PersonLabel name={from.name} overrideName={fromLabel} nameClassName="text-sm" />
+          {from.isDeparted && <span className="block text-xs text-muted-foreground">saiu do grupo</span>}
+        </div>
         <ArrowRight
           className="size-3.5 shrink-0 text-muted-foreground"
           aria-hidden="true"
         />
-        <PersonLabel
-          name={to.name}
-          overrideName={toLabel}
-          nameClassName="text-sm"
-        />
+        {to.isDeparted && <UserAvatar id={to.id} name={to.name} avatarUrl={to.avatarUrl} size="xs" />}
+        <div className="min-w-0">
+          <PersonLabel name={to.name} overrideName={toLabel} nameClassName="text-sm" />
+          {to.isDeparted && <span className="block text-xs text-muted-foreground">saiu do grupo</span>}
+        </div>
       </div>
       <Money cents={transfer.amountCents} size="sm" tone={amountTone} />
       {actionable && (

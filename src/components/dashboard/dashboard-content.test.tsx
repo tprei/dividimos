@@ -482,4 +482,30 @@ describe("DashboardContent", () => {
     expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
   });
+
+  it("keeps a former member's debt row free of pay and collect actions", () => {
+    seedStore([
+      snapshot({
+        members: [
+          { groupId: "g1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          { groupId: "g1", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+        ],
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+        formerMembers: [carol],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, você deve/ }));
+
+    expect(screen.getAllByText("saiu do grupo").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Ver grupo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Abrir conversa" })).not.toBeInTheDocument();
+  });
 });
