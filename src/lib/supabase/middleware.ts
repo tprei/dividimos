@@ -15,6 +15,7 @@ const PUBLIC_PATHS = [
   "/manutencao",
   "/terms",
   "/privacy",
+  "/excluir-conta",
 ];
 
 type PendingCookie = {
@@ -167,6 +168,9 @@ export async function updateSession(request: NextRequest) {
   );
 
   const pathname = request.nextUrl.pathname;
+  if (pathname === "/excluir-conta") {
+    return NextResponse.next({ request });
+  }
   let data: Awaited<ReturnType<typeof supabase.auth.getClaims>>["data"] = null;
   let error: unknown = null;
   let threw = false;
