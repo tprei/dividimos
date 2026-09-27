@@ -1,6 +1,4 @@
-import type { ItemIcon } from "@/types";
-
-export const ITEM_ICON_HINTS: Record<ItemIcon, string> = {
+export const ITEM_ICON_HINTS = {
   beer: "cerveja, chopp, long neck, balde de cerveja",
   wine: "vinho, taça de vinho, espumante, sangria",
   cocktail: "drinks e coquetéis: gin tônica, mojito, aperol, margarita",
@@ -38,6 +36,14 @@ export const ITEM_ICON_HINTS: Record<ItemIcon, string> = {
   other: "itens que não são comida nem bebida (limpeza, higiene, utensílios) ou que não cabem em nenhuma outra categoria",
 };
 
+export type ItemIcon = keyof typeof ITEM_ICON_HINTS;
+
+const ITEM_ICON_KEY_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+
 export function isItemIcon(value: unknown): value is ItemIcon {
   return typeof value === "string" && Object.hasOwn(ITEM_ICON_HINTS, value);
+}
+
+export function isItemIconKey(value: unknown): value is string {
+  return typeof value === "string" && ITEM_ICON_KEY_PATTERN.test(value);
 }

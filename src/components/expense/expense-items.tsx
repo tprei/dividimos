@@ -5,6 +5,7 @@ import { Money } from "@/components/shared/money";
 import { ItemIcon } from "@/components/shared/item-icon";
 import { formatBRL } from "@/lib/currency";
 import { attributeItem, type PayerAttribution } from "@/lib/expense-attribution";
+import { isItemIcon } from "@/lib/item-icons";
 import { displayNames } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import {
@@ -56,7 +57,7 @@ export function ExpenseItems({
   participantIsGuest,
   showHeading = true,
 }: ExpenseItemsProps) {
-  const showItemIcons = items.some((item) => item.icon !== undefined);
+  const showItemIcons = items.some((item) => isItemIcon(item.icon));
   const solePayerName =
     payers.length === 1 ? participantName(payers[0].participantIndex) : null;
   const names = displayNames([...new Set(itemAssignments?.map((assignment) => assignment.participantIndex))].map((index) => ({

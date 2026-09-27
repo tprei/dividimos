@@ -8,8 +8,7 @@ import {
   parseExpenseQuantity,
   unitPriceCentsForLineTotal,
 } from "@/lib/expense-quantity";
-import { ITEM_ICON_HINTS, isItemIcon } from "@/lib/item-icons";
-import type { ItemIcon } from "@/types";
+import { ITEM_ICON_HINTS, isItemIcon, type ItemIcon } from "@/lib/item-icons";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;

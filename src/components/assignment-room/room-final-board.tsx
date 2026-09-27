@@ -6,6 +6,7 @@ import { ItemIcon } from "@/components/shared/item-icon";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { haptics } from "@/hooks/use-haptics";
+import { isItemIcon } from "@/lib/item-icons";
 import { cn } from "@/lib/utils";
 import type { AssignmentBillBreakdown } from "@/types/assignment-room";
 
@@ -37,7 +38,7 @@ export function RoomFinalBoard({ bill, selfParticipantIndex = null }: RoomFinalB
         {bill.participants.map((participant) => {
           const index = participant.participantIndex;
           const assignments = assignmentsByParticipant.get(index) ?? [];
-          const showItemIcons = assignments.some((assignment) => bill.items[assignment.itemIndex]?.icon !== undefined);
+          const showItemIcons = assignments.some((assignment) => isItemIcon(bill.items[assignment.itemIndex]?.icon));
           const expanded = expandedIndex === index;
           const isSelf = index === selfParticipantIndex;
           const detailsId = `${id}-person-${index}`;

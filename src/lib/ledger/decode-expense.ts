@@ -1,5 +1,5 @@
 import type { ValidationResult } from "@/lib/expense-money";
-import { isItemIcon } from "@/lib/item-icons";
+import { isItemIconKey } from "@/lib/item-icons";
 import type {
   ChangeSummary,
   ExpenseDetail,
@@ -201,7 +201,7 @@ export function decodeExpenseItemPayload(
     totalPriceCents: total.value,
   };
   if (raw.icon === undefined) return ok(item);
-  if (!isItemIcon(raw.icon)) return fail([...path, "icon"]);
+  if (!isItemIconKey(raw.icon)) return fail([...path, "icon"]);
   return ok({ ...item, icon: raw.icon });
 }
 

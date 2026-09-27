@@ -1264,8 +1264,40 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       expect(Object.keys(detail.current.payload.items[1])).not.toContain("icon");
     });
 
-    it("rejects an icon outside the closed set, including null", async () => {
-      for (const icon of ["caviar", "Beer", null, 3]) {
+    it("stores an icon key this build does not know and keeps it through an edit", async () => {
+      const groupId = await createGroupWithMembers(alice, [], "Ícones");
+
+      const ack = await createExpenseAck(alice, {
+        groupId,
+        totalCents: 6000,
+        expenseType: "itemized",
+        payload: iconPayload("caviar"),
+      });
+
+      const detail = await getExpense(ack.expenseId);
+      expect(detail.current.payload.items.map((item) => item.icon)).toEqual(["caviar", undefined]);
+      expect(Object.keys(detail.current.payload.items[0])).toContain("icon");
+
+      const { error } = await callRpc(aliceClient, "edit_expense", {
+        p_expense_id: ack.expenseId,
+        p_expected_version_no: ack.versionNo,
+        p_occurred_on: OCCURRED_ON,
+        p_title: "Despesa teste",
+        p_merchant_name: null,
+        p_expense_type: "itemized",
+        p_total_cents: 6000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: iconPayload("caviar"),
+      });
+      expect(error).toBeNull();
+
+      const edited = await getExpense(ack.expenseId);
+      expect(edited.current.payload.items.map((item) => item.icon)).toEqual(["caviar", undefined]);
+    });
+
+    it("rejects a malformed icon key, including null and non-string icons", async () => {
+      for (const icon of ["Pizza", "", "pizza grande", "../beer", "a".repeat(33), null, 3]) {
         expect(
           await expectRpcError(
             callRpc(

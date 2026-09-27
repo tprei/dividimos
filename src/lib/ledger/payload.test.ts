@@ -237,7 +237,7 @@ describe("buildExpensePayload", () => {
     expect(payload.shares).toEqual([5000, 5000]);
   });
 
-  it("keeps item icons when a scanned expense is reopened for editing", () => {
+  it("keeps an icon key this build does not know when a scanned expense is reopened for editing", () => {
     useBillStore.getState().hydrateFromDetail(
       makeExpenseDetail({
         expense: { id: "exp-scanned", groupId: "group-1" },
@@ -249,7 +249,7 @@ describe("buildExpensePayload", () => {
           serviceFeeBasisPoints: 0,
           payload: {
             items: [
-              { description: "Calabresa G", quantityMilliunits: 1000, unitPriceCents: 5000, totalPriceCents: 5000, icon: "pizza" },
+              { description: "Calabresa G", quantityMilliunits: 1000, unitPriceCents: 5000, totalPriceCents: 5000, icon: "caviar" },
               { description: "Item manual", quantityMilliunits: 1000, unitPriceCents: 1000, totalPriceCents: 1000 },
             ],
             participants: [{ kind: "user", userId: "user-alice" }],
@@ -269,7 +269,7 @@ describe("buildExpensePayload", () => {
     const result = buildExpensePayload(useBillStore.getState(), "2026-09-05");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.payload.items.map((item) => item.icon)).toEqual(["pizza", undefined]);
+    expect(result.value.payload.items.map((item) => item.icon)).toEqual(["caviar", undefined]);
   });
 
   it("builds a single_amount expense split equally", () => {

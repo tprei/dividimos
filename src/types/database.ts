@@ -73,7 +73,7 @@ export type Database = {
       assignment_room_items: {
         Row: {
           description: string
-          icon: Database["public"]["Enums"]["expense_item_icon"] | null
+          icon: string | null
           id: string
           ordinal: number
           quantity_milliunits: number
@@ -84,7 +84,7 @@ export type Database = {
         }
         Insert: {
           description: string
-          icon?: Database["public"]["Enums"]["expense_item_icon"] | null
+          icon?: string | null
           id: string
           ordinal: number
           quantity_milliunits: number
@@ -95,7 +95,7 @@ export type Database = {
         }
         Update: {
           description?: string
-          icon?: Database["public"]["Enums"]["expense_item_icon"] | null
+          icon?: string | null
           id?: string
           ordinal?: number
           quantity_milliunits?: number
@@ -1886,42 +1886,6 @@ export type Database = {
         | "guest_claimed"
         | "nudge"
         | "assignment_room_opened"
-      expense_item_icon:
-        | "beer"
-        | "wine"
-        | "cocktail"
-        | "spirits"
-        | "caipirinha"
-        | "soda"
-        | "juice"
-        | "water"
-        | "coffee"
-        | "pizza"
-        | "burger"
-        | "fries"
-        | "hot_dog"
-        | "sandwich"
-        | "meat"
-        | "chicken"
-        | "fish"
-        | "seafood"
-        | "sushi"
-        | "pasta"
-        | "plate"
-        | "soup"
-        | "salad"
-        | "bread"
-        | "dessert"
-        | "ice_cream"
-        | "sweets"
-        | "fruit"
-        | "produce"
-        | "snacks"
-        | "coxinha"
-        | "pao_de_queijo"
-        | "acai"
-        | "pastel"
-        | "other"
       expense_status: "active" | "deleted"
       expense_type: "itemized" | "single_amount"
       group_kind: "group" | "dm"

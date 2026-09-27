@@ -217,7 +217,7 @@ flowchart TB
 
 - **Notificações.** Todo RPC financeiro ou de membros grava uma linha em `group_events`. Ela alimenta o feed, os cards do chat e o push: o cliente que agiu manda o id pra `/api/notify`, que reivindica a linha uma vez (`notified_at`) e dispara Web Push (VAPID) e FCM respeitando as categorias de cada pessoa.
 - **IA.** `/api/receipt/ocr`, `/api/voice/parse` e `/api/chat/parse` chamam Gemini 2.5 Flash-Lite com saída em JSON Schema. O texto do usuário entra delimitado como dado, e o resultado passa pelos mesmos decoders de dinheiro do resto do app antes de virar rascunho.
-- **Ícones dos itens.** Na mesma chamada do cupom, o Gemini escolhe pra cada item uma categoria do enum fechado `expense_item_icon` (cerveja, pizza, coxinha...), descrita em `src/lib/item-icons.ts`. A categoria vai como `icon` opcional no item do `payload` e em `assignment_room_items`, e o banco recusa valor fora do enum. Item sem `icon` (digitado à mão ou de conta antiga) fica sem ícone.
+- **Ícones dos itens.** Na mesma chamada do cupom, o Gemini escolhe pra cada item uma das chaves conhecidas de `ITEM_ICON_HINTS` em `src/lib/item-icons.ts` (cerveja, pizza, coxinha...). O banco não fecha a lista: aceita qualquer chave no formato `^[a-z][a-z0-9_]{0,31}$` e a guarda sem alterar, e o cliente só mostra imagem pras chaves que conhece, deixando as outras em branco. Por isso adicionar um ícone é incluir a chave e a dica em `ITEM_ICON_HINTS` e o arquivo `public/item-icons/<chave>.svg`, sem migration. O `icon` é opcional no item do `payload` e em `assignment_room_items`; item sem chave também fica sem ícone.
 
 ## Modelo de dados
 
@@ -396,7 +396,7 @@ erDiagram
         text description
         int quantity_milliunits
         int total_price_cents
-        expense_item_icon icon "nulo se não classificado"
+        text icon "chave livre validada pelo formato; nulo se não classificado"
     }
     assignment_room_participants {
         uuid room_id PK, FK
@@ -584,7 +584,7 @@ agent-guidance/                 # Guias para agentes: migrations, TypeScript, st
 - `src/lib/currency.ts` mantém todo o dinheiro em centavos inteiros: `formatBRL` pra exibir, `parseSafeMinorUnitCents` pra entrada. `src/lib/expense-money.ts` é o único dono de `MAX_EXPENSE_CENTS` e da fórmula da taxa de serviço.
 - `src/components/bill/` é o wizard de conta (seletor de tipo, participantes, itens, editores de divisão, pagadores, revisão da nota). `src/components/settlement/` tem o modal de QR Pix e o grafo de dívidas. `src/components/shared/user-avatar.tsx` é o avatar redondo com a foto do Google ou as iniciais.
 - **Carregamento dos avatares.** `UserAvatar` e `GroupAvatar` mantêm as iniciais até o callback de imagem decodificada do `next/image`, com entrada de 150 ms e sem transição ou pulso quando o movimento reduzido está ativo. Uma imagem já completa no navegador aparece sem transição. Fotos do Google passam pelo otimizador (TTL mínimo de 31 dias) e pelo cache de avatares do service worker (até 300 variantes). Fotos privadas de grupo não passam pelo otimizador nem pelo cache do worker: a API usa `private, no-store` e verifica a participação em cada leitura. O estado visual do componente não é um cache de fotos.
-- `src/components/shared/item-icon.tsx` exibe os SVGs decorativos de `public/item-icons/` a 24 px (20 px no resumo por pessoa), sem repetir o nome para leitores de tela. Listas sem nenhuma classificação mantêm o layout original; nas listas mistas, um espaço vazio do mesmo tamanho mantém os nomes alinhados. As cinco ilustrações brasileiras são originais; a origem e a licença dos demais ícones ficam em `public/item-icons/LICENSE`.
+- `src/components/shared/item-icon.tsx` exibe a imagem decorativa das chaves conhecidas em `public/item-icons/` a 24 px (20 px no resumo por pessoa), sem repetir o nome para leitores de tela. Chaves desconhecidas ficam sem imagem; listas sem nenhuma chave conhecida mantêm o layout original e, nas listas mistas, um espaço vazio do mesmo tamanho mantém os nomes alinhados. Para adicionar um ícone, inclua uma chave e sua dica em `ITEM_ICON_HINTS` e o SVG correspondente em `public/item-icons/`, sem migration. As cinco ilustrações brasileiras são originais; a origem e a licença dos demais ícones ficam em `public/item-icons/LICENSE`.
 - `src/types/ledger.ts` tem os tipos que vêm dos RPCs (`Me`, `GroupSnapshot`, `GroupMember`, `BalanceRow`, `Transfer`, `ExpensePayload`, `ExpenseVersion`). `src/types/assignment-room.ts` tem os tipos da sala. `src/types/index.ts` tem os tipos de UI (`User`, `Expense`, `DebtEdge`); `User` carrega `pixKeyHint`, nunca a chave crua.
 - `supabase/migrations/` guarda as migrations SQL em ordem: tabelas, grants, RPCs, realtime, triggers e mudanças posteriores. `supabase/config.toml` tem a configuração do projeto local e `supabase/seed.sql`, os dados de desenvolvimento.
 

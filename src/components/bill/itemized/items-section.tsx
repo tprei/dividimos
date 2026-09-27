@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { springs } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
+import { isItemIcon } from "@/lib/item-icons";
 import { centsText } from "@/lib/item-division";
 import type { ExpenseItem } from "@/types";
 
@@ -51,7 +52,7 @@ export function ItemsSection({
   const [composing, setComposing] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const reducedMotion = useReducedMotion();
-  const showItemIcons = items.some((item) => item.icon !== undefined);
+  const showItemIcons = items.some((item) => isItemIcon(item.icon));
   // Only while the keyboard is up (see the `keyboard:` classes below): the
   // filled rows fold into one line so the form sits where the thumb is.
   const folded = addingItem && composing && !listOpen;

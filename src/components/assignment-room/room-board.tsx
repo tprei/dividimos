@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
 import { ROOM_TICKS_PER_MILLIUNIT } from "@/lib/assignment-room-money";
 import { previewClaimCents, previewItemSplitCents, projectAssignmentRoomMoney } from "@/lib/assignment-room-projection";
+import { isItemIcon } from "@/lib/item-icons";
 import { cn } from "@/lib/utils";
 import type {
   AssignmentItemShare,
@@ -93,7 +94,7 @@ export function RoomBoard({
   const projection = projectAssignmentRoomMoney(view.room);
   const roomMoney = projection?.ok ? projection.value : null;
   const selfMoney = roomMoney?.byParticipant[view.room.selfParticipantId] ?? null;
-  const showItemIcons = view.room.items.some((item) => item.icon !== undefined);
+  const showItemIcons = view.room.items.some((item) => isItemIcon(item.icon));
   const rowMoney = (item: AssignmentRoomItem) =>
     roomMoney
       ? {
@@ -169,8 +170,8 @@ export function RoomBoard({
   const inviteVisible = view.role === "host" && view.room.status === "open";
   const availableRows = itemRows.filter((row) => row.availableTicks > 0);
   const mineRows = itemRows.filter((row) => row.ownClaimedTicks > 0);
-  const showAvailableIcons = availableRows.some((row) => row.item.icon !== undefined);
-  const showMineIcons = mineRows.some((row) => row.item.icon !== undefined);
+  const showAvailableIcons = availableRows.some((row) => isItemIcon(row.item.icon));
+  const showMineIcons = mineRows.some((row) => isItemIcon(row.item.icon));
   const selectedItem = selectedItemId
     ? itemRows.find((row) => row.item.id === selectedItemId) ?? null
     : null;

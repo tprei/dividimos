@@ -1,12 +1,8 @@
-import type { Database } from "@/types/database";
-
 export type PixKeyType = "cpf" | "email" | "phone" | "random";
 
 export type SplitType = "equal" | "percentage" | "fixed";
 
 export type ExpenseType = "itemized" | "single_amount";
-
-export type ItemIcon = Database["public"]["Enums"]["expense_item_icon"];
 
 export type NotificationCategory =
   | "expenses"
@@ -59,7 +55,7 @@ export interface ExpenseItem {
   quantity: number;
   unitPriceCents: number;
   totalPriceCents: number;
-  icon?: ItemIcon;
+  icon?: string;
   createdAt: string;
 }
 
