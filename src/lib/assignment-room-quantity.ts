@@ -21,6 +21,38 @@ const TICKS_PER_UNIT = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
 /** Denominators that read as fractions rather than as an odd ratio. */
 const FAMILIAR_DENOMINATORS = new Set([2, 3, 4, 5, 6, 8, 10]);
 
+/** Largest reduced denominator still printed as an exact fraction. */
+const MAX_EXACT_DENOMINATOR = 120;
+
+/** Shares the sheet spells with a glyph instead of a plain `k/n` ratio. */
+const FRACTION_GLYPHS: Record<string, string> = {
+  "1/3": "⅓",
+  "2/3": "⅔",
+  "1/4": "¼",
+  "3/4": "¾",
+  "1/5": "⅕",
+  "2/5": "⅖",
+  "3/5": "⅗",
+  "4/5": "⅘",
+  "1/6": "⅙",
+  "5/6": "⅚",
+  "1/8": "⅛",
+  "3/8": "⅜",
+  "5/8": "⅝",
+  "7/8": "⅞",
+};
+
+/** Whole percents, as in `"37%"`. */
+const WHOLE_PERCENT = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  maximumFractionDigits: 0,
+});
+
+/** Item counts with at most two decimals, as in `"1,29"`. */
+const APPROX_UNITS = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 2,
+});
+
 export type ClaimOptions =
   | {
       kind: "whole";
@@ -51,8 +83,36 @@ function greatestCommonDivisor(left: number, right: number): number {
 }
 
 /**
+ * Reduced `k/n` over denominators 2 to 12 whose exact cut `ticks` lands on:
+ * `ticks` equals the floor or the ceiling of `k * capacity / n`. Null when no
+ * fraction of at most twelve parts is that close.
+ */
+function exactUnitFraction(
+  ticks: number,
+  capacityTicks: number,
+): { numerator: number; denominator: number } | null {
+  for (let denominator = 2; denominator <= 12; denominator += 1) {
+    for (let numerator = 1; numerator < denominator; numerator += 1) {
+      if (greatestCommonDivisor(numerator, denominator) !== 1) continue;
+      const exactTicks = (numerator * capacityTicks) / denominator;
+      if (
+        Math.floor(exactTicks) === ticks ||
+        Math.ceil(exactTicks) === ticks
+      ) {
+        return { numerator, denominator };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Format claim ticks as a quantity of items: `"1"`, `"1,5"`, `"1/3"`,
- * `"2/3"`. Rejects values that cannot come from a decoded room, because a
+ * `"8/15"`, `"1/7"`, `"≈1,29"`. Values main already printed keep their text:
+ * familiar fractions below one item, whole-milliunit decimals, then exact
+ * fractions up to 120 parts. Even-split remainders read as the fraction they
+ * land on; anything else is a two-decimal approximation that never reads as
+ * zero. Rejects values that cannot come from a decoded room, because a
  * negative or fractional tick count is a bug to surface rather than a number
  * to round away.
  */
@@ -77,7 +137,26 @@ export function formatRoomTicks(ticks: number): string {
     const milliunits = (ticks / ROOM_TICKS_PER_MILLIUNIT) as ExpenseQuantity;
     return formatExpenseQuantity(milliunits);
   }
-  return `${numerator}/${denominator}`;
+  if (denominator <= MAX_EXACT_DENOMINATOR) {
+    return `${numerator}/${denominator}`;
+  }
+  if (ticks < TICKS_PER_UNIT) {
+    const fraction = exactUnitFraction(ticks, TICKS_PER_UNIT);
+    if (fraction) {
+      return `${fraction.numerator}/${fraction.denominator}`;
+    }
+  }
+  const approximate = APPROX_UNITS.format(ticks / TICKS_PER_UNIT);
+  if (approximate === "0") return "<0,01";
+  return `≈${approximate}`;
+}
+
+/** Whole percent of a partial share that never reads as none or all of it. */
+function partialPercentLabel(ticks: number, capacityTicks: number): string {
+  const label = WHOLE_PERCENT.format(ticks / capacityTicks);
+  if (ticks > 0 && label === WHOLE_PERCENT.format(0)) return "<1%";
+  if (ticks < capacityTicks && label === WHOLE_PERCENT.format(1)) return ">99%";
+  return label;
 }
 
 /** Shared spoken quantity for a claim; single-line fractions are relative to its capacity. */
@@ -93,10 +172,12 @@ export function claimQuantityLabel(quantityMilliunits: number, ticks: number): s
   if (capacity > 0) {
     if (ticks === capacity) return "inteira";
     if (ticks === capacity / 2) return "metade";
-    if (ticks === capacity / 3) return "⅓";
-    if (ticks === capacity / 4) return "¼";
-    if (ticks === (capacity / 3) * 2) return "⅔";
-    if (ticks === (capacity / 4) * 3) return "¾";
+    const fraction = exactUnitFraction(ticks, capacity);
+    if (fraction) {
+      const ratio = `${fraction.numerator}/${fraction.denominator}`;
+      return FRACTION_GLYPHS[ratio] ?? ratio;
+    }
+    return partialPercentLabel(ticks, capacity);
   }
   return formatRoomTicks(ticks);
 }
@@ -106,13 +187,17 @@ export function claimQuantityLabel(quantityMilliunits: number, ticks: number): s
  *
  * `maxTicks` is the largest absolute claim the selected participant may make:
  * their saved ticks plus the line's currently unclaimed ticks.
+ * `activeParticipantCount` unlocks the ⅕ ⅙ ⅛ shares once the room actually has
+ * enough people to split into them.
  */
 export function claimOptionsFor(
   quantityMilliunits: number,
   maxTicks: number,
+  activeParticipantCount: number,
 ): ClaimOptions {
   assertRoomQuantity(quantityMilliunits, "quantity milliunits");
   assertRoomQuantity(maxTicks, "maximum claim ticks");
+  assertRoomQuantity(activeParticipantCount, "active participant count");
 
   const capacityTicks = quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
   if (!Number.isSafeInteger(capacityTicks)) {
@@ -148,7 +233,17 @@ export function claimOptionsFor(
     { label: "Metade", ticks: capacityTicks / 2 },
     { label: "⅓", ticks: capacityTicks / 3 },
     { label: "¼", ticks: capacityTicks / 4 },
-  ].filter(
+  ];
+  if (activeParticipantCount >= 5) {
+    fractions.push({ label: "⅕", ticks: capacityTicks / 5 });
+  }
+  if (activeParticipantCount >= 6) {
+    fractions.push({ label: "⅙", ticks: capacityTicks / 6 });
+  }
+  if (activeParticipantCount >= 8) {
+    fractions.push({ label: "⅛", ticks: capacityTicks / 8 });
+  }
+  const options = fractions.filter(
     (option) =>
       Number.isSafeInteger(option.ticks) &&
       option.ticks > 0 &&
@@ -157,12 +252,12 @@ export function claimOptionsFor(
 
   if (
     availableTicks > 0 &&
-    !fractions.some((option) => option.ticks === availableTicks)
+    !options.some((option) => option.ticks === availableTicks)
   ) {
-    fractions.push({
+    options.push({
       label: `O resto · ${formatRoomTicks(availableTicks)}`,
       ticks: availableTicks,
     });
   }
-  return { kind: "fractions", options: fractions };
+  return { kind: "fractions", options };
 }

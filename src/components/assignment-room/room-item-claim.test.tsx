@@ -46,6 +46,15 @@ const other: AssignmentRoomParticipant = {
   removed: false,
 };
 
+/** Five active people, so the claim sheet unlocks the fifth chip. */
+const fiveActive: AssignmentRoomParticipant[] = [
+  { ...me, isGuest: true },
+  other,
+  { id: "person-c", ordinal: 2, displayName: "Caio", avatarUrl: null, isGuest: true, removed: false },
+  { id: "person-d", ordinal: 3, displayName: "Duda", avatarUrl: null, isGuest: true, removed: false },
+  { id: "person-e", ordinal: 4, displayName: "Eva", avatarUrl: null, isGuest: true, removed: false },
+];
+
 interface HarnessOptions {
   item?: AssignmentRoomItem;
   initialClaims?: AssignmentRoomClaim[];
@@ -57,6 +66,7 @@ interface HarnessOptions {
   error?: { participantId: string; message: string } | null;
   canSelectParticipant?: boolean;
   onTargetChange?: (participantId: string) => void;
+  participants?: AssignmentRoomParticipant[];
 }
 
 /**
@@ -70,6 +80,7 @@ function Harness({
   error = null,
   canSelectParticipant = false,
   onTargetChange = () => undefined,
+  participants = [me, other],
 }: HarnessOptions) {
   const [open, setOpen] = useState(true);
   const [claims, setClaims] = useState(initialClaims);
@@ -94,7 +105,7 @@ function Harness({
         claims={claims}
         availableTicks={capacity - claimed}
         targetParticipantId={me.id}
-        participants={[me, other]}
+        participants={participants}
         pending={false}
         disabled={false}
         error={error}
@@ -165,6 +176,19 @@ describe("RoomItemClaim", () => {
     ).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: /^Peguei / }));
     expect(onSubmit).toHaveBeenCalledWith("person-a", 40_000, 1);
+  });
+
+  it("lets a guest in a five-person room claim a fifth", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    render(<Harness participants={fiveActive} submit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "⅕" }));
+    expect(
+      screen.getByRole("button", { name: "⅕" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /^Peguei / }));
+    expect(onSubmit).toHaveBeenCalledWith("person-a", 24_000, 1);
   });
 
   it("edits an existing claim as an absolute quantity", async () => {
