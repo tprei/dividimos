@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/types/database";
+import type { ExpensePayload } from "@/types/ledger";
+import { buildAssignmentExpense } from "@/lib/assignment-room-money";
+import {
+  decodeAssignmentRoomView,
+  decodeFinalizeAssignmentRoomResult,
+} from "@/lib/ledger/decode-assignment-room";
+import type { AssignmentRoomView } from "@/types/assignment-room";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
@@ -8,6 +15,7 @@ import {
   createTestUser,
   createTestUsers,
   expectRpcError,
+  rpcDecoded,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -67,11 +75,19 @@ function roomCall(overrides: Partial<RoomCall> = {}): RoomCall {
   };
 }
 
+async function rpcRoom(
+  client: Client,
+  name: keyof Database["public"]["Functions"],
+  args: Record<string, unknown>,
+): Promise<RoomView> {
+  return rpcDecoded(client, name, args, decodeAssignmentRoomView);
+}
+
 async function createRoom(
   client: Client,
   call: RoomCall,
-): Promise<unknown> {
-  const { data, error } = await client.rpc("create_assignment_room", {
+): Promise<RoomView> {
+  return rpcRoom(client, "create_assignment_room", {
     p_room_id: call.roomId,
     p_group_target: call.groupTarget,
     p_header: header,
@@ -79,10 +95,6 @@ async function createRoom(
     p_participants: call.participants,
     p_join_token: call.joinToken,
   });
-  if (error) {
-    throw new Error(`create_assignment_room failed: ${error.message}`);
-  }
-  return data;
 }
 
 async function roomRowCounts(roomId: string): Promise<Record<string, number>> {
@@ -298,3 +310,227 @@ async function denialCode(client: Client, call: RoomCall): Promise<string> {
     ),
   );
 }
+
+type RoomView = AssignmentRoomView;
+
+function memberTokenValue(): string {
+  const random = crypto.randomUUID().replaceAll("-", "") + "AAAAAAAAAAA";
+  return `armm1_${random}`;
+}
+
+async function joinRoom(
+  client: Client,
+  roomId: string,
+  joinToken: string,
+  memberToken: string,
+): Promise<RoomView> {
+  return rpcRoom(client, "join_assignment_room", {
+    p_room_id: roomId,
+    p_join_token: joinToken,
+    p_member_token: memberToken,
+    p_display_name: "",
+  });
+}
+
+async function claimItem(
+  client: Client,
+  roomId: string,
+  memberToken: string | null,
+  itemId: string,
+  participantId: string,
+  expectedItemRevision: number,
+): Promise<RoomView> {
+  return rpcRoom(client, "set_assignment_room_claim", {
+    p_room_id: roomId,
+    p_member_token: memberToken,
+    p_item_id: itemId,
+    p_participant_id: participantId,
+    p_expected_item_revision: expectedItemRevision,
+    p_ticks: 60_000,
+  });
+}
+
+async function closeRoom(
+  client: Client,
+  roomId: string,
+  expectedRevision: number,
+): Promise<RoomView> {
+  return rpcRoom(client, "close_assignment_room", {
+    p_room_id: roomId,
+    p_expected_revision: expectedRevision,
+  });
+}
+
+function finalizePayload(view: RoomView): ExpensePayload {
+  if (view.role !== "host") {
+    throw new Error("expected a host view to build the expense payload");
+  }
+  const built = buildAssignmentExpense(view, [
+    { participantIndex: 0, amountCents: view.room.totalCents },
+  ]);
+  if (!built.ok) {
+    throw new Error(JSON.stringify(built.issue));
+  }
+
+  return built.value;
+}
+
+describe.skipIf(!isIntegrationTestReady)("blocked assignment rooms — join and finalize", () => {
+  it.each([
+    ["blocker hosts", "host"] as const,
+    ["blocker joins", "joiner"] as const,
+  ])(
+    "admits a blocked account through the link as an unlinked guest and finalizes as a guest slot (%s)",
+    async (_label, blockerSide) => {
+      const [ana, bruno] = await createTestUsers(2);
+      const anaClient = authenticateAs(ana);
+      const brunoClient = authenticateAs(bruno);
+      const token = memberTokenValue();
+
+      const call = roomCall({ participants: [participant(ana)] });
+      const created = await createRoom(anaClient, call);
+
+      if (blockerSide === "host") {
+        await rpcBlock(brunoClient, ana.id);
+      } else {
+        await rpcBlock(anaClient, bruno.id);
+      }
+
+      const joined = await joinRoom(brunoClient, call.roomId, call.joinToken, token);
+
+      const self = joined.room.participants.find(
+        (entry) => entry.id === joined.room.selfParticipantId,
+      );
+      expect(self).toMatchObject({ displayName: bruno.name, isGuest: true });
+
+      let current = await claimItem(
+        anaClient,
+        call.roomId,
+        null,
+        created.room.items[0].id,
+        created.room.selfParticipantId,
+        created.room.items[0].revision,
+      );
+      current = await claimItem(
+        brunoClient,
+        call.roomId,
+        token,
+        current.room.items[0].id,
+        joined.room.selfParticipantId,
+        current.room.items[0].revision,
+      );
+      const closed = await closeRoom(anaClient, call.roomId, current.room.revision);
+      const finalize = await rpcDecoded(
+        anaClient,
+        "finalize_assignment_room",
+        {
+          p_room_id: call.roomId,
+          p_expected_revision: closed.room.revision,
+          p_payload: finalizePayload(closed),
+        },
+        decodeFinalizeAssignmentRoomResult,
+      );
+
+      const expenseId = finalize.ack.expenseId;
+      const ledger = await withPg(async (client) => {
+        const participant = await client.query<{ user_id: string | null; display_name: string }>(
+          "select user_id, display_name from public.assignment_room_participants where room_id = $1 and id = $2",
+          [call.roomId, joined.room.selfParticipantId],
+        );
+        const payload = await client.query<{
+          payload: { participants: Array<{ kind: string; userId?: string | null; displayName?: string }> };
+        }>(
+          "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+          [expenseId],
+        );
+        return {
+          participant: participant.rows[0] ?? null,
+          participants: payload.rows[0].payload.participants,
+        };
+      });
+
+      expect(ledger.participant).toEqual({
+        user_id: null,
+        display_name: bruno.name,
+      });
+      expect(ledger.participants).toEqual([
+        { kind: "user", userId: ana.id },
+        { kind: "guest", guestId: expect.any(String), displayName: bruno.name },
+      ]);
+    },
+  );
+
+  it("finalizes a room that named the person before the block as a guest slot instead of inviting", async () => {
+    const [ana, bruno] = await createTestUsers(2);
+    const anaClient = authenticateAs(ana);
+    const brunoClient = authenticateAs(bruno);
+    const token = memberTokenValue();
+
+    const call = roomCall({
+      participants: [participant(ana), participant(bruno)],
+      groupTarget: { kind: "new", name: "Sala antes do bloqueio" },
+    });
+    const created = await createRoom(anaClient, call);
+    const joined = await joinRoom(brunoClient, call.roomId, call.joinToken, token);
+
+    await rpcBlock(brunoClient, ana.id);
+
+    let current = await claimItem(
+      anaClient,
+      call.roomId,
+      null,
+      created.room.items[0].id,
+      created.room.selfParticipantId,
+      created.room.items[0].revision,
+    );
+    current = await claimItem(
+      brunoClient,
+      call.roomId,
+      token,
+      current.room.items[0].id,
+      joined.room.selfParticipantId,
+      current.room.items[0].revision,
+    );
+    const closed = await closeRoom(anaClient, call.roomId, current.room.revision);
+    const finalize = await rpcDecoded(
+      anaClient,
+      "finalize_assignment_room",
+      {
+        p_room_id: call.roomId,
+        p_expected_revision: closed.room.revision,
+        p_payload: finalizePayload(closed),
+      },
+      decodeFinalizeAssignmentRoomResult,
+    );
+
+    const expenseId = finalize.ack.expenseId;
+    const ledger = await withPg(async (client) => {
+      const group = await client.query<{ group_id: string }>(
+        "select group_id from public.expenses where id = $1",
+        [expenseId],
+      );
+      const memberships = await client.query<{ user_id: string; status: string }>(
+        "select user_id, status from public.group_members where group_id = $1 order by user_id",
+        [group.rows[0].group_id],
+      );
+      const payload = await client.query<{
+        payload: { participants: Array<{ kind: string; userId?: string | null; displayName?: string }> };
+      }>(
+        "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+        [expenseId],
+      );
+      return {
+        groupId: group.rows[0].group_id,
+        memberships: memberships.rows,
+        participants: payload.rows[0].payload.participants,
+      };
+    });
+
+    expect(ledger.groupId).toBeTruthy();
+    expect(ledger.memberships).toEqual([{ user_id: ana.id, status: "accepted" }]);
+    expect(ledger.participants).toEqual([
+      { kind: "user", userId: ana.id },
+      { kind: "guest", guestId: expect.any(String), displayName: bruno.name },
+    ]);
+  });
+});
