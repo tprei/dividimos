@@ -3,7 +3,8 @@ import type { Bootstrap } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "./errors";
 import { rpc } from "./client";
-import { attachVisibilityRefresh, catchUpBootstrap, runBootstrap } from "./bootstrap";
+import { advanceBlockListEpoch, attachVisibilityRefresh, catchUpBootstrap, runBootstrap } from "./bootstrap";
+import { readUserBlocks } from "./refresh";
 
 const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("./client", () => ({
@@ -14,7 +15,10 @@ vi.mock("./client", () => ({
     return authState.generation;
   },
 }));
-vi.mock("./refresh", () => ({ refreshHostedAssignmentRooms: vi.fn(async () => {}) }));
+vi.mock("./refresh", () => ({
+  refreshHostedAssignmentRooms: vi.fn(async () => {}),
+  readUserBlocks: vi.fn(async () => []),
+}));
 
 const rpcMock = vi.mocked(rpc);
 const bootstrapResponse: Bootstrap = {
@@ -149,5 +153,54 @@ describe("catchUpBootstrap", () => {
     await Promise.all([initialRead, catchUp]);
 
     expect(rpcMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runBootstrap and the block list", () => {
+  it("never lets a bootstrap that started before a block overwrite the acknowledged list", async () => {
+    useAppStore.getState().reset();
+    const blocked = { id: "u-x", handle: "x", name: "X", avatarUrl: null, isBot: false };
+    const overview = Promise.withResolvers<unknown>();
+    const staleList = Promise.withResolvers<unknown>();
+    rpcMock.mockReturnValueOnce(overview.promise as never);
+    vi.mocked(readUserBlocks).mockReturnValueOnce(staleList.promise as never);
+
+    const stale = runBootstrap();
+    advanceBlockListEpoch();
+    useAppStore.getState().applyUserBlocks([blocked]);
+    overview.resolve({
+      me: {
+        id: "u-me",
+        handle: "me",
+        name: "Me",
+        avatarUrl: null,
+        isBot: false,
+        email: "me@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: { expenses: true, settlements: true, nudges: true },
+      },
+      groups: [],
+      serverTime: "2026-09-27T10:00:00.000Z",
+    });
+    staleList.resolve([]);
+    await stale;
+
+    expect(useAppStore.getState().blockedUsers).toEqual([blocked]);
+  });
+
+  it("commits the overview and keeps the cached list when the block list read fails", async () => {
+    useAppStore.getState().reset();
+    const blocked = { id: "u-x", handle: "x", name: "X", avatarUrl: null, isBot: false };
+    useAppStore.getState().applyUserBlocks([blocked]);
+    rpcMock.mockResolvedValueOnce(bootstrapResponse as never);
+    vi.mocked(readUserBlocks).mockRejectedValueOnce(new LedgerError("unknown"));
+
+    await runBootstrap();
+
+    expect(useAppStore.getState().me?.id).toBe(bootstrapResponse.me.id);
+    expect(useAppStore.getState().bootstrapStatus).toBe("ready");
+    expect(useAppStore.getState().blockedUsers).toEqual([blocked]);
   });
 });
