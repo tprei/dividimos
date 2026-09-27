@@ -62,7 +62,7 @@
     "public.assignment_room_summary_json(p_room_id uuid)": {
       "anon": false,
       "authenticated": false,
-      "note": "Internal room-summary serializer; reachable only through membership-checked reads and the internal group broadcast."
+      "note": "Internal room-summary serializer; reachable only through membership-checked reads, the host-scoped hosted-room list, and the internal group broadcast."
     },
     "public.assignment_room_topic_allowed(p_topic text)": {
       "anon": true,
@@ -418,6 +418,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated membership RPC; lists the group's open existing-target rooms with host profiles only."
+    },
+    "public.list_hosted_assignment_rooms()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; lists only the caller's own open and in-review hosted rooms."
     },
     "public.ledger_chat_message_json(p_message_id uuid)": {
       "anon": false,
