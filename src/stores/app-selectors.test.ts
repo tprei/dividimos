@@ -647,6 +647,24 @@ describe("groupNameOf", () => {
     expect(groupNameOf(dmSnapshot("dm1"), me.id)).toBe("User user-2");
     expect(groupNameOf(snapshot("g1"), me.id)).toBe("Group g1");
   });
+
+  it("names a DM by the counterparty projection when the membership is gone", () => {
+    const retained = snapshot("dm2", {
+      group: {
+        id: "dm2",
+        kind: "dm",
+        name: "",
+        creatorId: me.id,
+        dmUserA: me.id,
+        dmUserB: "user-gone",
+        ledgerVersion: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      dmCounterparty: { id: "user-gone", handle: "gone", name: "Conta excluída", avatarUrl: null, isBot: false },
+      members: [member(me.id, "accepted")],
+    });
+    expect(groupNameOf(retained, me.id)).toBe("Conta excluída");
+  });
 });
 
 describe("selectRecentBills", () => {

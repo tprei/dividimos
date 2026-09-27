@@ -6,10 +6,14 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
 import { cn } from "@/lib/utils";
 
+function dmCounterpartyMember(snapshot: GroupSnapshot, meId: string | null) {
+  if (meId === null) return undefined;
+  return snapshot.members.find((member) => member.userId !== meId);
+}
+
 function dmLabel(snapshot: GroupSnapshot, meId: string | null): string {
-  if (meId === null) return "Conversa direta";
-  const counterparty = snapshot.members.find((member) => member.userId !== meId);
-  return counterparty?.user.name || "Conversa direta";
+  const counterparty = dmCounterpartyMember(snapshot, meId);
+  return counterparty?.user.name || snapshot.dmCounterparty?.name || "Conversa direta";
 }
 
 export interface GroupSelectProps {
@@ -49,13 +53,19 @@ export function GroupSelect({
         value={selectedValue}
         options={[
           { value: "", label: "Escolha um grupo" },
-          ...groups.map((group) => ({
-            value: group.group.id,
-            label:
-              group.group.kind === "dm"
-                ? dmLabel(group, me?.id ?? null)
-                : group.group.name,
-          })),
+          ...groups
+            .filter(
+              (group) =>
+                group.group.kind !== "dm" ||
+                dmCounterpartyMember(group, me?.id ?? null) !== undefined,
+            )
+            .map((group) => ({
+              value: group.group.id,
+              label:
+                group.group.kind === "dm"
+                  ? dmLabel(group, me?.id ?? null)
+                  : group.group.name,
+            })),
           { value: "create", label: "Novo grupo…" },
           ...(dmEligible
             ? [{ value: "dm", label: "Conversa direta" }]

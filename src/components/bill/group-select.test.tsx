@@ -107,6 +107,23 @@ describe("GroupSelect", () => {
     expect(screen.getByRole("option", { name: "Carol Souza" })).toBeInTheDocument();
   });
 
+  it("excludes a DM whose counterpart lost membership from the bill targets", async () => {
+    const deleted = snapshot({
+      group: { id: "dm-gone", kind: "dm", name: "", dmUserA: me.id, dmUserB: "user-gone" },
+      dmCounterparty: { id: "user-gone", handle: "gone", name: "Conta excluída", avatarUrl: null, isBot: false },
+      members: [member("dm-gone", me)],
+    });
+    const live = snapshot({
+      group: { id: DM_GROUP_ID, kind: "dm", name: "", dmUserA: me.id, dmUserB: carol.id },
+      members: [member(DM_GROUP_ID, me), member(DM_GROUP_ID, carol)],
+    });
+    const { user } = renderSelect({ groups: [deleted, live] });
+
+    await user.click(screen.getByRole("combobox", { name: "Grupo" }));
+    expect(screen.getByRole("option", { name: "Carol Souza" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Conta excluída" })).not.toBeInTheDocument();
+  });
+
   it("keeps regular group names and the fixed option values", async () => {
     const group = snapshot({ group: { id: "g1", kind: "group", name: "Jantar" } });
     const { user } = renderSelect({ groups: [group], dmEligible: true });

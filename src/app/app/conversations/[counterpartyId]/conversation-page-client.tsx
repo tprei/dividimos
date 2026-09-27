@@ -157,7 +157,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     !dm && resolveError?.accountKey === accountKey ? resolveError.message : null;
   const resolving = accountKey !== null && !dm && activeResolveError === null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
-  const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
+  const counterparty: UserProfile | null = dm?.dmCounterparty ?? null;
+  const deletedCounterparty = Boolean(dm && counterparty && !counterpartyMember);
   // Subscribe to stable references only: deriving the view inside the store
   // selector would return a fresh object every render and loop forever.
   const groupRead = useAppStore((s) =>
@@ -184,6 +185,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const profileById = useMemo(() => {
     const profiles = new Map<string, UserProfile>();
     for (const member of dm?.members ?? []) profiles.set(member.userId, member.user);
+    if (dm?.dmCounterparty) profiles.set(dm.dmCounterparty.id, dm.dmCounterparty);
     return profiles;
   }, [dm]);
   const nameOf = useCallback(
@@ -550,10 +552,16 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       <ScreenHeader
         back
         title={counterparty.name}
-        subtitle={`@${counterparty.handle}`}
+        subtitle={deletedCounterparty ? undefined : `@${counterparty.handle}`}
         leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
       />
-      {isCounterpartyPending ? (
+      {deletedCounterparty ? (
+        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
+          <p className="text-center text-xs text-muted-foreground">
+            Essa conta do Dividimos foi excluída. O histórico foi mantido.
+          </p>
+        </div>
+      ) : isCounterpartyPending ? (
         <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
           <p className="text-center text-xs text-muted-foreground">
             Aguardando @{counterparty.handle} aceitar o convite
@@ -602,7 +610,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         />
       </div>
       )}
-      {!isCounterpartyPending && groupId && (
+      {!isCounterpartyPending && !deletedCounterparty && groupId && (
         <>
           <AnimatePresence>
             {chargeSheetOpen && (
