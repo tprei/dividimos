@@ -502,6 +502,7 @@ describe("assignment room sync", () => {
     expect(mocks.refreshGroup).toHaveBeenCalledOnce();
     expect(mocks.refreshGroup).toHaveBeenCalledWith("group-1");
     expect(getAssignmentRoomMemberToken(ROOM_ID)).toBeNull();
+    expect(useAppStore.getState().assignmentRoomAccess[ROOM_ID]).toBe("removed");
   });
 
   it("keeps the stored join token when the room refuses the entry", async () => {

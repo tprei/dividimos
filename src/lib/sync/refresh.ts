@@ -20,6 +20,7 @@ import {
   type ResourceReadState,
 } from "@/stores/app-store";
 import type { Conversation, ExpenseSummary, GroupSnapshot, PageCursor } from "@/types/ledger";
+import type { AssignmentRoomAccessEntry, AssignmentRoomSummary } from "@/types/assignment-room";
 import { getAuthGeneration, rpc } from "./client";
 import { LedgerError } from "./errors";
 
@@ -425,7 +426,7 @@ export async function loadConversation(
     attempt,
     () =>
       rpc(
-        "get_conversation",
+        "get_conversation_v2",
         {
           p_group_id: groupId,
           p_message_before_created_at: cursors?.messageBefore?.createdAt ?? undefined,
@@ -439,13 +440,29 @@ export async function loadConversation(
         },
         decodeConversation,
       ),
-    (data) =>
+    (data) => {
       useAppStore
         .getState()
         .applyConversation(groupId, {
           kind: cursors === undefined ? "head" : "older",
           envelope: data,
-        }),
+        });
+      const summaries: AssignmentRoomSummary[] = [];
+      const access: AssignmentRoomAccessEntry[] = [];
+      for (const event of data.events) {
+        if (event.assignmentRoom === undefined || event.assignmentRoom === null) continue;
+        summaries.push(event.assignmentRoom);
+        if (event.assignmentRoomAccess !== undefined) {
+          access.push({ roomId: event.assignmentRoom.id, access: event.assignmentRoomAccess });
+        }
+      }
+      if (summaries.length > 0) {
+        useAppStore.getState().applyAssignmentRoomSummaries(summaries);
+      }
+      if (access.length > 0) {
+        useAppStore.getState().setAssignmentRoomAccess(access);
+      }
+    },
   );
 }
 
