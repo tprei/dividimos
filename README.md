@@ -129,6 +129,7 @@ stateDiagram-v2
 - **Sem enumeração.** Usuários são encontrados só por `@handle` exato, por uma rota do servidor com rate limit. Alguns @ oficiais (suporte, admin, dividimos...), parecidos com eles (pix1, the_admin...) e nomes com esses termos no meio não estão disponíveis: tentar usar um deles no perfil devolve "Esse @ já está em uso.", e quem já tem um desses continua com ele. O @ automático de quem entra vem do nome, não do e-mail; se o nome já estiver em uso, entra um sufixo aleatório.
 - **Tokens guardados como hash.** Os tokens de claim, de entrada na sala e de membro da sala ficam no banco só como SHA-256. Claim e entrada valem 7 dias; o de membro vale 30 dias e renova com o uso.
 - **Rate limit que falha fechado.** Contadores no Postgres limitam IA, Pix, push e busca por usuário. Se o limitador cai, a rota responde 503 em vez de liberar.
+- **Conta excluída não volta.** Depois que a exclusão da conta grava o marcador, qualquer RPC comum dessa identidade falha com `account_deleted`, e o registro de push não recria inscrição para o perfil apagado — nem disputando com a própria exclusão em transação.
 
 ## Como o saldo fecha
 
