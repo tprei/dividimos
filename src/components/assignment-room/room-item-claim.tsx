@@ -87,9 +87,17 @@ export function RoomItemClaim({
     [claims, targetParticipantId],
   );
   const maximumTicks = savedTicks + availableTicks;
+  const activeParticipantCount = participants.filter(
+    (participant) => !participant.removed,
+  ).length;
   const claimOptions = useMemo(
-    () => claimOptionsFor(item.quantityMilliunits, maximumTicks),
-    [item.quantityMilliunits, maximumTicks],
+    () =>
+      claimOptionsFor(
+        item.quantityMilliunits,
+        maximumTicks,
+        activeParticipantCount,
+      ),
+    [item.quantityMilliunits, maximumTicks, activeParticipantCount],
   );
   const [draftTicks, setDraftTicks] = useState<number | null>(null);
   const [touched, setTouched] = useState(false);
