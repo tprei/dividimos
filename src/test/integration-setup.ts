@@ -7,6 +7,25 @@ import { afterAll, beforeAll, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";
 
+const REALTIME_MESSAGE_PARTITIONS = `
+DO $$
+DECLARE
+  d date;
+BEGIN
+  FOR d IN
+    SELECT generate_series((now() AT TIME ZONE 'utc')::date - 1, (now() AT TIME ZONE 'utc')::date + 3, interval '1 day')::date
+  LOOP
+    BEGIN
+      EXECUTE format(
+        'CREATE TABLE IF NOT EXISTS realtime.%I PARTITION OF realtime.messages FOR VALUES FROM (%L) TO (%L)',
+        'messages_' || to_char(d, 'YYYY_MM_DD'), d, d + 1
+      );
+    EXCEPTION WHEN duplicate_table THEN
+      NULL;
+    END;
+  END LOOP;
+END $$`;
+
 const REQUIRED_ENV_VARS = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
@@ -85,11 +104,15 @@ beforeAll(async () => {
     try {
       await client.query("select 1 from public.groups limit 1");
     } catch (error) {
+      await client.end();
       throw new Error(
         `[integration-setup] Database not ready: ${
           error instanceof Error ? error.message : error
         }. ` + "Ensure `supabase start` is running.",
       );
+    }
+    try {
+      await client.query(REALTIME_MESSAGE_PARTITIONS);
     } finally {
       await client.end();
     }
