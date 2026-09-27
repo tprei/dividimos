@@ -229,6 +229,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.delete_account(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role account anonymization after the all-groups balance guard."
+    },
     "public.edit_expense(p_expense_id uuid, p_expected_version_no integer, p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb)": {
       "anon": false,
       "authenticated": true,
