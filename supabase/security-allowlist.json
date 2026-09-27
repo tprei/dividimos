@@ -417,7 +417,7 @@
     "public.ledger_me_json(p_user_id uuid)": {
       "anon": false,
       "authenticated": false,
-      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+      "note": "Internal serializer; reachable only through membership-checked read RPCs and the account-scoped AI-consent RPCs."
     },
     "public.ledger_settlement_json(p_settlement_id uuid)": {
       "anon": false,
@@ -489,6 +489,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.require_ai_consent(p_version integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; verifies the caller's own stored AI-consent grant and takes no account argument, so it cannot probe another account."
+    },
     "public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)": {
       "anon": false,
       "authenticated": false,
@@ -509,6 +514,11 @@
       "authenticated": true,
       "note": "Authenticated host-only RPC; rotates the room join credential while the room is open."
     },
+    "public.revoke_ai_consent(p_expected_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; the actor comes from current_user_id() and p_expected_user_id must match it, so a delayed dialog cannot revoke another account's grant."
+    },
     "public.revoke_guest_claim_token(p_guest_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -528,6 +538,11 @@
       "anon": true,
       "authenticated": true,
       "note": "Capability RPC; active members claim only their own items while the host may correct any active participant."
+    },
+    "public.set_ai_consent(p_expected_user_id uuid, p_version integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; the actor comes from current_user_id() and p_expected_user_id must match it, so a delayed dialog cannot grant another account."
     },
     "public.set_group_avatar(p_group_id uuid, p_actor_id uuid, p_emoji text, p_photo_id uuid)": {
       "anon": false,

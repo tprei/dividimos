@@ -992,6 +992,8 @@ export type Database = {
       }
       users: {
         Row: {
+          ai_consent_granted_at: string | null
+          ai_consent_version: number | null
           avatar_url: string | null
           created_at: string
           email: string
@@ -1007,6 +1009,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_consent_granted_at?: string | null
+          ai_consent_version?: number | null
           avatar_url?: string | null
           created_at?: string
           email: string
@@ -1022,6 +1026,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_consent_granted_at?: string | null
+          ai_consent_version?: number | null
           avatar_url?: string | null
           created_at?: string
           email?: string
@@ -1727,6 +1733,12 @@ export type Database = {
         }
         Returns: Json
       }
+      require_ai_consent: {
+        Args: {
+          p_version: number
+        }
+        Returns: undefined
+      }
       resolve_expense_participants: {
         Args: {
           p_expense_id: string
@@ -1743,6 +1755,12 @@ export type Database = {
       restore_expense: {
         Args: {
           p_expense_id: string
+        }
+        Returns: Json
+      }
+      revoke_ai_consent: {
+        Args: {
+          p_expected_user_id: string
         }
         Returns: Json
       }
@@ -1771,6 +1789,13 @@ export type Database = {
         Args: {
           p_group_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      set_ai_consent: {
+        Args: {
+          p_expected_user_id: string
+          p_version: number
         }
         Returns: Json
       }
