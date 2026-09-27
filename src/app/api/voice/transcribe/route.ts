@@ -3,6 +3,7 @@ import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
+import { enforceAiConsent } from "@/lib/ai-consent-server";
 import { transcribeVoiceAudio } from "@/lib/voice-transcription";
 
 export const runtime = "nodejs";
@@ -43,8 +44,25 @@ export async function POST(request: Request) {
   }
 
   try {
-    await enforceRateLimit("voice.transcribe", userId);
+    await Promise.all([
+      enforceAiConsent(supabase),
+      enforceRateLimit("voice.transcribe", userId),
+    ]);
   } catch (error) {
+    if (error instanceof AppError && (
+      error.code === "AI_CONSENT_REQUIRED" ||
+      error.code === "AI_CONSENT_UNAVAILABLE"
+    )) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code === "AI_CONSENT_REQUIRED"
+            ? "ai_consent_required"
+            : "ai_consent_unavailable",
+        },
+        { status: error.statusCode },
+      );
+    }
     if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
       return NextResponse.json(
         { error: "Muitas requisições. Tente novamente em alguns segundos." },

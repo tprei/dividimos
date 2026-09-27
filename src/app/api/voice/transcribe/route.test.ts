@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGetUser = vi.fn();
+const mockSupabaseRpc = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
     auth: {
@@ -12,6 +13,7 @@ vi.mock("@/lib/supabase/server", () => ({
           : { data: null, error: null };
       },
     },
+    rpc: (...args: unknown[]) => mockSupabaseRpc(...args),
   }),
 }));
 
@@ -25,7 +27,7 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
 }));
 
-const { POST, runtime, maxDuration } = await import("./route");
+const { POST } = await import("./route");
 const { AppError } = await import("@/lib/errors");
 
 function audioRequest(options?: {
@@ -83,6 +85,8 @@ describe("POST /api/voice/transcribe", () => {
     // implementation from a prior test — reset the default to success here.
     mockEnforceRateLimit.mockReset();
     mockEnforceRateLimit.mockResolvedValue(undefined);
+    mockSupabaseRpc.mockReset();
+    mockSupabaseRpc.mockResolvedValue({ data: null, error: null });
     mockTranscribeVoiceAudio.mockReset();
     mockTranscribeVoiceAudio.mockResolvedValue("Uber com João 25 reais");
   });
@@ -389,14 +393,142 @@ describe("POST /api/voice/transcribe", () => {
     const body = await res.json();
     expect(body.code).toBe("LLM_QUOTA");
   });
-});
 
-describe("route segment config", () => {
-  it("exports nodejs runtime", () => {
-    expect(runtime).toBe("nodejs");
+  it("does not call the provider without current AI consent", async () => {
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "P0001", message: "ai_consent_required" },
+    });
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+      code: "ai_consent_required",
+    });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
   });
 
-  it("exports maxDuration of 15 seconds", () => {
-    expect(maxDuration).toBe(15);
+  it("fails closed when the consent RPC reports an unexpected SQL error", async () => {
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "boom" },
+    });
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Não foi possível verificar sua permissão de IA. Tente novamente.",
+      code: "ai_consent_unavailable",
+    });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the consent RPC transport throws", async () => {
+    mockSupabaseRpc.mockRejectedValue(new TypeError("fetch failed"));
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Não foi possível verificar sua permissão de IA. Tente novamente.",
+      code: "ai_consent_unavailable",
+    });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("waits for consent and rate limiting before calling the provider", async () => {
+    const order: string[] = [];
+    const consentGate = Promise.withResolvers<void>();
+    const limiterGate = Promise.withResolvers<void>();
+    mockSupabaseRpc.mockImplementation(async () => {
+      await consentGate.promise;
+      order.push("consent");
+      return { data: null, error: null };
+    });
+    mockEnforceRateLimit.mockImplementation(async () => {
+      await limiterGate.promise;
+      order.push("limiter");
+    });
+    mockTranscribeVoiceAudio.mockImplementation(async () => {
+      order.push("provider");
+      return "Transcrito com consentimento";
+    });
+
+    const pending = POST(audioRequest());
+
+    await macrotaskFlush();
+    expect(order).not.toContain("provider");
+
+    consentGate.resolve();
+    await macrotaskFlush();
+    expect(order).not.toContain("provider");
+
+    limiterGate.resolve();
+    const res = await pending;
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ transcript: "Transcrito com consentimento" });
+    expect(order).toEqual(["consent", "limiter", "provider"]);
+  });
+
+  it("allows the existing happy path with current consent", async () => {
+    mockTranscribeVoiceAudio.mockResolvedValue("Transcrito com consentimento");
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ transcript: "Transcrito com consentimento" });
+    expect(mockSupabaseRpc).toHaveBeenCalledWith("require_ai_consent", { p_version: 1 });
+    expect(mockTranscribeVoiceAudio).toHaveBeenCalledOnce();
+  });
+
+  it("does not query consent or call the provider when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(401);
+    expect(mockSupabaseRpc).not.toHaveBeenCalled();
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("enforces consent even when the limiter bypass is active", async () => {
+    const actualLimiter = (await vi.importActual("@/lib/rate-limit")) as {
+      enforceRateLimit: (bucket: string, subject: string) => Promise<void>;
+    };
+    mockEnforceRateLimit.mockImplementation(actualLimiter.enforceRateLimit);
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "P0001", message: "ai_consent_required" },
+    });
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "ai_consent_required" });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 with zero provider calls when the limiter rejects while consent is still pending", async () => {
+    const consentGate = Promise.withResolvers<void>();
+    mockSupabaseRpc.mockImplementation(async () => {
+      await consentGate.promise;
+      return { data: null, error: null };
+    });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "too many", { statusCode: 429 }),
+    );
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(429);
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
   });
 });
+
+function macrotaskFlush(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}

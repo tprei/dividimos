@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
+import { enforceAiConsent } from "@/lib/ai-consent-server";
 import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import {
   parseChatExpense,
@@ -33,6 +34,44 @@ export async function POST(request: Request) {
 
   let text: string;
   let members: MemberContext[] | undefined;
+  try {
+    await Promise.all([
+      enforceAiConsent(supabase),
+      enforceRateLimit("chat.parse", userId),
+    ]);
+  } catch (error) {
+    if (error instanceof AppError && (
+      error.code === "AI_CONSENT_REQUIRED" ||
+      error.code === "AI_CONSENT_IDENTITY" ||
+      error.code === "AI_CONSENT_UNAVAILABLE"
+    )) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code === "AI_CONSENT_REQUIRED"
+            ? "ai_consent_required"
+            : error.code === "AI_CONSENT_IDENTITY"
+              ? String(error.context?.machineCode ?? "unauthenticated")
+              : "ai_consent_unavailable",
+        },
+        { status: error.statusCode },
+      );
+    }
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[chat/parse] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
+  }
+
 
   try {
     const body = await request.json();
@@ -94,23 +133,6 @@ export async function POST(request: Request) {
     }
   }
 
-  try {
-    await enforceRateLimit("chat.parse", userId);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
-      return NextResponse.json(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        { status: 429 },
-      );
-    }
-    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
-      console.error("[chat/parse] unexpected rate-limit failure:", error);
-    }
-    return NextResponse.json(
-      { error: "Serviço temporariamente indisponível" },
-      { status: 503 },
-    );
-  }
 
   try {
     const result = await parseChatExpense(text.trim(), apiKey, members);

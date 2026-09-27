@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock supabase server client
 const mockGetUser = vi.fn();
 const mockGetClaims = vi.fn();
+const mockSupabaseRpc = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
     auth: {
       getUser: () => mockGetUser(),
       getClaims: () => mockGetClaims(),
     },
+    rpc: (...args: unknown[]) => mockSupabaseRpc(...args),
   }),
 }));
 
@@ -57,6 +59,8 @@ describe("POST /api/receipt/ocr", () => {
     // implementation from a prior test — reset the default to success here.
     mockEnforceRateLimit.mockReset();
     mockEnforceRateLimit.mockResolvedValue(undefined);
+    mockSupabaseRpc.mockReset();
+    mockSupabaseRpc.mockResolvedValue({ data: null, error: null });
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -335,4 +339,143 @@ describe("POST /api/receipt/ocr", () => {
     expect(JSON.stringify(body)).not.toContain("verificar o limite");
     expect(mockParseReceiptImage).not.toHaveBeenCalled();
   });
+
+  it("does not call the provider without current AI consent", async () => {
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "P0001", message: "ai_consent_required" },
+    });
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+      code: "ai_consent_required",
+    });
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the consent RPC reports an unexpected SQL error", async () => {
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "boom" },
+    });
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Não foi possível verificar sua permissão de IA. Tente novamente.",
+      code: "ai_consent_unavailable",
+    });
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the consent RPC transport throws", async () => {
+    mockSupabaseRpc.mockRejectedValue(new TypeError("fetch failed"));
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Não foi possível verificar sua permissão de IA. Tente novamente.",
+      code: "ai_consent_unavailable",
+    });
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("waits for consent and rate limiting before calling the provider", async () => {
+    const order: string[] = [];
+    const consentGate = Promise.withResolvers<void>();
+    const limiterGate = Promise.withResolvers<void>();
+    mockSupabaseRpc.mockImplementation(async () => {
+      await consentGate.promise;
+      order.push("consent");
+      return { data: null, error: null };
+    });
+    mockEnforceRateLimit.mockImplementation(async () => {
+      await limiterGate.promise;
+      order.push("limiter");
+    });
+    mockParseReceiptImage.mockImplementation(async () => {
+      order.push("provider");
+      return { merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 };
+    });
+
+    const pending = POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    await macrotaskFlush();
+    expect(order).not.toContain("provider");
+
+    consentGate.resolve();
+    await macrotaskFlush();
+    expect(order).not.toContain("provider");
+
+    limiterGate.resolve();
+    const res = await pending;
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 });
+    expect(order).toEqual(["consent", "limiter", "provider"]);
+  });
+
+  it("allows the existing happy path with current consent", async () => {
+    mockParseReceiptImage.mockResolvedValue({ merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 });
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 });
+    expect(mockSupabaseRpc).toHaveBeenCalledWith("require_ai_consent", { p_version: 1 });
+    expect(mockParseReceiptImage).toHaveBeenCalledOnce();
+  });
+
+  it("does not query consent or call the provider when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockGetClaims.mockResolvedValue({ data: null, error: null });
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(401);
+    expect(mockSupabaseRpc).not.toHaveBeenCalled();
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("enforces consent even when the limiter bypass is active", async () => {
+    const actualLimiter = (await vi.importActual("@/lib/rate-limit")) as {
+      enforceRateLimit: (bucket: string, subject: string) => Promise<void>;
+    };
+    mockEnforceRateLimit.mockImplementation(actualLimiter.enforceRateLimit);
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    mockSupabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: "P0001", message: "ai_consent_required" },
+    });
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "ai_consent_required" });
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 with zero provider calls when the limiter rejects while consent is still pending", async () => {
+    const consentGate = Promise.withResolvers<void>();
+    mockSupabaseRpc.mockImplementation(async () => {
+      await consentGate.promise;
+      return { data: null, error: null };
+    });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "too many", { statusCode: 429 }),
+    );
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(429);
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
 });
+
+function macrotaskFlush(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
