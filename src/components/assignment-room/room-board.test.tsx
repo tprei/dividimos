@@ -77,6 +77,7 @@ const boardProps = {
   claimError: null,
   splitError: null,
   onSplit: async () => true,
+  onDismissSplitError: noop,
   inviteOpen: false,
   onInviteOpenChange: noop,
   inviteError: null,
@@ -365,6 +366,17 @@ describe("RoomBoard", () => {
     rerender(<RoomBoard view={view} {...boardProps}
       splitError={{ itemId: "beer", message: "Não foi possível salvar." }} />);
     expect(within(editor).getByRole("alert")).toHaveTextContent("Não foi possível salvar.");
+  });
+
+  it("drops an item's split error when its row collapses from the header", async () => {
+    const user = userEvent.setup();
+    const onDismissSplitError = vi.fn();
+    render(<RoomBoard view={hostView([])} {...boardProps} onDismissSplitError={onDismissSplitError}
+      splitError={{ itemId: "beer", message: "Não foi possível salvar." }} />);
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    await user.click(screen.getByRole("button", { name: "Cerveja" }));
+    expect(screen.queryByRole("form", { name: "Dividir Cerveja" })).not.toBeInTheDocument();
+    expect(onDismissSplitError).toHaveBeenCalledOnce();
   });
 
   it("projects money by ownership and excludes removed participants from the host roster", async () => {

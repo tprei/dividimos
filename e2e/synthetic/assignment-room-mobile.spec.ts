@@ -155,8 +155,9 @@ async function chooseFraction(
     await editor.getByRole("button", { name: "Limpar" }).click();
     await editor.getByRole("button", { name: "Você", exact: true }).click();
     if (fraction !== "Inteira") {
+      const chip = fraction === "Metade" ? "½" : fraction;
       await editor.getByRole("radio", { name: "Ajustar" }).click();
-      await editor.getByRole("button", { name: fraction === "Metade" ? "½" : fraction, exact: true }).click();
+      await editor.getByRole("button", { name: `${chip} para Você`, exact: true }).click();
     }
     return editor;
   }

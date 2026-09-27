@@ -55,6 +55,7 @@ interface RoomBoardProps {
     shares: AssignmentItemShare[],
     expectedItemRevision: number,
   ) => Promise<boolean>;
+  onDismissSplitError: () => void;
   onRotateInvite: () => void;
   onRemoveParticipant: (participantId: string) => void;
   onClose: () => void;
@@ -81,6 +82,7 @@ export function RoomBoard({
   onReview,
   onClaim,
   onSplit,
+  onDismissSplitError,
   onRotateInvite,
   onRemoveParticipant,
   onClose,
@@ -190,6 +192,7 @@ export function RoomBoard({
 
   function closeItemEditor(itemId: string) {
     setItemDirty(itemId, false);
+    if (splitError?.itemId === itemId) onDismissSplitError();
     setExpandedItemIds((current) => {
       const next = new Set(current);
       next.delete(itemId);
@@ -236,7 +239,10 @@ export function RoomBoard({
   }
 
   function leaveBoard(action: (() => void) | undefined, itemId?: string) {
-    if (savingItemIds.size > 0 || pendingItemIds.length > 0) return;
+    const busy = itemId
+      ? savingItemIds.has(itemId) || pendingItemIds.includes(itemId)
+      : savingItemIds.size > 0 || pendingItemIds.length > 0;
+    if (busy) return;
     const dirty = itemId ? dirtyItemIds.has(itemId) : dirtyItemIds.size > 0;
     if (dirty && !window.confirm("Descartar as divisões não salvas?")) return;
     action?.();
@@ -408,6 +414,9 @@ export function RoomBoard({
                           }}
                           onSave={(shares, revision) => saveItemSplit(row.item.id, shares, revision)}
                           onDirtyChange={(dirty) => setItemDirty(row.item.id, dirty)}
+                          onDismissError={() => {
+                            if (splitError?.itemId === row.item.id) onDismissSplitError();
+                          }}
                           onClose={() => closeItemEditor(row.item.id)}
                         />
                       }
@@ -511,7 +520,7 @@ export function RoomBoard({
           </>
         )}
       </main>
-      {view.role === "host" && expandedItemIds.size === 0 && (view.room.status === "open" || view.room.status === "closed") && (
+      {view.role === "host" && dirtyItemIds.size === 0 && savingItemIds.size === 0 && (view.room.status === "open" || view.room.status === "closed") && (
         <RoomHostControls unownedLineCount={roomMoney?.unownedLineCount ?? availableRows.length} complete={Boolean(roomMoney) && roomComplete} closed={view.room.status === "closed"} disabled={hostControlsDisabled} closePending={closePending} onReturnToReview={onReview ? () => leaveBoard(onReview) : undefined} onClose={() => leaveBoard(onClose)} />
       )}
       {view.role === "participant" && !accessRemoved && (view.room.status === "open" || view.room.status === "closed") && (

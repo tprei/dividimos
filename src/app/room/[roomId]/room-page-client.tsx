@@ -632,6 +632,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         onReview={view.role === "host" && view.room.status === "closed" ? () => setEditingClosed(false) : undefined}
         onClaim={handleClaim}
         onSplit={handleSplit}
+        onDismissSplitError={() => setSplitError(null)}
         onRotateInvite={handleRotateInvite}
         onRemoveParticipant={handleRemoveParticipant}
         onClose={handleClose}
