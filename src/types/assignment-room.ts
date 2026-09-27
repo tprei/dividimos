@@ -197,6 +197,11 @@ export interface OpenAssignmentRoom extends AssignmentRoomSummary {
   joined: boolean;
 }
 
+export interface HostedAssignmentRoom extends Omit<AssignmentRoomSummary, "groupId"> {
+  groupId: string | null;
+  groupName: string | null;
+}
+
 export type AssignmentRoomAccess = "none" | "joined" | "removed";
 
 export interface AssignmentRoomAccessEntry {

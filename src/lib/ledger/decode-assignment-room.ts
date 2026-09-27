@@ -11,6 +11,7 @@ import type {
   AssignmentRoomSummary,
   AssignmentRoomClaimer,
   AssignmentRoomView,
+  HostedAssignmentRoom,
   OpenAssignmentRoom,
 } from "@/types/assignment-room";
 import type {
@@ -129,6 +130,7 @@ const ROOM_SUMMARY_KEYS = [
   "expenseId",
 ] as const;
 const OPEN_ROOM_KEYS = [...ROOM_SUMMARY_KEYS, "joined"] as const;
+const HOSTED_ROOM_KEYS = [...ROOM_SUMMARY_KEYS, "groupName"] as const;
 const CLAIMER_KEYS = ["participantId", "userId", "name", "avatarUrl"] as const;
 const ROOM_STATUSES = ["open", "closed", "finalized", "cancelled"] as const;
 
@@ -560,14 +562,12 @@ function decodeClaimer(
   });
 }
 
-function decodeSummaryFields(
+function decodeSummaryBody(
   raw: Record<string, unknown>,
   path: Path
-): ValidationResult<AssignmentRoomSummary, WireIssue> {
+): ValidationResult<Omit<AssignmentRoomSummary, "groupId">, WireIssue> {
   const roomId = id(raw.id, [...path, "id"]);
   if (!roomId.ok) return roomId;
-  const groupId = id(raw.groupId, [...path, "groupId"]);
-  if (!groupId.ok) return groupId;
   const status = oneOf(raw.status, ROOM_STATUSES, [...path, "status"]);
   if (!status.ok) return status;
   const revision = nonnegativeCount(raw.revision, [...path, "revision"]);
@@ -592,7 +592,6 @@ function decodeSummaryFields(
   if (!expenseId.ok) return expenseId;
   return ok({
     id: roomId.value,
-    groupId: groupId.value,
     status: status.value,
     revision: revision.value,
     title: title.value,
@@ -605,6 +604,16 @@ function decodeSummaryFields(
     claimers: claimers.value,
     expenseId: expenseId.value,
   });
+}
+
+function decodeSummaryFields(
+  raw: Record<string, unknown>,
+  path: Path
+): ValidationResult<AssignmentRoomSummary, WireIssue> {
+  const body = decodeSummaryBody(raw, path);
+  if (!body.ok) return body;
+  const groupId = id(raw.groupId, [...path, "groupId"]);
+  return groupId.ok ? ok({ ...body.value, groupId: groupId.value }) : groupId;
 }
 
 export function decodeAssignmentRoomSummary(
@@ -639,6 +648,32 @@ export function decodeOpenAssignmentRooms(
   const keys = exactKeys(raw, ["rooms"], path);
   if (!keys.ok) return keys;
   return arrayOf(raw.rooms, [...path, "rooms"], decodeOpenAssignmentRoom);
+}
+
+function decodeHostedAssignmentRoom(
+  raw: unknown,
+  path: Path
+): ValidationResult<HostedAssignmentRoom, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, HOSTED_ROOM_KEYS, path);
+  if (!keys.ok) return keys;
+  const body = decodeSummaryBody(raw, path);
+  if (!body.ok) return body;
+  const groupId = nullableId(raw.groupId, [...path, "groupId"]);
+  if (!groupId.ok) return groupId;
+  const groupName = nullableStr(raw.groupName, [...path, "groupName"]);
+  if (!groupName.ok) return groupName;
+  return ok({ ...body.value, groupId: groupId.value, groupName: groupName.value });
+}
+
+export function decodeHostedAssignmentRooms(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<HostedAssignmentRoom[], WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["rooms"], path);
+  if (!keys.ok) return keys;
+  return arrayOf(raw.rooms, [...path, "rooms"], decodeHostedAssignmentRoom);
 }
 
 export interface AnnounceAssignmentRoomResult {

@@ -1652,6 +1652,10 @@ export type Database = {
         }
         Returns: Json
       }
+      list_hosted_assignment_rooms: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       list_open_assignment_rooms: {
         Args: {
           p_group_id: string

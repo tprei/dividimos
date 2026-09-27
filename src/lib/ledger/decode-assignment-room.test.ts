@@ -5,6 +5,7 @@ import {
   decodeAssignmentRoomSummary,
   decodeAssignmentRoomView,
   decodeFinalizeAssignmentRoomResult,
+  decodeHostedAssignmentRooms,
   decodeOpenAssignmentRooms,
 } from "./decode-assignment-room";
 
@@ -258,6 +259,13 @@ describe("decodeAssignmentRoomSummary", () => {
       issue: { code: "invalid_wire", path: ["joined"] },
     });
   });
+
+  it("still requires a group for group-topic summaries", () => {
+    expect(decodeAssignmentRoomSummary({ ...roomSummary(), groupId: null })).toMatchObject({
+      ok: false,
+      issue: { code: "invalid_wire", path: ["groupId"] },
+    });
+  });
 });
 
 describe("decodeOpenAssignmentRooms", () => {
@@ -301,6 +309,23 @@ describe("decodeOpenAssignmentRooms", () => {
     expect(decoded).toMatchObject({
       ok: false,
       issue: { code: "invalid_wire", path: ["nextCursor"] },
+    });
+  });
+});
+
+describe("decodeHostedAssignmentRooms", () => {
+  it("decodes rooms with and without a group", () => {
+    const grouped = { ...roomSummary(), groupName: "Viagem" };
+    const standalone = { ...roomSummary(), groupId: null, groupName: null };
+    const decoded = decodeHostedAssignmentRooms({ rooms: [grouped, standalone] });
+    expect(decoded).toMatchObject({ ok: true, value: [grouped, standalone] });
+  });
+
+  it("rejects an entry without the group name", () => {
+    const decoded = decodeHostedAssignmentRooms({ rooms: [roomSummary()] });
+    expect(decoded).toMatchObject({
+      ok: false,
+      issue: { code: "invalid_wire", path: ["rooms", 0, "groupName"] },
     });
   });
 });
