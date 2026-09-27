@@ -569,6 +569,11 @@
       "authenticated": true,
       "note": "Capability RPC; active members claim only their own items while the host may correct any active participant."
     },
+    "public.set_assignment_room_item_claims(p_room_id uuid, p_item_id uuid, p_expected_item_revision bigint, p_claims jsonb)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; writes several participants' shares of one item in one revision."
+    },
     "public.set_group_avatar(p_group_id uuid, p_actor_id uuid, p_emoji text, p_photo_id uuid)": {
       "anon": false,
       "authenticated": false,

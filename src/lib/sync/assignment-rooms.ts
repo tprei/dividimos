@@ -3,6 +3,7 @@ import type {
   AssignmentRoomCompletion,
   AssignmentRoomView,
   SetAssignmentClaimInput,
+  SetAssignmentItemClaimsInput,
 } from "@/types/assignment-room";
 import type {
   ExpenseItemPayload,
@@ -541,6 +542,34 @@ export async function setAssignmentRoomClaim(
           p_participant_id: input.participantId,
           p_expected_item_revision: input.expectedItemRevision,
           p_ticks: input.ticks,
+        },
+        decodeAssignmentRoomView
+      )
+    );
+  } finally {
+    useAssignmentRoomStore.getState().endItemMutation(input.roomId, input.itemId);
+  }
+}
+
+export async function setAssignmentRoomItemClaims(
+  input: SetAssignmentItemClaimsInput
+): Promise<AssignmentRoomView> {
+  const store = useAssignmentRoomStore.getState();
+  if (!store.beginItemMutation(input.roomId, input.itemId)) {
+    throw new LedgerError("item_unavailable");
+  }
+  try {
+    return await mutateRoom(input.roomId, () =>
+      rpc(
+        "set_assignment_room_item_claims",
+        {
+          p_room_id: input.roomId,
+          p_item_id: input.itemId,
+          p_expected_item_revision: input.expectedItemRevision,
+          p_claims: input.shares.map(({ participantId, ticks }) => ({
+            participantId,
+            ticks,
+          })),
         },
         decodeAssignmentRoomView
       )

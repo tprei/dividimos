@@ -30,6 +30,7 @@ import {
   resetAssignmentRoomRuntime,
   rotateAssignmentRoomJoin,
   setAssignmentRoomClaim,
+  setAssignmentRoomItemClaims,
   type CreateAssignmentRoomInput,
 } from "./assignment-rooms";
 
@@ -241,6 +242,65 @@ describe("assignment room sync", () => {
     expect(
       useAssignmentRoomStore.getState().rooms[ROOM_ID].pendingItemIds
     ).toEqual([]);
+  });
+
+  it("rejects a host split while a claim on the same item is in flight", async () => {
+    const pending = Promise.withResolvers<AssignmentRoomView>();
+    mocks.rpc.mockReturnValueOnce(pending.promise);
+    const claim = setAssignmentRoomClaim({
+      roomId: ROOM_ID,
+      itemId: ITEM_ID,
+      participantId: PARTICIPANT_ID,
+      expectedItemRevision: 1,
+      ticks: 120_000,
+    });
+
+    await expect(
+      setAssignmentRoomItemClaims({
+        roomId: ROOM_ID,
+        itemId: ITEM_ID,
+        expectedItemRevision: 1,
+        shares: [{ participantId: PARTICIPANT_ID, ticks: 60_000 }],
+      })
+    ).rejects.toMatchObject({ code: "item_unavailable" });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+
+    pending.resolve(view(2));
+    await claim;
+  });
+
+  it("unlocks the item after a failed host split so the next split is sent", async () => {
+    const other = "00000000-0000-4000-8000-000000000004";
+    mocks.rpc
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockImplementationOnce(decodeThrough(view(3)));
+    const input = {
+      roomId: ROOM_ID,
+      itemId: ITEM_ID,
+      expectedItemRevision: 2,
+      shares: [
+        { participantId: PARTICIPANT_ID, ticks: 60_000 },
+        { participantId: other, ticks: 60_000 },
+      ],
+    };
+
+    await expect(setAssignmentRoomItemClaims(input)).rejects.toMatchObject({ code: "network" });
+    await expect(setAssignmentRoomItemClaims(input)).resolves.toEqual(view(3));
+
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "set_assignment_room_item_claims",
+      {
+        p_room_id: ROOM_ID,
+        p_item_id: ITEM_ID,
+        p_expected_item_revision: 2,
+        p_claims: [
+          { participantId: PARTICIPANT_ID, ticks: 60_000 },
+          { participantId: other, ticks: 60_000 },
+        ],
+      },
+      expect.any(Function)
+    );
+    expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].pendingItemIds).toEqual([]);
   });
 
   it("refreshes once after a conflict and never replays the claim", async () => {
