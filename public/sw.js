@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const SHELL_CACHE = `dividimos-shell-${CACHE_VERSION}`;

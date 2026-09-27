@@ -111,7 +111,7 @@ stateDiagram-v2
 
 ### App
 
-- **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão.
+- **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão. A página offline (`public/offline.html`) é a mesma página do boteco do Android (`native-shell/offline.html`), só que "Tentar novamente" e a volta da conexão recarregam a página que a pessoa tentou abrir.
 - **Troca de aba na hora.** Tocar numa aba da barra de navegação já marca a aba. Se a tela demora mais de 120 ms pra chegar (rede lenta ou instável), o esqueleto dela aparece no lugar da tela anterior até a rota carregar. Cada aba registra o seu esqueleto em `navItems` no `app-shell.tsx`.
 - **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
 - **Tema.** Claro, escuro ou o do sistema.
@@ -787,7 +787,7 @@ Os testes sintéticos (`e2e/synthetic/*.spec.ts`) percorrem jornadas reais pela 
 
 **Grupos e DMs**: convite por `@handle`, e o membro precisa aceitar (confirmação mútua). Membros aceitos e convidados podem estar numa conta, mas só os aceitos leem saldos, contas e chat do grupo; quem está convidado recebe um snapshot reduzido. Todo RPC garante isso checando membership. Uma conversa 1-a-1 é uma linha de `groups` com `kind = 'dm'`, então chat, eventos e saldos funcionam igual nos dois.
 
-**Cliente local-first**: as telas leem o store Zustand (`src/stores/app-store.ts`, salvo em IndexedDB via `src/lib/idb-storage.ts`) e nunca consultam o Supabase direto. Toda a rede mora em `src/lib/sync/`: um snapshot de bootstrap no login, mutations otimistas que desfazem por entrada se falharem e reconciliam com `refreshGroup`, e broadcasts de realtime nos tópicos privados `group:`, `chat:`, `user:` e `assignment:`. `/app/**` é um shell estático pré-renderizado, servido cache-first pelo `public/sw.js`.
+**Cliente local-first**: as telas leem o store Zustand (`src/stores/app-store.ts`, salvo em IndexedDB via `src/lib/idb-storage.ts`) e nunca consultam o Supabase direto. Toda a rede mora em `src/lib/sync/`: um snapshot de bootstrap no login, mutations otimistas que desfazem por entrada se falharem e reconciliam com `refreshGroup`, e broadcasts de realtime nos tópicos privados `group:`, `chat:`, `user:` e `assignment:`. `/app/**` é um shell estático pré-renderizado, servido cache-first pelo `public/sw.js`. No logout, o cliente apaga o cache do shell (e o de avatares) via `clearSessionCaches` em `src/lib/platform/session-caches.ts`, então reabrir o app sem sessão passa pelo servidor, que redireciona pra `/auth`, ou, offline, pela página offline.
 
 **Modelo de conta (inspirado no Splitwise)**: toda conta pertence a um grupo. Dois tipos: `single_amount` (um total dividido entre os participantes) e `itemized` (itens atribuídos por pessoa). Os passos do wizard saem do tipo da conta.
 
