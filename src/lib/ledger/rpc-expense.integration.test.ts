@@ -1687,6 +1687,30 @@ describe("create_expense_with_group", () => {
     expect(after.rows[0].n).toBe(before.rows[0].n);
   });
 
+  it("refuses more than 50 member ids and leaves no group behind", async () => {
+    if (!isIntegrationTestReady) return;
+    const before = await withPg((pg) =>
+      pg.query("select count(*)::int as n from groups where creator_id = $1", [alice.id]),
+    );
+
+    expect(
+      await expectRpcError(
+        callRpc(
+          aliceClient,
+          "create_expense_with_group",
+          args(crypto.randomUUID(), equalSplitPayload([alice.id, bruno.id], 10000), {
+            p_member_ids: Array.from({ length: 51 }, () => crypto.randomUUID()),
+          }),
+        ),
+      ),
+    ).toBe("invalid_argument");
+
+    const after = await withPg((pg) =>
+      pg.query("select count(*)::int as n from groups where creator_id = $1", [alice.id]),
+    );
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
   it("returns the original pair when the same client id is replayed", async () => {
     if (!isIntegrationTestReady) return;
     const clientId = crypto.randomUUID();

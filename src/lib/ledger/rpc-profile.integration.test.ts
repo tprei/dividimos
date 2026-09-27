@@ -1,14 +1,16 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type { ValidationResult } from "@/lib/expense-money";
 import type { WireIssue } from "@/types/ledger";
+import { encryptPixKey } from "@/lib/crypto";
 import {
   decodeBootstrap,
   decodeConversation,
   decodeMe,
   decodeUserProfile,
 } from "@/lib/ledger/decode";
+import { maskPixKey } from "@/lib/pix";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
@@ -17,6 +19,8 @@ import {
   expectRpcError,
   type TestUser,
 } from "@/test/integration-helpers";
+
+vi.mock("server-only", () => ({}));
 
 type OnboardingResult = { kind: "completed" | "already_completed" };
 
@@ -95,7 +99,7 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
         pendingClient,
         `  ${pending.handle}  `,
         "  Primeiro Nome  ",
-        "encrypted-first",
+        encryptPixKey("first@example.com"),
         "first@example.com",
         "email",
       ),
@@ -106,7 +110,7 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
         pendingClient,
         "different_handle",
         "Outro Nome",
-        "encrypted-second",
+        encryptPixKey("second@example.com"),
         "second@example.com",
         "cpf",
       ),
@@ -129,7 +133,7 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
       ownerClient,
       owner.handle,
       "Owner",
-      "owner-encrypted",
+      encryptPixKey("owner@example.com"),
       "owner@example.com",
       "email",
     );
@@ -139,7 +143,7 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
         contenderClient.rpc("complete_onboarding", {
           p_handle: owner.handle,
           p_name: "Contender",
-          p_pix_key_encrypted: "contender-encrypted",
+          p_pix_key_encrypted: encryptPixKey("contender@example.com"),
           p_pix_key_hint: "contender@example.com",
           p_pix_key_type: "email",
         }),
@@ -195,6 +199,107 @@ describe.skipIf(!isIntegrationTestReady)("complete_onboarding RPC", () => {
         }),
       ),
     ).resolves.toMatch(/permission denied/);
+  });
+
+  it("rejects pix ciphertext outside the iv:tag:ciphertext format and hints over 80", async () => {
+    await expect(
+      expectRpcError(
+        invalidClient.rpc("complete_onboarding", {
+          p_handle: invalid.handle,
+          p_name: "Invalid",
+          p_pix_key_encrypted: "chave-sem-formato",
+          p_pix_key_hint: "invalid@example.com",
+          p_pix_key_type: "email",
+        }),
+      ),
+    ).resolves.toBe("invalid_argument");
+
+    await expect(
+      expectRpcError(
+        invalidClient.rpc("complete_onboarding", {
+          p_handle: invalid.handle,
+          p_name: "Invalid",
+          p_pix_key_encrypted: "a:b:c",
+          p_pix_key_hint: "invalid@example.com",
+          p_pix_key_type: "email",
+        }),
+      ),
+    ).resolves.toBe("invalid_argument");
+
+    await expect(
+      expectRpcError(
+        invalidClient.rpc("complete_onboarding", {
+          p_handle: invalid.handle,
+          p_name: "Invalid",
+          p_pix_key_encrypted: encryptPixKey("valid@example.com"),
+          p_pix_key_hint: "h".repeat(81),
+          p_pix_key_type: "email",
+        }),
+      ),
+    ).resolves.toBe("invalid_argument");
+  });
+
+  it("accepts hints of exactly 80 characters and ciphertexts of exactly 256 characters, refusing 81 and 257", async () => {
+    const hintBoundary = await createTestUser({ onboarded: false });
+    await expect(
+      completeOnboarding(
+        authenticateAs(hintBoundary),
+        hintBoundary.handle,
+        "Nome",
+        encryptPixKey("boundary@example.com"),
+        "h".repeat(80),
+        "email",
+      ),
+    ).resolves.toEqual({ kind: "completed" });
+
+    const exactly256 = `${"A".repeat(16)}:${"A".repeat(22)}==:${"B".repeat(212)}==`;
+    expect(exactly256.length).toBe(256);
+    const ciphertextBoundary = await createTestUser({ onboarded: false });
+    await expect(
+      completeOnboarding(
+        authenticateAs(ciphertextBoundary),
+        ciphertextBoundary.handle,
+        "Nome",
+        exactly256,
+        "dica",
+        "email",
+      ),
+    ).resolves.toEqual({ kind: "completed" });
+
+    const exactly257 = `${exactly256}B`;
+    expect(exactly257.length).toBe(257);
+    const rejected = await createTestUser({ onboarded: false });
+    await expect(
+      expectRpcError(
+        authenticateAs(rejected).rpc("complete_onboarding", {
+          p_handle: rejected.handle,
+          p_name: "Nome",
+          p_pix_key_encrypted: exactly257,
+          p_pix_key_hint: "dica",
+          p_pix_key_type: "email",
+        }),
+      ),
+    ).resolves.toBe("invalid_argument");
+  });
+
+  it("accepts a real ciphertext for the longest valid pix key", async () => {
+    const longestEmail = `${"a".repeat(73)}@b.c`;
+    const encrypted = encryptPixKey(longestEmail);
+    const hint = maskPixKey(longestEmail);
+    expect(encrypted.length).toBeLessThanOrEqual(256);
+    expect(hint.length).toBeLessThanOrEqual(80);
+
+    const fresh = await createTestUser({ onboarded: false });
+    await expect(
+      completeOnboarding(
+        authenticateAs(fresh),
+        fresh.handle,
+        "Nome Longo",
+        encrypted,
+        hint,
+        "email",
+      ),
+    ).resolves.toEqual({ kind: "completed" });
   });
 });
 
