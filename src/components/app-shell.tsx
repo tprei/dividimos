@@ -19,6 +19,7 @@ import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { ConversationsSkeleton } from "@/components/conversations/conversations-skeleton";
 import { NewBillSkeleton } from "@/components/bill/wizard/new-bill-skeleton";
 import { GroupsSkeleton } from "@/components/groups/groups-skeleton";
+import { ProfileSkeleton } from "@/components/profile/profile-skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { IconButton } from "@/components/ui/icon-button";
@@ -58,12 +59,11 @@ const navItems = [
   },
   { href: WIZARD_PREFIX, icon: Plus, label: "Nova", primary: true, skeleton: NewBillSkeleton },
   { href: "/app/groups", icon: Users, label: "Grupos", skeleton: GroupsSkeleton },
-  { href: "/app/profile", icon: User, label: "Perfil" },
+  { href: "/app/profile", icon: User, label: "Perfil", skeleton: ProfileSkeleton },
 ];
 
 function pendingSkeletonFor(href: string | null) {
-  const item = navItems.find((candidate) => candidate.href === href);
-  return item && "skeleton" in item ? item.skeleton : null;
+  return navItems.find((candidate) => candidate.href === href)?.skeleton ?? null;
 }
 
 

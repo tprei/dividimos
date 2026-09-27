@@ -168,10 +168,9 @@ describe("ProfilePage QR share button", () => {
 describe("ProfilePage loading skeleton", () => {
   it("renders the loading skeleton while me is null", () => {
     useAppStore.setState({ hydrated: true, me: null });
-    const { container } = render(<ProfilePage />);
+    render(<ProfilePage />);
 
-    expect(container.querySelector(".h-16.w-16.rounded-full")).not.toBeNull();
-    expect(screen.queryByText("Chave Pix")).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Carregando" })).toBeInTheDocument();
     expect(screen.queryByText("Ana Costa")).not.toBeInTheDocument();
   });
 });
