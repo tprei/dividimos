@@ -1,3 +1,4 @@
+import type { Route } from "@playwright/test";
 import { test, expect } from "../fixtures";
 
 test.describe("DM navigation and deep links", () => {
@@ -110,11 +111,11 @@ test.describe("DM navigation and deep links", () => {
   });
 
   // Test 4: Conversations tab navigation from a non-conversations page
-  test("clicking the Conversations tab navigates to the conversation list", async ({
+  test("clicking the Conversations tab switches at once and shows its skeleton until the list loads", async ({
     page,
     seed,
     loginAs,
-  }) => {
+  }, testInfo) => {
     const alice = await seed.createUser({ name: "Alice ConvTab" });
     const bob = await seed.createUser({ name: "Bob ConvTab" });
 
@@ -123,14 +124,44 @@ test.describe("DM navigation and deep links", () => {
     await seed.sendChatMessage(dm.id, bob.id, "Hello Alice!");
 
     await loginAs(alice, { navigate: false });
-    await page.goto("/app/profile");
-    await page.waitForLoadState("networkidle");
 
-    const conversasLink = page.getByRole("link", { name: /Conversas/i });
+    // Held from page load, because a prefetch that lands before the tap
+    // commits the navigation without ever showing the skeleton.
+    const held: Route[] = [];
+    let holding = true;
+    await page.route(
+      (url) => url.pathname === "/app/conversations",
+      async (route) => {
+        const isRsc = route.request().headers()["rsc"] === "1" || new URL(route.request().url()).searchParams.has("_rsc");
+        if (holding && isRsc) {
+          held.push(route);
+          return;
+        }
+        await route.continue();
+      },
+    );
+
+    await page.goto("/app/profile");
+    await expect(page.getByRole("heading", { name: "Perfil", exact: true })).toBeVisible({ timeout: 10000 });
+
+    const nav = page.getByRole("navigation", { name: "Navegação principal" });
+    const conversasLink = nav.getByRole("link", { name: /Conversas/i });
     await conversasLink.click();
 
+    await expect(conversasLink).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("main").getByRole("status", { name: "Carregando" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conversas", exact: true })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/app/profile");
+    await testInfo.attach("conversas-skeleton", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+
+    holding = false;
+    await Promise.all(held.map((route) => route.continue()));
+
     await expect(page).toHaveURL("/app/conversations", { timeout: 8000 });
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("main").getByRole("status", { name: "Carregando" })).toHaveCount(0);
 
     // Bob should appear in the conversations list
     await expect(page.getByText(bob.name.split(" ")[0])).toBeVisible({

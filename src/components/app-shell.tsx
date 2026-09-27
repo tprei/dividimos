@@ -16,6 +16,7 @@ import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
+import { ConversationsSkeleton } from "@/components/conversations/conversations-skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { IconButton } from "@/components/ui/icon-button";
@@ -51,6 +52,7 @@ const navItems = [
     icon: MessageSquare,
     label: "Conversas",
     badge: true as const,
+    skeleton: ConversationsSkeleton,
   },
   { href: WIZARD_PREFIX, icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
