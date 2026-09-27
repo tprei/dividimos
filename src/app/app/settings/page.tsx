@@ -28,6 +28,7 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SelectField } from "@/components/ui/select-field";
+import { BlockedUsersSettings } from "@/components/settings/blocked-users-settings";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -217,6 +218,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </motion.div>
+
+      <BlockedUsersSettings key={me.id} />
 
       <motion.div
         variants={popIn} initial="hidden" animate="visible"

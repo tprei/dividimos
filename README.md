@@ -97,7 +97,7 @@ stateDiagram-v2
 - **Leitor de convite.** **Entrar em sala** abre um leitor que reconhece QR de sala, de grupo, de perfil e de convidado.
 - **Página do grupo.** Avatar com emoji ou foto, **Gastos do grupo** com o total e a parte de cada um, e as abas **Saldos**, **Contas** e **Membros**.
 - **Sair e remover.** Só sai do grupo quem está com saldo zerado. O criador remove membros, e quem foi removido não volta sozinho por link.
-- **Bloquear pessoa.** Bloquear alguém corta o contato direto entre vocês: conversa 1-a-1 nova ou existente, convites de grupo, lembretes e push dessa pessoa param de chegar pra você, ela não pode te nomear numa sala de itens, e as mensagens dela nos grupos que vocês compartilham deixam de aparecer pra você. O bloqueio vale até você desbloquear; despesas, saldos e membros dos grupos que vocês dividem não mudam, e a outra pessoa não recebe aviso. Quem entra por link de sala ou resgata a parte de um convidado continua podendo, e recusas de conversa anteriores continuam valendo mesmo depois do desbloqueio.
+- **Bloquear pessoa.** Bloquear alguém corta o contato direto entre vocês: conversa 1-a-1 nova ou existente, convites de grupo novos, lembretes e push dessa pessoa param de chegar pra você, ela não pode te nomear numa sala de itens, e as mensagens dela nos grupos que vocês compartilham deixam de aparecer pra você. O bloqueio vale até você desbloquear; despesas, saldos e membros dos grupos que vocês dividem não mudam, e a outra pessoa não recebe aviso. Um convite que já estava pendente e os links de convite de grupo continuam valendo; pelo link de uma sala, a pessoa bloqueada entra como convidada, sem vínculo com a conta; e quem resgata a parte de um convidado continua podendo. Recusas de conversa anteriores continuam valendo mesmo depois do desbloqueio. Bloqueie em **Bloquear pessoa** no perfil (`/u/<handle>`) e desbloqueie ali ou em Configurações > **Pessoas bloqueadas**. Enquanto você bloqueia alguém, o perfil dessa pessoa não mostra **Dividir uma conta** nem **Enviar mensagem**.
 
 ### Conversas
 
@@ -213,7 +213,7 @@ flowchart TB
 |--------|---------|-------------------------|
 | `group:<id>` | `ledger`, `chat_activity` | Membros aceitos. Dispara um `refreshGroup`; no `ledger`, só se a `ledger_version` ou o evento for novo. |
 | `chat:<id>` | `message` | Quem está com a conversa aberta. A mensagem entra direto no store. |
-| `user:<id>` | `membership` | O próprio usuário. Convite ou DM novo dispara um novo bootstrap. |
+| `user:<id>` | `membership`, `blocks_changed` | O próprio usuário. Convite ou DM novo dispara um novo bootstrap; bloquear ou desbloquear em outro aparelho também, pra atualizar a lista de bloqueados. |
 | `assignment:<sala>:<chave>` | `assignment`, `access_changed` | Quem tem o link da sala, com ou sem conta. A chave é aleatória e troca quando alguém é removido. Refaz a leitura da sala quando a `revision` sobe. |
 
 - **Notificações.** Todo RPC financeiro ou de membros grava uma linha em `group_events`. Ela alimenta o feed, os cards do chat e o push: o cliente que agiu manda o id pra `/api/notify`, que reivindica a linha uma vez (`notified_at`) e dispara Web Push (VAPID) e FCM respeitando as categorias de cada pessoa.

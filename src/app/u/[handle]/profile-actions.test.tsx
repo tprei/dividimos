@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import toast from "react-hot-toast";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { SendMessageButton } from "./profile-actions";
+import { useAppStore } from "@/stores/app-store";
+import { SendMessageButton, SplitBillButton } from "./profile-actions";
 
 const pushMock = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -21,6 +22,7 @@ vi.mock("react-hot-toast", () => ({
 describe("SendMessageButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.getState().reset();
   });
 
   it("creates a DM group and navigates on click", async () => {
@@ -65,5 +67,20 @@ describe("SendMessageButton", () => {
     });
 
     resolve({ groupId: "group-abc", created: true });
+  });
+
+  it("offers no message or split action for someone you blocked", () => {
+    useAppStore.getState().applyUserBlocks([
+      { id: "user-123", handle: "bruno", name: "Bruno", avatarUrl: null, isBot: false },
+    ]);
+
+    render(
+      <>
+        <SendMessageButton targetUserId="user-123" />
+        <SplitBillButton targetUserId="user-123" />
+      </>,
+    );
+
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });
