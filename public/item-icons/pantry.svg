@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M7 3h18l-1 5 3 18c.4 2.2-.6 4-3 4H8c-2.4 0-3.4-1.8-3-4L8 8 7 3Z" fill="#D3D3D3"/>
+<path d="M7 3h15l-1 5 3 18c.3 1.6-.2 3-1.5 4H8c-2.4 0-3.4-1.8-3-4L8 8 7 3Z" fill="#F4F4F4"/>
+<path d="M7 3h18l-.6 3H7.6L7 3ZM5.4 24h21.2l.4 2c.4 2.2-.6 4-3 4H8c-2.4 0-3.4-1.8-3-4l.4-2Z" fill="#00A26A"/>
+<path d="M11 10h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" fill="#D99542"/>
+<path d="M11 10h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" fill="#E7B87B"/>
+<ellipse cx="12" cy="13.5" rx="1" ry="2.3" transform="rotate(-30 12 13.5)" fill="#FFF3C2"/>
+<ellipse cx="17.5" cy="13" rx="1" ry="2.3" transform="rotate(35 17.5 13)" fill="#FFF3C2"/>
+<ellipse cx="11.5" cy="19" rx="1" ry="2.3" transform="rotate(30 11.5 19)" fill="#FFF3C2"/>
+<ellipse cx="16.5" cy="18.5" rx="1" ry="2.3" transform="rotate(-35 16.5 18.5)" fill="#FFF3C2"/>
+</svg>
