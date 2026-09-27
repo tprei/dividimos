@@ -3,6 +3,7 @@ import { Nunito } from "next/font/google";
 import { Geist_Mono } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import { MotionProvider } from "@/components/motion-provider";
+import { NativeVersionGate } from "@/components/native-version-gate";
 import { RegisterSW } from "@/components/pwa/register-sw";
 import { ThemeSync } from "@/components/theme-sync";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
@@ -87,7 +88,9 @@ export default function RootLayout({
       <body className="fixed inset-x-0 top-[var(--app-viewport-top)] h-[var(--app-viewport-height)] w-full overflow-hidden flex flex-col safe-top safe-bottom">
         <ThemeSync />
         <RegisterSW />
-        <MotionProvider>{children}</MotionProvider>
+        <MotionProvider>
+          <NativeVersionGate>{children}</NativeVersionGate>
+        </MotionProvider>
         <Toaster
           position="top-center"
           toastOptions={{
