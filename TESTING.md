@@ -290,7 +290,7 @@ Tests native camera capture, photo gallery selection, and web file upload fallba
   5. Verify captured/selected image displays in the preview container with buttons **"Trocar foto"** and **"Processar nota"**.
   6. Tap **"Processar nota"**:
      - Verify transition to `ScanSkeletonLoader` ("Lendo nota fiscal...").
-     - Verify image compression occurs client-side (`src/lib/process-receipt-scan.ts`) and uploads to `/api/receipt/ocr`.
+     - Verify image compression occurs client-side (`src/lib/sync/receipt.ts`) and uploads to `/api/receipt/ocr`.
 - **Expected Observable Outcomes**:
   - Native camera launches smoothly and saves captured image to app cache.
   - Permission denial triggers clear in-app guidance without freezing the interface.
@@ -391,7 +391,7 @@ Tests that Gemini receipt OCR output is treated strictly as an untrusted draft r
 - **Surfaces & File Paths**:
   - API Route: `src/app/api/receipt/ocr/route.ts`
   - OCR Logic: `src/lib/receipt-ocr.ts` (`parseReceiptImage` via `@google/genai` Gemini 2.5 Flash)
-  - Validation & Deadline: `src/lib/process-receipt-scan.ts` (`assertReconciledReceipt`)
+  - Validation & Deadline: `src/lib/sync/receipt.ts` (`assertReconciledReceipt`)
   - Review Screen: `src/components/bill/scanned-items-review.tsx` (`ScannedItemsReview`)
   - Item Row Editor: `src/components/bill/receipt/receipt-item-row.tsx` (`ReceiptItemRow`)
   - Persistence Boundary: `src/app/app/bill/new/use-wizard-submit.ts`, `src/lib/ledger/rpc-expense.ts` (`createExpense`)

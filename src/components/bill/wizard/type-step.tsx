@@ -10,7 +10,7 @@ import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceBillReview, type ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import { Button } from "@/components/ui/button";
-import { processReceiptScan } from "@/lib/process-receipt-scan";
+import { processReceiptScan } from "@/lib/sync/receipt";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";

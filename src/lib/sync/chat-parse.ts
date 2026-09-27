@@ -1,5 +1,10 @@
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
-import { LedgerError } from "@/lib/sync/errors";
+import {
+  assertAiConsentAttempt,
+  captureAiConsentAttempt,
+  invalidateAiConsent,
+} from "./ai-consent";
+import { LedgerError } from "./errors";
 
 const FAILURE_FALLBACK = "Erro ao processar mensagem";
 
@@ -13,6 +18,8 @@ export async function parseChatExpenseMessage(input: {
   members?: { handle: string; name: string }[];
   signal?: AbortSignal;
 }): Promise<ChatExpenseResult> {
+  const attempt = captureAiConsentAttempt();
+
   let response: Response;
   try {
     response = await fetch("/api/chat/parse", {
@@ -27,8 +34,23 @@ export async function parseChatExpenseMessage(input: {
   }
 
   if (!response.ok) {
-    const body = (await response.json()) as { error?: string };
-    throw new Error(body.error ?? FAILURE_FALLBACK);
+    const body = (await response.json().catch(() => null)) as
+      | { error?: string; code?: string }
+      | null;
+    assertAiConsentAttempt(attempt);
+    if (body?.code === "ai_consent_required") {
+      invalidateAiConsent(attempt);
+      throw new LedgerError("ai_consent_required");
+    }
+    throw new Error(body?.error ?? FAILURE_FALLBACK);
   }
-  return (await response.json()) as ChatExpenseResult;
+
+  let result: ChatExpenseResult;
+  try {
+    result = (await response.json()) as ChatExpenseResult;
+  } catch (error) {
+    throw new LedgerError("invalid_wire", { cause: error });
+  }
+  assertAiConsentAttempt(attempt);
+  return result;
 }

@@ -5,11 +5,14 @@ vi.mock("@/lib/image-utils", () => ({
   compressImage: vi.fn((file: File) => Promise.resolve(file)),
 }));
 
+import { compressImage } from "@/lib/image-utils";
+import { useAppStore } from "@/stores/app-store";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
 import {
   processReceiptScan,
   ReceiptTimeoutError,
   ReceiptInvalidError,
-} from "./process-receipt-scan";
+} from "./receipt";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 const mockOcrResult: ReceiptOcrResult = {
@@ -38,9 +41,47 @@ function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
 }
 
 
+function revokeLocally(): void {
+  useAppStore.getState().patch((s) =>
+    s.me
+      ? {
+          me: { ...s.me, aiConsentVersion: null, aiConsentGrantedAt: null },
+          aiConsentRevision: s.aiConsentRevision + 1,
+        }
+      : {},
+  );
+}
+
+function seedUsableConsent(): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: "user-1",
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: "user-1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+      email: "alice@example.com",
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: CURRENT_AI_CONSENT_VERSION,
+      aiConsentGrantedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+}
+
 describe("processReceiptScan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    seedUsableConsent();
+  });
+  afterEach(() => {
+    useAppStore.getState().reset();
   });
 
   it("compresses the image, sends base64 to OCR API, and returns result", async () => {
@@ -241,10 +282,111 @@ describe("processReceiptScan", () => {
 
     fetchSpy.mockRestore();
   });
+  it("revocation during compression uploads nothing and reports the cancelled path", async () => {
+    const compression = Promise.withResolvers<File>();
+    vi.mocked(compressImage).mockImplementationOnce(() => compression.promise as never);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const pending = processReceiptScan(createMockFile());
+    revokeLocally();
+    compression.resolve(createMockFile());
+
+    await expect(pending).rejects.toThrowError(
+      "Não foi possível processar. Tente novamente ou adicione manualmente.",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it("a 403 denial invalidates only the matching account", async () => {
+    const response = Promise.withResolvers<Response>();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockReturnValue(response.promise as never);
+
+    const pending = processReceiptScan(createMockFile());
+    useAppStore.getState().reset();
+    seedUsableConsent();
+    useAppStore.setState({
+      me: {
+        ...useAppStore.getState().me!,
+        id: "user-2",
+        handle: "bob",
+        email: "bob@example.com",
+      },
+      lastBootstrappedAccountId: "user-2",
+    });
+
+    response.resolve(
+      new Response(
+        JSON.stringify({
+          error: "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+          code: "ai_consent_required",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(pending).rejects.toBeInstanceOf(ReceiptTimeoutError);
+
+    const state = useAppStore.getState();
+    expect(state.me?.id).toBe("user-2");
+    expect(state.me?.aiConsentVersion).toBe(CURRENT_AI_CONSENT_VERSION);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("a 403 denial for the current account invalidates its grant", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+          code: "ai_consent_required",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    await expect(processReceiptScan(createMockFile())).rejects.toMatchObject({
+      code: "ai_consent_required",
+    });
+
+    const state = useAppStore.getState();
+    expect(state.me?.aiConsentVersion).toBeNull();
+    expect(state.aiConsentRevision).toBe(1);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("missing consent means zero fetch calls", async () => {
+    revokeLocally();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(processReceiptScan(createMockFile())).rejects.toMatchObject({
+      code: "ai_consent_required",
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it("a 503 keeps known consent but surfaces the failure", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), {
+        status: 503,
+      }),
+    );
+
+    await expect(processReceiptScan(createMockFile())).rejects.toThrow(
+      "Serviço temporariamente indisponível",
+    );
+
+    const state = useAppStore.getState();
+    expect(state.me?.aiConsentVersion).toBe(CURRENT_AI_CONSENT_VERSION);
+    expect(state.me?.aiConsentGrantedAt).toBe("2026-01-01T00:00:00.000Z");
+
+    fetchSpy.mockRestore();
+  });
 });
-
-
-
 
 describe("ReceiptTimeoutError", () => {
   it("has timeout property set to true", () => {
@@ -270,6 +412,7 @@ describe("ReceiptTimeoutError", () => {
 describe("application-owned deadlines", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    seedUsableConsent();
   });
 
   afterEach(() => {

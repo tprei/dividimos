@@ -1,5 +1,10 @@
 import type { MemberContext, VoiceExpenseResult } from "@/lib/voice-expense-parser";
-import { LedgerError } from "@/lib/sync/errors";
+import {
+  assertAiConsentAttempt,
+  captureAiConsentAttempt,
+  invalidateAiConsent,
+} from "./ai-consent";
+import { LedgerError } from "./errors";
 
 const FAILURE_FALLBACK = "Erro ao processar comando de voz";
 const TRANSCRIBE_FALLBACK = "Não foi possível transcrever o áudio";
@@ -12,13 +17,17 @@ const TRANSCRIBE_FALLBACK = "Não foi possível transcrever o áudio";
 export async function parseVoiceExpenseCommand(input: {
   text: string;
   members?: MemberContext[];
+  signal?: AbortSignal;
 }): Promise<VoiceExpenseResult> {
+  const attempt = captureAiConsentAttempt();
+
   let response: Response;
   try {
     response = await fetch("/api/voice/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: input.text, members: input.members }),
+      signal: input.signal,
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
@@ -26,14 +35,25 @@ export async function parseVoiceExpenseCommand(input: {
   }
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    const body = (await response.json().catch(() => null)) as
+      | { error?: string; code?: string }
+      | null;
+    assertAiConsentAttempt(attempt);
+    if (body?.code === "ai_consent_required") {
+      invalidateAiConsent(attempt);
+      throw new LedgerError("ai_consent_required");
+    }
     throw new Error(body?.error || FAILURE_FALLBACK);
   }
+
+  let result: VoiceExpenseResult;
   try {
-    return (await response.json()) as VoiceExpenseResult;
+    result = (await response.json()) as VoiceExpenseResult;
   } catch (error) {
     throw new LedgerError("invalid_wire", { cause: error });
   }
+  assertAiConsentAttempt(attempt);
+  return result;
 }
 
 /**
@@ -46,6 +66,8 @@ export async function transcribeVoiceAudio(
   blob: Blob,
   signal: AbortSignal,
 ): Promise<string> {
+  const attempt = captureAiConsentAttempt();
+
   const form = new FormData();
   form.append("audio", blob);
 
@@ -62,7 +84,14 @@ export async function transcribeVoiceAudio(
   }
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    const body = (await response.json().catch(() => null)) as
+      | { error?: string; code?: string }
+      | null;
+    assertAiConsentAttempt(attempt);
+    if (body?.code === "ai_consent_required") {
+      invalidateAiConsent(attempt);
+      throw new LedgerError("ai_consent_required");
+    }
     throw new Error(body?.error || TRANSCRIBE_FALLBACK);
   }
 
@@ -75,5 +104,6 @@ export async function transcribeVoiceAudio(
   if (typeof data.transcript !== "string") {
     throw new LedgerError("invalid_wire");
   }
+  assertAiConsentAttempt(attempt);
   return data.transcript;
 }

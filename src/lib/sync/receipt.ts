@@ -1,6 +1,25 @@
 import { compressImage } from "@/lib/image-utils";
 import { computeServiceFeeCents, decodeExpenseResult } from "@/lib/expense-money";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import type { AiConsentAttempt } from "./ai-consent";
+import {
+  assertAiConsentAttempt,
+  captureAiConsentAttempt,
+  invalidateAiConsent,
+} from "./ai-consent";
+import { LedgerError } from "./errors";
+
+/**
+ * A scan invalidated mid-flight is cancelled: the caller must see the PT-BR
+ * cancelled message, never the raw AbortError from the consent assertion.
+ */
+function assertScanCurrent(attempt: AiConsentAttempt): void {
+  try {
+    assertAiConsentAttempt(attempt);
+  } catch {
+    throw new ReceiptTimeoutError();
+  }
+}
 
 /**
  * Application-owned deadlines. A server-side timeout does not cover a proxy
@@ -116,6 +135,7 @@ export async function processReceiptScan(
   file: File,
   signal?: AbortSignal,
 ): Promise<ReceiptOcrResult> {
+  const attempt = captureAiConsentAttempt();
   const compressed = await compressImage(file);
   const buffer = await compressed.arrayBuffer();
   const base64 = btoa(
@@ -124,6 +144,8 @@ export async function processReceiptScan(
       "",
     ),
   );
+
+  assertScanCurrent(attempt);
 
   let res: Response;
   try {
@@ -143,7 +165,16 @@ export async function processReceiptScan(
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      code?: string;
+      timeout?: boolean;
+    };
+    assertScanCurrent(attempt);
+    if (body.code === "ai_consent_required") {
+      invalidateAiConsent(attempt);
+      throw new LedgerError("ai_consent_required");
+    }
     if (body.timeout) {
       throw new ReceiptTimeoutError(body.error);
     }
@@ -151,5 +182,6 @@ export async function processReceiptScan(
   }
 
   const result = (await res.json()) as ReceiptOcrResult;
+  assertScanCurrent(attempt);
   return assertReconciledReceipt(result);
 }
