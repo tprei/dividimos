@@ -3,12 +3,8 @@
 import { Loader2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { GuestAvatar } from "@/components/shared/guest-avatar";
-import { displayNames } from "@/lib/people";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
-import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -39,10 +35,7 @@ interface RoomItemClaimProps {
   item: AssignmentRoomItem;
   claims: AssignmentRoomClaim[];
   availableTicks: number;
-  targetParticipantId: string;
   participants: AssignmentRoomParticipant[];
-  canSelectParticipant: boolean;
-  onTargetChange: (participantId: string) => void;
   pending: boolean;
   disabled: boolean;
   error: { participantId: string; message: string } | null;
@@ -62,10 +55,7 @@ export function RoomItemClaim({
   item,
   claims,
   availableTicks,
-  targetParticipantId,
   participants,
-  canSelectParticipant,
-  onTargetChange,
   pending,
   disabled,
   error,
@@ -76,15 +66,14 @@ export function RoomItemClaim({
   const multiUnit = item.quantityMilliunits >= 2_000;
   const target =
     participants.find(
-      (participant) => participant.id === targetParticipantId,
+      (participant) => participant.id === selfParticipantId,
     ) ?? null;
   const targetActive = target !== null && !target.removed;
-  const labels = displayNames(participants.filter((person) => !person.removed).map((person) => ({ ...person, name: person.displayName })), { style: "short", viewerId: selfParticipantId, selfLabel: "você" });
   const savedTicks = useMemo(
     () =>
-      claims.find((claim) => claim.participantId === targetParticipantId)
+      claims.find((claim) => claim.participantId === selfParticipantId)
         ?.ticks ?? 0,
-    [claims, targetParticipantId],
+    [claims, selfParticipantId],
   );
   const maximumTicks = savedTicks + availableTicks;
   const activeParticipantCount = participants.filter(
@@ -110,7 +99,7 @@ export function RoomItemClaim({
   const savingRef = useRef(false);
   const wasOpenRef = useRef(false);
   const draftKeyRef = useRef<string | null>(null);
-  const draftKey = `${item.id}:${targetParticipantId}`;
+  const draftKey = `${item.id}:${selfParticipantId}`;
 
   useEffect(() => {
     if (!open) {
@@ -160,7 +149,7 @@ export function RoomItemClaim({
   const previewAmount =
     previewTicks === null
       ? null
-      : previewCents(targetParticipantId, previewTicks);
+      : previewCents(selfParticipantId, previewTicks);
   const canSave =
     !disabled &&
     !pending &&
@@ -171,9 +160,9 @@ export function RoomItemClaim({
     previewAmount !== null &&
     !unchanged;
   const scopedError =
-    error?.participantId === targetParticipantId ? error.message : null;
+    error?.participantId === selfParticipantId ? error.message : null;
   const message = !targetActive
-    ? "Essa pessoa não está mais na sala."
+    ? "Você não está mais na sala."
     : collision ?? scopedError ?? saveError;
 
   function chooseTicks(ticks: number) {
@@ -214,7 +203,7 @@ export function RoomItemClaim({
     setSaveError(null);
     try {
       const saved = await onSubmit(
-        targetParticipantId,
+        selfParticipantId,
         draftTicks,
         draftItemRevision,
       );
@@ -225,7 +214,7 @@ export function RoomItemClaim({
       }
       haptics.error();
       setSaveError(
-        error?.participantId === targetParticipantId
+        error?.participantId === selfParticipantId
           ? error.message
           : "Não foi possível salvar. Tente novamente.",
       );
@@ -238,14 +227,7 @@ export function RoomItemClaim({
     }
   }
 
-  const hostTargetLabel = labels.get(targetParticipantId) ?? "pessoa removida";
-  const question = canSelectParticipant
-    ? multiUnit
-      ? "Quantos?"
-      : "Quanto?"
-    : multiUnit
-      ? "Quantos você consumiu?"
-      : "Quanto você consumiu?";
+  const question = multiUnit ? "Quantos você consumiu?" : "Quanto você consumiu?";
   const stepperUnits =
     draftTicks !== null && draftTicks >= UNIT_TICKS
       ? Math.floor(draftTicks / UNIT_TICKS)
@@ -254,13 +236,9 @@ export function RoomItemClaim({
   const actionQuantityLabel = draftTicks === null
     ? null
     : claimQuantityLabel(item.quantityMilliunits, draftTicks);
-  const Surface = canSelectParticipant ? Popover : Dialog;
-  const Content = canSelectParticipant ? PopoverContent : DialogContent;
-  const Title = canSelectParticipant ? PopoverTitle : DialogTitle;
-  const Description = canSelectParticipant ? PopoverDescription : DialogDescription;
 
   return (
-    <Surface
+    <Dialog
       open={open}
       dismissable={!saving}
       onOpenChange={(next) => {
@@ -269,22 +247,21 @@ export function RoomItemClaim({
         onOpenChange(next);
       }}
     >
-      <Content
+      <DialogContent
         finalFocus={getReturnFocus}
-        {...(canSelectParticipant ? { anchor: getReturnFocus() } : {})}
         className="gap-3 sm:px-5 sm:py-4"
       >
         <DialogHeader className="gap-0.5">
           <div className="flex items-baseline justify-between gap-3">
-            <Title className="min-w-0 break-words pr-1 text-base leading-6 font-semibold tracking-tight">
+            <DialogTitle className="min-w-0 break-words pr-1 text-base leading-6 font-semibold tracking-tight">
               {item.description}
-            </Title>
+            </DialogTitle>
             <Money
               cents={item.totalPriceCents}
               className="shrink-0 text-sm font-semibold"
             />
           </div>
-          <Description className="text-xs text-muted-foreground leading-4">
+          <DialogDescription className="text-xs text-muted-foreground leading-4">
             {multiUnit ? (
               <>
                 Restam {formatRoomTicks(availableTicks)} de{" "}
@@ -298,56 +275,8 @@ export function RoomItemClaim({
             ) : (
               "Inteira"
             )}
-          </Description>
+          </DialogDescription>
         </DialogHeader>
-        {canSelectParticipant && (
-          <section aria-labelledby="claim-target-label">
-            <p id="claim-target-label" className="mb-1.5 text-xs font-medium text-muted-foreground">
-              Pra quem?
-            </p>
-            <div
-              className="flex flex-wrap gap-1.5"
-              role="radiogroup"
-              aria-label="Pra quem?"
-            >
-              {participants
-                .filter((participant) => !participant.removed)
-                .map((participant) => {
-                  const selected = participant.id === targetParticipantId;
-                  const label = participant.id === selfParticipantId ? "Você" : labels.get(participant.id);
-                  return (
-                    <Button
-                      key={participant.id}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      role="radio"
-                      aria-label={label}
-                      aria-checked={selected}
-                      className={cn(
-                        "h-8 shrink-0 gap-1.5 rounded-[0.5rem] px-2.5 text-xs font-medium transition-colors",
-                        selected
-                          ? "border-primary/30 bg-primary/15 text-primary-text hover:bg-primary/20"
-                          : "border-border bg-card text-foreground hover:bg-muted",
-                      )}
-                      disabled={saving}
-                      onClick={() => {
-                        if (participant.id === targetParticipantId) return;
-                        if (unsaved && !window.confirm("Descartar esta escolha não salva?")) return;
-                        haptics.selectionChanged();
-                        onTargetChange(participant.id);
-                      }}
-                    >
-                      {participant.isGuest
-                        ? <GuestAvatar id={participant.id} name={participant.displayName} size="xs" />
-                        : <UserAvatar id={participant.id} name={participant.displayName} avatarUrl={participant.avatarUrl} size="xs" />}
-                      <span title={participant.displayName} className="max-w-28 truncate">{label}</span>
-                    </Button>
-                  );
-                })}
-            </div>
-          </section>
-        )}
 
         <section aria-labelledby="claim-quantity-label">
           <p
@@ -521,9 +450,7 @@ export function RoomItemClaim({
               </>
             ) : actionQuantityLabel !== null && previewAmount !== null ? (
               <>
-                {canSelectParticipant
-                  ? `Dar ${actionQuantityLabel} pra ${hostTargetLabel} · `
-                  : `Peguei ${actionQuantityLabel} · `}
+                {`Peguei ${actionQuantityLabel} · `}
                 <Money cents={previewAmount} />
               </>
             ) : (
@@ -537,21 +464,15 @@ export function RoomItemClaim({
               variant="ghost"
               size="sm"
               className="h-8 w-full text-xs font-semibold text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
-              aria-label={
-                canSelectParticipant
-                  ? `Remover escolha de ${target?.displayName}`
-                  : "Remover minha escolha"
-              }
+              aria-label="Remover minha escolha"
               disabled={saving || stale || !targetActive}
               onClick={() => chooseTicks(0)}
             >
-              {canSelectParticipant
-                ? targetParticipantId === selfParticipantId ? "Tirar da minha parte" : `Tirar de ${hostTargetLabel}`
-                : "Tirar da minha parte"}
+              Tirar da minha parte
             </Button>
           )}
         </div>
-      </Content>
-    </Surface>
+      </DialogContent>
+    </Dialog>
   );
 }

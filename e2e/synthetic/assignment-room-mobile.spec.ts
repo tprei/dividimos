@@ -151,23 +151,14 @@ async function chooseFraction(
     if ((await toggle.getAttribute("aria-expanded")) === "false") {
       await toggle.click();
     }
-    const hostClaim = card
-      .getByRole("button", { name: new RegExp(`^Mudar ${description} de `) })
-      .filter({ hasText: "Você" });
-    if (await hostClaim.isVisible()) {
-      await hostClaim.click();
-    } else {
-      await card
-        .getByRole("button", { name: /^(Atribuir o que sobrou|Atribuir a alguém)$/ })
-        .click();
+    const editor = card.getByRole("form", { name: `Dividir ${description}` });
+    await editor.getByRole("button", { name: "Limpar" }).click();
+    await editor.getByRole("button", { name: "Você", exact: true }).click();
+    if (fraction !== "Inteira") {
+      await editor.getByRole("radio", { name: "Ajustar" }).click();
+      await editor.getByRole("button", { name: fraction === "Metade" ? "½" : fraction, exact: true }).click();
     }
-    const dialog = page.getByRole("dialog", { name: description });
-    await expect(dialog.getByRole("radio", { name: "Você" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    await dialog.getByRole("button", { name: fraction, exact: true }).click();
-    return dialog;
+    return editor;
   }
   await rowButton(page, list, description).click();
   const dialog = page.getByRole("dialog", { name: description });
@@ -329,10 +320,10 @@ test.describe("Assignment room on a phone", () => {
 
       // Register the bill and check the signed-in joiner kept an account share
       // and received an ordinary group invitation.
-      await chooseFraction(page, "Itens", "Toast Bacon Egg", "Inteira").then((dialog) =>
-        dialog.getByRole("button", { name: /^Dar / }).click(),
-      );
-      // A claim is always self-made, so Rui takes the latte in his own session.
+      const toastEditor = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Inteira");
+      await toastEditor.getByRole("button", { name: "Salvar divisão" }).click();
+      await expect(toastEditor).toBeHidden({ timeout: ROOM_TIMEOUT });
+      // Rui takes the latte in his own session.
       await rowButton(memberSession.page, "Ainda sem dono", "Caffe Latte S").click();
       const latte = memberSession.page.getByRole("dialog", { name: "Caffe Latte S" });
       await latte.getByRole("button", { name: "Inteira", exact: true }).click();
@@ -389,39 +380,27 @@ test.describe("Assignment room on a phone", () => {
     }
   });
 
-  test("keeps a dialog's content square with both edges", async ({
-    context,
-    loginAs,
-    page,
-    seed,
+  test("keeps the inline split editor within a phone viewport", async ({
+    context, loginAs, page, seed,
   }) => {
     const host = await seed.createUser({ name: "Ana Simetria" });
+    await page.setViewportSize({ width: 360, height: 740 });
     await recordClipboard(context);
     await loginAs(host, { navigate: false });
     await openRoom(page, TWO_LINES);
-
-    const item = row(page, "Itens", "Toast Bacon Egg");
-    await item.getByRole("button", { name: "Toast Bacon Egg", exact: true }).click();
-    await item.getByRole("button", { name: "Atribuir a alguém" }).click();
-    const dialog = page.getByRole("dialog", { name: "Toast Bacon Egg" });
-    await expect(dialog).toBeVisible();
-
-    // The close control used to reserve its width from the whole popup, which
-    // pushed every field and button in off the right edge. Only the header
-    // gives up room for it now, so the body sits evenly between both edges.
-    const popup = await dialog.boundingBox();
-    const confirm = await dialog
-      .getByRole("button", { name: "Escolha uma quantidade" })
-      .boundingBox();
-    expect(popup).not.toBeNull();
-    expect(confirm).not.toBeNull();
-    if (popup && confirm) {
-      const leftInset = confirm.x - popup.x;
-      const rightInset = popup.x + popup.width - (confirm.x + confirm.width);
-      expect(Math.abs(leftInset - rightInset)).toBeLessThanOrEqual(2);
-      expect(rightInset).toBeLessThanOrEqual(24);
+    const editor = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Metade");
+    const save = editor.getByRole("button", { name: "Salvar divisão" });
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
+    const box = await editor.boundingBox();
+    expect(box).not.toBeNull();
+    if (box) {
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(360);
     }
-
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+    await save.click();
+    await expect(editor).toBeHidden({ timeout: ROOM_TIMEOUT });
   });
 
   test("scrolls a long room and keeps the footer reachable", async ({
@@ -477,7 +456,7 @@ test.describe("Assignment room on a phone", () => {
     );
     expect(overflow).toBeLessThanOrEqual(0);
 
-    // Opening and closing both dialogs must leave the room scrollable.
+    // Opening the invitation and inline editor must leave the room scrollable.
     await page.getByRole("button", { name: "Convidar" }).click();
     await page
       .getByRole("dialog", { name: "Sala de itens" })
@@ -485,10 +464,9 @@ test.describe("Assignment room on a phone", () => {
       .click();
     const item = row(page, "Itens", "Item longo número 1");
     await item.getByRole("button", { name: "Item longo número 1", exact: true }).click();
-    await item.getByRole("button", { name: "Atribuir a alguém" }).click();
-    const dialog = page.getByRole("dialog", { name: "Item longo número 1" });
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    const editor = item.getByRole("form", { name: "Dividir Item longo número 1" });
+    await editor.getByRole("button", { name: "Cancelar" }).click();
+    await expect(editor).toBeHidden();
 
     const after = await scroller.evaluate((node) => ({
       scrollHeight: node.scrollHeight,
@@ -542,7 +520,7 @@ test.describe("Assignment room on a phone", () => {
       ).toBeVisible();
 
       const confirmed = await chooseFraction(page, "Itens", "Toast Bacon Egg", "Metade");
-      await confirmed.getByRole("button", { name: /^Dar / }).click();
+      await confirmed.getByRole("button", { name: "Salvar divisão" }).click();
       await expect(confirmed).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       // The reported bug: the other half must stay available, on both phones.
@@ -555,8 +533,7 @@ test.describe("Assignment room on a phone", () => {
       if ((await toastToggle.getAttribute("aria-expanded")) === "false") {
         await toastToggle.click();
       }
-      await expect(toastRow.getByText("Você")).toBeVisible();
-      await expect(toastRow.getByText("metade")).toBeVisible();
+      await expect(toastRow.getByRole("slider", { name: "Parte de Você" })).toHaveAttribute("aria-valuetext", "metade");
       await expect(
         row(guestPage, "Ainda sem dono", "Toast Bacon Egg").getByText(
           "Falta metade",
@@ -584,12 +561,10 @@ test.describe("Assignment room on a phone", () => {
       if ((await releaseToggle.getAttribute("aria-expanded")) === "false") {
         await releaseToggle.click();
       }
-      await releaseRow
-        .getByRole("button", { name: `Mudar Toast Bacon Egg de ${host.name}` })
-        .click();
-      const release = page.getByRole("dialog", { name: "Toast Bacon Egg" });
-      await release.getByRole("button", { name: /^(Tirar de|Remover escolha de)/ }).click();
-      await release.getByRole("button", { name: /^Tirar · libera/ }).click();
+      const release = releaseRow.getByRole("form", { name: "Dividir Toast Bacon Egg" });
+      await release.getByRole("radio", { name: "Ajustar" }).click();
+      await release.getByRole("button", { name: "Você", exact: true }).click();
+      await release.getByRole("button", { name: "Salvar divisão" }).click();
       await expect(release).toBeHidden({ timeout: ROOM_TIMEOUT });
       await expect(
         row(guestPage, "Minha parte", "Toast Bacon Egg").getByText("metade"),
@@ -622,11 +597,8 @@ test.describe("Assignment room on a phone", () => {
       await joinAsGuest(guestPage, invitation, "Bia Terço");
 
       const third = await chooseFraction(page, "Itens", "Caffe Latte S", "⅓");
-      await expect(third.getByRole("button", { name: "⅓", exact: true })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-      await third.getByRole("button", { name: /^Dar / }).click();
+      await expect(third.getByRole("slider", { name: "Parte de Você" })).toHaveAttribute("aria-valuetext", "⅓");
+      await third.getByRole("button", { name: "Salvar divisão" }).click();
       await expect(third).toBeHidden({ timeout: ROOM_TIMEOUT });
 
       // A third of one item reads as a third, never as 0,333 or raw ticks.
@@ -639,8 +611,7 @@ test.describe("Assignment room on a phone", () => {
       if ((await latteToggle.getAttribute("aria-expanded")) === "false") {
         await latteToggle.click();
       }
-      await expect(latteRow.getByText("Você")).toBeVisible();
-      await expect(latteRow.getByText("⅓")).toBeVisible();
+      await expect(latteRow.getByRole("slider", { name: "Parte de Você" })).toHaveAttribute("aria-valuetext", "⅓");
 
       // The guest asks for more than is left and is told so, keeping the draft.
       await rowButton(guestPage, "Ainda sem dono", "Caffe Latte S").click();

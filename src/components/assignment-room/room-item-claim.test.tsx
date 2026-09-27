@@ -64,8 +64,6 @@ interface HarnessOptions {
     expectedItemRevision: number,
   ) => Promise<boolean>;
   error?: { participantId: string; message: string } | null;
-  canSelectParticipant?: boolean;
-  onTargetChange?: (participantId: string) => void;
   participants?: AssignmentRoomParticipant[];
 }
 
@@ -78,8 +76,6 @@ function Harness({
   initialClaims = [],
   submit,
   error = null,
-  canSelectParticipant = false,
-  onTargetChange = () => undefined,
   participants = [me, other],
 }: HarnessOptions) {
   const [open, setOpen] = useState(true);
@@ -104,13 +100,10 @@ function Harness({
         item={item}
         claims={claims}
         availableTicks={capacity - claimed}
-        targetParticipantId={me.id}
         participants={participants}
         pending={false}
         disabled={false}
         error={error}
-        canSelectParticipant={canSelectParticipant}
-        onTargetChange={onTargetChange}
         previewCents={(_participantId, ticks) =>
           Math.round((item.totalPriceCents * ticks) / capacity)
         }
@@ -315,29 +308,6 @@ describe("RoomItemClaim", () => {
     expect(onSubmit).toHaveBeenCalledWith("person-a", 60_000, 2);
   });
 
-  it("claims for the person using it, with nobody else to pick", async () => {
-    const user = userEvent.setup();
-    const onSubmit = vi.fn(async () => true);
-    render(<Harness submit={onSubmit} />);
-
-    // Participant mode is pinned to the signed-in room member; only hosts
-    // receive the target picker.
-    expect(screen.queryByRole("radiogroup", { name: "Pra quem?" })).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Metade" }));
-    await user.click(screen.getByRole("button", { name: /^Peguei / }));
-    expect(onSubmit).toHaveBeenCalledWith(me.id, 60_000, 1);
-  });
-
-  it("lets the host choose which active participant owns the draft", async () => {
-    const user = userEvent.setup();
-    const onTargetChange = vi.fn();
-    render(<Harness canSelectParticipant onTargetChange={onTargetChange} />);
-
-    await user.click(screen.getByRole("radio", { name: /Bia/ }));
-
-    expect(onTargetChange).toHaveBeenCalledWith(other.id);
-  });
 
   it("keeps an unconfirmed choice when dismissal is declined", async () => {
     const user = userEvent.setup();
