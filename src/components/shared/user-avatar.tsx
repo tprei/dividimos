@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import Image from "next/image";
 import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarToneIndex, initialsOf } from "@/lib/people";
+import { useAvatarPhoto } from "./use-avatar-photo";
 
 interface UserAvatarProps {
   id?: string;
@@ -38,8 +38,6 @@ const badgeClasses: Record<"sm" | "md" | "lg", string> = {
   lg: "size-4.5",
 };
 
-type PhotoState = "loading" | "loaded" | "error";
-
 export function avatarStyle(id: string) {
   return {
     backgroundColor: `var(--avatar-tone-${avatarToneIndex(id)})`,
@@ -48,22 +46,7 @@ export function avatarStyle(id: string) {
 }
 
 export function UserAvatar({ id, name, avatarUrl, size = "md", className, priority, isBot, standalone = false }: UserAvatarProps) {
-  const [photoState, setPhotoState] = useState<PhotoState>("loading");
-  const [prevUrl, setPrevUrl] = useState(avatarUrl);
-  // Adjusting state during render: a new URL restarts the cycle instead of
-  // staying stuck on the previous photo's "loaded"/"error" state.
-  if (prevUrl !== avatarUrl) {
-    setPrevUrl(avatarUrl);
-    setPhotoState("loading");
-  }
-  // A cached photo can already be decoded by the time React attaches: start
-  // loaded so it paints instantly instead of pulsing behind opacity-0 until
-  // onLoad's state update round-trips through hydration.
-  const attachPhoto = useCallback((img: HTMLImageElement | null) => {
-    if (img?.complete && img.naturalWidth > 0) {
-      setPhotoState("loaded");
-    }
-  }, []);
+  const { photoState, photoClassName, attachPhoto, handleLoad, handleError } = useAvatarPhoto(avatarUrl);
   const sizeClass = sizeClasses[size];
   const px = sizePx[size];
 
@@ -89,8 +72,6 @@ export function UserAvatar({ id, name, avatarUrl, size = "md", className, priori
         aria-hidden={standalone ? undefined : true}
       >
         {toneLayer}
-        {/* fill is load-bearing: without it (and without width/height) Next
-            emits an <img> at intrinsic size, which collapses inside the box. */}
         <Image
           src={photoUrl}
           fill
@@ -98,12 +79,9 @@ export function UserAvatar({ id, name, avatarUrl, size = "md", className, priori
           sizes={`${px}px`}
           priority={priority}
           ref={attachPhoto}
-          onLoad={() => setPhotoState("loaded")}
-          onError={() => setPhotoState("error")}
-          className={cn(
-            "object-cover opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
-            photoState === "loaded" && "opacity-100",
-          )}
+          onLoad={handleLoad}
+          onError={handleError}
+          className={photoClassName}
         />
       </div>
     ) : (

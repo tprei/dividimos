@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useState } from "react";
 import { initialsOf } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import type { GroupAvatar as GroupAvatarData } from "@/types/ledger";
+import { useAvatarPhoto } from "./use-avatar-photo";
 
 const sizeClasses = {
   sm: "size-8 text-base",
@@ -36,24 +36,33 @@ function PhotoAvatar({
   size: GroupAvatarSize;
   eager: boolean;
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const handleImageError = useCallback(() => {
-    setImageFailed(true);
-  }, []);
+  const photoUrl = `/api/groups/${encodeURIComponent(groupId)}/avatar?photoId=${encodeURIComponent(photoId)}`;
+  const { photoState, photoClassName, attachPhoto, handleLoad, handleError } = useAvatarPhoto(photoUrl);
 
-  if (imageFailed) return <GroupInitials name={name} size={size} />;
+  if (photoState === "error") return <GroupInitials name={name} size={size} />;
 
   return (
     <div className={cn("relative shrink-0 overflow-hidden rounded-full", sizeClasses[size])}>
+      <div
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 flex items-center justify-center bg-primary/15 font-bold text-primary-text",
+          photoState === "loading" && "animate-pulse motion-reduce:animate-none",
+        )}
+      >
+        {initialsOf(name)}
+      </div>
       <Image
-        src={`/api/groups/${encodeURIComponent(groupId)}/avatar?photoId=${encodeURIComponent(photoId)}`}
+        src={photoUrl}
         alt={name}
         fill
         unoptimized
         loading={eager ? "eager" : undefined}
         sizes={`${sizePixels[size]}px`}
-        className="object-cover"
-        onError={handleImageError}
+        className={photoClassName}
+        ref={attachPhoto}
+        onLoad={handleLoad}
+        onError={handleError}
       />
     </div>
   );

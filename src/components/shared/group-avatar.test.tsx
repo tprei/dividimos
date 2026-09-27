@@ -4,12 +4,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useCallback } from "react";
 
 function MockNextImage(props: Record<string, unknown>) {
-  const { fill, unoptimized, onError, ...rest } = props;
+  const { fill, unoptimized, onError, ref, ...rest } = props;
   void fill;
   void unoptimized;
   const ownRef = useCallback(
     (img: HTMLImageElement | null) => {
       if (!img) return;
+      if (typeof ref === "function") ref(img);
       if (onError) {
         // Next.js Image ownRef re-assigns img.src when onError is provided
         const attr = img.getAttribute("src");
@@ -17,7 +18,7 @@ function MockNextImage(props: Record<string, unknown>) {
         if (attr) img.setAttribute("src", attr);
       }
     },
-    [onError],
+    [onError, ref],
   );
   return (
     <img
@@ -74,6 +75,30 @@ describe("GroupAvatar", () => {
       "src",
       "/api/groups/group-1/avatar?photoId=photo-2",
     );
+  });
+
+  it("keeps initials visible until the decoded image load callback", () => {
+    render(<GroupAvatar name="Viagem" groupId="group-1" avatar={{ kind: "photo", photoId: "photo-1" }} />);
+    const image = screen.getByRole("img", { name: "Viagem" });
+    expect(screen.getByText("VI")).toBeInTheDocument();
+    expect(image).toHaveClass("opacity-0");
+    fireEvent.load(image);
+    expect(image).toHaveClass("opacity-100");
+    expect(image).not.toHaveClass("opacity-0");
+  });
+
+  it("shows an already-complete photo without a fade or loading pulse", () => {
+    const complete = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    const width = vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(64);
+    try {
+      render(<GroupAvatar name="Viagem" groupId="group-1" avatar={{ kind: "photo", photoId: "photo-1" }} />);
+      expect(screen.getByRole("img", { name: "Viagem" })).toHaveClass("opacity-100");
+      expect(screen.getByRole("img", { name: "Viagem" })).not.toHaveClass("transition-opacity");
+      expect(screen.getByText("VI")).not.toHaveClass("animate-pulse");
+    } finally {
+      complete.mockRestore();
+      width.mockRestore();
+    }
   });
 
   it("does not reassign img.src on parent re-renders when photo id is unchanged", () => {

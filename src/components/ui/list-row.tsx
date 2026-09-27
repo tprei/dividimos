@@ -10,6 +10,7 @@ interface ListRowContentProps {
   subtitle?: string;
   meta?: ReactNode;
   trailing?: ReactNode;
+  trailingAlign?: "start" | "center";
   footer?: ReactNode;
   className?: string;
 }
@@ -20,7 +21,7 @@ export type ListRowProps = ListRowContentProps & (
   | { href?: never; onClick?: never; disabled?: never }
 );
 
-export function ListRow({ leading, title, subtitle, meta, trailing, footer, className, href, onClick, disabled }: ListRowProps) {
+export function ListRow({ leading, title, subtitle, meta, trailing, trailingAlign = "start", footer, className, href, onClick, disabled }: ListRowProps) {
   const classes = cn("flex min-h-11 w-full flex-col justify-center px-3 py-2.5 text-left", (href !== undefined || onClick) && "outline-none transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring motion-safe:transition-transform motion-safe:active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50", className);
   const content = <>
     <span className="flex w-full items-center gap-3">
@@ -30,7 +31,7 @@ export function ListRow({ leading, title, subtitle, meta, trailing, footer, clas
         {subtitle && <span title={subtitle} className="block truncate text-xs leading-4 text-muted-foreground">{subtitle}</span>}
       </span>
       {meta != null && <span className="shrink-0 self-start text-xs leading-5 tabular-nums text-muted-foreground">{meta}</span>}
-      {trailing != null && <span className="flex min-h-5 shrink-0 items-center gap-2 self-start">{trailing}</span>}
+      {trailing != null && <span className={cn("flex min-h-5 shrink-0 items-center gap-2", trailingAlign === "center" ? "self-center" : "self-start")}>{trailing}</span>}
     </span>
     {footer != null && <span className="block w-full pt-1">{footer}</span>}
   </>;

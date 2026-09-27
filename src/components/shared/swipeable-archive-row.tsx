@@ -8,7 +8,7 @@ import {
   useTransform,
   type PanInfo,
 } from "framer-motion";
-import { Archive, ArchiveRestore, MoreHorizontal } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -133,13 +133,13 @@ export function SwipeableArchiveRow({
           aria-label={open ? "Ocultar ações" : "Mostrar ações"}
           aria-expanded={open}
           aria-controls={actionId}
-          className="absolute right-0 top-1/2 min-h-11 min-w-11 -translate-y-1/2"
+          className="absolute right-0 top-1/2 min-h-11 min-w-11 -translate-y-1/2 text-muted-foreground"
           onClick={() => {
             haptics.selectionChanged();
             reveal(!open);
           }}
         >
-          <MoreHorizontal className="size-4" aria-hidden="true" />
+          <ChevronLeft className="size-3.5" aria-hidden="true" />
         </Button>
       </motion.div>
       {reducedMotion ? (
