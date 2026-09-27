@@ -7,6 +7,7 @@ import {
 } from "@/lib/assignment-room-money";
 import {
   previewClaimCents,
+  previewItemSplitCents,
   projectAssignmentRoomMoney,
 } from "@/lib/assignment-room-projection";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/lib/expense-quantity";
 import { propertyConfig } from "@/test/property";
 import type {
+  AssignmentItemShare,
   AssignmentRoomClaim,
   AssignmentRoomItem,
   AssignmentRoomParticipant,
@@ -512,5 +514,140 @@ describe("projectAssignmentRoomMoney & previewClaimCents", () => {
         expect(overclaim.issue.code).toBe("allocation_exceeds_total");
       }
     });
+  });
+});
+
+describe("previewItemSplitCents", () => {
+  // 3-unit line at R$3,00/unit: capacity 360_000 ticks, R$9,00 total.
+  const baseRoom: AssignmentRoomSnapshot = {
+    id: "room-split-preview-test",
+    revision: 1,
+    status: "open",
+    title: "Split Preview Room",
+    occurredOn: "2026-09-23",
+    serviceFeeBasisPoints: 1000,
+    fixedFeeCents: 10,
+    totalCents: 1000,
+    selfParticipantId: "p-ana",
+    items: [
+      {
+        id: "item-shared",
+        ordinal: 0,
+        revision: 1,
+        description: "Petisco compartilhado",
+        quantityMilliunits: 3000,
+        unitPriceCents: 300,
+        totalPriceCents: 900,
+      },
+    ],
+    participants: [
+      makeParticipant("p-ana", 0),
+      makeParticipant("p-bruno", 1),
+      makeParticipant("p-carla", 2),
+      makeParticipant("p-zed", 3, true),
+    ],
+    claims: [
+      { itemId: "item-shared", participantId: "p-ana", ticks: 240_000 },
+      { itemId: "item-shared", participantId: "p-bruno", ticks: 40_000 },
+    ],
+    topic: null,
+    currentBill: null,
+  };
+
+  it("sums to the line total for a full three-way split", () => {
+    const shares: AssignmentItemShare[] = [
+      { participantId: "p-ana", ticks: 120_000 },
+      { participantId: "p-bruno", ticks: 120_000 },
+      { participantId: "p-carla", ticks: 120_000 },
+    ];
+
+    const result = previewItemSplitCents(baseRoom, "item-shared", shares);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.size).toBe(3);
+    expect([...result.value.values()].reduce((a, b) => a + b, 0)).toBe(900);
+    for (const participantId of ["p-ana", "p-bruno", "p-carla"]) {
+      expect(result.value.get(participantId)).toBe(300);
+    }
+  });
+
+  it("leaves the unclaimed bucket out of the map for a partial split", () => {
+    const shares: AssignmentItemShare[] = [
+      { participantId: "p-ana", ticks: 120_000 },
+      { participantId: "p-bruno", ticks: 60_000 },
+    ];
+
+    const result = previewItemSplitCents(baseRoom, "item-shared", shares);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect([...result.value.keys()].sort()).toEqual(["p-ana", "p-bruno"]);
+    expect(result.value.get("p-ana")).toBe(300);
+    expect(result.value.get("p-bruno")).toBe(150);
+    expect([...result.value.values()].reduce((a, b) => a + b, 0)).toBeLessThan(900);
+  });
+
+  it("matches projectAssignmentRoomMoney after applying the same shares", () => {
+    const shares: AssignmentItemShare[] = [
+      { participantId: "p-ana", ticks: 60_000 },
+      { participantId: "p-bruno", ticks: 0 },
+      { participantId: "p-carla", ticks: 120_000 },
+      { participantId: "p-zed", ticks: 200_000 },
+    ];
+    const preview = previewItemSplitCents(baseRoom, "item-shared", shares);
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    expect([...preview.value.keys()].sort()).toEqual(["p-ana", "p-carla"]);
+
+    const roomAfterSplit: AssignmentRoomSnapshot = {
+      ...baseRoom,
+      claims: baseRoom.claims
+        .filter(
+          (claim) =>
+            claim.itemId !== "item-shared" ||
+            !shares.some((s) => s.participantId === claim.participantId),
+        )
+        .concat(
+          shares
+            .filter((s) => s.ticks > 0 && s.participantId !== "p-zed")
+            .map((s) => ({ itemId: "item-shared", participantId: s.participantId, ticks: s.ticks })),
+        ),
+    };
+    const projection = projectAssignmentRoomMoney(roomAfterSplit);
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+
+    const claims = projection.value.byItem["item-shared"].claims.filter(
+      (claim) => claim.ticks > 0,
+    );
+    expect(claims).toHaveLength(preview.value.size);
+    for (const claim of claims) {
+      expect(preview.value.get(claim.participantId)).toBe(claim.amountCents);
+    }
+  });
+
+  it("fails with the allocation error when shares exceed the capacity", () => {
+    const shares: AssignmentItemShare[] = [
+      { participantId: "p-ana", ticks: 360_000 },
+      { participantId: "p-carla", ticks: 60_000 },
+    ];
+
+    const result = previewItemSplitCents(baseRoom, "item-shared", shares);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.code).toBe("allocation_exceeds_total");
+    }
+  });
+
+  it("previews an unknown item as an empty map", () => {
+    const result = previewItemSplitCents(baseRoom, "item-missing", [
+      { participantId: "p-ana", ticks: 120_000 },
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.size).toBe(0);
+    }
   });
 });
