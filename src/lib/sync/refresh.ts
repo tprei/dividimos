@@ -4,7 +4,11 @@ import {
   decodeGroupEvents,
   decodeChargePage,
 } from "@/lib/ledger/decode";
-import { decodeExpenseContext, decodeOpenAssignmentRooms } from "@/lib/ledger/decode-assignment-room";
+import {
+  decodeExpenseContext,
+  decodeHostedAssignmentRooms,
+  decodeOpenAssignmentRooms,
+} from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
 import { decodeGroupOverviewV2 } from "@/lib/ledger/decode-group-overview";
 import {
@@ -12,6 +16,7 @@ import {
   conversationReadKey,
   expensePageReadKey,
   expenseReadKey,
+  HOSTED_ASSIGNMENT_ROOMS_READ_KEY,
   MY_EXPENSES_READ_KEY,
   groupReadKey,
   openAssignmentRoomsReadKey,
@@ -30,6 +35,8 @@ const inFlightExpensePages = new Map<string, Promise<void>>();
 const inFlightExpensePageOwners = new Map<string, symbol>();
 const inFlightSettlements = new Map<string, Promise<void>>();
 const inFlightOpenRooms = new Map<string, Promise<void>>();
+let inFlightHostedRooms: Promise<void> | null = null;
+let pendingHostedRooms: Promise<void> | null = null;
 
 interface ReadAttempt {
   generation: number;
@@ -76,6 +83,8 @@ export function invalidateSyncReads(): void {
   inFlightExpensePageOwners.clear();
   inFlightSettlements.clear();
   inFlightOpenRooms.clear();
+  inFlightHostedRooms = null;
+  pendingHostedRooms = null;
 }
 
 async function trackedRead<T>(
@@ -260,6 +269,39 @@ export function refreshOpenAssignmentRooms(groupId: string): Promise<void> {
   return task;
 }
 
+function runHostedRoomsRead(): Promise<void> {
+  const attempt = beginRead(HOSTED_ASSIGNMENT_ROOMS_READ_KEY);
+  const task: Promise<void> = trackedRead(
+    HOSTED_ASSIGNMENT_ROOMS_READ_KEY,
+    attempt,
+    () => rpc("list_hosted_assignment_rooms", {}, decodeHostedAssignmentRooms),
+    (rooms) => useAppStore.getState().applyHostedAssignmentRooms(rooms),
+  )
+    .then(
+      (): undefined => undefined,
+      (): undefined => undefined,
+    )
+    .finally(() => {
+      if (inFlightHostedRooms === task) inFlightHostedRooms = null;
+    });
+  inFlightHostedRooms = task;
+  return task;
+}
+
+export function refreshHostedAssignmentRooms(): Promise<void> {
+  const current = inFlightHostedRooms;
+  if (current === null) return runHostedRoomsRead();
+  if (pendingHostedRooms !== null) return pendingHostedRooms;
+
+  const authGeneration = getAuthGeneration();
+  const followUp = current.then(() => {
+    if (pendingHostedRooms === followUp) pendingHostedRooms = null;
+    if (getAuthGeneration() !== authGeneration) return;
+    return runHostedRoomsRead();
+  });
+  pendingHostedRooms = followUp;
+  return followUp;
+}
 
 export async function refreshExpense(expenseId: string): Promise<void> {
   const key = expenseReadKey(expenseId);

@@ -19,7 +19,10 @@ vi.mock("./client", () => ({
   rpc: vi.fn(),
   getAuthGeneration: () => authState.generation,
 }));
-vi.mock("./refresh", () => ({ refreshGroup: vi.fn(async () => {}) }));
+vi.mock("./refresh", () => ({
+  refreshGroup: vi.fn(async () => {}),
+  refreshHostedAssignmentRooms: vi.fn(async () => {}),
+}));
 
 const rpcMock = vi.mocked(rpc);
 

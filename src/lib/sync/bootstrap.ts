@@ -2,6 +2,7 @@ import { decodeBootstrapOverviewV2 } from "@/lib/ledger/decode-group-overview";
 import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import { getAuthGeneration, rpc } from "./client";
+import { refreshHostedAssignmentRooms } from "./refresh";
 
 let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
 let bootstrapPending: { generation: number; promise: Promise<void> } | null = null;
@@ -12,6 +13,7 @@ async function executeBootstrap(generation: number): Promise<void> {
   // speak for groups created or removed after this point.
   const knownGroupIds = Object.keys(store.groups);
   store.setBootstrapLoading();
+  void refreshHostedAssignmentRooms();
 
   let data;
   try {
