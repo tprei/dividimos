@@ -11,6 +11,7 @@ import type {
   Settlement,
   VendorCharge,
 } from "@/types/ledger";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import { migrateAppState, settlementReadKey, useAppStore } from "./app-store";
 
 const me: Me = {
@@ -142,6 +143,25 @@ function detail(expenseId: string, groupId = "g1"): ExpenseDetail {
       { participantIndex: 0, kind: "user", shareCents: 1000, paidCents: 0, user: me, guest: null },
     ],
     group: { id: groupId, name: "G", kind: "group" },
+  };
+}
+
+function openRoom(): OpenAssignmentRoom {
+  return {
+    id: "room-1",
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: "Almoço",
+    occurredOn: "2026-09-19",
+    totalCents: 100,
+    host: { id: "user-2", handle: "bob", name: "Bob", avatarUrl: null, isBot: false },
+    createdAt: "2026-09-19T12:00:00Z",
+    itemCount: 2,
+    ownedItemCount: 0,
+    claimers: [],
+    expenseId: null,
+    joined: false,
   };
 }
 
@@ -395,6 +415,100 @@ describe("applyExpenseContext", () => {
   });
 });
 
+describe("openAssignmentRoomsByGroupId", () => {
+  it("drops persisted entries that are not room arrays and junk rows inside them", () => {
+    const migrated = migrateAppState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoom(), null, "corrupted", { title: "no id" }],
+        g2: "corrupted",
+        g3: { rooms: [openRoom()] },
+        g4: null,
+      },
+    });
+
+    expect(migrated.openAssignmentRoomsByGroupId).toEqual({ g1: [openRoom()] });
+  });
+
+  it("migrates a v5 cache that never stored open rooms without touching it", () => {
+    const migrated = migrateAppState({
+      groups: { g1: snapshot("g1", []) },
+      groupOrder: ["g1"],
+      vendorCharges: [],
+    });
+
+    expect(migrated.groups.g1?.group.id).toBe("g1");
+    expect(migrated.groupOrder).toEqual(["g1"]);
+    expect(migrated.vendorCharges).toEqual([]);
+    expect(migrated.openAssignmentRoomsByGroupId).toEqual({});
+  });
+
+  it("clears a group's open rooms together with the group cache", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []), g2: snapshot("g2", []) },
+    });
+    useAppStore.getState().applyOpenAssignmentRooms("g1", [openRoom()]);
+    useAppStore.getState().applyOpenAssignmentRooms("g2", []);
+
+    useAppStore.getState().removeGroup("g1");
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      g2: [],
+    });
+  });
+
+  it("keeps a group's open rooms out of an absent group", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+    });
+
+    useAppStore.getState().applyOpenAssignmentRooms("g-missing", [openRoom()]);
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({});
+
+    useAppStore.getState().removeGroup("g1");
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({});
+  });
+
+  it("prunes open-room entries for groups the bootstrap dropped", () => {
+    useAppStore.setState({
+      groups: { g1: snapshot("g1", []), g2: snapshot("g2", []) },
+      openAssignmentRoomsByGroupId: { g1: [openRoom()], g2: [openRoom()] },
+    });
+
+    useAppStore.getState().applyBootstrap({
+      me,
+      serverTime: "2026-01-06T00:00:00Z",
+      groups: [snapshot("g1", [])],
+    });
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      g1: [openRoom()],
+    });
+  });
+
+  it("marks one room joined without touching the others", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+    });
+    useAppStore.getState().applyOpenAssignmentRooms("g1", [
+      openRoom(),
+      { ...openRoom(), id: "room-2", joined: true },
+    ]);
+
+    useAppStore.getState().markOpenAssignmentRoomJoined("g1", "room-1");
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([
+      { ...openRoom(), joined: true },
+      { ...openRoom(), id: "room-2", joined: true },
+    ]);
+
+    useAppStore.getState().markOpenAssignmentRoomJoined("g-missing", "room-1");
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toHaveLength(2);
+  });
+});
+
 describe("replaceExpenseId", () => {
   it("renames in expenses, expense list ids and expense details", () => {
     useAppStore.setState({
@@ -546,6 +660,7 @@ describe("reset", () => {
       serverTime: "2026-01-03T00:00:00Z",
       groups: [snapshot("g1", recentExpenses(2, "g1"))],
     });
+    useAppStore.setState({ openAssignmentRoomsByGroupId: { g1: [openRoom()] } });
     expect(useAppStore.getState().me).not.toBeNull();
 
     useAppStore.getState().reset();
@@ -558,6 +673,7 @@ describe("reset", () => {
     expect(state.expenses).toEqual({});
     expect(state.expenseDetails).toEqual({});
     expect(state.assignmentRoomsByExpenseId).toEqual({});
+    expect(state.openAssignmentRoomsByGroupId).toEqual({});
     expect(state.conversations).toEqual({});
     expect(state.vendorCharges).toEqual([]);
     expect(state.activity).toEqual({

@@ -4,7 +4,7 @@ import {
   decodeGroupEvents,
   decodeChargePage,
 } from "@/lib/ledger/decode";
-import { decodeExpenseContext } from "@/lib/ledger/decode-assignment-room";
+import { decodeExpenseContext, decodeOpenAssignmentRooms } from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
 import { decodeGroupOverview } from "@/lib/ledger/decode-group-overview";
 import {
@@ -14,6 +14,7 @@ import {
   expenseReadKey,
   MY_EXPENSES_READ_KEY,
   groupReadKey,
+  openAssignmentRoomsReadKey,
   settlementReadKey,
   useAppStore,
   type ResourceReadState,
@@ -27,6 +28,7 @@ const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
 const inFlightExpensePageOwners = new Map<string, symbol>();
 const inFlightSettlements = new Map<string, Promise<void>>();
+const inFlightOpenRooms = new Map<string, Promise<void>>();
 
 interface ReadAttempt {
   generation: number;
@@ -72,6 +74,7 @@ export function invalidateSyncReads(): void {
   inFlightExpensePages.clear();
   inFlightExpensePageOwners.clear();
   inFlightSettlements.clear();
+  inFlightOpenRooms.clear();
 }
 
 async function trackedRead<T>(
@@ -153,20 +156,55 @@ function refreshStaleSettlementDetails(
   }
 }
 
+function startOpenAssignmentRoomsRead(groupId: string): Promise<void> | null {
+  const state = useAppStore.getState();
+  const cached = state.groups[groupId];
+  const viewerId = state.me?.id ?? null;
+  const readsRooms =
+    cached === undefined ||
+    (cached.group.kind !== "dm" &&
+      cached.members.some(
+        (member) => member.userId === viewerId && member.status === "accepted",
+      ));
+  if (!readsRooms) return null;
+  const roomsKey = openAssignmentRoomsReadKey(groupId);
+  const roomsAttempt = beginRead(roomsKey);
+  return trackedRead(
+    roomsKey,
+    roomsAttempt,
+    () =>
+      rpc(
+        "list_open_assignment_rooms",
+        { p_group_id: groupId },
+        decodeOpenAssignmentRooms,
+      ),
+    (rooms) => useAppStore.getState().applyOpenAssignmentRooms(groupId, rooms),
+  ).then(
+    (): undefined => undefined,
+    (): undefined => undefined,
+  );
+}
+
+
 async function executeRefreshGroup(groupId: string): Promise<void> {
-  const prev = useAppStore.getState().groups[groupId];
+  const state = useAppStore.getState();
+  const prev = state.groups[groupId];
   const prevVersion = prev?.group.ledgerVersion ?? null;
   const prevEventId = prev?.lastEventId ?? null;
 
   const key = groupReadKey(groupId);
   const attempt = beginRead(key);
 
-  const snapshot = await trackedRead(
+  const overviewRead = trackedRead(
     key,
     attempt,
     () => rpc("get_group_overview", { p_group_id: groupId }, decodeGroupOverview),
     (value) => useAppStore.getState().applyGroup(value),
   );
+  const roomsRead = startOpenAssignmentRoomsRead(groupId);
+
+  const snapshot = await overviewRead;
+  await roomsRead;
 
   if (snapshot === null || !isCurrentRead(key, attempt)) return;
   refreshStaleDetails(groupId, snapshot, prevVersion);
@@ -206,6 +244,19 @@ export function refreshGroup(groupId: string): Promise<void> {
   });
   pendingGroups.set(groupId, followUp);
   return followUp;
+}
+
+export function refreshOpenAssignmentRooms(groupId: string): Promise<void> {
+  const inFlight = inFlightOpenRooms.get(groupId);
+  if (inFlight) return inFlight;
+
+  const task = (startOpenAssignmentRoomsRead(groupId) ?? Promise.resolve()).finally(
+    () => {
+      if (inFlightOpenRooms.get(groupId) === task) inFlightOpenRooms.delete(groupId);
+    },
+  );
+  inFlightOpenRooms.set(groupId, task);
+  return task;
 }
 
 

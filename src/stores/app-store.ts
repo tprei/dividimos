@@ -9,6 +9,7 @@ import type {
   AssignmentRoomExpenseMetadata,
   ExpenseContext,
 } from "@/lib/ledger/decode-assignment-room";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type {
   Bootstrap,
   ChargePage,
@@ -85,6 +86,8 @@ export type ResourceReadState =
   | { status: "error"; code: LedgerErrorCode };
 
 export const groupReadKey = (groupId: string) => `group:${groupId}`;
+export const openAssignmentRoomsReadKey = (groupId: string) =>
+  `openAssignmentRooms:${groupId}`;
 export const expenseReadKey = (expenseId: string) => `expense:${expenseId}`;
 export const conversationReadKey = (groupId: string) => `conversation:${groupId}`;
 export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
@@ -106,6 +109,7 @@ interface AppStateData {
   expenses: Record<string, ExpenseSummary>;
   expenseDetails: Record<string, ExpenseDetail>;
   assignmentRoomsByExpenseId: Record<string, AssignmentRoomExpenseMetadata>;
+  openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]>;
   activity: {
     items: GroupEvent[];
     oldestId: number | null;
@@ -156,6 +160,8 @@ export interface AppState extends AppStateData {
   setBootstrapLoading(): void;
   setBootstrapError(code: LedgerErrorCode): void;
   applyGroup(s: GroupSnapshot): void;
+  applyOpenAssignmentRooms(groupId: string, rooms: OpenAssignmentRoom[]): void;
+  markOpenAssignmentRoomJoined(groupId: string, roomId: string): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpenseContext(context: ExpenseContext): void;
@@ -188,6 +194,7 @@ const initialData: AppStateData = {
   expenses: {},
   expenseDetails: {},
   assignmentRoomsByExpenseId: {},
+  openAssignmentRoomsByGroupId: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
   activityViewedAt: {},
   settlementDetails: {},
@@ -418,6 +425,23 @@ export function migrateAppState(persisted: unknown): AppStateData {
         value as AssignmentRoomExpenseMetadata;
     }
   }
+  const openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]> = {};
+  const persistedOpenRooms =
+    root.openAssignmentRoomsByGroupId !== null &&
+    typeof root.openAssignmentRoomsByGroupId === "object" &&
+    !Array.isArray(root.openAssignmentRoomsByGroupId)
+      ? (root.openAssignmentRoomsByGroupId as Record<string, unknown>)
+      : {};
+  for (const [groupId, value] of Object.entries(persistedOpenRooms)) {
+    if (!Array.isArray(value)) continue;
+    openAssignmentRoomsByGroupId[groupId] = value.filter(
+      (room): room is OpenAssignmentRoom =>
+        typeof room === "object" &&
+        room !== null &&
+        !Array.isArray(room) &&
+        typeof (room as Record<string, unknown>).id === "string",
+    );
+  }
   const groupOrder = Array.isArray(root.groupOrder)
     ? root.groupOrder.filter((id): id is string => typeof id === "string")
     : [];
@@ -451,6 +475,7 @@ export function migrateAppState(persisted: unknown): AppStateData {
     expenses: persistedExpenses,
     expenseDetails,
     assignmentRoomsByExpenseId,
+    openAssignmentRoomsByGroupId,
     activity,
     activityViewedAt,
     conversations,
@@ -527,6 +552,13 @@ export const useAppStore = create<AppState>()(
             }
           }
 
+          const openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]> =
+            {};
+          for (const [id, rooms] of Object.entries(state.openAssignmentRoomsByGroupId)) {
+            if (groups[id] === undefined) continue;
+            openAssignmentRoomsByGroupId[id] = rooms;
+          }
+
           return {
             me: b.me,
             groups,
@@ -534,6 +566,7 @@ export const useAppStore = create<AppState>()(
             expenseLists,
             conversations,
             expenses,
+            openAssignmentRoomsByGroupId,
             lastBootstrapAt: new Date().toISOString(),
             bootstrapStatus: "ready" as const,
             bootstrapErrorCode: null,
@@ -592,6 +625,10 @@ export const useAppStore = create<AppState>()(
               ([expenseId]) => expenseDetails[expenseId] !== undefined,
             ),
           );
+          const openAssignmentRoomsByGroupId = {
+            ...state.openAssignmentRoomsByGroupId,
+          };
+          delete openAssignmentRoomsByGroupId[groupId];
           const settlementDetails: Record<string, Settlement> = {};
           for (const [id, settlement] of Object.entries(state.settlementDetails)) {
             if (settlement.groupId !== groupId) settlementDetails[id] = settlement;
@@ -604,7 +641,33 @@ export const useAppStore = create<AppState>()(
             expenses,
             expenseDetails,
             assignmentRoomsByExpenseId,
+            openAssignmentRoomsByGroupId,
             settlementDetails,
+          };
+        }),
+
+      applyOpenAssignmentRooms: (groupId, rooms) =>
+        set((state) => {
+          if (state.groups[groupId] === undefined) return {};
+          return {
+            openAssignmentRoomsByGroupId: {
+              ...state.openAssignmentRoomsByGroupId,
+              [groupId]: rooms,
+            },
+          };
+        }),
+
+      markOpenAssignmentRoomJoined: (groupId, roomId) =>
+        set((state) => {
+          const rooms = state.openAssignmentRoomsByGroupId[groupId];
+          if (rooms === undefined) return {};
+          return {
+            openAssignmentRoomsByGroupId: {
+              ...state.openAssignmentRoomsByGroupId,
+              [groupId]: rooms.map((room) =>
+                room.id === roomId ? { ...room, joined: true } : room,
+              ),
+            },
           };
         }),
 
@@ -829,6 +892,7 @@ export const useAppStore = create<AppState>()(
         expenses: state.expenses,
         expenseDetails: state.expenseDetails,
         assignmentRoomsByExpenseId: state.assignmentRoomsByExpenseId,
+        openAssignmentRoomsByGroupId: state.openAssignmentRoomsByGroupId,
         activity: state.activity,
         activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,
@@ -842,9 +906,9 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      // Bumped for activity.readIds/dismissedIds: without it `migrate` never
-      // runs and an existing cache rehydrates those lists as undefined.
-      version: 5,
+      // Bumped for openAssignmentRoomsByGroupId: without it `migrate` never
+      // runs and an existing v5 cache rehydrates the field as undefined.
+      version: 6,
     },
   ),
 );

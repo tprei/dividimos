@@ -251,6 +251,8 @@ describe("optimistic mutations under interleaved responses", () => {
               }
               case "get_group":
                 return snapshotOf(server);
+              case "list_open_assignment_rooms":
+                return [];
               case "get_expense_context":
                 return { detail: detailOf(server), assignmentRoom: null };
               case "get_group_overview":

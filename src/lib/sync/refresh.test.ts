@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseDetail, GroupSnapshot, Me, Settlement } from "@/types/ledger";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import {
   expensePageReadKey,
   expenseReadKey,
   groupReadKey,
+  openAssignmentRoomsReadKey,
   settlementReadKey,
   useAppStore,
 } from "@/stores/app-store";
@@ -14,6 +16,7 @@ import {
   loadMoreExpenses,
   refreshExpense,
   refreshGroup,
+  refreshOpenAssignmentRooms,
   refreshSettlement,
 } from "./refresh";
 import { LedgerError } from "./errors";
@@ -105,6 +108,41 @@ function expenseDetail(): ExpenseDetail {
   };
 }
 
+function openRoom(): OpenAssignmentRoom {
+  return {
+    id: "00000000-0000-4000-8000-000000000009",
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: "Almoço",
+    occurredOn: "2026-09-19",
+    totalCents: 111,
+    host: { id: "user-me", handle: "me_user", name: "Eu Mesmo", avatarUrl: null, isBot: false },
+    createdAt: "2026-09-19T12:00:00.000Z",
+    itemCount: 2,
+    ownedItemCount: 0,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+  };
+}
+
+function memberSnapshot(groupId: string, ledgerVersion: number): GroupSnapshot {
+  return {
+    ...snapshot(groupId, ledgerVersion),
+    members: [
+      {
+        groupId,
+        userId: ME.id,
+        status: "accepted",
+        invitedBy: null,
+        acceptedAt: "2026-01-01T00:00:00.000Z",
+        user: ME,
+      },
+    ],
+  };
+}
+
 type SnapshotResolver = (value: GroupSnapshot | PromiseLike<GroupSnapshot>) => void;
 
 const resolvers: SnapshotResolver[] = [];
@@ -116,7 +154,8 @@ describe("refreshGroup", () => {
     resolvers.length = 0;
     invalidateSyncReads();
     useAppStore.getState().reset();
-    vi.mocked(rpc).mockImplementation(async () => {
+    vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name === "list_open_assignment_rooms") return [];
       const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
       resolvers.push(resolve);
       return await promise;
@@ -124,20 +163,21 @@ describe("refreshGroup", () => {
   });
 
   it("schedules one trailing-edge follow-up and returns its promise to later callers", async () => {
-    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 6));
 
     const first = refreshGroup("g1");
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
 
     const second = refreshGroup("g1");
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(second).not.toBe(first);
 
     resolvers[0]?.(snapshot("g1", 5));
     await first;
     await vi.waitFor(() => expect(resolvers).toHaveLength(2));
 
-    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenCalledTimes(4);
     expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(6);
 
     resolvers[1]?.(snapshot("g1", 7));
@@ -147,22 +187,257 @@ describe("refreshGroup", () => {
   });
 
   it("shares a single follow-up among callers arriving during the same flight", async () => {
-    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 6));
 
     const first = refreshGroup("g1");
     const second = refreshGroup("g1");
     const third = refreshGroup("g1");
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(second).toBe(third);
 
-    resolvers[0]?.(snapshot("g1", 7));
+    resolvers[0]?.(memberSnapshot("g1", 7));
     await vi.waitFor(() => expect(resolvers).toHaveLength(2));
-    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenCalledTimes(4);
 
-    resolvers[1]?.(snapshot("g1", 8));
+    resolvers[1]?.(memberSnapshot("g1", 8));
     await Promise.all([first, second, third]);
 
     expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(8);
+  });
+
+  it("reads open rooms alongside the overview and settles only after both", async () => {
+    const overview = Promise.withResolvers<GroupSnapshot>();
+    const rooms = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? rooms.promise : overview.promise,
+    );
+
+    const refresh = refreshGroup("g1");
+    expect(rpc).toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "get_group_overview",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
+
+    let settled = false;
+    void refresh.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    overview.resolve(snapshot("g1", 3));
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({ status: "ready" }),
+    );
+    expect(settled).toBe(false);
+
+    rooms.reject(new LedgerError("network"));
+    await expect(refresh).resolves.toBeUndefined();
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toEqual({
+      status: "error",
+      code: "network",
+    });
+    expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(3);
+  });
+
+  it("publishes open rooms under their group key", async () => {
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [openRoom()] : snapshot("g1", 2),
+    );
+
+    await refreshGroup("g1");
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toEqual({
+      status: "ready",
+    });
+  });
+
+  it("still rejects with the overview failure when the open-rooms read succeeds", async () => {
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms"
+        ? []
+        : Promise.reject(new LedgerError("unauthenticated")),
+    );
+
+    await expect(refreshGroup("g1")).rejects.toMatchObject({ code: "unauthenticated" });
+    expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({
+      status: "error",
+      code: "unauthenticated",
+    });
+  });
+
+  it("skips the open-rooms read for DMs and pending invitations", async () => {
+    const base = snapshot("g1", 2);
+    const dm = { ...base, group: { ...base.group, kind: "dm" as const } };
+    const invited = {
+      ...base,
+      members: [
+        {
+          groupId: "g1",
+          userId: ME.id,
+          status: "invited" as const,
+          invitedBy: null,
+          acceptedAt: null,
+          user: ME,
+        },
+      ],
+    };
+    useAppStore.setState({ me: ME, groups: { g1: dm } });
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : dm,
+    );
+
+    await refreshGroup("g1");
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    useAppStore.setState({ groups: { g1: invited } });
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : invited,
+    );
+    await refreshGroup("g1");
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).not.toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("issues the open-rooms read for an accepted member's group", async () => {
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 2));
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : memberSnapshot("g1", 3),
+    );
+
+    await refreshGroup("g1");
+
+    expect(rpc).toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
+  });
+
+  it("drops a stale rooms read superseded by a newer generation", async () => {
+    const staleRooms = Promise.withResolvers<OpenAssignmentRoom[]>();
+    const freshRooms = Promise.withResolvers<OpenAssignmentRoom[]>();
+    let roomsCall = 0;
+    vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name !== "list_open_assignment_rooms") return snapshot("g1", 2);
+      roomsCall += 1;
+      return roomsCall === 1 ? staleRooms.promise : freshRooms.promise;
+    });
+
+    const stale = refreshGroup("g1");
+    clientState.authGeneration = 1;
+    invalidateSyncReads();
+    const fresh = refreshGroup("g1");
+
+    freshRooms.resolve([openRoom()]);
+    await fresh;
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+
+    staleRooms.resolve([{ ...openRoom(), id: "00000000-0000-4000-8000-000000000010" }]);
+    await stale;
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+  });
+});
+
+describe("refreshOpenAssignmentRooms", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("publishes the list and marks the read ready", async () => {
+    useAppStore.setState({ me: ME, groups: { g1: memberSnapshot("g1", 2) } });
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [openRoom()] : snapshot("g1", 2),
+    );
+
+    await refreshOpenAssignmentRooms("g1");
+
+    expect(rpc).toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toEqual({
+      status: "ready",
+    });
+  });
+
+  it("skips DMs and viewers whose membership is not accepted", async () => {
+    const base = snapshot("g1", 2);
+    const dm = { ...base, group: { ...base.group, kind: "dm" as const } };
+    const invited = {
+      ...base,
+      members: [
+        {
+          groupId: "g1",
+          userId: ME.id,
+          status: "invited" as const,
+          invitedBy: null,
+          acceptedAt: null,
+          user: ME,
+        },
+      ],
+    };
+
+    useAppStore.setState({ me: ME, groups: { g1: dm } });
+    await refreshOpenAssignmentRooms("g1");
+    expect(rpc).not.toHaveBeenCalled();
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toBeUndefined();
+
+    useAppStore.setState({ groups: { g1: invited } });
+    await refreshOpenAssignmentRooms("g1");
+    expect(rpc).not.toHaveBeenCalled();
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toBeUndefined();
+  });
+
+  it("shares one in-flight read among concurrent callers", async () => {
+    const pending = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? pending.promise : snapshot("g1", 2),
+    );
+
+    const first = refreshOpenAssignmentRooms("g1");
+    const second = refreshOpenAssignmentRooms("g1");
+    expect(second).toBe(first);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    pending.resolve([openRoom()]);
+    await Promise.all([first, second]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    await refreshOpenAssignmentRooms("g1");
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves with the failure recorded in the read state", async () => {
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+
+    await expect(refreshOpenAssignmentRooms("g1")).resolves.toBeUndefined();
+
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toEqual({
+      status: "error",
+      code: "network",
+    });
   });
 });
 
@@ -269,7 +544,8 @@ describe("resource read state", () => {
     resolvers.length = 0;
     invalidateSyncReads();
     useAppStore.getState().reset();
-    vi.mocked(rpc).mockImplementation(async () => {
+    vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name === "list_open_assignment_rooms") return [];
       const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
       resolvers.push(resolve);
       return await promise;
@@ -437,10 +713,12 @@ describe("group refresh settlement details", () => {
   });
 
   it("refreshes a loaded detail whose record left the snapshot after a version bump", async () => {
-    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 6));
     useAppStore.getState().applySettlementDetail(settlementFixture());
 
     vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name === "list_open_assignment_rooms") return [];
       if (name === "get_settlement") return settlementFixture({ status: "voided" });
       return snapshot("g1", 7);
     });
@@ -457,46 +735,59 @@ describe("group refresh settlement details", () => {
 
   it("skips loaded details the fresh snapshot already matches", async () => {
     const cached = settlementFixture();
-    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 6));
     useAppStore.getState().applySettlementDetail(cached);
 
     const fresh = { ...snapshot("g1", 7), settlements: [cached] };
-    vi.mocked(rpc).mockResolvedValue(fresh);
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : fresh,
+    );
 
     await refreshGroup("g1");
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).not.toHaveBeenCalledWith("get_settlement", expect.anything(), expect.anything());
     expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(cached);
   });
 
   it("skips detail reads when the group version did not change", async () => {
     const cached = settlementFixture();
-    const unchanged = { ...snapshot("g1", 7), settlements: [] };
+    const unchanged = { ...memberSnapshot("g1", 7), settlements: [] };
+    useAppStore.setState({ me: ME });
     useAppStore.getState().applyGroup(unchanged);
     useAppStore.getState().applySettlementDetail(cached);
 
-    vi.mocked(rpc).mockResolvedValue(unchanged);
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : unchanged,
+    );
 
     await refreshGroup("g1");
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().settlementDetails["set-1"]).toEqual(cached);
   });
 
   it("does not read every historical settlement card, only loaded details", async () => {
-    useAppStore.getState().applyGroup(snapshot("g1", 6));
+    useAppStore.setState({ me: ME });
+    useAppStore.getState().applyGroup(memberSnapshot("g1", 6));
 
     const historical = [
       settlementFixture({ id: "set-old-1" }),
       settlementFixture({ id: "set-old-2" }),
     ];
-    useAppStore.getState().applyGroup({ ...snapshot("g1", 7), settlements: historical });
+    useAppStore
+      .getState()
+      .applyGroup({ ...memberSnapshot("g1", 7), settlements: historical });
 
-    vi.mocked(rpc).mockResolvedValue({ ...snapshot("g1", 8), settlements: historical });
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms"
+        ? []
+        : { ...snapshot("g1", 8), settlements: historical },
+    );
 
     await refreshGroup("g1");
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 });
