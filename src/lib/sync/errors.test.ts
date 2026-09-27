@@ -28,6 +28,7 @@ describe("errors", () => {
     expect(codeFromMessage("group_has_history")).toBe("group_has_history");
     expect(codeFromMessage("invitation_not_accepted")).toBe("invitation_not_accepted");
     expect(codeFromMessage("member_excluded")).toBe("member_excluded");
+    expect(codeFromMessage("former_member_balance")).toBe("former_member_balance");
   });
 
   it("codeFromMessage falls back to unknown for arbitrary text", () => {

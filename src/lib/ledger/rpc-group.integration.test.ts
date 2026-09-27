@@ -1786,5 +1786,250 @@ WHERE (
         expect(summary?.myShareCents).toBe(0);
       });
     });
+
+    describe("former-member balance guard", () => {
+      let creator: TestUser;
+      let member: TestUser;
+      let third: TestUser;
+      let clientCreator: SupabaseClient;
+      let clientMember: SupabaseClient;
+      let groupId: string;
+      let sharedExpenseId: string;
+      let soloExpenseId: string;
+      let settlementId: string;
+
+      beforeAll(async () => {
+        [creator, member, third] = await createTestUsers(3);
+        clientCreator = authenticateAs(creator);
+        clientMember = authenticateAs(member);
+      });
+
+      it("refuses to delete a bill that would move a removed member from zero to owed", async () => {
+        groupId = await createGroupWithMembers(creator, [member, third], "Guarda");
+        sharedExpenseId = (
+          await createExpense(creator, {
+            groupId,
+            title: "Churrasco",
+            totalCents: 10000,
+            payload: equalSplitPayload([creator.id, member.id], 10000, 0),
+          })
+        ).expenseId;
+
+        settlementId = (
+          await rpc<SettlementAck>(clientMember, "record_settlement", {
+            p_operation_id: crypto.randomUUID(),
+            p_group_id: groupId,
+            p_from_user_id: member.id,
+            p_to_user_id: creator.id,
+            p_amount_cents: 5000,
+          })
+        ).settlementId;
+        expect(await getBalances(groupId)).toHaveLength(0);
+
+        await rpc<MutationAck>(clientCreator, "remove_member", {
+          p_group_id: groupId,
+          p_user_id: member.id,
+        });
+
+        const err = await expectError(
+          clientCreator.rpc("delete_expense", { p_expense_id: sharedExpenseId }),
+        );
+        expect(err).toBe("former_member_balance");
+
+        const { rows } = await withPg((pg) =>
+          pg.query<{ status: string }>(
+            "select status from public.expenses where id = $1",
+            [sharedExpenseId],
+          ),
+        );
+        expect(rows[0].status).toBe("active");
+        expect(await getBalances(groupId)).toHaveLength(0);
+      });
+
+      it("still accepts edits that leave the removed member's balance unchanged", async () => {
+        const occurredOn = new Date().toISOString().slice(0, 10);
+        await rpc<MutationAck>(clientCreator, "edit_expense", {
+          p_expense_id: sharedExpenseId,
+          p_expected_version_no: 1,
+          p_occurred_on: occurredOn,
+          p_title: "Churrasco renomeado",
+          p_merchant_name: null,
+          p_expense_type: "single_amount",
+          p_total_cents: 10000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: equalSplitPayload([creator.id, member.id], 10000, 0),
+        });
+
+        soloExpenseId = (
+          await createExpense(creator, {
+            groupId,
+            title: "Com o terceiro",
+            totalCents: 2000,
+            payload: equalSplitPayload([creator.id, third.id], 2000, 0),
+          })
+        ).expenseId;
+        await rpc<MutationAck>(clientCreator, "edit_expense", {
+          p_expense_id: soloExpenseId,
+          p_expected_version_no: 1,
+          p_occurred_on: occurredOn,
+          p_title: "Com o terceiro renomeado",
+          p_merchant_name: null,
+          p_expense_type: "single_amount",
+          p_total_cents: 2000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: equalSplitPayload([creator.id, third.id], 2000, 0),
+        });
+
+        const balances = await getBalances(groupId);
+        const expected = [
+          { kind: "user", participant_id: creator.id, net_cents: 1000 },
+          { kind: "user", participant_id: third.id, net_cents: -1000 },
+        ].sort((x, y) => x.participant_id.localeCompare(y.participant_id));
+        expect([...balances].sort((x, y) => x.participant_id.localeCompare(y.participant_id))).toEqual(
+          expected,
+        );
+      });
+
+      it("unblocks the group by reinviting, deleting, voiding, and archiving", async () => {
+        await rpc<MutationAck>(clientCreator, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: member.id,
+        });
+        await acceptInvitation(member, groupId);
+
+        await rpc<MutationAck>(clientCreator, "delete_expense", {
+          p_expense_id: sharedExpenseId,
+        });
+        await rpc<MutationAck>(clientCreator, "delete_expense", {
+          p_expense_id: soloExpenseId,
+        });
+        await rpc<MutationAck>(clientCreator, "void_settlement", {
+          p_settlement_id: settlementId,
+        });
+        expect(await getBalances(groupId)).toHaveLength(0);
+
+        await rpc<MutationAck>(clientMember, "leave_group", { p_group_id: groupId });
+        const ack = await rpc<{ groupId: string; archivedAt: string | null }>(
+          clientCreator,
+          "archive_group",
+          { p_group_id: groupId },
+        );
+        expect(ack.groupId).toBe(groupId);
+        expect(ack.archivedAt).toBeTruthy();
+      });
+
+      it("allows restoring the bill that zeroes a legacy stuck former-member balance", async () => {
+        const legacyGroupId = await createGroupWithMembers(creator, [member], "Legado");
+        const billId = (
+          await createExpense(creator, {
+            groupId: legacyGroupId,
+            title: "Conta antiga",
+            totalCents: 2286,
+            payload: equalSplitPayload([creator.id, member.id], 2286, 0),
+          })
+        ).expenseId;
+
+        await rpc<SettlementAck>(clientMember, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: legacyGroupId,
+          p_from_user_id: member.id,
+          p_to_user_id: creator.id,
+          p_amount_cents: 643,
+        });
+        await rpc<SettlementAck>(clientMember, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: legacyGroupId,
+          p_from_user_id: member.id,
+          p_to_user_id: creator.id,
+          p_amount_cents: 500,
+        });
+        expect(await getBalances(legacyGroupId)).toHaveLength(0);
+
+        await rpc<MutationAck>(clientCreator, "remove_member", {
+          p_group_id: legacyGroupId,
+          p_user_id: member.id,
+        });
+
+        await withPg(async (pg) => {
+          await pg.query(
+            "update public.expenses set status = 'deleted', deleted_at = now(), deleted_by = $2 where id = $1",
+            [billId, creator.id],
+          );
+          await pg.query(
+            "insert into public.group_balances (group_id, kind, participant_id, net_cents) " +
+              "values ($1, 'user', $2, 1143), ($1, 'user', $3, -1143)",
+            [legacyGroupId, member.id, creator.id],
+          );
+        });
+
+        await withPg(async (pg) => {
+          const { rows } = await pg.query<{ version: string }>(
+            "select public.recompute_group_balances($1)::text as version",
+            [legacyGroupId],
+          );
+          expect(Number(rows[0].version)).toBeGreaterThan(0);
+        });
+        const stuck = await getBalances(legacyGroupId);
+        expect(stuck.find((row) => row.participant_id === member.id)?.net_cents).toBe(1143);
+
+        await rpc<MutationAck>(clientCreator, "restore_expense", { p_expense_id: billId });
+
+        expect(await getBalances(legacyGroupId)).toHaveLength(0);
+      });
+
+      it("refuses a decline that would leave a reinvited former member with a balance", async () => {
+        const declineGroupId = await createGroupWithMembers(creator, [member], "Recusa");
+        const billId = (
+          await createExpense(creator, {
+            groupId: declineGroupId,
+            title: "Jantar",
+            totalCents: 6000,
+            payload: equalSplitPayload([creator.id, member.id], 6000, 0),
+          })
+        ).expenseId;
+        await rpc<SettlementAck>(clientMember, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: declineGroupId,
+          p_from_user_id: member.id,
+          p_to_user_id: creator.id,
+          p_amount_cents: 3000,
+        });
+        await rpc<MutationAck>(clientMember, "leave_group", { p_group_id: declineGroupId });
+        await rpc<MutationAck>(clientCreator, "invite_member", {
+          p_group_id: declineGroupId,
+          p_user_id: member.id,
+        });
+
+        const outsiderErr = await expectError(
+          authenticateAs(third).rpc("decline_invitation", { p_group_id: declineGroupId }),
+        );
+        expect(outsiderErr).toBe("not_invited");
+        const acceptedErr = await expectError(
+          clientCreator.rpc("decline_invitation", { p_group_id: declineGroupId }),
+        );
+        expect(acceptedErr).toBe("not_invited");
+
+        const err = await expectError(
+          clientMember.rpc("decline_invitation", { p_group_id: declineGroupId }),
+        );
+        expect(err).toBe("outstanding_balance");
+
+        const { rows } = await withPg((pg) =>
+          pg.query<{ expense_status: string; member_status: string | null }>(
+            "select e.status as expense_status, " +
+              "(select status::text from public.group_members where group_id = $1 and user_id = $3) as member_status " +
+              "from public.expenses e where e.id = $2",
+            [declineGroupId, billId, member.id],
+          ),
+        );
+        expect(rows[0]).toEqual({ expense_status: "active", member_status: "invited" });
+        expect(await getBalances(declineGroupId)).toHaveLength(0);
+
+        await acceptInvitation(member, declineGroupId);
+        await rpc<MutationAck>(clientMember, "leave_group", { p_group_id: declineGroupId });
+      });
+    });
   },
 );

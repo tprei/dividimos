@@ -10,6 +10,7 @@ import {
   createExpense,
   equalSplitPayload,
   expectRpcError,
+  withPg,
   type TestUser,
 } from "@/test/integration-helpers";
 import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
@@ -297,7 +298,22 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(settledEntry.snapshot.balances).toEqual([]);
 
       await rpc<MutationAck>(c1, "remove_member", { p_group_id: groupId, p_user_id: u2.id });
-      await rpc<MutationAck>(c1, "delete_expense", { p_expense_id: expense.expenseId });
+
+      expect(
+        await expectError(c1.rpc("delete_expense", { p_expense_id: expense.expenseId })),
+      ).toBe("former_member_balance");
+
+      await withPg(async (pg) => {
+        await pg.query(
+          "update public.expenses set status = 'deleted', deleted_at = now(), deleted_by = $2 where id = $1",
+          [expense.expenseId, u1.id],
+        );
+        await pg.query(
+          "insert into public.group_balances (group_id, kind, participant_id, net_cents) " +
+            "values ($1, 'user', $2, 500), ($1, 'user', $3, -500)",
+          [groupId, u2.id, u1.id],
+        );
+      });
 
       const entry = await readV2(c1, groupId);
       const expectedBalances = [

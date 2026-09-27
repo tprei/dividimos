@@ -1618,7 +1618,7 @@ describe("P7 decline metadata and restoration denial", () => {
     expect(err).toBe("invitation_not_accepted");
   });
 
-  it("ordinary settled-departure restoration preserves historical participant restoration", async () => {
+  it("settled-departure delete needs the reinvite escape but restoration preserves historical participants", async () => {
     if (!isIntegrationTestReady) return;
     const [owner, member] = await createTestUsers(2);
     const ownerClient = authenticateAs(owner);
@@ -1649,11 +1649,30 @@ describe("P7 decline metadata and restoration denial", () => {
     });
     expect(leaveErr).toBeNull();
 
-    // Owner manually deletes the expense
-    const { error: delErr } = await callRpc(ownerClient, "delete_expense", {
+    // Deleting the bill would move the departed member from zero to owed.
+    const delErr = await expectRpcError(
+      callRpc(ownerClient, "delete_expense", {
+        p_expense_id: expenseId,
+      }),
+    );
+    expect(delErr).toBe("former_member_balance");
+
+    // Documented escape: reinvite, accept, then delete and restore in their
+    // presence; the historical participants survive the round-trip.
+    const { error: inviteErr } = await ownerClient.rpc("invite_member", {
+      p_group_id: groupId,
+      p_user_id: member.id,
+    });
+    expect(inviteErr).toBeNull();
+    const { error: acceptErr } = await memberClient.rpc("accept_invitation", {
+      p_group_id: groupId,
+    });
+    expect(acceptErr).toBeNull();
+
+    const { error: deleteErr } = await callRpc(ownerClient, "delete_expense", {
       p_expense_id: expenseId,
     });
-    expect(delErr).toBeNull();
+    expect(deleteErr).toBeNull();
 
     // Owner restores the expense: historical participant without decline restores fine!
     const { error: restoreErr } = await callRpc(ownerClient, "restore_expense", {
@@ -1669,6 +1688,12 @@ describe("P7 decline metadata and restoration denial", () => {
       return rows;
     });
     expect(row.map((r) => r.user_id).sort()).toEqual([owner.id, member.id].sort());
+
+    // The round-trip zeroes the ledger again, so the member can leave again.
+    const { error: releaveErr } = await memberClient.rpc("leave_group", {
+      p_group_id: groupId,
+    });
+    expect(releaveErr).toBeNull();
   });
 
   it("decline of an already-deleted expense records the decliner in the column", async () => {

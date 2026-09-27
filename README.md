@@ -96,7 +96,7 @@ stateDiagram-v2
 - **Página do grupo.** Avatar com emoji ou foto, **Gastos do grupo** com o total e a parte de cada um, e as abas **Saldos**, **Contas** e **Membros**.
 - **Sair e remover.** Só sai do grupo quem está com saldo zerado. O criador remove membros, e quem foi removido não volta sozinho por link.
 - **Arquivar só pra você.** Em **Grupos** e **Conversas**, deslize uma linha ou abra suas ações para arquivar quando seu saldo estiver zerado. **Arquivadas** fica no topo da lista, mostra a quantidade e as conversas não lidas e abre na mesma página (`?view=archived`). Desarquive pela linha, pelo aviso no grupo ou pelas configurações, sem confirmação. Um novo saldo pendente traz o grupo de volta; mensagens não desarquivam.
-- **Saldos de quem saiu.** Se uma alteração no histórico recriar um saldo com um ex-membro, o nome e o avatar continuam visíveis nos saldos do grupo e no início, com a indicação **saiu do grupo**, sem ações de Pix, pagamento ou lembrete.
+- **Saldos de quem saiu.** Apagar, editar ou restaurar uma conta, ou desfazer um pagamento, é recusado quando mudaria o saldo de quem já saiu do grupo para outro valor diferente de zero. Para mexer nisso, convide a pessoa de volta, acertem com ela no grupo e ela sai de novo com saldo zerado. Recusar esse convite também só funciona com saldo zerado. Mudanças que levam o saldo dela a zero continuam permitidas. Saldos antigos desse tipo aparecem nos saldos do grupo e no início com o nome, o avatar e a indicação **saiu do grupo**, sem ações de Pix, pagamento ou lembrete.
 - **Excluir grupo.** Só aparece para o criador quando ninguém tem saldo pendente e o grupo nunca compartilhou histórico financeiro. Depois disso, arquivar é o jeito de tirar o grupo da frente.
 
 ### Conversas
