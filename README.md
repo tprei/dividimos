@@ -680,7 +680,7 @@ O que é preciso configurar pra remontar a produção, sem valores. Os valores f
 - **Supabase** (região `sa-east-1`). Auth só com o provedor Google, `site_url = https://www.dividimos.ai`; a lista de redirects fica em Dashboard > Authentication > URL Configuration. Assinatura de JWT: ES256 em uso; a chave HS256 legada continua ativa porque `e2e/seed-helper.ts` gera sessões HS256 pros testes sintéticos (`mintAccessToken`).
 - **Google OAuth**: um client id web no projeto do GCP, usado no login web e no Android.
 - **Firebase**: um app Android pro FCM.
-- **Variáveis de ambiente na Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`. `DEV_LOGIN_SECRET` nunca é definido em produção.
+- **Variáveis de ambiente na Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`, `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`. `DEV_LOGIN_SECRET` nunca é definido em produção.
 - **Secrets do GitHub Actions**: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (só pro sintético da CI).
 
 ### Aplicando mudanças no banco
@@ -694,6 +694,30 @@ supabase db push --linked              # aplica
 ```
 
 `supabase db push` aplica as migrations que ainda não estão no histórico do projeto de destino. Ele não troca um banco existente pela sequência do reset. Pra uma troca intencional de época de migrations, use um projeto Supabase novo ou restaurado e isolado, repita o diretório inteiro de migrations nele, confira o catálogo e a suite de integração, e só então aponte o deploy pra esse projeto. Nunca rode a sequência inicial aposentada e a nova no mesmo banco. Agentes nunca rodam esses comandos.
+
+### Denúncias e moderação
+
+Denúncias de mensagens e perfis chegam no mesmo chat do Telegram usado pelos alertas do ambient. Uma pessoa precisa copiar os valores existentes de `ALERT_TELEGRAM_BOT_TOKEN` e `ALERT_TELEGRAM_CHAT_ID` para as variáveis de ambiente da Vercel e fazer um novo deploy. Nunca use o prefixo `NEXT_PUBLIC_` nessas variáveis. Os secrets do GitHub Actions continuam configurados para o ambient.
+
+A denúncia só aparece como enviada no app depois que o Telegram aceita o aviso e o servidor registra `notified_at`. Se o envio falhar, o app informa o erro e permite tentar de novo usando a mesma denúncia. Uma falha entre o envio e o registro do recebimento pode repetir o aviso no Telegram: confira o id da denúncia, não trate o aviso repetido como uma nova denúncia.
+
+Revisamos denúncias de abuso e pedidos enviados para `contato@dividimos.ai` em até 7 dias. Verifique a fila diariamente; um aviso no Telegram não substitui a revisão no dashboard.
+
+1. No Supabase Dashboard, abra Table Editor > `public.reports`. Filtre `status = open` e ordene por `created_at`, das mais antigas para as mais novas. Confira também as linhas com `notified_at` vazio: elas foram salvas, mas o app ainda não confirmou a entrega do aviso.
+2. Confira `reporter_id`, `target_user_id`, `message_id`, `reason`, `details` e `message_snapshot`. O snapshot é evidência restrita à equipe, não texto para repostar. Ele pode continuar guardado depois que a mensagem original foi apagada ou o perfil foi anonimizado. Não compartilhe o acesso ao dashboard ou ao chat de moderação com usuários comuns.
+3. Para apagar o texto de uma mensagem confirmada como abusiva, confira o `message_id` da denúncia e execute no SQL Editor, substituindo o UUID:
+
+   select public.erase_chat_message('UUID-DA-MENSAGEM'::uuid);
+
+   Isso mantém a mensagem como “Mensagem apagada”, preserva o autor e não altera contas, pagamentos nem saldos. Excluir a conta do autor é outro fluxo. Não use DELETE na tabela de mensagens como ferramenta de moderação.
+4. Para suspender uma pessoa, confira `target_user_id` e abra Authentication > Users no Supabase. Abra esse usuário e use a ação de banimento, escolhendo a duração conforme o caso. Não use Delete user para suspender. O banimento do Auth pode não invalidar imediatamente um access token já emitido; confira a expiração da sessão antes de afirmar que todo acesso foi interrompido.
+5. Registre a decisão pelo SQL Editor:
+
+   select public.resolve_report('UUID-DA-DENUNCIA'::uuid, 'resolved', 'Mensagem removida após revisão.');
+
+   Se a revisão não exigir ação, use `dismissed` e escreva o motivo. A nota é obrigatória. Resolver uma denúncia não apaga uma mensagem nem bane alguém automaticamente; essas ações são separadas e precisam ser verificadas.
+
+As funções de denúncia, confirmação de entrega e resolução não podem ser executadas pelos papéis de navegador. Não exponha a service role no app. Não marque `notified_at` manualmente para esconder uma falha de envio.
 
 ### Monitoramento sintético
 
