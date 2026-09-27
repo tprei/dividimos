@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatAiInput } from "./chat-ai-input";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -29,8 +31,49 @@ function setup(props = {}) {
   return { user, ...utils };
 }
 
+function makeMe(id: string, granted: boolean) {
+  return {
+    id,
+    handle: id,
+    name: id,
+    avatarUrl: null,
+    isBot: false,
+    email: `${id}@example.com`,
+    pixKeyType: null,
+    pixKeyHint: null,
+    onboarded: true,
+    notificationPreferences: {},
+    aiConsentVersion: granted ? CURRENT_AI_CONSENT_VERSION : null,
+    aiConsentGrantedAt: granted ? "2026-01-01T00:00:00.000Z" : null,
+  };
+}
+
+function seedUsableAiConsent(): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: "user-1",
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: "user-1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+      email: "alice@example.com",
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: CURRENT_AI_CONSENT_VERSION,
+      aiConsentGrantedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+}
+
 describe("ChatAiInput", () => {
   beforeEach(() => {
+    seedUsableAiConsent();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -439,5 +482,110 @@ describe("send acknowledgement", () => {
       expect(screen.getByTestId("send-error")).toBeInTheDocument();
     });
     expect(input.value).toBe("Oi");
+  });
+
+});
+
+describe("ChatAiInput AI consent", () => {
+  beforeEach(() => {
+    seedUsableAiConsent();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("declining AI keeps typed text and normal send available", async () => {
+    useAppStore.getState().reset();
+    useAppStore.setState({
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: "user-1",
+      me: makeMe("user-1", false),
+    });
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = setup({ onSend });
+
+    await user.type(screen.getByTestId("chat-input"), "uber 25");
+    await user.click(screen.getByTestId("sparkle-toggle"));
+
+    expect(screen.getByText("Usar IA no Dividimos?")).toBeInTheDocument();
+    expect(screen.getByTestId("sparkle-toggle")).toHaveAttribute("aria-pressed", "false");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Continuar sem IA" }));
+
+    expect(screen.queryByText("Usar IA no Dividimos?")).toBeNull();
+    expect(screen.getByTestId("chat-input")).toHaveValue("uber 25");
+
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith("uber 25");
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a 403 preserves typed text without automatic resend", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: () =>
+        Promise.resolve({
+          error: "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+          code: "ai_consent_required",
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = setup();
+
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "uber 25 eu paguei");
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("parse-error")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("parse-error")).toHaveTextContent(
+      "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+    );
+    expect(screen.getByTestId("chat-input")).toHaveValue("uber 25 eu paguei");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("chat-draft-card")).toBeNull();
+  });
+
+  it("revocation or account switch discards a late parse result", async () => {
+    let resolve!: (v: unknown) => void;
+    const fetchMock = vi.fn().mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = setup();
+
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "uber 25");
+    await user.click(screen.getByTestId("send-button"));
+    expect(screen.getByTestId("parsing-skeleton")).toBeInTheDocument();
+
+    // The shared device now belongs to another account while the parse is in
+    // flight; its result must never surface.
+    act(() => {
+      useAppStore.setState({
+        me: makeMe("user-2", false),
+        lastBootstrappedAccountId: "user-2",
+        aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+      });
+    });
+    resolve({ ok: true, json: () => Promise.resolve(mockResult) });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("parsing-skeleton")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("chat-draft-card")).toBeNull();
+    expect(screen.queryByTestId("parse-error")).toBeNull();
   });
 });

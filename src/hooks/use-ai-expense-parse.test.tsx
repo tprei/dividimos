@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 import { renderHook, act } from "@testing-library/react";
 import { useAiExpenseParse } from "./use-ai-expense-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -16,8 +18,32 @@ const mockResult: ChatExpenseResult = {
   confidence: "high",
 };
 
+function seedUsableAiConsent(): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: "user-1",
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: "user-1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+      email: "alice@example.com",
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: CURRENT_AI_CONSENT_VERSION,
+      aiConsentGrantedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+}
+
 describe("useAiExpenseParse", () => {
   beforeEach(() => {
+    seedUsableAiConsent();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -41,17 +67,19 @@ describe("useAiExpenseParse", () => {
 
     const { result } = renderHook(() => useAiExpenseParse());
 
-    let parsePromise: Promise<void>;
+    let parsePromise: Promise<boolean>;
     act(() => {
       parsePromise = result.current.parse("uber 25 eu paguei");
     });
 
     expect(result.current.isParsing).toBe(true);
 
+    let accepted = false;
     await act(async () => {
-      await parsePromise;
+      accepted = await parsePromise;
     });
 
+    expect(accepted).toBe(true);
     expect(result.current.isParsing).toBe(false);
     expect(result.current.result).toEqual(mockResult);
     expect(result.current.error).toBeNull();
@@ -98,10 +126,12 @@ describe("useAiExpenseParse", () => {
 
     const { result } = renderHook(() => useAiExpenseParse());
 
+    let accepted = true;
     await act(async () => {
-      await result.current.parse("test");
+      accepted = await result.current.parse("test");
     });
 
+    expect(accepted).toBe(false);
     expect(result.current.error).toBe("Chat parser nao configurado");
     expect(result.current.result).toBeNull();
   });

@@ -10,7 +10,9 @@ import {
   ComposerSendButton,
   isImeComposing,
 } from "@/components/chat/composer";
+import { AiConsentDialog } from "@/components/ai/ai-consent-dialog";
 import { ChatDraftCard, type ChatDraftStatus } from "@/components/chat/chat-draft-card";
+import { useAiConsentGate } from "@/hooks/use-ai-consent-gate";
 import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -40,6 +42,12 @@ export function ChatAiInput(props: ChatAiInputProps) {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const { parse, isParsing, result, error, reset } = useAiExpenseParse();
+  const { requestConsent, dialogProps } = useAiConsentGate(
+    useCallback(() => {
+      setMode("normal");
+      reset();
+    }, [reset]),
+  );
 
   const isAiMode = mode === "ai";
   const hasDraft = result !== null;
@@ -58,9 +66,10 @@ export function ChatAiInput(props: ChatAiInputProps) {
       setConfirmError(undefined);
       return;
     }
+    if (!isAiMode && !requestConsent()) return;
     setMode((prev) => (prev === "ai" ? "normal" : "ai"));
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [hasDraft, isParsing, isConfirming, reset]);
+  }, [hasDraft, isParsing, isConfirming, reset, isAiMode, requestConsent]);
 
   // Synchronous so a double submit cannot start two sends before React
   // re-renders with the pending state.
@@ -79,8 +88,9 @@ export function ChatAiInput(props: ChatAiInputProps) {
     if (!trimmed) return;
 
     if (isAiMode) {
-      await parse(trimmed, members);
-      setText("");
+      if (!requestConsent()) return;
+      const accepted = await parse(trimmed, members);
+      if (accepted) setText("");
       return;
     }
 
@@ -113,7 +123,7 @@ export function ChatAiInput(props: ChatAiInputProps) {
       sendingRef.current = false;
       setSending(false);
     }
-  }, [text, isAiMode, parse, members, onSend, groupId]);
+  }, [text, isAiMode, parse, members, onSend, groupId, requestConsent]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -162,7 +172,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
   );
 
   return (
-    <ComposerDock>
+    <>
+      <ComposerDock>
       <AnimatePresence mode="wait">
         {isParsing && (
           <motion.div
@@ -278,6 +289,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
           aria-label={isAiMode ? "Registrar conta com IA" : "Enviar"}
         />
       </ComposerField>
-    </ComposerDock>
+      </ComposerDock>
+      <AiConsentDialog {...dialogProps} />
+    </>
   );
 }
