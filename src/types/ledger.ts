@@ -241,21 +241,39 @@ export interface GroupEvent {
   assignmentRoomAccess?: AssignmentRoomAccess;
 }
 
-export interface ChatMessage {
+export type ChatMessage = {
   id: string;
   clientId: string;
   groupId: string;
   senderId: string;
-  content: string;
   createdAt: string;
-  sender: UserProfile;
-}
-
-export interface ChatLastMessage {
+  sender: UserProfile | null;
+  erased: false;
   content: string;
+} | {
+  id: string;
+  clientId: string;
+  groupId: string;
   senderId: string;
   createdAt: string;
-}
+  sender: UserProfile | null;
+  erased: true;
+  content: null;
+};
+
+export type ChatLastMessage = {
+  senderId: string;
+  createdAt: string;
+  sender: UserProfile | null;
+  erased: false;
+  content: string;
+} | {
+  senderId: string;
+  createdAt: string;
+  sender: UserProfile | null;
+  erased: true;
+  content: null;
+};
 
 export interface GroupGuest {
   id: string;
@@ -295,6 +313,7 @@ export interface GroupOverviewData {
 
 export interface GroupSnapshot {
   group: Group;
+  dmCounterparty: UserProfile | null;
   members: GroupMember[];
   balances: BalanceRow[];
   guests: GroupGuest[];

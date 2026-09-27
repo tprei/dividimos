@@ -48,6 +48,7 @@ function groupSnapshot(): GroupSnapshot {
       ledgerVersion: 7,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: users.map(([id, handle, name]) => ({
       groupId: "g1",
       userId: id,

@@ -29,6 +29,7 @@ function group(id: string): GroupSnapshot {
       ledgerVersion: 1,
       createdAt: "2026-09-01T00:00:00.000Z",
     },
+    dmCounterparty: null,
     members: [],
     balances: [],
     archivedAt: null,

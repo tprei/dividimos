@@ -86,6 +86,7 @@ function makeSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: [
       {
         groupId: "group-1",
@@ -163,6 +164,7 @@ describe("GroupChatClient", () => {
       groupId: "group-1",
       senderId: carol.id,
       content: "Levo o carvão",
+      erased: false,
       createdAt: "2026-01-01T10:00:00Z",
       sender: carol,
     };
@@ -230,6 +232,7 @@ describe("GroupChatClient", () => {
       groupId: "group-1",
       senderId: carol.id,
       content: "Primeira",
+      erased: false,
       createdAt: "2026-01-01T10:00:00Z",
       sender: carol,
     };

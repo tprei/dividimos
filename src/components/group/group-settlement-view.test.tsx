@@ -81,6 +81,7 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
       ledgerVersion: 7,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: [
       member("user-1", "tiago", "Tiago Silva"),
       member("user-2", "bia", "Bia Costa"),

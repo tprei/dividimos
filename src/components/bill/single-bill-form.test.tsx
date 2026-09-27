@@ -293,6 +293,7 @@ describe("SingleBillForm submit", () => {
     const submit = vi.fn().mockResolvedValue(false);
     const group = {
       group: { id: "g-late", kind: "group" as const, name: "Viagem", creatorId: me.id, dmUserA: null, dmUserB: null, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
+      dmCounterparty: null,
       members: [],
       balances: [],
       guests: [],

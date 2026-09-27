@@ -31,14 +31,6 @@ function dmInviteStatusLine(
   return null;
 }
 
-function resolveSpeaker(
-  snapshot: GroupSnapshot,
-  senderId: string | undefined,
-): UserProfile | null {
-  if (!senderId) return null;
-  return snapshot.members.find((member) => member.userId === senderId)?.user ?? null;
-}
-
 function netCentsForGroup(snapshot: GroupSnapshot, meId: string): number {
   return debtRowsForGroup(snapshot, meId).reduce(
     (sum, row) => sum + (row.direction === "owed" ? row.amountCents : -row.amountCents),
@@ -54,24 +46,27 @@ export function conversationRow(
   const isDm = snapshot.group.kind === "dm";
 
   if (isDm) {
-    const counterparty = snapshot.members.find((member) => member.userId !== meId);
-    if (!counterparty) return null;
+    const counterpartyMember = snapshot.members.find((member) => member.userId !== meId);
+    const profile = counterpartyMember?.user ?? snapshot.dmCounterparty;
+    if (!profile) return null;
 
     const myStatus = snapshot.members.find((member) => member.userId === meId)?.status;
-    const statusLine = dmInviteStatusLine(myStatus, counterparty.status);
+    const statusLine = counterpartyMember
+      ? dmInviteStatusLine(myStatus, counterpartyMember.status)
+      : null;
     const lastMessage = statusLine ? null : snapshot.lastMessage;
 
     return {
       groupId: snapshot.group.id,
       kind: "dm",
-      title: counterparty.user.name,
-      avatarName: counterparty.user.name,
-      avatarUrl: counterparty.user.avatarUrl,
-      avatarIsBot: counterparty.user.isBot,
-      href: `/app/conversations/${counterparty.userId}`,
-      preview: lastMessage?.content ?? null,
+      title: profile.name,
+      avatarName: profile.name,
+      avatarUrl: profile.avatarUrl,
+      avatarIsBot: profile.isBot,
+      href: `/app/conversations/${profile.id}`,
+      preview: lastMessage?.erased ? "Mensagem apagada" : lastMessage?.content ?? null,
       previewIsMine: lastMessage?.senderId === meId,
-      speaker: resolveSpeaker(snapshot, lastMessage?.senderId),
+      speaker: lastMessage?.sender ?? null,
       lastMessageAt: lastMessage?.createdAt ?? null,
       unreadCount: statusLine ? 0 : snapshot.unreadCount,
       netCents,
@@ -92,9 +87,9 @@ export function conversationRow(
     avatarUrl: null,
     avatarIsBot: false,
     href: `/app/groups/${snapshot.group.id}/chat`,
-    preview: lastMessage?.content ?? "Sem mensagens",
+    preview: lastMessage?.erased ? "Mensagem apagada" : lastMessage?.content ?? "Sem mensagens",
     previewIsMine: lastMessage?.senderId === meId,
-    speaker: resolveSpeaker(snapshot, lastMessage?.senderId),
+    speaker: lastMessage?.sender ?? null,
     lastMessageAt: lastMessage?.createdAt ?? null,
     unreadCount: snapshot.unreadCount,
     netCents,

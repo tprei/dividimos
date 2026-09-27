@@ -103,6 +103,7 @@ function snapshotOf(state: ServerState): GroupSnapshot {
       ledgerVersion: state.ledgerVersion,
       createdAt: "2026-01-01T00:00:00.000Z",
     },
+    dmCounterparty: null,
     members: [
       {
         groupId: GROUP_ID,

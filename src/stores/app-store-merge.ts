@@ -107,6 +107,7 @@ function mergeMessages(
   for (const row of existing) byClientId.set(row.clientId, row);
   for (const row of incoming) {
     const held = byClientId.get(row.clientId);
+    if (held?.erased && !row.erased) continue;
     // A provisional row uses its clientId as id; anything else is server truth.
     const heldIsProvisional = held !== undefined && held.id === held.clientId;
     const incomingIsProvisional = row.id === row.clientId;

@@ -902,7 +902,7 @@ describe.skipIf(!isIntegrationTestReady)("users.is_bot", () => {
     const conversation = must(decodeConversation(data));
     const message = conversation.messages.find((m) => m.content === "oi");
     expect(message).toBeDefined();
-    expect(message!.sender.isBot).toBe(true);
+    expect(message!.sender?.isBot).toBe(true);
     expect(message!.senderId).toBe(bot.id);
   });
 

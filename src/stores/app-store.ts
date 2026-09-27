@@ -317,11 +317,12 @@ function normalizeConversationReconcile(value: unknown): ConversationReconcileSt
   };
 }
 
-export function migrateAppState(persisted: unknown): AppStateData {
+export function migrateAppState(persisted: unknown, version: number): AppStateData {
   const root =
     persisted !== null && typeof persisted === "object" && !Array.isArray(persisted)
       ? (persisted as Record<string, unknown>)
       : {};
+  const dropChatProjections = version < 9;
   const legacy = root as Partial<AppStateData>;
   const groups: Record<string, GroupSnapshot> = {};
   const persistedGroups =
@@ -536,8 +537,8 @@ export function migrateAppState(persisted: unknown): AppStateData {
   return {
     ...initialData,
     me: legacy.me ? { ...legacy.me, isBot: legacy.me.isBot ?? false } : null,
-    groups,
-    groupOrder,
+    groups: dropChatProjections ? {} : groups,
+    groupOrder: dropChatProjections ? [] : groupOrder,
     expenseLists,
     myExpenses: normalizeExpenseList(root.myExpenses),
     expenses: persistedExpenses,
@@ -547,14 +548,17 @@ export function migrateAppState(persisted: unknown): AppStateData {
     hostedAssignmentRooms,
     activity,
     activityViewedAt,
-    conversations,
+    conversations: dropChatProjections ? {} : conversations,
     vendorCharges: Array.isArray(root.vendorCharges)
       ? (root.vendorCharges as VendorCharge[])
       : [],
     chargeSummary,
-    lastBootstrapAt: typeof legacy.lastBootstrapAt === "string" ? legacy.lastBootstrapAt : null,
+    lastBootstrapAt:
+      dropChatProjections || typeof legacy.lastBootstrapAt !== "string"
+        ? null
+        : legacy.lastBootstrapAt,
     lastBootstrappedAccountId:
-      typeof legacy.lastBootstrappedAccountId === "string"
+      !dropChatProjections && typeof legacy.lastBootstrappedAccountId === "string"
         ? legacy.lastBootstrappedAccountId
         : null,
   };
@@ -1087,7 +1091,7 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      version: 8,
+      version: 9,
     },
   ),
 );
