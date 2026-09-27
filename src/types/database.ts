@@ -1808,6 +1808,15 @@ export type Database = {
         }
         Returns: Json
       }
+      set_assignment_room_item_claims: {
+        Args: {
+          p_room_id: string
+          p_item_id: string
+          p_expected_item_revision: number
+          p_claims: Json
+        }
+        Returns: Json
+      }
       set_group_avatar: {
         Args: {
           p_group_id: string
