@@ -43,6 +43,8 @@ Não tem cupom? Dá pra falar a conta ou digitar do jeito que vier. A divisão p
 - **Dois tipos de conta.** **Valor único** (um total pra dividir: Uber, Airbnb, mercado) ou **Vários itens** (cada um paga o que consumiu).
 - **Contatos do celular.** Adicione gente direto da agenda no Android e nos navegadores com Contact Picker. Os contatos não saem do aparelho.
 
+A permissão de IA é pedida no aparelho antes do primeiro uso — escanear nota, falar conta ou modo IA no chat — e fica salva por conta neste dispositivo; dá pra revogar em Configurações, e o servidor não exige essa permissão nas rotas de IA.
+
 | Tipo | Passos do wizard |
 |------|------------------|
 | Valor único | Participantes &rarr; Valor e divisão &rarr; Quem pagou |
