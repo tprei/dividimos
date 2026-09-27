@@ -579,4 +579,109 @@ describe.skipIf(!isIntegrationTestReady)("blocked assignment rooms — join and 
     expect(await listed(bruno)).toEqual([]);
     expect(await listed(carla)).toEqual([call.roomId]);
   });
+
+  it("sends a blocked host's live room summary only to members outside the pair", async () => {
+    const [ana, bruno, carla] = await createTestUsers(3);
+    const anaClient = authenticateAs(ana);
+    const groupId = await createGroupWithMembers(ana, [bruno, carla], "Grupo ao vivo");
+    const call = roomCall({
+      groupTarget: { kind: "existing", groupId },
+      participants: [participant(ana)],
+    });
+    const created = await createRoom(anaClient, call);
+    await rpcBlock(anaClient, bruno.id);
+    const claimed = await claimItem(
+      anaClient,
+      call.roomId,
+      null,
+      created.room.items[0].id,
+      created.room.selfParticipantId,
+      created.room.items[0].revision,
+    );
+
+    const topics = await withPg(async (pg) => {
+      const result = await pg.query<{ topic: string }>(
+        "select topic from realtime.messages where event = 'assignment_room' and payload->'room'->>'id' = $1 and (payload->'room'->>'revision')::bigint = $2",
+        [call.roomId, claimed.room.revision],
+      );
+      return result.rows.map((row) => row.topic);
+    });
+    expect(topics).toContain(`user:${carla.id}`);
+    expect(topics).toContain(`user:${ana.id}`);
+    expect(topics).not.toContain(`user:${bruno.id}`);
+  });
+
+  it("finalizes a group room as a guest slot for a member who blocked the host after entering", async () => {
+    const [ana, bruno] = await createTestUsers(2);
+    const anaClient = authenticateAs(ana);
+    const brunoClient = authenticateAs(bruno);
+    const groupId = await createGroupWithMembers(ana, [bruno], "Grupo da sala bloqueada");
+    const call = roomCall({
+      groupTarget: { kind: "existing", groupId },
+      participants: [participant(ana)],
+    });
+    const created = await createRoom(anaClient, call);
+    const brunoToken = memberTokenValue();
+    const entered = await rpcRoom(brunoClient, "enter_group_assignment_room", {
+      p_room_id: call.roomId,
+      p_member_token: brunoToken,
+    });
+
+    let current = await claimItem(
+      anaClient,
+      call.roomId,
+      null,
+      created.room.items[0].id,
+      created.room.selfParticipantId,
+      created.room.items[0].revision,
+    );
+    current = await claimItem(
+      brunoClient,
+      call.roomId,
+      brunoToken,
+      current.room.items[0].id,
+      entered.room.selfParticipantId,
+      current.room.items[0].revision,
+    );
+    await rpcBlock(brunoClient, ana.id);
+
+    const memberView = await rpcRoom(brunoClient, "get_assignment_room", {
+      p_room_id: call.roomId,
+      p_member_token: brunoToken,
+    });
+    const brunoSelf = memberView.room.participants.find(
+      (entry) => entry.id === entered.room.selfParticipantId,
+    );
+    expect(brunoSelf?.isGuest).toBe(false);
+
+    const closed = await closeRoom(anaClient, call.roomId, current.room.revision);
+    const brunoInHostView = closed.room.participants.find(
+      (entry) => entry.id === entered.room.selfParticipantId,
+    );
+    expect(brunoInHostView?.isGuest).toBe(true);
+    const finalize = await rpcDecoded(
+      anaClient,
+      "finalize_assignment_room",
+      {
+        p_room_id: call.roomId,
+        p_expected_revision: closed.room.revision,
+        p_payload: finalizePayload(closed),
+      },
+      decodeFinalizeAssignmentRoomResult,
+    );
+
+    const participants = await withPg(async (client) => {
+      const payload = await client.query<{
+        payload: { participants: Array<{ kind: string; userId?: string | null; displayName?: string }> };
+      }>(
+        "select payload from public.expense_versions where expense_id = $1 order by version_no desc limit 1",
+        [finalize.ack.expenseId],
+      );
+      return payload.rows[0].payload.participants;
+    });
+    expect(participants).toEqual([
+      { kind: "user", userId: ana.id },
+      { kind: "guest", guestId: expect.any(String), displayName: bruno.name },
+    ]);
+  });
 });
