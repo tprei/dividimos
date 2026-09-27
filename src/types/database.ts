@@ -1065,6 +1065,12 @@ export type Database = {
         }
         Returns: Json
       }
+      announce_assignment_room: {
+        Args: {
+          p_room_id: string
+        }
+        Returns: Json
+      }
       assert_dm_pair_allowed: {
         Args: {
           p_group_id: string
