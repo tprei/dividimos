@@ -722,6 +722,16 @@ Pull requests que mexem no Android (mesmos caminhos da tabela acima) só compila
 
 **Saída do build**: AAB assinado enviado como artefato (`app-release-<run_number>`), guardado por 7 dias.
 
+### Versão mínima do app nativo
+
+O código web verifica a compatibilidade do app instalado antes de liberar as telas, inclusive o login. Os mínimos ficam em `MINIMUM_NATIVE_BUILDS`, em `src/lib/native-version.ts`, separados por plataforma. `0` desliga a verificação daquela plataforma; os dois começam em `0`. Quando o mínimo está ativo, `App.getInfo().build` lê a versão de build no aparelho, sem chamada ao servidor. No Android, esse valor é o `versionCode`, não o `versionName`.
+
+Aumente o mínimo só quando o código web precisar de uma mudança incompatível no app nativo, como um plugin ou uma correção obrigatória da ponte nativa. Primeiro publique e confira a disponibilidade do build compatível na Play Store para todo o público afetado; depois altere `android` para o menor `versionCode` compatível e faça o deploy web. Use um inteiro não negativo e seguro. Não aumente o mínimo por uma mudança só de interface e não bloqueie uma versão cuja substituta ainda está em revisão ou em distribuição parcial.
+
+Build abaixo do mínimo vê “Atualize o Dividimos” e o botão para a Play Store. Abrir ou fechar a loja não libera o app: depois de instalar a atualização, abra o Dividimos de novo. Se a leitura da versão falhar, o app não libera as telas e oferece “Tentar novamente”. Web e PWA não são bloqueados. A verificação roda no aparelho, depois da hidratação: com a regra ativa, uma build desatualizada chega a montar as telas da rota por alguns instantes até a leitura local concluir e o bloqueio assumir. Mantenha `ios: 0` enquanto não houver app iOS publicado e um link real da App Store configurado.
+
+Antes de subir o mínimo, confira um build abaixo, um igual e um acima dele no Android, incluindo a entrada por `/auth` e por link. Em um bloqueio indevido, corrija o mínimo e publique o código web novamente; use `0` para desativar a regra. A mudança vale quando o aparelho carregar o novo código web. A página nativa de falha de conexão não executa essa verificação.
+
 ### Ciclo de desenvolvimento mobile
 
 A WebView do Capacitor carrega o servidor de dev rodando, não um export estático, então o `npm run dev` precisa estar de pé em outro terminal.
