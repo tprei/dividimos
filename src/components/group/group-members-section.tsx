@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -22,7 +22,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { canDeleteGroup, groupArchiveAction } from "@/lib/group-lifecycle";
 import {
+  archiveGroup,
+  unarchiveGroup,
   deleteGroup,
   createGuestClaimToken,
   leaveGroup,
@@ -52,6 +55,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
   const [removing, setRemoving] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [shareGuest, setShareGuest] = useState<{
     guestId: string;
     guestName: string;
@@ -63,6 +67,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
 
   const creatorId = snapshot.group.creatorId;
   const isCreator = meId === creatorId;
+  const archiveAction = groupArchiveAction(snapshot, meId);
   const isAcceptedMember = snapshot.members.some(
     (m) => m.userId === meId && m.status === "accepted",
   );
@@ -144,6 +149,27 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
       setConfirmDelete(false);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (archiveAction !== "archive" && archiveAction !== "unarchive") return;
+    setArchiving(true);
+    haptics.tap();
+    try {
+      if (archiveAction === "archive") {
+        await archiveGroup(snapshot.group.id);
+        toast.success("Grupo arquivado");
+        router.replace("/app/groups");
+      } else {
+        await unarchiveGroup(snapshot.group.id);
+        toast.success("Grupo desarquivado");
+      }
+    } catch (error) {
+      haptics.error();
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -234,7 +260,26 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
           </div>
         )}
 
-        {settingsOnly && (isCreator ? (
+        {settingsOnly && archiveAction !== null && (
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              className="min-h-11 w-full gap-2"
+              disabled={archiving || archiveAction === "blocked_by_balance"}
+              aria-describedby={archiveAction === "blocked_by_balance" ? "archive-balance-reason" : undefined}
+              onClick={() => void handleArchive()}
+            >
+              {archiveAction === "unarchive" ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+              {archiveAction === "unarchive" ? "Desarquivar grupo" : "Arquivar grupo"}
+            </Button>
+            {archiveAction === "blocked_by_balance" && (
+              <p id="archive-balance-reason" className="text-center text-sm text-muted-foreground">
+                Acerte as contas antes de arquivar.
+              </p>
+            )}
+          </div>
+        )}
+        {settingsOnly && (canDeleteGroup(snapshot, meId) ? (
           <Button
             variant="outline"
             onClick={() => setConfirmDelete(true)}
@@ -244,7 +289,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
             Excluir grupo
           </Button>
         ) : (
-          isAcceptedMember && (
+          !isCreator && isAcceptedMember && (
             <Button
               variant="outline"
               onClick={() => setConfirmLeave(true)}

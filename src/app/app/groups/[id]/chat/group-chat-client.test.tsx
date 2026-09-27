@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupChatClient } from "./group-chat-client";
+import { unarchiveGroup } from "@/lib/sync/mutations-group";
 import { useAppStore } from "@/stores/app-store";
 import type { ChatMessage, GroupSnapshot, Me } from "@/types/ledger";
 
@@ -20,8 +21,13 @@ const realtime = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/realtime", () => realtime);
 
+const mutationsGroup = vi.hoisted(() => ({
+  unarchiveGroup: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
+
 vi.mock("react-hot-toast", () => ({
-  default: { error: vi.fn() },
+  default: { error: vi.fn(), success: vi.fn() },
 }));
 
 const mockPush = vi.fn();
@@ -187,6 +193,20 @@ describe("GroupChatClient", () => {
     const payment = screen.getByRole("button", { name: "Registrar pagamento" });
     fireEvent.change(screen.getByPlaceholderText("Mensagem..."), { target: { value: "oi" } });
     expect(payment).not.toBeInTheDocument();
+  });
+
+  it("shows the archived banner and unarchives through the mutation", async () => {
+    seed(makeSnapshot({ archivedAt: "2026-09-10T08:00:00.000Z" }));
+
+    render(<GroupChatClient groupId="group-1" />);
+
+    expect(screen.getByText("Grupo arquivado")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Desarquivar" }));
+
+    await waitFor(() => {
+      expect(unarchiveGroup).toHaveBeenCalledWith("group-1");
+    });
   });
 
   it("sends a message through the group mutation", async () => {

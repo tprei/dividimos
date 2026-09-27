@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { MessageSquare, UserPlus } from "lucide-react";
+import { Archive, MessageSquare, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { GroupAvatarEditor } from "@/components/group/group-avatar-editor";
@@ -15,6 +15,7 @@ import { springs } from "@/lib/animations";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GroupSnapshot } from "@/types/ledger";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 
 export interface GroupProfileViewProps {
   groupId: string;
@@ -101,6 +102,12 @@ export function GroupProfileView({ groupId, snapshot, meId, onClose, onShowMembe
             <span>{members.length + snapshot.guests.length} pessoas</span>
           </button>
           <GroupSpendingSection spending={overview?.spending} meId={meId ?? ""} />
+          {isGroupArchived(snapshot) && (
+            <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Archive className="size-4" aria-hidden="true" />
+              Grupo arquivado
+            </p>
+          )}
           <GroupMembersSection
             settingsOnly
             snapshot={snapshot}

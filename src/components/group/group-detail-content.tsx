@@ -41,7 +41,9 @@ import { isBotGroup } from "@/lib/bot-group";
 import { fade, springs } from "@/lib/animations";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup, refreshOpenAssignmentRooms } from "@/lib/sync/refresh";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { ArchivedGroupBanner } from "@/components/shared/archived-group-banner";
 import { groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import type { OpenAssignmentRoom } from "@/types/assignment-room";
 
@@ -403,6 +405,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
                   )
                 }
               />
+              {isGroupArchived(snapshot) && <ArchivedGroupBanner groupId={groupId} kind="group" />}
 
               {isAcceptedMember && meId !== null && (
                 <OpenRoomsCard

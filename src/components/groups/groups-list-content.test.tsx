@@ -17,6 +17,7 @@ const refreshGroup = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/sync/mutations-group", () => ({

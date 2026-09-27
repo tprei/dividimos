@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConversationsListContent, swipeTarget } from "./conversations-list-content";
 import { useAppStore } from "@/stores/app-store";
@@ -6,6 +6,7 @@ import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("next/link", () => ({
@@ -169,6 +170,30 @@ function seedGroups(snapshots: GroupSnapshot[]) {
     groups: Object.fromEntries(snapshots.map((snapshot) => [snapshot.group.id, snapshot])),
     groupOrder: snapshots.map((snapshot) => snapshot.group.id),
   });
+}
+
+function panHandlersOf(root: HTMLElement) {
+  const candidates = [root, ...root.querySelectorAll<HTMLElement>("*")];
+  for (const element of candidates) {
+    const propsKey = Object.keys(element).find((key) => key.startsWith("__reactProps$"));
+    if (!propsKey) continue;
+    const props = (element as unknown as Record<string, unknown>)[propsKey] as {
+      onPanStart?: (event: { target: Element }) => void;
+      onPanEnd?: (
+        event: unknown,
+        info: { offset: { x: number; y: number }; velocity: { x: number; y: number } },
+      ) => void;
+    };
+    if (props.onPanStart && props.onPanEnd) {
+      return {
+        container: element,
+        start: (target: Element) => props.onPanStart!({ target }),
+        end: (offset: { x: number; y: number }) =>
+          props.onPanEnd!({ target: element }, { offset, velocity: { x: 0, y: 0 } }),
+      };
+    }
+  }
+  throw new Error("No element carries the list pan handlers");
 }
 
 describe("ConversationsListContent", () => {
@@ -380,6 +405,80 @@ describe("ConversationsListContent", () => {
 
     expect(screen.getByText("Carol Souza")).toBeDefined();
     expect(screen.queryByText("Nenhuma conversa encontrada")).toBeNull();
+  });
+
+  it("ignores a filter pan that starts inside a swipeable row", () => {
+    seedGroups([makeDmSnapshot(carol)]);
+
+    const { container } = render(<ConversationsListContent />);
+
+    const pan = panHandlersOf(container.firstElementChild as HTMLElement);
+    const row = document.querySelector("[data-swipe-row]") as HTMLElement;
+    expect(row).not.toBeNull();
+
+    act(() => {
+      pan.start(row);
+      pan.end({ x: -80, y: 4 });
+    });
+
+    expect(screen.getByRole("tab", { name: "Todas" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "A pagar" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("switches the balance filter for a pan starting inside the list container outside any swipe row", () => {
+    seedGroups([makeDmSnapshot(carol)]);
+
+    const { container } = render(<ConversationsListContent />);
+
+    const pan = panHandlersOf(container.firstElementChild as HTMLElement);
+    const list = screen.getByRole("list");
+    expect(list.contains(document.querySelector("[data-swipe-row]"))).toBe(true);
+
+    act(() => {
+      pan.start(list);
+      pan.end({ x: -80, y: 4 });
+    });
+
+    expect(screen.getByRole("tab", { name: "A pagar" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Todas" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("switches the balance filter for a pan on a pending invitation row", () => {
+    seedGroups([
+      makeDmSnapshot(carol, {
+        members: [
+          {
+            groupId: "dm-1",
+            userId: me.id,
+            status: "invited",
+            invitedBy: carol.id,
+            acceptedAt: null,
+            user: me,
+          },
+          {
+            groupId: "dm-1",
+            userId: carol.id,
+            status: "accepted",
+            invitedBy: null,
+            acceptedAt: "2026-01-01T00:00:00Z",
+            user: carol,
+          },
+        ],
+      }),
+    ]);
+
+    const { container } = render(<ConversationsListContent />);
+
+    const pan = panHandlersOf(container.firstElementChild as HTMLElement);
+    expect(document.querySelector("[data-swipe-row]")).toBeNull();
+    const inviteRow = screen.getByText("Convite para conversar").closest("li") as HTMLElement;
+
+    act(() => {
+      pan.start(inviteRow);
+      pan.end({ x: -80, y: 4 });
+    });
+
+    expect(screen.getByRole("tab", { name: "A pagar" })).toHaveAttribute("aria-selected", "true");
   });
 });
 
