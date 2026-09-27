@@ -13,6 +13,13 @@ import {
   type SpeechEngine,
 } from "@/lib/speech-engine";
 import { transcribeVoiceAudio } from "@/lib/sync/voice";
+import {
+  captureAiConsentAttempt,
+  isAiConsentAttemptCurrent,
+  type AiConsentAttempt,
+} from "@/lib/sync/ai-consent";
+import { useAppStore } from "@/stores/app-store";
+import { LedgerError } from "@/lib/sync/errors";
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
@@ -108,6 +115,8 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStoppingRef = useRef(false);
   const instanceCounterRef = useRef(0);
+  /** Consent attempt behind the current capture instance, if any. */
+  const consentAttemptRef = useRef<{ instanceId: number; attempt: AiConsentAttempt } | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
@@ -192,6 +201,61 @@ export function useVoiceInput(): UseVoiceInputReturn {
     if (ctx && ctx.state !== "closed") void ctx.close().catch(() => undefined);
   }, []);
 
+  /** A continuation may run only while its consent attempt is still current. */
+  const isConsentCurrent = useCallback(
+    (instanceId: number): boolean => {
+      const active = consentAttemptRef.current;
+      return (
+        active !== null &&
+        active.instanceId === instanceId &&
+        isAiConsentAttemptCurrent(active.attempt)
+      );
+    },
+    [],
+  );
+
+  /** Tears the current capture down without finalizing a transcript. */
+  const cancelCapture = useCallback(() => {
+    instanceCounterRef.current += 1;
+    clearSilenceTimer();
+    transcribeAbortRef.current?.abort();
+    transcribeAbortRef.current = null;
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder) {
+      recorder.onstop = null;
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+      if (recorder.state !== "inactive") recorder.stop();
+    }
+    releaseCapture();
+    const stop = nativeStopRef.current;
+    nativeStopRef.current = null;
+    if (stop) void stop.stop();
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) recognition.abort();
+    consentAttemptRef.current = null;
+  }, [clearSilenceTimer, releaseCapture]);
+
+  // A consent revocation or account switch cancels the live capture
+  // immediately and clears the partial transcript: nothing recorded under a
+  // lost permission may survive or be transcribed.
+  useEffect(() => {
+    const unsubscribe = useAppStore.subscribe(() => {
+      const active = consentAttemptRef.current;
+      if (active === null || isAiConsentAttemptCurrent(active.attempt)) return;
+      cancelCapture();
+      setTranscript("");
+      setInterimTranscript("");
+      setError(null);
+      setIsListening(false);
+      setPhase("idle");
+      setLevel(0);
+    });
+    return unsubscribe;
+  }, [cancelCapture]);
+
   const transcribeAndFinish = useCallback(
     async (instanceId: number, blob: Blob) => {
       if (blob.size === 0) {
@@ -212,9 +276,11 @@ export function useVoiceInput(): UseVoiceInputReturn {
       try {
         const text = await transcribeVoiceAudio(blob, controller.signal);
         if (instanceId !== instanceCounterRef.current) return;
+        if (!isConsentCurrent(instanceId)) return;
         setTranscript(text);
       } catch (transcribeError) {
         if (instanceId !== instanceCounterRef.current) return;
+        if (!isConsentCurrent(instanceId)) return;
         if (
           transcribeError instanceof Error &&
           transcribeError.name === "AbortError"
@@ -229,14 +295,14 @@ export function useVoiceInput(): UseVoiceInputReturn {
         );
       } finally {
         transcribeAbortRef.current = null;
-        if (instanceId === instanceCounterRef.current) {
+        if (instanceId === instanceCounterRef.current && isConsentCurrent(instanceId)) {
           setIsListening(false);
           setPhase("idle");
           setLevel(0);
         }
       }
     },
-    [],
+    [isConsentCurrent],
   );
 
   const startRecorder = useCallback(
@@ -255,7 +321,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         );
         return;
       }
-      if (instanceId !== instanceCounterRef.current) {
+      if (instanceId !== instanceCounterRef.current || !isConsentCurrent(instanceId)) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -308,6 +374,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         recorderRef.current = null;
         if (failed) return;
         if (instanceId !== instanceCounterRef.current) return;
+        if (!isConsentCurrent(instanceId)) return;
         const blob = new Blob(chunks, {
           type: recorder.mimeType || mimeType || "audio/webm",
         });
@@ -391,7 +458,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       setPhase("listening");
       rafRef.current = requestAnimationFrame(tick);
     },
-    [releaseCapture, transcribeAndFinish],
+    [isConsentCurrent, releaseCapture, transcribeAndFinish],
   );
 
   const stopListening = useCallback(() => {
@@ -421,12 +488,27 @@ export function useVoiceInput(): UseVoiceInputReturn {
   }, [clearSilenceTimer, engine]);
 
   const startListening = useCallback(() => {
+    // The consent check is the very first side effect of a start: a missing
+    // or stale grant must reach no microphone and no OS recognizer.
+    let attempt: AiConsentAttempt;
+    try {
+      attempt = captureAiConsentAttempt();
+    } catch (error) {
+      haptics.error();
+      setError(
+        error instanceof LedgerError
+          ? error.message
+          : "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+      );
+      return;
+    }
     setTranscript("");
     setInterimTranscript("");
     setError(null);
     isStoppingRef.current = false;
     instanceCounterRef.current += 1;
     const instanceId = instanceCounterRef.current;
+    consentAttemptRef.current = { instanceId, attempt };
 
     transcribeAbortRef.current?.abort();
     transcribeAbortRef.current = null;
@@ -448,11 +530,13 @@ export function useVoiceInput(): UseVoiceInputReturn {
       void startNativeListening(
         (text) => {
           if (instanceId !== instanceCounterRef.current) return;
+          if (!isConsentCurrent(instanceId)) return;
           setInterimTranscript(text);
           resetSilenceTimer();
         },
         (message) => {
           if (instanceId !== instanceCounterRef.current) return;
+          if (!isConsentCurrent(instanceId)) return;
           haptics.error();
           setError(message);
           setPhase("idle");
@@ -460,6 +544,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         },
         () => {
           if (instanceId !== instanceCounterRef.current) return;
+          if (!isConsentCurrent(instanceId)) return;
           setIsListening(false);
           setPhase("idle");
           setInterimTranscript((interim) => {
@@ -471,7 +556,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
           nativeStopRef.current = null;
         },
       ).then((outcome) => {
-        if (instanceId !== instanceCounterRef.current) {
+        if (instanceId !== instanceCounterRef.current || !isConsentCurrent(instanceId)) {
           if (outcome.kind === "started") void outcome.stop();
           return;
         }
@@ -524,6 +609,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     recognition.onstart = () => {
       if (instanceId !== instanceCounterRef.current) return;
+      if (!isConsentCurrent(instanceId)) return;
       setIsListening(true);
       setPhase("listening");
       resetSilenceTimer();
@@ -531,6 +617,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (instanceId !== instanceCounterRef.current) return;
+      if (!isConsentCurrent(instanceId)) return;
       let final = "";
       let interim = "";
 
@@ -550,6 +637,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (instanceId !== instanceCounterRef.current) return;
+      if (!isConsentCurrent(instanceId)) return;
       if (event.error !== "aborted") haptics.error();
       const message = ERROR_MESSAGES[event.error];
       if (message !== undefined) {
@@ -563,6 +651,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     recognition.onend = () => {
       if (instanceId !== instanceCounterRef.current) return;
+      if (!isConsentCurrent(instanceId)) return;
       setIsListening(false);
       setPhase("idle");
       setInterimTranscript((interim) => {
@@ -583,35 +672,13 @@ export function useVoiceInput(): UseVoiceInputReturn {
       setPhase("idle");
       recognitionRef.current = null;
     }
-  }, [engine, resetSilenceTimer, clearSilenceTimer, startRecorder, releaseCapture]);
+  }, [engine, resetSilenceTimer, clearSilenceTimer, startRecorder, releaseCapture, isConsentCurrent]);
 
   useEffect(() => {
-    return () => {
-      instanceCounterRef.current += 1;
-      clearSilenceTimer();
-      transcribeAbortRef.current?.abort();
-      transcribeAbortRef.current = null;
-      const recorder = recorderRef.current;
-      recorderRef.current = null;
-      // Synchronous teardown only: unmount must never wait on the mic or the
-      // network, so Back/Close stay responsive.
-      if (recorder) {
-        recorder.onstop = null;
-        recorder.ondataavailable = null;
-        recorder.onerror = null;
-        if (recorder.state !== "inactive") recorder.stop();
-      }
-      releaseCapture();
-      if (nativeStopRef.current) {
-        void nativeStopRef.current.stop();
-        nativeStopRef.current = null;
-      }
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-        recognitionRef.current = null;
-      }
-    };
-  }, [clearSilenceTimer, releaseCapture]);
+    // Synchronous teardown only: unmount must never wait on the mic or the
+    // network, so Back/Close stay responsive, and it must never set state.
+    return () => cancelCapture();
+  }, [cancelCapture]);
 
   return {
     isListening,

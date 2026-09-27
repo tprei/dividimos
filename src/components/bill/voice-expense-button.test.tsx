@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { VoiceExpenseButton } from "./voice-expense-button";
+import type * as AiConsentSync from "@/lib/sync/ai-consent";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 
 vi.mock("@/hooks/use-haptics", () => ({
@@ -30,7 +34,52 @@ vi.mock("@/hooks/use-voice-input", () => ({
   useVoiceInput: () => mockVoiceInput,
 }));
 
+const mockGrant = vi.fn();
+vi.mock("@/lib/sync/ai-consent", async (importOriginal) => {
+  const actual = await importOriginal<typeof AiConsentSync>();
+  return { ...actual, grantAiConsent: (...args: unknown[]) => mockGrant(...args) };
+});
+
+function seedAiConsent(granted: boolean): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: "user-1",
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: "user-1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+      email: "alice@example.com",
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: granted ? CURRENT_AI_CONSENT_VERSION : null,
+      aiConsentGrantedAt: granted ? "2026-01-01T00:00:00.000Z" : null,
+    },
+  });
+}
+
+function seedUsableAiConsent(): void {
+  seedAiConsent(true);
+}
+
+function revokeAiConsentFor(newUserId: string): void {
+  act(() => {
+    useAppStore.setState({
+      me: { ...useAppStore.getState().me!, id: newUserId, aiConsentVersion: null, aiConsentGrantedAt: null },
+      lastBootstrappedAccountId: newUserId,
+      aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+    });
+  });
+}
+
 beforeEach(() => {
+  seedUsableAiConsent();
+  mockGrant.mockReset();
   vi.clearAllMocks();
   vi.restoreAllMocks();
   mockVoiceInput.isListening = false;
@@ -41,6 +90,12 @@ beforeEach(() => {
   mockVoiceInput.phase = "idle";
   mockVoiceInput.level = 0;
 });
+
+/** Starts a recording through the mic button so the consent attempt exists. */
+function tapMic(): void {
+  const mic = screen.getByRole("button", { name: /Gravar (conta|novamente)/ });
+  fireEvent.click(mic);
+}
 
 describe("VoiceExpenseButton", () => {
 
@@ -124,9 +179,20 @@ describe("VoiceExpenseButton", () => {
       const { promise: parsePending, resolve: resolveFetch } = Promise.withResolvers<Response>();
       vi.spyOn(globalThis, "fetch").mockReturnValue(parsePending);
 
-      mockVoiceInput.isListening = true;
+      mockVoiceInput.isListening = false;
       const review = <div data-testid="voice-review" />;
       const { rerender } = render(
+        <VoiceExpenseButton
+          preview
+          onResult={vi.fn()}
+          onError={vi.fn()}
+          onRecordStart={vi.fn()}
+          review={review}
+        />,
+      );
+      tapMic();
+      mockVoiceInput.isListening = true;
+      rerender(
         <VoiceExpenseButton
           preview
           onResult={vi.fn()}
@@ -199,10 +265,13 @@ describe("VoiceExpenseButton", () => {
 
       const onResult = vi.fn();
       const onError = vi.fn();
-      mockVoiceInput.isListening = true;
+      mockVoiceInput.isListening = false;
       const { rerender, unmount } = render(
         <VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />,
       );
+      fireEvent.click(screen.getByRole("button", { name: "Gravar conta" }));
+      mockVoiceInput.isListening = true;
+      rerender(<VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />);
 
       mockVoiceInput.isListening = false;
       mockVoiceInput.transcript = "uber 25 reais";
@@ -253,11 +322,20 @@ describe("VoiceExpenseButton", () => {
       const onError = props.onError ?? vi.fn<(message: string) => void>();
       const members = props.members;
 
-      // Start with isListening = true
-      mockVoiceInput.isListening = true;
+      mockVoiceInput.isListening = false;
       mockVoiceInput.transcript = "";
 
       const { rerender } = render(
+        <VoiceExpenseButton
+          members={members}
+          onResult={onResult}
+          onError={onError}
+        onRecordStart={vi.fn()}
+        />,
+      );
+      tapMic();
+      mockVoiceInput.isListening = true;
+      rerender(
         <VoiceExpenseButton
           members={members}
           onResult={onResult}
@@ -438,12 +516,15 @@ describe("VoiceExpenseButton", () => {
     it("calls onError when transcript is empty and no voiceError on stop", () => {
       const onError = vi.fn();
 
-      mockVoiceInput.isListening = true;
+      mockVoiceInput.isListening = false;
       mockVoiceInput.transcript = "";
 
       const { rerender } = render(
         <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
+      fireEvent.click(screen.getByRole("button", { name: "Gravar conta" }));
+      mockVoiceInput.isListening = true;
+      rerender(<VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />);
 
       // Stop with empty transcript and no error
       mockVoiceInput.isListening = false;
@@ -498,11 +579,14 @@ describe("VoiceExpenseButton", () => {
     it("trims whitespace-only transcript and treats it as empty", () => {
       const onError = vi.fn();
 
-      mockVoiceInput.isListening = true;
+      mockVoiceInput.isListening = false;
 
       const { rerender } = render(
         <VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />,
       );
+      fireEvent.click(screen.getByRole("button", { name: "Gravar conta" }));
+      mockVoiceInput.isListening = true;
+      rerender(<VoiceExpenseButton onResult={vi.fn()} onError={onError} onRecordStart={vi.fn()} />);
 
       mockVoiceInput.isListening = false;
       mockVoiceInput.transcript = "   ";
@@ -593,6 +677,126 @@ describe("VoiceExpenseButton", () => {
       const body = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string);
       expect(body.text).toBe("uber com João 25 reais");
       expect(body.members).toBeUndefined();
+    });
+  });
+
+  describe("AI consent gate", () => {
+    function grantInStore(): void {
+      act(() => {
+        useAppStore.setState({
+          me: { ...useAppStore.getState().me!, aiConsentVersion: CURRENT_AI_CONSENT_VERSION, aiConsentGrantedAt: "2026-01-01T00:00:00.000Z" },
+          aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+        });
+      });
+    }
+
+    it("the microphone asks before start", async () => {
+      const user = userEvent.setup();
+      seedAiConsent(false);
+      const onRecordStart = vi.fn();
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response("{}", { status: 200 }),
+      );
+      render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={onRecordStart} />);
+
+      await user.click(screen.getByRole("button", { name: "Gravar conta" }));
+
+      expect(screen.getByText("Usar IA no Dividimos?")).toBeInTheDocument();
+      expect(mockVoiceInput.startListening).not.toHaveBeenCalled();
+      expect(onRecordStart).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("saving consent does not start recording", async () => {
+      const user = userEvent.setup();
+      seedAiConsent(false);
+      const onRecordStart = vi.fn();
+      mockGrant.mockImplementation(async () => {
+        grantInStore();
+      });
+      render(<VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={onRecordStart} />);
+
+      await user.click(screen.getByRole("button", { name: "Gravar conta" }));
+      await user.click(screen.getByRole("button", { name: "Permitir uso de IA" }));
+
+      expect(
+        await screen.findByText("Permissão salva. Toque de novo no recurso para continuar."),
+      ).toBeInTheDocument();
+      expect(mockVoiceInput.startListening).not.toHaveBeenCalled();
+      expect(onRecordStart).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Voltar" }));
+      expect(screen.queryByText("Usar IA no Dividimos?")).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Gravar conta" }));
+
+      expect(mockVoiceInput.startListening).toHaveBeenCalledOnce();
+      expect(onRecordStart).toHaveBeenCalledOnce();
+    });
+
+    it("denial never parses an old transcript", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response("{}", { status: 200 }),
+      );
+      const onResult = vi.fn();
+      const onError = vi.fn();
+      mockVoiceInput.isListening = true;
+      const { rerender } = render(
+        <VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />,
+      );
+
+      revokeAiConsentFor("user-1");
+      mockVoiceInput.isListening = false;
+      mockVoiceInput.transcript = "uber 25 reais";
+      rerender(<VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />);
+      await waitFor(() => {
+        expect(mockVoiceInput.isListening).toBe(false);
+      });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(onResult).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it("revocation during parsing never delivers a draft", async () => {
+      const { promise: parsePending, resolve: resolveFetch } = Promise.withResolvers<Response>();
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockReturnValue(parsePending);
+      const onResult = vi.fn();
+      const onError = vi.fn();
+      mockVoiceInput.isListening = false;
+      const { rerender } = render(
+        <VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Gravar conta" }));
+      mockVoiceInput.isListening = true;
+      rerender(<VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />);
+
+      mockVoiceInput.isListening = false;
+      mockVoiceInput.transcript = "uber 25 reais";
+      rerender(<VoiceExpenseButton onResult={onResult} onError={onError} onRecordStart={vi.fn()} />);
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledOnce();
+      });
+
+      revokeAiConsentFor("user-2");
+      await act(async () => {
+        resolveFetch(
+          new Response(
+            JSON.stringify({
+              title: "Uber",
+              amountCents: 2500,
+              expenseType: "single_amount",
+              items: [],
+              participants: [],
+              merchantName: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      });
+
+      expect(onResult).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
     });
   });
 });

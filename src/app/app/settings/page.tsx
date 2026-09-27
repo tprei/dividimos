@@ -13,7 +13,7 @@ import {
   Users,
   BellRing,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
@@ -23,6 +23,8 @@ import { useSignOut } from "@/hooks/use-sign-out";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { isScanDraftChoice } from "@/lib/confirmation-preferences";
 import { useAppStore } from "@/stores/app-store";
+import { hasCurrentAiConsent } from "@/lib/ai-consent";
+import { revokeAiConsent } from "@/lib/sync/ai-consent";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,8 @@ import { SelectField } from "@/components/ui/select-field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { AiConsentSection } from "@/components/settings/ai-consent-section";
+import { RevokeAiConsentPopover } from "@/components/ai/revoke-ai-consent-popover";
 import type { NotificationCategory } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -100,6 +104,58 @@ export default function SettingsPage() {
     const result = await signOut();
     if (result.ok) router.replace("/auth");
   };
+
+  const aiConsentGranted = me !== null && hasCurrentAiConsent(me);
+  const [revokeAnchor, setRevokeAnchor] = useState<HTMLElement | null>(null);
+  const [revokeState, setRevokeState] = useState<
+    "idle" | "loading" | "error" | "success" | "empty"
+  >("idle");
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  // An account switch closes the popover and clears its state: a late revoke
+  // completion must never announce success for another account.
+  const revokeAccountIdRef = useRef(me?.id ?? null);
+  useEffect(() => {
+    const meId = me?.id ?? null;
+    if (revokeAccountIdRef.current === meId) return;
+    revokeAccountIdRef.current = meId;
+    setRevokeAnchor(null);
+    setRevokeState("idle");
+    setRevokeError(null);
+  }, [me?.id]);
+
+  const handleRevokeOpen = useCallback((anchor: HTMLButtonElement) => {
+    setRevokeAnchor(anchor);
+    setRevokeState("idle");
+    setRevokeError(null);
+  }, []);
+
+  const handleRevokeCancel = useCallback(() => {
+    setRevokeAnchor(null);
+    setRevokeState("idle");
+    setRevokeError(null);
+  }, []);
+
+  const revokeBusyRef = useRef(false);
+  const handleRevokeConfirm = useCallback(async () => {
+    if (revokeBusyRef.current) return;
+    revokeBusyRef.current = true;
+    setRevokeError(null);
+    setRevokeState("loading");
+    const accountId = useAppStore.getState().me?.id ?? null;
+    try {
+      await revokeAiConsent();
+      if (useAppStore.getState().me?.id !== accountId) return;
+      setRevokeState("success");
+      setRevokeAnchor(null);
+    } catch (error) {
+      if (useAppStore.getState().me?.id !== accountId) return;
+      setRevokeState("error");
+      setRevokeError(ledgerErrorMessage(error));
+    } finally {
+      revokeBusyRef.current = false;
+    }
+  }, []);
 
   if (!me) {
     return (
@@ -176,6 +232,26 @@ export default function SettingsPage() {
           <NotificationPreferencesSection key={me.id} />
         </div>
       )}
+
+      <motion.div
+        variants={popIn} initial="hidden" animate="visible"
+        className="mt-6"
+      >
+        <AiConsentSection
+          granted={aiConsentGranted}
+          status={revokeState}
+          errorMessage={revokeError}
+          onRevoke={handleRevokeOpen}
+        />
+        <RevokeAiConsentPopover
+          open={revokeAnchor !== null}
+          anchor={revokeAnchor}
+          state={revokeState}
+          errorMessage={revokeError}
+          onCancel={handleRevokeCancel}
+          onConfirm={() => void handleRevokeConfirm()}
+        />
+      </motion.div>
 
       <motion.div
         variants={popIn} initial="hidden" animate="visible"

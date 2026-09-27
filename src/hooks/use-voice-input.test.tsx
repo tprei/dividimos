@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 import { renderHook, act } from "@testing-library/react";
 
 const { nativeSpeechAvailable, startNativeListening, nativeSpeechSupported } = vi.hoisted(() => ({
@@ -68,7 +70,46 @@ function makeMockCtor() {
   return ctor;
 }
 
+function seedAiConsent(granted: boolean, userId = "user-1"): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: userId,
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: userId,
+      handle: userId === "user-1" ? "alice" : "bob",
+      name: userId === "user-1" ? "Alice" : "Bob",
+      avatarUrl: null,
+      isBot: false,
+      email: `${userId}@example.com`,
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: granted ? CURRENT_AI_CONSENT_VERSION : null,
+      aiConsentGrantedAt: granted ? "2026-01-01T00:00:00.000Z" : null,
+    },
+  });
+}
+
+function seedUsableAiConsent(): void {
+  seedAiConsent(true);
+}
+
+function revokeAiConsentFor(newUserId: string): void {
+  act(() => {
+    useAppStore.setState({
+      me: { ...useAppStore.getState().me!, id: newUserId, aiConsentVersion: null, aiConsentGrantedAt: null },
+      lastBootstrappedAccountId: newUserId,
+      aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+    });
+  });
+}
+
+
 beforeEach(() => {
+  seedUsableAiConsent();
   vi.useFakeTimers();
   nativeSpeechAvailable.mockReturnValue(false);
   nativeSpeechSupported.mockResolvedValue(false);
@@ -472,6 +513,82 @@ describe("useVoiceInput", () => {
     expect(result.current.isListening).toBe(false);
   });
 
+  it("missing consent starts no recognizer or microphone", () => {
+    seedAiConsent(false);
+    const { result } = renderHook(() => useVoiceInput());
+
+    act(() => {
+      result.current.startListening();
+    });
+
+    expect(MockSpeechRecognition.callCount).toBe(0);
+    expect(startNativeListening).not.toHaveBeenCalled();
+    expect(result.current.error).toBe(
+      "Para usar IA, permita o envio dos dados. Você pode continuar sem IA.",
+    );
+    expect(result.current.isListening).toBe(false);
+  });
+
+  it("revocation aborts capture without transcription", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => {
+      result.current.startListening();
+    });
+    expect(MockSpeechRecognition.callCount).toBe(1);
+
+    revokeAiConsentFor("user-1");
+
+    expect(mockInstance.abort).toHaveBeenCalled();
+    expect(result.current.isListening).toBe(false);
+    expect(result.current.transcript).toBe("");
+    expect(result.current.interimTranscript).toBe("");
+  });
+
+  it("account replacement never publishes a transcript", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => {
+      result.current.startListening();
+    });
+
+    revokeAiConsentFor("user-2");
+    act(() => {
+      mockInstance._emitResult([{ transcript: "uber 25", isFinal: true, 0: { transcript: "uber 25" } }]);
+    });
+    act(() => {
+      mockInstance._emitEnd();
+    });
+
+    expect(result.current.transcript).toBe("");
+    expect(result.current.isListening).toBe(false);
+  });
+
+  it("a late native start is stopped after revocation", async () => {
+    nativeSpeechAvailable.mockReturnValue(true);
+    nativeSpeechSupported.mockResolvedValue(true);
+    const stop = vi.fn(async () => undefined);
+    const gate = Promise.withResolvers<{ kind: "started"; stop: () => Promise<void> }>();
+    startNativeListening.mockReturnValueOnce(gate.promise);
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.startListening();
+    });
+    revokeAiConsentFor("user-1");
+
+    await act(async () => {
+      gate.resolve({ kind: "started", stop });
+      await gate.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(result.current.isListening).toBe(false);
+  });
+
   it("does not update transcript when only interim (isFinal: false) results arrive", () => {
     const { result } = renderHook(() => useVoiceInput());
     act(() => result.current.startListening());
@@ -833,6 +950,54 @@ describe("useVoiceInput recorder engine", () => {
     expect(recorderInstances[0].stop).toHaveBeenCalled();
     expect(mockTrack.stop).toHaveBeenCalled();
     expect(() => vi.advanceTimersByTime(20_000)).not.toThrow();
+  });
+
+  it("revocation aborts capture without transcription", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+    });
+    expect(recorderInstances).toHaveLength(1);
+    const recorder = recorderInstances[0];
+
+    revokeAiConsentFor("user-1");
+    await act(async () => {});
+
+    expect(recorder.onstop).toBeNull();
+    expect(recorder.ondataavailable).toBeNull();
+    expect(recorder.state).toBe("inactive");
+    expect(mockTrack.stop).toHaveBeenCalled();
+
+    act(() => {
+      recorder.ondataavailable?.({ data: new Blob(["x"], { type: "audio/mp4" }) });
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.transcript).toBe("");
+    expect(result.current.isListening).toBe(false);
+  });
+
+  it("a late media permission resolution releases tracks after revocation", async () => {
+    const gate = Promise.withResolvers<typeof mockStream>();
+    getUserMediaMock.mockReturnValueOnce(gate.promise);
+    const { result } = renderHook(() => useVoiceInput());
+
+    act(() => {
+      result.current.startListening();
+    });
+    revokeAiConsentFor("user-1");
+
+    await act(async () => {
+      gate.resolve(mockStream);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockTrack.stop).toHaveBeenCalledOnce();
+    expect(result.current.isListening).toBe(false);
+    expect(recorderInstances).toHaveLength(0);
   });
 
   it("aborts an in-flight transcription on unmount and never sets state after", async () => {

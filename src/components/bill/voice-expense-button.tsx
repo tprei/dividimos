@@ -4,8 +4,16 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Loader2, Mic, MicOff, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { useAiConsentGate } from "@/hooks/use-ai-consent-gate";
+import { AiConsentDialog } from "@/components/ai/ai-consent-dialog";
 import { haptics } from "@/hooks/use-haptics";
+import {
+  captureAiConsentAttempt,
+  isAiConsentAttemptCurrent,
+  type AiConsentAttempt,
+} from "@/lib/sync/ai-consent";
 import { parseVoiceExpenseCommand } from "@/lib/sync/voice";
+import { useAppStore } from "@/stores/app-store";
 import { sketchVoiceBill } from "@/lib/voice-bill-sketch";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 import { VoiceBillPreview, VoiceExamples } from "@/components/bill/voice-bill-preview";
@@ -65,12 +73,37 @@ export function VoiceExpenseButton({
   const [attempted, setAttempted] = useState(false);
   const wasListeningRef = useRef(false);
   const aliveRef = useRef(true);
+  /** Consent attempt behind the recording that produced the transcript. */
+  const recordingAttemptRef = useRef<AiConsentAttempt | null>(null);
+  const parseAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      parseAbortRef.current?.abort();
+      parseAbortRef.current = null;
+      recordingAttemptRef.current = null;
     };
   }, []);
+
+  // A revocation or account switch invalidates the recording's attempt: the
+  // in-flight parse is aborted and the transcript can no longer be parsed.
+  useEffect(() => {
+    const unsubscribe = useAppStore.subscribe(() => {
+      const attempt = recordingAttemptRef.current;
+      if (attempt === null || isAiConsentAttemptCurrent(attempt)) return;
+      parseAbortRef.current?.abort();
+      parseAbortRef.current = null;
+      recordingAttemptRef.current = null;
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleConsentDecline = useCallback(() => {
+    recordingAttemptRef.current = null;
+  }, []);
+
+  const { requestConsent, dialogProps } = useAiConsentGate(handleConsentDecline);
 
   const transcribing = phase === "transcribing";
   const recording = isListening && !transcribing;
@@ -79,18 +112,35 @@ export function VoiceExpenseButton({
 
   const parseTranscript = useCallback(
     async (text: string) => {
+      const attempt = recordingAttemptRef.current;
+      if (attempt === null || !isAiConsentAttemptCurrent(attempt)) return;
+      const controller = new AbortController();
+      parseAbortRef.current = controller;
       setParsing(true);
       try {
-        const result = await parseVoiceExpenseCommand({ text: text.trim(), members });
-        if (!aliveRef.current) return;
+        const result = await parseVoiceExpenseCommand({
+          text: text.trim(),
+          members,
+          signal: controller.signal,
+        });
+        if (
+          !aliveRef.current ||
+          parseAbortRef.current !== controller ||
+          !isAiConsentAttemptCurrent(attempt)
+        ) {
+          return;
+        }
         haptics.success();
         onResult(result);
       } catch (err) {
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || parseAbortRef.current !== controller) return;
+        if (err instanceof Error && err.name === "AbortError") return;
         haptics.error();
         onError(err instanceof Error ? err.message : "Erro ao processar comando de voz");
       } finally {
-        if (aliveRef.current) setParsing(false);
+        if (aliveRef.current && parseAbortRef.current === controller) {
+          setParsing(false);
+        }
       }
     },
     [members, onResult, onError],
@@ -98,6 +148,13 @@ export function VoiceExpenseButton({
 
   useEffect(() => {
     if (wasListeningRef.current && !isListening) {
+      const attempt = recordingAttemptRef.current;
+      if (attempt === null || !isAiConsentAttemptCurrent(attempt)) {
+        // The permission died during the recording: drop the transcript
+        // instead of parsing an old capture or blaming the user for silence.
+        wasListeningRef.current = false;
+        return;
+      }
       if (transcript.trim() && !voiceError) {
         parseTranscript(transcript);
       } else if (!voiceError) {
@@ -144,7 +201,13 @@ export function VoiceExpenseButton({
             onClick={() => {
               haptics.tap();
               if (recording) stopListening();
-              else { setAttempted(true); onRecordStart(); startListening(); }
+              else {
+                if (!requestConsent()) return;
+                recordingAttemptRef.current = captureAiConsentAttempt();
+                setAttempted(true);
+                onRecordStart();
+                startListening();
+              }
             }}
             className="relative size-14 rounded-full shadow-sm">
             {micIcon}
@@ -182,6 +245,7 @@ export function VoiceExpenseButton({
           <VoiceExamples />
         </>
       )}
+      <AiConsentDialog {...dialogProps} />
     </div>
   );
 }

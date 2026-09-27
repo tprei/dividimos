@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { NotificationPreferences } from "@/types";
 import type { Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
@@ -53,6 +53,11 @@ const { updateProfileMock } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations-group", () => ({
   updateProfile: updateProfileMock,
+}));
+
+const mockRevokeAiConsent = vi.fn();
+vi.mock("@/lib/sync/ai-consent", () => ({
+  revokeAiConsent: (...args: unknown[]) => mockRevokeAiConsent(...args),
 }));
 
 const mockToastError = vi.fn();
@@ -469,5 +474,101 @@ describe("SettingsPage account", () => {
     });
     rerender(<SettingsPage />);
     expect(screen.getByRole("switch", { name: "Contas" })).toHaveAttribute("aria-checked", "true");
+  });
+});
+
+describe("SettingsPage AI consent", () => {
+  beforeEach(() => {
+    mockRevokeAiConsent.mockReset();
+    useAppStore.getState().reset();
+    useAppStore.setState({
+      hydrated: true,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: "user-a",
+      me: { ...makeMe("user-a"), aiConsentVersion: 1, aiConsentGrantedAt: "2026-01-01T00:00:00.000Z" },
+    });
+  });
+
+  it("revoke needs confirmation", async () => {
+    mockRevokeAiConsent.mockResolvedValue(undefined);
+    render(<SettingsPage />);
+
+    const revokeButtons = () => screen.getAllByRole("button", { name: "Revogar permissão" });
+    await fireEvent.click(revokeButtons()[0]);
+
+    expect(screen.getByText("Revogar permissão de IA?")).toBeInTheDocument();
+    expect(mockRevokeAiConsent).not.toHaveBeenCalled();
+
+    await fireEvent.click(revokeButtons()[1]);
+
+    expect(mockRevokeAiConsent).toHaveBeenCalledOnce();
+  });
+
+  it("success disables future AI use", async () => {
+    mockRevokeAiConsent.mockImplementation(async () => {
+      useAppStore.setState({
+        me: { ...useAppStore.getState().me!, aiConsentVersion: null, aiConsentGrantedAt: null },
+        aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+      });
+    });
+    render(<SettingsPage />);
+
+    const revokeButtons = () => screen.getAllByRole("button", { name: "Revogar permissão" });
+    await fireEvent.click(revokeButtons()[0]);
+    await fireEvent.click(revokeButtons()[1]);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Revogar permissão de IA?")).toBeNull();
+    });
+    expect(screen.getByText("Uso de IA não permitido")).toBeInTheDocument();
+    expect(screen.getByText("Permissão de IA revogada.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Revogar permissão" })).toBeNull();
+  });
+
+  it("failure remains retryable without a success message", async () => {
+    mockRevokeAiConsent
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(undefined);
+    render(<SettingsPage />);
+
+    const revokeButtons = () => screen.getAllByRole("button", { name: "Revogar permissão" });
+    await fireEvent.click(revokeButtons()[0]);
+    await fireEvent.click(revokeButtons()[1]);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("Permissão de IA revogada.")).toBeNull();
+    expect(screen.queryByText("Uso de IA não permitido")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Revogar permissão de IA?")).toBeNull();
+    });
+    expect(mockRevokeAiConsent).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Uso de IA não permitido")).toBeInTheDocument();
+  });
+
+  it("a new account does not inherit revoke UI state", async () => {
+    mockRevokeAiConsent.mockResolvedValue(undefined);
+    render(<SettingsPage />);
+
+    const revokeButtons = () => screen.getAllByRole("button", { name: "Revogar permissão" });
+    await fireEvent.click(revokeButtons()[0]);
+    expect(screen.getByText("Revogar permissão de IA?")).toBeInTheDocument();
+
+    act(() => {
+      useAppStore.setState({
+        me: makeMe("user-b"),
+        lastBootstrappedAccountId: "user-b",
+        aiConsentRevision: useAppStore.getState().aiConsentRevision + 1,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Revogar permissão de IA?")).toBeNull();
+    });
+    expect(mockRevokeAiConsent).not.toHaveBeenCalled();
   });
 });
