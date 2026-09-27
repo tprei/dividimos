@@ -1483,6 +1483,12 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_account: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
+      }
       delete_expense: {
         Args: {
           p_expense_id: string
