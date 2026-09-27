@@ -1,12 +1,11 @@
 import type {
-  ItemIcon,
   PixKeyType,
   NotificationCategory,
   NotificationPreferences,
 } from "@/types";
 import type { AssignmentRoomAccess, AssignmentRoomSummary } from "@/types/assignment-room";
 
-export type { ItemIcon, PixKeyType, NotificationCategory, NotificationPreferences };
+export type { PixKeyType, NotificationCategory, NotificationPreferences };
 
 export type GroupKind = "group" | "dm";
 export type MemberStatus = "invited" | "accepted";
@@ -86,7 +85,7 @@ export type ExpenseItemPayload = {
   quantityMilliunits: number;
   unitPriceCents: number;
   totalPriceCents: number;
-  icon?: ItemIcon;
+  icon?: string;
 };
 
 export type ParticipantRef =

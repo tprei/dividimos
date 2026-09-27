@@ -22,6 +22,7 @@ import {
   parseServiceFeeBasisPointsText,
 } from "@/lib/expense-money";
 import { centsText } from "@/lib/item-division";
+import { isItemIcon } from "@/lib/item-icons";
 import { parseExpenseQuantity, unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import type { ReceiptItem, ReceiptOcrResult } from "@/lib/receipt-ocr";
@@ -200,7 +201,7 @@ export function ScannedItemsReview({
     onShare(normalized.result, normalized.occurredOn);
   };
 
-  const showItemIcons = items.some((item) => item.icon !== undefined);
+  const showItemIcons = items.some((item) => isItemIcon(item.icon));
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">

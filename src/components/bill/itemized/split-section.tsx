@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { formatBRL } from "@/lib/currency";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
+import { isItemIcon } from "@/lib/item-icons";
 import {
   divisionForItem,
   equalDivision,
@@ -86,7 +87,7 @@ export function SplitSection({
 
   const selected = new Set(selectedIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
-  const showItemIcons = items.some((item) => item.icon !== undefined);
+  const showItemIcons = items.some((item) => isItemIcon(item.icon));
 
   function divideAllEqually(): void {
     for (const item of items) {

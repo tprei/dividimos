@@ -377,7 +377,7 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     it("finalizes only with the icons the room stored", async () => {
-      const args = { ...roomArgs(host), p_items: [{ ...ITEMS[0], icon: "pizza" }] };
+      const args = { ...roomArgs(host), p_items: [{ ...ITEMS[0], icon: "caviar" }] };
       const created = await createRoom(hostClient, args);
       const claimed = await claim(
         hostClient,
@@ -390,7 +390,7 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       const closed = await closeRoom(hostClient, args.p_room_id, claimed.room.revision);
       const payload = expensePayload(closed);
-      expect(payload.items[0].icon).toBe("pizza");
+      expect(payload.items[0].icon).toBe("caviar");
 
       for (const items of [[{ ...ITEMS[0], icon: "meat" }], ITEMS]) {
         expect(
@@ -412,7 +412,7 @@ describe.skipIf(!isIntegrationTestReady)(
         );
         return rows.rows[0].items;
       });
-      expect(stored).toEqual([{ ...ITEMS[0], icon: "pizza" }]);
+      expect(stored).toEqual([{ ...ITEMS[0], icon: "caviar" }]);
     });
 
     it("keeps an account share and invites that account into a new group", async () => {

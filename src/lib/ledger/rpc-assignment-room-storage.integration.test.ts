@@ -213,9 +213,9 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
     }
   });
 
-  it("keeps each line's scanned icon as immutable receipt input", async () => {
+  it("stores an unknown icon key verbatim and keeps each line's icon immutable", async () => {
     const iconItems = [
-      { ...items[0], icon: "pizza" },
+      { ...items[0], icon: "caviar" },
       {
         description: "Guaraná",
         quantityMilliunits: 1_000,
@@ -225,7 +225,7 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
     ];
     const args = roomArgs(host, { p_items: iconItems });
     const view = await createRoom(hostClient, args);
-    expect(view.room.items.map((item) => item.icon)).toEqual(["pizza", undefined]);
+    expect(view.room.items.map((item) => item.icon)).toEqual(["caviar", undefined]);
     expect(await createRoom(hostClient, args)).toEqual(view);
 
     const recategorized = {
@@ -236,7 +236,7 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       await expectRpcError(hostClient.rpc("create_assignment_room", recategorized))
     ).toContain("invalid_argument");
 
-    for (const icon of ["caviar", null, 7]) {
+    for (const icon of ["Pizza", "", "pizza grande", "../beer", "a".repeat(33), null, 7]) {
       const invalid = roomArgs(host, { p_items: [{ ...items[0], icon }] });
       expect(
         await expectRpcError(hostClient.rpc("create_assignment_room", invalid))

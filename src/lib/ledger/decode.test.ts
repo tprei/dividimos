@@ -402,7 +402,7 @@ describe("decodeExpensePayload", () => {
     if (!result.ok) expect(result.issue.path).toEqual(["splitMethod"]);
   });
 
-  it("rejects an item icon outside the closed set", () => {
+  it("keeps an icon key this build does not know", () => {
     const raw = {
       items: [
         {
@@ -411,6 +411,27 @@ describe("decodeExpensePayload", () => {
           unitPriceCents: 1200,
           totalPriceCents: 1200,
           icon: "caviar",
+        },
+      ],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1200],
+      payers: [{ participantIndex: 0, amountCents: 1200 }],
+      itemAssignments: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.items[0]?.icon).toBe("caviar");
+  });
+
+  it("rejects a malformed icon key", () => {
+    const raw = {
+      items: [
+        {
+          description: "Chopp",
+          quantityMilliunits: 1000,
+          unitPriceCents: 1200,
+          totalPriceCents: 1200,
+          icon: "Pizza",
         },
       ],
       participants: [{ kind: "user", userId: "user-1" }],
