@@ -454,6 +454,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.mark_report_notified(p_report_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role Telegram delivery receipt; browsers cannot acknowledge reports."
+    },
     "public.pairwise_from_nets(p_kinds participant_kind[], p_ids uuid[], p_nets bigint[])": {
       "anon": false,
       "authenticated": false,
@@ -494,6 +499,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.report_content(p_reporter_id uuid, p_target_user_id uuid, p_reason text, p_message_id uuid, p_details text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role report creation after session authentication and rate limiting in the API route."
+    },
     "public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)": {
       "anon": false,
       "authenticated": false,
@@ -503,6 +513,11 @@
       "anon": true,
       "authenticated": true,
       "note": "Anonymous token endpoint (invite/claim preview); the unguessable token is the authorization."
+    },
+    "public.resolve_report(p_report_id uuid, p_status text, p_note text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role operator resolution from the Supabase dashboard."
     },
     "public.restore_expense(p_expense_id uuid)": {
       "anon": false,
