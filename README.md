@@ -438,12 +438,13 @@ erDiagram
 | | `group_events` | Feed, cards do chat e fila de push |
 | Avulsos | `vendor_charges` | Cobrar rápido, fora do ledger de grupo |
 | | `rate_limit_counters` | Janelas fixas por bucket e usuário |
+| Denúncias | `reports` | Evidência de abuso só para service role, com dedupe por autor e resolução do operador |
 
 Além das tabelas, a view `current_expense_participants` explode a versão atual de cada conta ativa em uma linha por participante; é dela que o recompute tira os saldos. O schema `guest_credentials` guarda os hashes dos tokens de claim e de sala, e o tópico de Realtime de cada sala. O bucket privado `group-avatars` guarda as fotos de grupo, com até 1 MB.
 
 ## RPCs
 
-Toda leitura e escrita do app passa por uma função Postgres chamada via `supabase.rpc()`. A migration inicial revoga `EXECUTE` de `public`, `anon` e `authenticated` em todas as funções, e cada RPC ganha seu `GRANT` explícito. São 59 funções pra `authenticated`, 8 abertas também pra `anon` (salas de itens e prévias de convite e de claim), 12 só pra `service_role` (chamadas pelas rotas de API e pela moderação) e o resto são helpers internos e triggers, sem grant nenhum.
+Toda leitura e escrita do app passa por uma função Postgres chamada via `supabase.rpc()`. A migration inicial revoga `EXECUTE` de `public`, `anon` e `authenticated` em todas as funções, e cada RPC ganha seu `GRANT` explícito. São 59 funções pra `authenticated`, 8 abertas também pra `anon` (salas de itens e prévias de convite e de claim), 15 só pra `service_role` (chamadas pelas rotas de API e pela moderação) e o resto são helpers internos e triggers, sem grant nenhum.
 
 Todo RPC que mexe no ledger (contas e liquidações) segue a mesma ordem, na mesma transação:
 
@@ -475,7 +476,7 @@ flowchart LR
 | Conversas | `send_message`, `mark_read` | `mutations.ts` |
 | Cobrar rápido | `record_vendor_charge`, `confirm_vendor_charge`, `cancel_vendor_charge` | `mutations-group.ts` |
 | Sala de itens | `create_assignment_room`, `list_open_assignment_rooms`, `enter_group_assignment_room`, `announce_assignment_room`, `get_assignment_room`, `join_assignment_room`, `refresh_assignment_room_member`, `set_assignment_room_claim`, `remove_assignment_room_participant`, `rotate_assignment_room_join`, `claim_assignment_room_guest`, `close_assignment_room`, `cancel_assignment_room`, `finalize_assignment_room`, `get_assignment_room_completion` | `src/lib/sync/assignment-rooms.ts` |
-| Só servidor | `lookup_user_by_handle`, `set_group_avatar`, `claim_push_subscription`, `increment_rate_limit`, `cleanup_expired_rate_limit_counters`, `erase_chat_message` | Rotas de API com service role |
+| Só servidor | `lookup_user_by_handle`, `set_group_avatar`, `claim_push_subscription`, `increment_rate_limit`, `cleanup_expired_rate_limit_counters`, `report_content`, `mark_report_notified`, `resolve_report`, `erase_chat_message` | Rotas de API com service role; `erase_chat_message` também é a operação compartilhada de moderação que apaga o texto de uma mensagem denunciada |
 
 Os helpers internos também moram nas migrations: `recompute_group_balances` e `group_transfers` (a projeção e a minimização), `validate_expense_payload` (a mesma regra de dinheiro de `src/lib/expense-money.ts`), `effective_expense_payload`, os `ledger_*_json` que montam as respostas, e `broadcast_group`/`broadcast_user`/`broadcast_assignment_room` que chamam `realtime.send`. As rotas de API com service role leem algumas tabelas direto (`/api/pix/generate`, `/api/notify`), porque o service role ignora RLS; nenhum código de cliente faz isso.
 
