@@ -251,6 +251,25 @@ function checkTransfers(
   }
 }
 
+async function checkArchivedMembersHaveNoBalance(
+  client: Client,
+  groupId: string,
+  violations: string[],
+): Promise<void> {
+  const { rows } = await client.query<{ user_id: string }>(
+    "select gm.user_id from public.group_members gm " +
+      "join public.group_balances gb on gb.group_id = gm.group_id " +
+      "and gb.kind = 'user' and gb.participant_id = gm.user_id " +
+      "where gm.group_id = $1 and gm.archived_at is not null order by gm.user_id",
+    [groupId],
+  );
+  if (rows.length > 0) {
+    violations.push(
+      `[7] archived members hold user balances: ${JSON.stringify(rows.map((row) => row.user_id))}`,
+    );
+  }
+}
+
 async function collectViolations(client: Client, groupId: string): Promise<string[]> {
   const violations: string[] = [];
 
@@ -272,6 +291,7 @@ async function collectViolations(client: Client, groupId: string): Promise<strin
   checkNoZeroRows(balances, violations);
   checkProjectionMatchesFacts(balances, expenses, settlements, claims, violations);
   checkTransfers(balances, transfers.rows, violations);
+  await checkArchivedMembersHaveNoBalance(client, groupId, violations);
 
   return violations;
 }

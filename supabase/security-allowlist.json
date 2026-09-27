@@ -84,6 +84,11 @@
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
     },
+    "public.archive_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; member archives own view, zero own balance required."
+    },
     "public.assert_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
       "authenticated": false,
@@ -103,6 +108,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; bootstrap includes membership-checked group overviews."
+    },
+    "public.bootstrap_overview_v2()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; v1 bootstrap overview plus per-group archive lifecycle fields."
     },
     "public.broadcast_assignment_room(p_room_id uuid, p_event text, p_topic text)": {
       "anon": false,
@@ -309,6 +319,11 @@
       "authenticated": true,
       "note": "Authenticated membership-checked group overview read."
     },
+    "public.get_group_overview_v2(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated membership-checked group overview read plus archive lifecycle fields."
+    },
     "public.get_group_avatar(p_group_id uuid)": {
       "anon": false,
       "authenticated": true,
@@ -424,15 +439,20 @@
       "authenticated": false,
       "note": "Internal serializer; reachable only through membership-checked read RPCs."
     },
-    "public.ledger_group_snapshot_json(p_group_id uuid, p_viewer uuid)": {
+    "public.ledger_group_lifecycle_json(p_group_id uuid, p_viewer uuid)": {
       "anon": false,
       "authenticated": false,
-      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+      "note": "Internal archive lifecycle serializer; reachable only through membership-checked v2 reads."
     },
     "public.ledger_group_overview_json(p_group_id uuid, p_viewer uuid)": {
       "anon": false,
       "authenticated": false,
       "note": "Internal overview serializer; reachable only through membership-checked reads."
+    },
+    "public.ledger_group_snapshot_json(p_group_id uuid, p_viewer uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
     },
     "public.ledger_me_json(p_user_id uuid)": {
       "anon": false,
@@ -578,6 +598,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.unarchive_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; member clears own archived flag."
     }
   }
 }
