@@ -1,5 +1,6 @@
 export const LEDGER_ERROR_CODES = [
   "unauthenticated",
+  "account_deleted",
   "not_a_member",
   "group_not_found",
   "invalid_payload",
@@ -64,6 +65,7 @@ export type LedgerErrorCode = (typeof LEDGER_ERROR_CODES)[number];
 
 const MESSAGES: Record<LedgerErrorCode, string> = {
   unauthenticated: "Sua sessão expirou. É preciso entrar de novo.",
+  account_deleted: "Sua conta do Dividimos foi excluída. Falta encerrar o acesso.",
   not_a_member: "Você não faz parte desse grupo.",
   group_not_found: "Esse grupo não existe mais.",
   invalid_payload: "Alguns dados dessa conta estão inválidos.",

@@ -49,6 +49,9 @@ export async function POST(request: Request) {
     });
 
     if (error) {
+      if (error.message === "account_deleted") {
+        return NextResponse.json({ error: "account_deleted" }, { status: 403 });
+      }
       console.error("[push/subscribe] claim failed:", error);
       return NextResponse.json(
         { error: "Erro ao salvar subscription" },
@@ -81,6 +84,9 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    if (error.message === "account_deleted") {
+      return NextResponse.json({ error: "account_deleted" }, { status: 403 });
+    }
     console.error("[push/subscribe] claim failed:", error);
     return NextResponse.json(
       { error: "Erro ao salvar subscription" },
