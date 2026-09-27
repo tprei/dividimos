@@ -1072,6 +1072,94 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     ).toBe("invalid_payload");
   });
 
+  it("an item description over 240 code points fails with invalid_payload", async () => {
+    const payload = {
+      items: [
+        {
+          description: "R".repeat(241),
+          quantityMilliunits: 1000,
+          unitPriceCents: 1000,
+          totalPriceCents: 1000,
+        },
+      ],
+      participants: [{ kind: "user", userId: alice.id }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1000, payload)),
+      ),
+    ).toBe("invalid_payload");
+  });
+
+  it("an item description of exactly 240 code points is accepted on create and edit", async () => {
+    const item = {
+      description: "R".repeat(240),
+      quantityMilliunits: 1000,
+      unitPriceCents: 1000,
+      totalPriceCents: 1000,
+    };
+    const payload = {
+      items: [item],
+      participants: [{ kind: "user", userId: alice.id }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    const created = await callRpc(
+      aliceClient,
+      "create_expense",
+      createArgs(validationGroupId, 1000, payload),
+    );
+    expect(created.error).toBeNull();
+    const ack = expenseAck("create_expense", created.data);
+
+    const longer = { ...payload, items: [{ ...item, description: `${item.description}R` }] };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 1000, longer)),
+      ),
+    ).toBe("invalid_payload");
+
+    const edited = await callRpc(
+      aliceClient,
+      "edit_expense",
+      editArgs(ack.expenseId, ack.versionNo, 1000, payload),
+    );
+    expect(edited.error).toBeNull();
+  });
+
+  it("an item description boundary counts code points, not utf-16 units", async () => {
+    const item = {
+      description: "😀".repeat(240),
+      quantityMilliunits: 1000,
+      unitPriceCents: 1000,
+      totalPriceCents: 1000,
+    };
+    const payload = {
+      items: [item],
+      participants: [{ kind: "user", userId: alice.id }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    const created = await callRpc(
+      aliceClient,
+      "create_expense",
+      createArgs(validationGroupId, 1000, payload),
+    );
+    expect(created.error).toBeNull();
+
+    const longer = { ...payload, items: [{ ...item, description: "😀".repeat(241) }] };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1000, longer)),
+      ),
+    ).toBe("invalid_payload");
+  });
+
   it("rejects a JSON quantity with a fractional representation", async () => {
     const payload = `{"items":[{"description":"Item","quantityMilliunits":1000.0,"unitPriceCents":100,"totalPriceCents":100}],"participants":[{"kind":"user","userId":"${alice.id}"}],"shares":[100],"payers":[{"participantIndex":0,"amountCents":100}],"itemAssignments":null}`;
     const error = await withPg(async (client) => {
@@ -1219,6 +1307,175 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
       throw new Error("expected the second payload participant to be a guest");
     }
     expect(typeof guestRef.guestId).toBe("string");
+  });
+
+  it("a guest participant without a name fails with invalid_payload on create", async () => {
+    const omitted = {
+      items: [],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId: null },
+      ],
+      shares: [1500, 1500],
+      payers: [{ participantIndex: 0, amountCents: 3000 }],
+      itemAssignments: null,
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 3000, omitted)),
+      ),
+    ).toBe("invalid_payload");
+
+    const nulled = {
+      ...omitted,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId: null, displayName: null },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 3000, nulled)),
+      ),
+    ).toBe("invalid_payload");
+  });
+
+  it("a user participant with a missing or malformed userId fails with invalid_payload and keeps the version", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const bill = {
+      items: [],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId: null, displayName: "Zé" },
+      ],
+      shares: [500, 500],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    const ack = await createExpenseAck(alice, { groupId, totalCents: 1000, payload: bill });
+
+    const zeroShare = {
+      ...bill,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user" },
+      ],
+      shares: [1000, 0],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 1000, zeroShare)),
+      ),
+    ).toBe("invalid_payload");
+
+    const halfPayer = {
+      ...bill,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user" },
+      ],
+      payers: [
+        { participantIndex: 0, amountCents: 500 },
+        { participantIndex: 1, amountCents: 500 },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 1000, halfPayer)),
+      ),
+    ).toBe("invalid_payload");
+
+    const malformed = {
+      ...bill,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: "nao-e-um-uuid" },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 1000, malformed)),
+      ),
+    ).toBe("invalid_payload");
+
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1000, malformed)),
+      ),
+    ).toBe("invalid_payload");
+
+    const expense = await withPg(async (pg) =>
+      (
+        await pg.query<{ current_version_no: number }>(
+          "SELECT current_version_no FROM public.expenses WHERE id = $1",
+          [ack.expenseId],
+        )
+      ).rows[0],
+    );
+    expect(expense.current_version_no).toBe(1);
+  });
+
+  it("an edit that drops an existing guest's name fails with invalid_payload and keeps the bill editable", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const named = {
+      items: [],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId: null, displayName: "Zé" },
+      ],
+      shares: [1500, 1500],
+      payers: [{ participantIndex: 0, amountCents: 3000 }],
+      itemAssignments: null,
+    };
+    const ack = await createExpenseAck(alice, { groupId, totalCents: 3000, payload: named });
+
+    const detail = await getExpense(ack.expenseId);
+    const guestRef = detail.current.payload.participants[1];
+    if (guestRef.kind !== "guest") {
+      throw new Error("expected the second payload participant to be a guest");
+    }
+    const { guestId } = guestRef;
+
+    const omitted = {
+      ...named,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 3000, omitted)),
+      ),
+    ).toBe("invalid_payload");
+
+    const nulled = {
+      ...named,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId, displayName: null },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "edit_expense", editArgs(ack.expenseId, ack.versionNo, 3000, nulled)),
+      ),
+    ).toBe("invalid_payload");
+
+    const renamed = {
+      ...named,
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", guestId, displayName: "Zé Cardoso" },
+      ],
+    };
+    const edited = await callRpc(
+      aliceClient,
+      "edit_expense",
+      editArgs(ack.expenseId, ack.versionNo, 3000, renamed),
+    );
+    expect(edited.error).toBeNull();
+    expect(expenseAck("edit_expense", edited.data).versionNo).toBe(2);
   });
 });
 
