@@ -97,6 +97,7 @@ stateDiagram-v2
 - **Leitor de convite.** **Entrar em sala** abre um leitor que reconhece QR de sala, de grupo, de perfil e de convidado.
 - **Página do grupo.** Avatar com emoji ou foto, **Gastos do grupo** com o total e a parte de cada um, e as abas **Saldos**, **Contas** e **Membros**.
 - **Sair e remover.** Só sai do grupo quem está com saldo zerado. O criador remove membros, e quem foi removido não volta sozinho por link.
+- **Bloquear pessoa.** Bloquear alguém corta o contato direto entre vocês: conversa 1-a-1 nova ou existente, convites de grupo, lembretes e push dessa pessoa param de chegar pra você, e ela não pode te nomear numa sala de itens. O bloqueio vale até você desbloquear; despesas, saldos e membros dos grupos que vocês dividem não mudam, e a outra pessoa não recebe aviso. Quem entra por link de sala ou resgata a parte de um convidado continua podendo, e recusas de conversa anteriores continuam valendo mesmo depois do desbloqueio.
 
 ### Conversas
 
@@ -128,6 +129,7 @@ stateDiagram-v2
 - **Pix só pra quem tem a receber.** `/api/pix/generate` só usa a chave de outra pessoa se ela for credora de quem pede numa transferência do grupo, e até o valor devido. As recusas de autorização voltam todas com o mesmo 403, pra ninguém descobrir quem tem chave ou quem deve a quem.
 - **Acesso só via RPC.** RLS habilitado em todas as tabelas, sem políticas e sem grants para `anon`/`authenticated`. O navegador só chama funções `SECURITY DEFINER`, que checam membership (ou o token da sala, pra quem entrou sem conta). Só as rotas do servidor usam a service role.
 - **Sem enumeração.** Usuários são encontrados só por `@handle` exato, por uma rota do servidor com rate limit. Alguns @ oficiais (suporte, admin, dividimos...), parecidos com eles (pix1, the_admin...) e nomes com esses termos no meio não estão disponíveis: tentar usar um deles no perfil devolve "Esse @ já está em uso.", e quem já tem um desses continua com ele. O @ automático de quem entra vem do nome, não do e-mail; se o nome já estiver em uso, entra um sufixo aleatório.
+- **Bloqueio sem exposição.** Uma ação que o bloqueio recusa falha com o mesmo erro genérico das outras recusas, sem revelar a direção do bloqueio; erros de estado (já é membro, sem dívida) continuam aparecendo como sempre. A lista de bloqueados só é legível pelo próprio autor do bloqueio; os mensageiros internos de contato e de elegibilidade de push não podem ser chamados pelo navegador.
 - **Tokens guardados como hash.** Os tokens de claim, de entrada na sala e de membro da sala ficam no banco só como SHA-256. Claim e entrada valem 7 dias; o de membro vale 30 dias e renova com o uso.
 - **Rate limit que falha fechado.** Contadores no Postgres limitam IA, Pix, push e busca por usuário. Se o limitador cai, a rota responde 503 em vez de liberar.
 - **Conta excluída não volta.** Depois que a exclusão da conta grava o marcador, qualquer RPC comum dessa identidade falha com `account_deleted`, e o registro de push não recria inscrição para o perfil apagado — nem disputando com a própria exclusão em transação.

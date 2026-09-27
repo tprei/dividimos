@@ -1063,6 +1063,39 @@ export type Database = {
           },
         ]
       }
+      user_blocks: {
+        Row: {
+          blocked_id: string
+          blocker_id: string
+          created_at: string
+        }
+        Insert: {
+          blocked_id: string
+          blocker_id: string
+          created_at?: string
+        }
+        Update: {
+          blocked_id?: string
+          blocker_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_blocks_blocked_id_fkey"
+            columns: ["blocked_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_blocks_blocker_id_fkey"
+            columns: ["blocker_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           avatar_url: string | null
@@ -1195,6 +1228,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      assert_user_contact_allowed: {
+        Args: {
+          p_actor: string
+          p_other: string
+        }
+        Returns: undefined
+      }
       assignment_room_bill_breakdown: {
         Args: {
           p_expense_id: string
@@ -1220,6 +1260,12 @@ export type Database = {
           p_room_id: string
           p_self_participant_id: string
           p_host: boolean
+        }
+        Returns: Json
+      }
+      block_user: {
+        Args: {
+          p_user_id: string
         }
         Returns: Json
       }
@@ -1566,10 +1612,20 @@ export type Database = {
         }
         Returns: Json
       }
+      get_push_blockers: {
+        Args: {
+          p_actor_id: string
+        }
+        Returns: string[]
+      }
       get_settlement: {
         Args: {
           p_settlement_id: string
         }
+        Returns: Json
+      }
+      get_user_blocks: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       get_vendor_charges: {
@@ -1906,6 +1962,12 @@ export type Database = {
           p_actor_id: string
           p_emoji: string
           p_photo_id: string
+        }
+        Returns: Json
+      }
+      unblock_user: {
+        Args: {
+          p_user_id: string
         }
         Returns: Json
       }
