@@ -67,6 +67,8 @@ function optInOnThisDevice(): void {
       pixKeyHint: null,
       pixKeyType: null,
       notificationPreferences: {},
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
     },
   });
   setNativePushConsent(ACCOUNT_ID, true);

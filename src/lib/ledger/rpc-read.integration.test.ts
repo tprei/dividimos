@@ -30,6 +30,8 @@ interface MeProfile extends UserProfile {
   pixKeyHint: string | null;
   onboarded: boolean;
   notificationPreferences: Record<string, unknown> | null;
+  aiConsentVersion: number | null;
+  aiConsentGrantedAt: string | null;
 }
 
 interface GroupInfo {
@@ -217,6 +219,8 @@ const ME_KEYS = [
   "pixKeyHint",
   "onboarded",
   "notificationPreferences",
+  "aiConsentVersion",
+  "aiConsentGrantedAt",
 ];
 
 const SNAPSHOT_KEYS = [

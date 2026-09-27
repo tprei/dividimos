@@ -60,6 +60,8 @@ const storeMe: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 /** Seeds the store group the fetch-variant modal reads its live amount from. */

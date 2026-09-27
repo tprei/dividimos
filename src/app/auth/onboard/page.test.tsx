@@ -22,6 +22,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: false,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const action = vi.fn().mockResolvedValue(undefined);

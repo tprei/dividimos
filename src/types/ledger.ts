@@ -1,3 +1,4 @@
+import type { AiConsentState } from "@/lib/ai-consent";
 import type { PixKeyType, NotificationCategory, NotificationPreferences } from "@/types";
 
 export type { PixKeyType, NotificationCategory, NotificationPreferences };
@@ -33,13 +34,16 @@ export interface UserProfile {
   isBot: boolean;
 }
 
-export interface Me extends UserProfile {
+export interface Me extends UserProfile, AiConsentState {
   email: string;
   pixKeyType: PixKeyType | null;
   pixKeyHint: string | null;
   onboarded: boolean;
   notificationPreferences: NotificationPreferences;
 }
+
+/** Me narrowed to the fields `update_profile` may change; consent is account privacy state. */
+export type ProfileUpdate = Omit<Me, keyof AiConsentState>;
 
 export interface Group {
   id: string;

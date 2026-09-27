@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Bootstrap } from "@/types/ledger";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
 import {
   decodeBootstrap,
   decodeChatMessage,
@@ -13,6 +14,7 @@ import {
   decodeInvitePreview,
   decodeMe,
   decodeMutationAck,
+  decodeProfileUpdate,
   decodeUserProfile,
   decodeUserProfileOrNull,
   decodeVendorCharge,
@@ -36,6 +38,8 @@ describe("decodeBootstrap", () => {
         expenses: true,
         settlements: false,
       },
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
     },
     groups: [
       {
@@ -444,6 +448,8 @@ describe("additional wire decoders", () => {
       expenses: true,
       settlements: false,
     },
+    aiConsentVersion: null,
+    aiConsentGrantedAt: null,
   };
 
   it("decodes me without isBot defaulting to false", () => {
@@ -490,6 +496,89 @@ describe("additional wire decoders", () => {
     if (!result.ok) {
       expect(result.issue.path.at(-1)).toBe("digest");
     }
+  });
+
+  it("decodes me with the paired null consent state", () => {
+    const result = decodeMe(meFixture);
+    expect(result.ok).toBe(true);
+  });
+
+  it("decodes me with a positive stored consent version as data", () => {
+    const stored = {
+      ...meFixture,
+      aiConsentVersion: CURRENT_AI_CONSENT_VERSION + 1,
+      aiConsentGrantedAt: "2026-09-27T12:00:00.000Z",
+    };
+    const result = decodeMe(stored);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.aiConsentVersion).toBe(CURRENT_AI_CONSENT_VERSION + 1);
+    }
+  });
+
+  it("decodes me without the consent keys as the ungranted pair", () => {
+    const withoutPair = { ...meFixture };
+    delete (withoutPair as Record<string, unknown>).aiConsentVersion;
+    delete (withoutPair as Record<string, unknown>).aiConsentGrantedAt;
+    const result = decodeMe(withoutPair);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.aiConsentVersion).toBeNull();
+      expect(result.value.aiConsentGrantedAt).toBeNull();
+    }
+  });
+
+  it("rejects me with a partial consent pair", () => {
+    expect(
+      decodeMe({ ...meFixture, aiConsentVersion: CURRENT_AI_CONSENT_VERSION }).ok,
+    ).toBe(false);
+    expect(
+      decodeMe({ ...meFixture, aiConsentGrantedAt: "2026-09-27T12:00:00.000Z" }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects me with a nonpositive consent version", () => {
+    expect(decodeMe({ ...meFixture, aiConsentVersion: 0, aiConsentGrantedAt: "2026-09-27T12:00:00.000Z" }).ok).toBe(false);
+    expect(decodeMe({ ...meFixture, aiConsentVersion: -1, aiConsentGrantedAt: "2026-09-27T12:00:00.000Z" }).ok).toBe(false);
+  });
+
+  it("rejects me with a fractional or string consent version", () => {
+    expect(
+      decodeMe({ ...meFixture, aiConsentVersion: 1.5, aiConsentGrantedAt: "2026-09-27T12:00:00.000Z" }).ok,
+    ).toBe(false);
+    expect(
+      decodeMe({ ...meFixture, aiConsentVersion: "1", aiConsentGrantedAt: "2026-09-27T12:00:00.000Z" }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects me with an unparseable consent timestamp", () => {
+    expect(
+      decodeMe({ ...meFixture, aiConsentVersion: CURRENT_AI_CONSENT_VERSION, aiConsentGrantedAt: "nope" }).ok,
+    ).toBe(false);
+  });
+
+  it("decodes a profile update without consent fields", () => {
+    const profile = {
+      id: meFixture.id,
+      handle: meFixture.handle,
+      name: meFixture.name,
+      avatarUrl: meFixture.avatarUrl,
+      isBot: meFixture.isBot,
+      email: meFixture.email,
+      pixKeyType: meFixture.pixKeyType,
+      pixKeyHint: meFixture.pixKeyHint,
+      onboarded: meFixture.onboarded,
+      notificationPreferences: meFixture.notificationPreferences,
+    };
+    const result = decodeProfileUpdate(profile);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.id).toBe(meFixture.id);
+    }
+  });
+
+  it("rejects a profile update carrying consent fields", () => {
+    expect(decodeProfileUpdate(meFixture).ok).toBe(false);
   });
 
   it("decodes group event with arbitrary json payload", () => {

@@ -26,6 +26,8 @@ function setAccount(id: string): void {
         settlements: true,
         nudges: true,
       },
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
     },
   });
 }

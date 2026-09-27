@@ -18,6 +18,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const counterparty: UserProfile = {

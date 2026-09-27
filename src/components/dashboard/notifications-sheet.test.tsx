@@ -38,6 +38,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 function snapshot(id = "g1"): GroupSnapshot {

@@ -22,6 +22,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 function prepareStore(title = "", withBob = true) {

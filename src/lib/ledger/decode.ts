@@ -26,6 +26,7 @@ import type {
   NotificationCategory,
   ParticipantKind,
   PixKeyType,
+  ProfileUpdate,
   Settlement,
   SettlementStatus,
   Transfer,
@@ -119,10 +120,24 @@ const ME_KEYS = [
 // responses lack the key. We tolerate missing isBot during the deploy window.
 const ME_OPTIONAL_KEYS = ["isBot"] as const;
 
-export function decodeMe(
+// The consent pair follows the same deploy-window rule: the web client ships
+// first, then the migration starts emitting the fields. A missing pair decodes
+// as no grant; present-but-malformed values are still rejected.
+const ME_CONSENT_OPTIONAL_KEYS = [
+  "isBot",
+  "aiConsentVersion",
+  "aiConsentGrantedAt",
+] as const;
+
+/**
+ * Decodes the profile-only response of `update_profile`: the same shape as the
+ * bootstrap me payload minus the two AI-consent fields, which only the
+ * consent RPCs own.
+ */
+export function decodeProfileUpdate(
   raw: unknown,
   path: Path = [],
-): ValidationResult<Me, WireIssue> {
+): ValidationResult<ProfileUpdate, WireIssue> {
   if (!isRecord(raw)) return fail(path);
   const k = exactKeys(raw, ME_KEYS, path, ME_OPTIONAL_KEYS);
   if (!k.ok) return k;
@@ -181,7 +196,61 @@ export function decodeMe(
     pixKeyType,
     pixKeyHint: pkh.value,
     onboarded: onb.value,
-    notificationPreferences: prefObj as Me["notificationPreferences"],
+    notificationPreferences: prefObj as ProfileUpdate["notificationPreferences"],
+  });
+}
+
+/**
+ * Me decoder for the bootstrap/`ledger_me_json` payload. When present, the
+ * two consent fields must form a valid pair (both null or a positive version
+ * with a parseable timestamp); absent means no grant. A future positive
+ * version is valid stored data, but only `hasCurrentAiConsent` grants
+ * permission.
+ */
+export function decodeMe(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<Me, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ME_KEYS, path, ME_CONSENT_OPTIONAL_KEYS);
+  if (!keys.ok) return keys;
+  const version = nullableInt(
+    raw.aiConsentVersion ?? null,
+    [...path, "aiConsentVersion"],
+  );
+  if (!version.ok) return version;
+  const grantedAt = nullableStr(
+    raw.aiConsentGrantedAt ?? null,
+    [...path, "aiConsentGrantedAt"],
+  );
+  if (!grantedAt.ok) return grantedAt;
+  if (version.value !== null && version.value <= 0) {
+    return fail([...path, "aiConsentVersion"]);
+  }
+  if ((version.value === null) !== (grantedAt.value === null)) {
+    return fail([...path, "aiConsentGrantedAt"]);
+  }
+  if (grantedAt.value !== null && !Number.isFinite(Date.parse(grantedAt.value))) {
+    return fail([...path, "aiConsentGrantedAt"]);
+  }
+  const profile: Record<string, unknown> = {
+    id: raw.id,
+    handle: raw.handle,
+    name: raw.name,
+    avatarUrl: raw.avatarUrl,
+    email: raw.email,
+    pixKeyType: raw.pixKeyType,
+    pixKeyHint: raw.pixKeyHint,
+    onboarded: raw.onboarded,
+    notificationPreferences: raw.notificationPreferences,
+  };
+  if ("isBot" in raw) profile.isBot = raw.isBot;
+  const decoded = decodeProfileUpdate(profile, path);
+  if (!decoded.ok) return decoded;
+  return ok({
+    ...decoded.value,
+    aiConsentVersion: version.value,
+    aiConsentGrantedAt: grantedAt.value,
   });
 }
 

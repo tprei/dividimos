@@ -18,6 +18,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const carol: UserProfile = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };

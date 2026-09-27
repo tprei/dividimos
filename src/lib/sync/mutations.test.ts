@@ -79,6 +79,8 @@ const ME: Me = {
   pixKeyHint: "me@example.com",
   onboarded: true,
   notificationPreferences: { expenses: true, settlements: true, nudges: true },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const USER_2: UserProfile = {

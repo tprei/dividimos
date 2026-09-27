@@ -36,6 +36,8 @@ const meUser: Me = {
     settlements: true,
     messages: true,
   },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const baseSnapshot: GroupSnapshot = {

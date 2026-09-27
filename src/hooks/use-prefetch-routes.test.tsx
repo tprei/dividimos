@@ -28,6 +28,8 @@ function signIn(id: string): void {
       pixKeyHint: null,
       onboarded: true,
       notificationPreferences: {},
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
     },
   });
 }

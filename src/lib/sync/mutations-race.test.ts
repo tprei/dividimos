@@ -43,6 +43,8 @@ const ME: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: { expenses: true, settlements: true, nudges: true },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const OTHER: UserProfile = {

@@ -21,6 +21,8 @@ function validMe(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     pixKeyHint: "***.456.789-**",
     onboarded: true,
     notificationPreferences: { expenses: true, settlements: false },
+    aiConsentVersion: null,
+    aiConsentGrantedAt: null,
     ...overrides,
   };
 }
@@ -120,6 +122,8 @@ describe("resolveAuthProfile", () => {
         pixKeyHint: "***.456.789-**",
         onboarded: true,
         notificationPreferences: { expenses: true, settlements: false },
+        aiConsentVersion: null,
+        aiConsentGrantedAt: null,
       },
     });
   });
@@ -145,6 +149,8 @@ describe("resolveAuthProfile", () => {
         pixKeyHint: null,
         onboarded: true,
         notificationPreferences: { expenses: true, settlements: false },
+        aiConsentVersion: null,
+        aiConsentGrantedAt: null,
       },
     });
   });

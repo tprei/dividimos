@@ -124,6 +124,8 @@ function makeMe(id: string, prefs?: NotificationPreferences): Me {
     pixKeyHint: "",
     onboarded: true,
     notificationPreferences: prefs ?? {},
+    aiConsentVersion: null,
+    aiConsentGrantedAt: null,
   };
 }
 

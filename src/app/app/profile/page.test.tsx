@@ -91,6 +91,8 @@ const userA: Me = {
   pixKeyHint: "a**@test.com",
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const userB: Me = {
@@ -104,6 +106,8 @@ const userB: Me = {
   pixKeyHint: "(**) 99999-9999",
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const userWithoutPix: Me = {
@@ -117,6 +121,8 @@ const userWithoutPix: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 beforeEach(() => {

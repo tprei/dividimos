@@ -25,6 +25,8 @@ const me: Me = {
   pixKeyHint: "a**@test.com",
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 function setup(meOverrides: Partial<Me> = {}) {

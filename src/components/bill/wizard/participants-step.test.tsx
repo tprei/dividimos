@@ -33,6 +33,8 @@ const me: Me = {
   pixKeyHint: "",
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const meUser: User = {

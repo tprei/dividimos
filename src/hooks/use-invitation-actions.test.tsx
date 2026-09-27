@@ -32,6 +32,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 function invitedSnapshot(groupId: string): GroupSnapshot {

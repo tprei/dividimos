@@ -96,6 +96,8 @@ const mockMe: Me = {
   pixKeyHint: "***.456.789-**",
   onboarded: true,
   notificationPreferences: { expenses: true, settlements: false },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 describe("AppShell hydration & auth lifecycle", () => {

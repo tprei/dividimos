@@ -37,6 +37,8 @@ const profile = (overrides: Partial<Me> = {}): Me => ({
   pixKeyHint: null,
   onboarded: false,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
   ...overrides,
 });
 

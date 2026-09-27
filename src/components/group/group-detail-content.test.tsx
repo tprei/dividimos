@@ -112,6 +112,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const groupId = "g1";
@@ -549,6 +551,8 @@ describe("GroupDetailContent", () => {
         pixKeyHint: null,
         onboarded: true,
         notificationPreferences: {},
+        aiConsentVersion: null,
+        aiConsentGrantedAt: null,
       },
       groups: { [groupId]: snap },
       groupOrder: [groupId],
@@ -577,6 +581,8 @@ describe("GroupDetailContent", () => {
       pixKeyHint: null,
       onboarded: true,
       notificationPreferences: {},
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
     };
 
     useAppStore.setState({
@@ -635,6 +641,8 @@ describe("GroupDetailContent", () => {
         pixKeyHint: null,
         onboarded: true,
         notificationPreferences: {},
+        aiConsentVersion: null,
+        aiConsentGrantedAt: null,
       },
       groups: { [groupId]: snap },
       groupOrder: [groupId],

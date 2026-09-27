@@ -7,7 +7,7 @@ import { encryptPixKey } from "@/lib/crypto";
 import {
   decodeBootstrap,
   decodeConversation,
-  decodeMe,
+  decodeProfileUpdate,
   decodeUserProfile,
 } from "@/lib/ledger/decode";
 import { maskPixKey } from "@/lib/pix";
@@ -396,7 +396,7 @@ describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
       p_name: "Ana Oficial",
     });
     expect(error).toBeNull();
-    expect(must(decodeMe(data))).toMatchObject({
+    expect(must(decodeProfileUpdate(data))).toMatchObject({
       handle: official,
       name: "Ana Oficial",
     });
@@ -419,7 +419,7 @@ describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
       p_handle: held,
     });
     expect(error).toBeNull();
-    expect(must(decodeMe(data))).toMatchObject({
+    expect(must(decodeProfileUpdate(data))).toMatchObject({
       handle: held,
       name: "Suporte Antigo",
     });
@@ -429,7 +429,7 @@ describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
       p_handle: held.toUpperCase(),
     });
     expect(upper.error).toBeNull();
-    expect(must(decodeMe(upper.data))).toMatchObject({
+    expect(must(decodeProfileUpdate(upper.data))).toMatchObject({
       handle: held,
       name: "Suporte Antigo 2",
     });
@@ -619,7 +619,7 @@ describe.skipIf(!isIntegrationTestReady)("users.is_bot", () => {
       p_name: "Robo Verificado",
     });
     expect(error).toBeNull();
-    const me = must(decodeMe(data));
+    const me = must(decodeProfileUpdate(data));
     expect(me.isBot).toBe(true);
     expect(me.name).toBe("Robo Verificado");
 

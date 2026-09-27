@@ -69,6 +69,8 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
           pixKeyHint: null,
           onboarded: true,
           notificationPreferences: {},
+          aiConsentVersion: null,
+          aiConsentGrantedAt: null,
         },
         participants: [],
         guests: [{ id: "g1", name: "Gil" }, { id: "g2", name: "Gui" }],

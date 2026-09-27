@@ -27,6 +27,8 @@ const me: Me = {
   pixKeyHint: null,
   onboarded: true,
   notificationPreferences: {},
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const bob = { id: "user-bob", handle: "bob", name: "Bob Silva", avatarUrl: null, isBot: false };

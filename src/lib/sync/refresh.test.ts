@@ -35,6 +35,8 @@ const ME: Me = {
   pixKeyHint: "me@example.com",
   onboarded: true,
   notificationPreferences: { expenses: true, settlements: true, nudges: true },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 function snapshot(groupId: string, ledgerVersion: number): GroupSnapshot {

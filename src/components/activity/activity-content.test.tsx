@@ -45,6 +45,8 @@ const me: Me = {
     settlements: true,
     nudges: true,
   },
+  aiConsentVersion: null,
+  aiConsentGrantedAt: null,
 };
 
 const alice: UserProfile = {
