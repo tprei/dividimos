@@ -106,11 +106,15 @@ export function usePullGesture(options: {
 
   useEffect(() => cancel, [cancel]);
 
-  // Any scroll anywhere — the capture phase catches nested scrollers too —
-  // disarms the gesture until the surface has rested again, so the handlers
-  // never need an onScroll of their own.
+  // Any scroll away from the top anywhere (the capture phase catches nested
+  // scrollers too) disarms the gesture until the surface has rested again, so
+  // the handlers never need an onScroll of their own. Scrolls at or above the
+  // top don't count: iOS rubber-banding fires them after every fling and every
+  // pull, and counting them kept disarming each retried pull.
   useEffect(() => {
-    const mark = () => {
+    const mark = (event: Event) => {
+      const scrolled = event.target instanceof Element ? event.target : document.scrollingElement;
+      if (scrolled !== null && scrolled.scrollTop < 1) return;
       lastScrollAt.current = performance.now();
     };
     document.addEventListener("scroll", mark, { capture: true, passive: true });
