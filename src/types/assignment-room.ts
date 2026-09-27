@@ -156,6 +156,20 @@ export interface SetAssignmentClaimInput {
   ticks: number;
 }
 
+/** One participant's share of one item, in raw room ticks. */
+export interface AssignmentItemShare {
+  participantId: string;
+  ticks: number;
+}
+
+/** Host write of several shares of one item in one revision; `expectedItemRevision` rejects stale writers. */
+export interface SetAssignmentItemClaimsInput {
+  roomId: string;
+  itemId: string;
+  expectedItemRevision: number;
+  shares: AssignmentItemShare[];
+}
+
 export interface AssignmentRoomClaimer {
   participantId: string;
   userId: string | null;
