@@ -48,6 +48,7 @@ export function useAssignmentRoomEntry({
             quantityMilliunits: item.quantity,
             unitPriceCents: item.unitPriceCents,
             totalPriceCents: item.totalCents,
+            icon: item.icon,
           })),
           participants: [
             {

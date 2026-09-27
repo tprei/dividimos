@@ -107,6 +107,22 @@ describe("parseReceiptImage", () => {
     expect(callArgs.config.temperature).toBe(0);
   });
 
+  it("keeps a known item icon and drops one outside the closed set", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        ...validResult,
+        items: [
+          { ...validResult.items[0], icon: "beer" },
+          { ...validResult.items[1], icon: "caviar" },
+        ],
+      }),
+    });
+
+    const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
+
+    expect(result.items.map((item) => item.icon)).toEqual(["beer", undefined]);
+  });
+
   it("keeps the printed line total and derives the unit price when the printed unit price is not usable", async () => {
     const resultWithFloats = {
       merchant: "Test",

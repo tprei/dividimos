@@ -217,6 +217,7 @@ flowchart TB
 
 - **Notificações.** Todo RPC financeiro ou de membros grava uma linha em `group_events`. Ela alimenta o feed, os cards do chat e o push: o cliente que agiu manda o id pra `/api/notify`, que reivindica a linha uma vez (`notified_at`) e dispara Web Push (VAPID) e FCM respeitando as categorias de cada pessoa.
 - **IA.** `/api/receipt/ocr`, `/api/voice/parse` e `/api/chat/parse` chamam Gemini 2.5 Flash-Lite com saída em JSON Schema. O texto do usuário entra delimitado como dado, e o resultado passa pelos mesmos decoders de dinheiro do resto do app antes de virar rascunho.
+- **Ícones dos itens.** Na mesma chamada do cupom, o Gemini escolhe pra cada item uma categoria do enum fechado `expense_item_icon` (cerveja, pizza, coxinha...), descrita em `src/lib/item-icons.ts`. A categoria vai como `icon` opcional no item do `payload` e em `assignment_room_items`, e o banco recusa valor fora do enum. Item sem `icon` (digitado à mão ou de conta antiga) fica sem ícone.
 
 ## Modelo de dados
 

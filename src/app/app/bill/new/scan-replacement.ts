@@ -42,6 +42,7 @@ export function buildScanDraftCandidate(input: {
     quantity: item.quantity,
     unitPriceCents: item.unitPriceCents,
     totalPriceCents: item.totalCents,
+    icon: item.icon,
     createdAt: input.nowIso,
   }));
 
