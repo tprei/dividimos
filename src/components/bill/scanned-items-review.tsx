@@ -70,6 +70,7 @@ export interface ScannedItemsReviewProps {
   onShare: (result: ReceiptOcrResult, occurredOn: string) => void;
   sharePending?: boolean;
   shareError?: string | null;
+  inGroup?: boolean;
   onCancel: () => void;
   onManageParticipants: () => void;
 }
@@ -84,6 +85,7 @@ export function ScannedItemsReview({
   onManageParticipants,
   sharePending = false,
   shareError,
+  inGroup = false,
 }: ScannedItemsReviewProps) {
   const [items, setItems] = useState<ReceiptItem[]>(() =>
     result.items.map((item) => ({
@@ -123,8 +125,8 @@ export function ScannedItemsReview({
     isOccurredOnValid(occurredOn) &&
     serviceFeeResult.ok &&
     serviceFeeCentsResult?.ok === true;
-  const roomShareBlocked = participants.length > 1;
-  const canShare = receiptValid && participants.length === 1 && !sharePending;
+  const roomShareBlocked = !inGroup && participants.length > 1;
+  const canShare = receiptValid && !roomShareBlocked && !sharePending;
   const canConfirm = participants.length >= 2 && receiptValid;
 
   const handleNameChange = (index: number, value: string) => {
@@ -320,7 +322,9 @@ export function ScannedItemsReview({
           </p>
         )}
         <p className="text-center text-xs leading-4 text-muted-foreground">
-          Cada pessoa entra pelo QR ou link e escolhe o que consumiu.
+          {inGroup
+            ? "O grupo recebe um aviso e cada pessoa escolhe o que consumiu."
+            : "Cada pessoa entra pelo QR ou link e escolhe o que consumiu."}
         </p>
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-border" />
