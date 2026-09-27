@@ -710,7 +710,7 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 
 ### Secrets do build Android (`.github/workflows/android.yml`)
 
-Pull requests que mexem no Android (mesmos caminhos da tabela acima) só compilam um build debug, sem secrets de assinatura. Pushes na `main` geram um AAB release assinado com o projeto Android nativo do Capacitor.
+Pull requests que mexem no Android (mesmos caminhos da tabela acima) só compilam um build debug, sem secrets de assinatura. Pushes na `main` geram um AAB release assinado com o projeto Android nativo do Capacitor. A compilação do PR falha se o manifest mesclado declarar alguma permissão de advertising ID; é o `plugins.SocialLogin.providers` no `capacitor.config.ts` que mantém o SDK do Facebook fora do build.
 
 **Secrets obrigatórios do job de release**:
 - `ANDROID_KEYSTORE_BASE64`: keystore de release (`.jks`) em Base64
