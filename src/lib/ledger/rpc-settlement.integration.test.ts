@@ -530,16 +530,17 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(await readBalances()).toEqual([]);
     });
 
-    it("lets the creditor void a fabricated payment after the debtor left, restoring the debt", async () => {
+    it("refuses the creditor voiding a payment after the debtor left with former_member_balance", async () => {
       await rpcOk<{ groupId: string }>(clientDebtor, "leave_group", {
         p_group_id: groupId,
       });
-      const ack = await rpcOk<SettlementAck>(clientCreditor, "void_settlement", {
-        p_settlement_id: finalPaymentId,
-      });
-      expect(ack.eventId).toEqual(expect.any(Number));
-      expect(await readBalances()).toEqual(owed(1000));
-      expect(await confirmedSettlementCount()).toBe(1);
+      await expect(
+        rpcErrorCode(clientCreditor, "void_settlement", {
+          p_settlement_id: finalPaymentId,
+        }),
+      ).resolves.toBe("former_member_balance");
+      expect(await readBalances()).toEqual([]);
+      expect(await confirmedSettlementCount()).toBe(2);
     });
 
     it("rejects a departed party at assert_member with not_a_member", async () => {
@@ -555,16 +556,16 @@ describe.skipIf(!isIntegrationTestReady)(
           recordArgs(crypto.randomUUID(), debtor.id, creditor.id, 1000),
         ),
       ).resolves.toBe("not_a_member");
-      expect(await readBalances()).toEqual(owed(1000));
+      expect(await readBalances()).toEqual([]);
     });
 
-    it("still rejects a second void with settlement_voided after the counterparty left", async () => {
+    it("still rejects voiding an already-voided settlement with settlement_voided after the counterparty left", async () => {
       await expect(
         rpcErrorCode(clientCreditor, "void_settlement", {
-          p_settlement_id: finalPaymentId,
+          p_settlement_id: partialPaymentId,
         }),
       ).resolves.toBe("settlement_voided");
-      expect(await readBalances()).toEqual(owed(1000));
+      expect(await readBalances()).toEqual([]);
     });
 
     it("rejects a member who is not a party voiding with not_party", async () => {
@@ -573,7 +574,7 @@ describe.skipIf(!isIntegrationTestReady)(
           p_settlement_id: finalPaymentId,
         }),
       ).resolves.toBe("not_party");
-      expect(await readBalances()).toEqual(owed(1000));
+      expect(await readBalances()).toEqual([]);
     });
   },
 );

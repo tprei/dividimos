@@ -22,6 +22,7 @@ export const LEDGER_ERROR_CODES = [
   "settlement_voided",
   "not_party",
   "counterparty_not_member",
+  "former_member_balance",
   "amount_exceeds_debt",
   "invalid_name",
   "user_not_found",
@@ -85,6 +86,8 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   settlement_voided: "Esse pagamento foi desfeito.",
   not_party: "Você não faz parte desse pagamento.",
   counterparty_not_member: "A outra pessoa não está no grupo.",
+  former_member_balance:
+    "Essa mudança mexe no saldo de quem saiu do grupo. Convide a pessoa de volta para acertar antes.",
   amount_exceeds_debt: "Esse valor é maior que a dívida.",
   invalid_name: "O nome precisa ter de 1 a 80 caracteres.",
   user_not_found: "Não achamos esse usuário.",

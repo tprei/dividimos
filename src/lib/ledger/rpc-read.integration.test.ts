@@ -1531,7 +1531,7 @@ describe.skipIf(!isIntegrationTestReady)(
 describe.skipIf(!isIntegrationTestReady)(
   "historical re-materialisation after a legitimate departure",
   () => {
-    it("keeps edit, delete and repair of E2 possible after A leaves with zero net (F4)", async () => {
+    it("keeps edit of E2 possible after A leaves with zero net and delete and repair reachable via reinvite (F4)", async () => {
       const [ay, bee, cee] = await createTestUsers(3);
       const groupId = await createGroupWithMembers(ay, [bee, cee], "F4");
 
@@ -1623,6 +1623,30 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(balances.get(cee.id)).toBe(-5000);
       expect(balances.has(ay.id)).toBe(false);
 
+      const deleteErr = await expectRpcError(
+        authenticateAs(cee).rpc("delete_expense", { p_expense_id: e2.expenseId }),
+      );
+      expect(deleteErr).toBe("former_member_balance");
+      expect(
+        (
+          await rpcOk<ExpenseDetail>(authenticateAs(cee), "get_expense", {
+            p_expense_id: e2.expenseId,
+          })
+        ).participants.map((participant) => participant.user?.id ?? null),
+      ).toEqual([ay.id, cee.id]);
+      balances = await balanceMap();
+      expect(balances.get(bee.id)).toBe(5000);
+      expect(balances.get(cee.id)).toBe(-5000);
+      expect(balances.has(ay.id)).toBe(false);
+
+      // Documented escape: reinvite the departed member, accept, delete and
+      // repair in their presence, and they leave again at zero.
+      await rpcOk(authenticateAs(bee), "invite_member", {
+        p_group_id: groupId,
+        p_user_id: ay.id,
+      });
+      await acceptInvitation(ay, groupId);
+
       await rpcOk(authenticateAs(cee), "delete_expense", {
         p_expense_id: e2.expenseId,
       });
@@ -1643,7 +1667,9 @@ describe.skipIf(!isIntegrationTestReady)(
           })
         ).participants.map((participant) => participant.user?.id ?? null),
       ).toEqual([ay.id, cee.id]);
-      const memberStatusAfterRestore = await withPg((pg) =>
+
+      await rpcOk(authenticateAs(ay), "leave_group", { p_group_id: groupId });
+      const memberStatusAfterSecondDeparture = await withPg((pg) =>
         pg
           .query(
             "select 1 from group_members where group_id = $1 and user_id = $2",
@@ -1651,7 +1677,7 @@ describe.skipIf(!isIntegrationTestReady)(
           )
           .then((r) => r.rowCount),
       );
-      expect(memberStatusAfterRestore).toBe(0);
+      expect(memberStatusAfterSecondDeparture).toBe(0);
       balances = await balanceMap();
       expect(balances.get(bee.id)).toBe(5000);
       expect(balances.get(cee.id)).toBe(-5000);
