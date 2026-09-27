@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CURRENT_AI_CONSENT_VERSION } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 import type { Mock } from "vitest";
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -91,7 +93,31 @@ const originalVisibilityState = Object.getOwnPropertyDescriptor(
   "visibilityState",
 );
 
+function seedAiConsent(userId: string, granted: boolean): void {
+  useAppStore.getState().reset();
+  useAppStore.setState({
+    bootstrapStatus: "ready",
+    lastBootstrappedAccountId: userId,
+    lastBootstrappedGeneration: 0,
+    me: {
+      id: userId,
+      handle: userId,
+      name: userId,
+      avatarUrl: null,
+      isBot: false,
+      email: `${userId}@example.com`,
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+      aiConsentVersion: granted ? CURRENT_AI_CONSENT_VERSION : null,
+      aiConsentGrantedAt: granted ? "2026-01-01T00:00:00.000Z" : null,
+    },
+  });
+}
+
 beforeEach(() => {
+  seedAiConsent("user-1", true);
   mockGetPlatform.mockReturnValue("web");
   mockTakeNativePhoto.mockReset();
   mockPickNativeGalleryPhoto.mockReset();
@@ -543,6 +569,25 @@ describe("ReceiptScanner", () => {
       expect(screen.getByAltText("Foto da nota fiscal")).toBeInTheDocument();
     });
 
+    it("discards a late native photo after the account changed", async () => {
+      const captured = createMockFile();
+      const deferred = Promise.withResolvers<PhotoOutcome>();
+      mockTakeNativePhoto.mockReturnValue(deferred.promise);
+      const onProcess = vi.fn();
+
+      render(<ReceiptScanner onProcess={onProcess} onBack={vi.fn()} />);
+      await flushMicrotasks();
+
+      expect(mockTakeNativePhoto).toHaveBeenCalledOnce();
+
+      seedAiConsent("user-2", true);
+      await act(async () => {
+        deferred.resolve({ kind: "captured", file: captured });
+      });
+
+      expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
+      expect(onProcess).not.toHaveBeenCalled();
+    });
     it("relaunches a fresh native intent when retaking", async () => {
       const first = createMockFile("primeira.jpg");
       mockTakeNativePhoto
@@ -563,5 +608,68 @@ describe("ReceiptScanner", () => {
       expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
     });
+  });
+
+  describe("AI consent gate", () => {
+    it("no consent starts neither native camera nor web capture", async () => {
+      seedAiConsent("user-1", false);
+      const onBack = vi.fn();
+      const getUserMedia = vi.fn<GetUserMedia>();
+      stubMediaDevices(getUserMedia);
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={onBack} />);
+      await flushMicrotasks();
+
+      expect(
+        screen.getByText("Permita o uso de IA antes de escanear uma nota."),
+      ).toBeInTheDocument();
+      expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(mockTakeNativePhoto).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByText("Voltar e preencher manualmente"));
+      expect(onBack).toHaveBeenCalledOnce();
+    });
+
+    it("an android device without consent never launches the native camera", async () => {
+      mockGetPlatform.mockReturnValue("android");
+      seedAiConsent("user-1", false);
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+      await flushMicrotasks();
+
+      expect(mockTakeNativePhoto).not.toHaveBeenCalled();
+      expect(
+        screen.getByText("Permita o uso de IA antes de escanear uma nota."),
+      ).toBeInTheDocument();
+    });
+
+    it("denial clears preview without processing", async () => {
+      const onProcess = vi.fn();
+      stubMediaDevices(
+        vi.fn<GetUserMedia>(() =>
+          Promise.resolve(createFakeStream().stream),
+        ),
+      );
+      const { container } = render(
+        <ReceiptScanner onProcess={onProcess} onBack={vi.fn()} />,
+      );
+      await flushMicrotasks();
+
+      const galleryInput = container.querySelector(
+        'input[type="file"]',
+      ) as HTMLInputElement;
+      await userEvent.upload(galleryInput, createMockFile());
+      expect(screen.getByAltText("Foto da nota fiscal")).toBeInTheDocument();
+
+      seedAiConsent("user-1", false);
+      await flushMicrotasks();
+
+      expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
+      expect(screen.getByText("Permita o uso de IA antes de escanear uma nota.")).toBeInTheDocument();
+      expect(onProcess).not.toHaveBeenCalled();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(fakeUrl);
+    });
+
   });
 });

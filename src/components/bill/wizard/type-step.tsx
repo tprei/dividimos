@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
+import { AiConsentDialog } from "@/components/ai/ai-consent-dialog";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
@@ -10,7 +11,15 @@ import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceBillReview, type ResolvedParticipant } from "@/components/bill/voice-bill-review";
 import { Button } from "@/components/ui/button";
+import { useAiConsentGate } from "@/hooks/use-ai-consent-gate";
+import {
+  canUseAi,
+  captureAiConsentAttempt,
+  isAiConsentAttemptCurrent,
+  type AiConsentAttempt,
+} from "@/lib/sync/ai-consent";
 import { processReceiptScan } from "@/lib/sync/receipt";
+import { useAppStore } from "@/stores/app-store";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
@@ -36,6 +45,7 @@ export interface TypeStepProps {
 interface ScanAttempt {
   accountId: string | null;
   accountEpoch: number;
+  consentAttempt: AiConsentAttempt;
   controller: AbortController;
 }
 
@@ -56,6 +66,9 @@ export function TypeStep({
   onManageParticipants,
 }: TypeStepProps) {
   const searchParams = useSearchParams();
+  const bootstrapStatus = useAppStore((s) => s.bootstrapStatus);
+  const consentRevision = useAppStore((s) => s.aiConsentRevision);
+  const consentMutationPending = useAppStore((s) => s.aiConsentMutationPending);
 
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
@@ -83,7 +96,8 @@ export function TypeStep({
       attemptRef.current === attempt &&
       attempt.accountId === accountRef.current &&
       attempt.accountEpoch === accountEpochRef.current &&
-      !attempt.controller.signal.aborted
+      !attempt.controller.signal.aborted &&
+      isAiConsentAttemptCurrent(attempt.consentAttempt)
     );
   }, []);
 
@@ -101,6 +115,13 @@ export function TypeStep({
     setScanProcessingPhoto(false);
     setScanError(null);
   }, [invalidateAttempt]);
+
+  const handleConsentDecline = useCallback(() => {
+    resetScanState();
+    setShowScanner(false);
+  }, [resetScanState]);
+
+  const { requestConsent, dialogProps } = useAiConsentGate(handleConsentDecline);
 
   // Unmount cleanup aborts any in-flight attempt without touching React state.
   useEffect(() => {
@@ -121,19 +142,35 @@ export function TypeStep({
     setShowScanner(false);
   }, [accountChanged, resetScanState]);
 
+  // A consent revision change (grant, revoke, or a 403 invalidation) or a
+  // pending revocation cancels any scan attempt and closes the capture
+  // surface, so no pending file survives a lost permission.
+  const consentGuardRef = useRef({ revision: consentRevision, pending: consentMutationPending });
+  useEffect(() => {
+    const previous = consentGuardRef.current;
+    if (previous.revision === consentRevision && previous.pending === consentMutationPending) return;
+    consentGuardRef.current = { revision: consentRevision, pending: consentMutationPending };
+    resetScanState();
+    setShowScanner(false);
+  }, [consentRevision, consentMutationPending, resetScanState]);
+
+
+  const openScanner = useCallback(() => {
+    if (!requestConsent()) return;
+    setShowScanner(true);
+  }, [requestConsent]);
 
   const scanParamRef = useRef(false);
   useEffect(() => {
     if (scanParamRef.current) return;
-    if (searchParams.get("scan") && !showScanner && !scanResult) {
-      scanParamRef.current = true;
-      setShowScanner(true);
-    }
-  }, [searchParams, showScanner, scanResult]);
-
-  const openScanner = useCallback(() => {
-    setShowScanner(true);
-  }, []);
+    if (!searchParams.get("scan")) return;
+    if (showScanner || scanResult) return;
+    // The deep link waits for a known account: consent cannot be asked before
+    // bootstrap knows who is asking.
+    if (bootstrapStatus !== "ready") return;
+    scanParamRef.current = true;
+    openScanner();
+  }, [searchParams, showScanner, scanResult, bootstrapStatus, openScanner]);
 
   const reviewing = scanResult !== null;
   useEffect(() => {
@@ -150,11 +187,16 @@ export function TypeStep({
   }, [reviewClearSignal, resetScanState]);
 
   const handleScanProcess = useCallback(async (file: File) => {
+    if (!canUseAi()) {
+      requestConsent();
+      return;
+    }
     const previous = attemptRef.current;
     previous?.controller.abort();
     const attempt: ScanAttempt = {
       accountId: accountRef.current,
       accountEpoch: accountEpochRef.current,
+      consentAttempt: captureAiConsentAttempt(),
       controller: new AbortController(),
     };
     attemptRef.current = attempt;
@@ -177,7 +219,7 @@ export function TypeStep({
         setScanProcessingPhoto(false);
       }
     }
-  }, [isCurrentAttempt, resetScanState]);
+  }, [isCurrentAttempt, resetScanState, requestConsent]);
 
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
@@ -214,96 +256,105 @@ export function TypeStep({
     setShowVoiceInput(false);
   }, []);
 
-  if (scanResult) {
+  const renderContent = (): ReactNode => {
+    if (scanResult) {
+      return (
+        <ScannedItemsReview
+          result={scanResult}
+          participants={participants}
+          initialOccurredOn={occurredOn}
+          onConfirm={handleScanConfirm}
+          onShare={handleScanShare}
+          sharePending={scanSharePending}
+          shareError={scanShareError}
+          onCancel={handleScanCancel}
+          onManageParticipants={onManageParticipants}
+        />
+      );
+    }
+
+    if (scanProcessingPhoto) {
+      return <ScanSkeletonLoader />;
+    }
+
+    if (showScanner) {
+      return (
+        <div className="space-y-3">
+          <ReceiptScanner
+            onProcess={handleScanProcess}
+            onBack={() => {
+              resetScanState();
+              setShowScanner(false);
+            }}
+            processing={scanProcessing}
+          />
+          {scanError && (
+            <motion.p
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center text-sm text-destructive"
+            >
+              {scanError}
+            </motion.p>
+          )}
+        </div>
+      );
+    }
+
+    if (showVoiceInput) {
+      return (
+        <div className="space-y-4">
+          <VoiceExpenseButton
+            preview
+            members={groupMembers.map((m) => ({ handle: m.handle, name: m.name }))}
+            onResult={handleVoiceResult}
+            onError={handleVoiceError}
+            onRecordStart={handleVoiceRecordStart}
+            review={voiceResult ? (
+              <VoiceBillReview
+                result={voiceResult}
+                groupMembers={groupMembers}
+                onConfirm={onVoiceConfirm}
+                onCancel={handleVoiceCancel}
+              />
+            ) : undefined}
+          />
+          {!voiceResult && voiceError && (
+            <motion.p
+              role="alert"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center text-sm text-destructive-text"
+            >
+              {voiceError}
+            </motion.p>
+          )}
+          {!voiceResult && (
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => { setShowVoiceInput(false); setVoiceError(null); }}
+            >
+              Voltar
+            </Button>
+          )}
+        </div>
+      );
+    }
+
     return (
-      <ScannedItemsReview
-        result={scanResult}
-        participants={participants}
-        initialOccurredOn={occurredOn}
-        onConfirm={handleScanConfirm}
-        onShare={handleScanShare}
-        sharePending={scanSharePending}
-        shareError={scanShareError}
-        onCancel={handleScanCancel}
-        onManageParticipants={onManageParticipants}
+      <BillTypeSelector
+        onSelect={onTypeSelect}
+        onScanReceipt={openScanner}
+        onVoiceExpense={() => setShowVoiceInput(true)}
       />
     );
-  }
-
-  if (scanProcessingPhoto) {
-    return <ScanSkeletonLoader />;
-  }
-
-  if (showScanner) {
-    return (
-      <div className="space-y-3">
-        <ReceiptScanner
-          onProcess={handleScanProcess}
-          onBack={() => {
-            resetScanState();
-            setShowScanner(false);
-          }}
-          processing={scanProcessing}
-        />
-        {scanError && (
-          <motion.p
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center text-sm text-destructive"
-          >
-            {scanError}
-          </motion.p>
-        )}
-      </div>
-    );
-  }
-
-  if (showVoiceInput) {
-    return (
-      <div className="space-y-4">
-        <VoiceExpenseButton
-          preview
-          members={groupMembers.map((m) => ({ handle: m.handle, name: m.name }))}
-          onResult={handleVoiceResult}
-          onError={handleVoiceError}
-          onRecordStart={handleVoiceRecordStart}
-          review={voiceResult ? (
-            <VoiceBillReview
-              result={voiceResult}
-              groupMembers={groupMembers}
-              onConfirm={onVoiceConfirm}
-              onCancel={handleVoiceCancel}
-            />
-          ) : undefined}
-        />
-        {!voiceResult && voiceError && (
-          <motion.p
-            role="alert"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center text-sm text-destructive-text"
-          >
-            {voiceError}
-          </motion.p>
-        )}
-        {!voiceResult && (
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={() => { setShowVoiceInput(false); setVoiceError(null); }}
-          >
-            Voltar
-          </Button>
-        )}
-      </div>
-    );
-  }
+  };
 
   return (
-    <BillTypeSelector
-      onSelect={onTypeSelect}
-      onScanReceipt={openScanner}
-      onVoiceExpense={() => setShowVoiceInput(true)}
-    />
+    <>
+      {renderContent()}
+      <AiConsentDialog {...dialogProps} />
+    </>
   );
 }

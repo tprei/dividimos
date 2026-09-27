@@ -6,7 +6,14 @@ import { RotateCcw, ScanLine, X } from "lucide-react";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
+import { hasCurrentAiConsent } from "@/lib/ai-consent";
 import { popIn } from "@/lib/animations";
+import {
+  canUseAi,
+  captureAiConsentAttempt,
+  isAiConsentAttemptCurrent,
+} from "@/lib/sync/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 import {
   isNativeCameraAvailable,
   pickNativeGalleryPhoto,
@@ -43,6 +50,18 @@ export function ReceiptScanner({
    */
   const nativeIntentRef = useRef<Promise<PhotoOutcome> | null>(null);
 
+  // Defense in depth: even rendered directly, no capture surface may exist
+  // while the current account cannot use AI. The parent owns the consent
+  // dialog; this surface only refuses.
+  const allowed = useAppStore(
+    (s) =>
+      s.bootstrapStatus === "ready" &&
+      s.me !== null &&
+      s.lastBootstrappedAccountId === s.me.id &&
+      !s.aiConsentMutationPending &&
+      hasCurrentAiConsent(s.me),
+  );
+
   // Mirror for revoking the preview URL on unmount. StrictMode double-runs
   // mount cleanups while state survives, so the cleanup reads the mirror
   // (null at mount) instead of revoking a URL the state still references.
@@ -56,7 +75,29 @@ export function ReceiptScanner({
     };
   }, []);
 
+  // Losing permission or the account itself drops any pending photo and
+  // closes both camera variants; the web camera child unmounts and runs its
+  // own cleanup, and a late native result is ignored.
+  const clearCapture = useCallback(() => {
+    setFile(null);
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setCameraOpen(false);
+    setNativeCamera(false);
+    nativeIntentRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = useAppStore.subscribe(() => {
+      if (!canUseAi()) clearCapture();
+    });
+    return unsubscribe;
+  }, [clearCapture]);
+
   const showFile = useCallback((next: File) => {
+    if (!canUseAi()) return;
     haptics.success();
     setFile(next);
     setCaptureError(null);
@@ -92,7 +133,7 @@ export function ReceiptScanner({
   }, []);
 
   const handleProcess = useCallback(() => {
-    if (file) onProcess(file);
+    if (file && canUseAi()) onProcess(file);
   }, [file, onProcess]);
 
   const applyNativeOutcome = useCallback(
@@ -119,39 +160,45 @@ export function ReceiptScanner({
 
   // Native camera entry: launch exactly one capture per intent, deliver the
   // outcome exactly once, and ignore handlers from StrictMode replays
-  // (cleaned up) or superseded intents.
+  // (cleaned up) or superseded intents. A photo is only accepted while the
+  // consent attempt captured at launch is still current.
   useEffect(() => {
-    if (!nativeCamera) return;
+    if (!nativeCamera || !allowed) return;
     if (nativeIntentRef.current === null) {
       nativeIntentRef.current = takeNativePhoto();
     }
     const intent = nativeIntentRef.current;
+    const consentAttempt = captureAiConsentAttempt();
     let active = true;
     void intent.then(
       (outcome) => {
         if (!active || nativeIntentRef.current !== intent) return;
         nativeIntentRef.current = null;
         setNativeCamera(false);
+        if (!isAiConsentAttemptCurrent(consentAttempt)) return;
         applyNativeOutcome(outcome);
       },
       () => {
         if (!active || nativeIntentRef.current !== intent) return;
         nativeIntentRef.current = null;
         setNativeCamera(false);
+        if (!isAiConsentAttemptCurrent(consentAttempt)) return;
         setCaptureError("Não foi possível abrir a câmera.");
       },
     );
     return () => {
       active = false;
     };
-  }, [nativeCamera, applyNativeOutcome]);
+  }, [nativeCamera, allowed, applyNativeOutcome]);
 
   const startWebCamera = useCallback(() => {
+    if (!canUseAi()) return;
     setCaptureError(null);
     setCameraOpen(true);
   }, []);
 
   const startNativeCamera = useCallback(() => {
+    if (!canUseAi()) return;
     setCaptureError(null);
     setNativeCamera(true);
   }, []);
@@ -167,13 +214,17 @@ export function ReceiptScanner({
   // The gallery must open inside the user gesture, so the camera stops and
   // the hidden input is clicked synchronously in the same event.
   const handleCameraGallery = useCallback(() => {
+    if (!canUseAi()) return;
     setCameraOpen(false);
     galleryRef.current?.click();
   }, []);
 
   const handleNativeGallery = useCallback(() => {
+    if (!canUseAi()) return;
+    const consentAttempt = captureAiConsentAttempt();
     void pickNativeGalleryPhoto().then(
       (outcome) => {
+        if (!isAiConsentAttemptCurrent(consentAttempt)) return;
         if (outcome.kind === "captured") {
           showFile(outcome.file);
           return;
@@ -194,6 +245,19 @@ export function ReceiptScanner({
     if (isNative) startNativeCamera();
     else startWebCamera();
   }, [clearPreview, isNative, startNativeCamera, startWebCamera]);
+
+  if (!allowed) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm leading-relaxed">
+          Permita o uso de IA antes de escanear uma nota.
+        </p>
+        <Button variant="outline" className="min-h-11 w-full" onClick={onBack}>
+          Voltar e preencher manualmente
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -279,11 +343,7 @@ export function ReceiptScanner({
             <Button
               variant="outline"
               className="min-h-11 w-full"
-              onClick={
-                isNative
-                  ? handleNativeGallery
-                  : () => galleryRef.current?.click()
-              }
+              onClick={isNative ? handleNativeGallery : handleCameraGallery}
             >
               Escolher da galeria
             </Button>
