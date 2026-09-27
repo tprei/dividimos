@@ -8,6 +8,7 @@ import {
   parseExpenseQuantity,
   unitPriceCentsForLineTotal,
 } from "@/lib/expense-quantity";
+import { ITEM_ICON_HINTS, isItemIcon } from "@/lib/item-icons";
 import type { ItemIcon } from "@/types";
 
 /** Timeout for the Gemini API call in milliseconds. */
@@ -66,8 +67,13 @@ const RECEIPT_SCHEMA = {
             description:
               "Preço total do item em centavos (quantity * unitPrice)",
           },
+          icon: {
+            type: "string",
+            enum: Object.keys(ITEM_ICON_HINTS),
+            description: "Categoria visual do item, conforme a lista do prompt",
+          },
         },
-        required: ["description", "quantity", "unitPriceCents", "totalCents"],
+        required: ["description", "quantity", "unitPriceCents", "totalCents", "icon"],
       },
     },
     serviceFeeBasisPoints: {
@@ -104,7 +110,11 @@ Extraia os dados estruturados da imagem. Regras:
 - fixedFeesCents: some todas as taxas fixas impressas separadamente, como couvert ou entrega, em centavos. Se não houver taxa fixa, informe 0. Não inclua a taxa de serviço percentual neste campo.
 - totalCents (raiz): valor total da nota fiscal impresso, incluindo taxas. NUNCA calcule somando os itens — se o total da nota não estiver legível, retorne 0.
 - Se o texto estiver parcialmente ilegível, omita os itens ou valores ilegíveis em vez de adivinhar.
-- Não invente itens que não existem na imagem.`;
+- Não invente itens que não existem na imagem.
+- icon: escolha a categoria de cada item na lista abaixo. Classifique pelo produto, não pela grafia: a nota abrevia e erra nomes. Use o nome do estabelecimento e as outras linhas para desambiguar (ex.: "Calabresa G" numa pizzaria é pizza; "Porção calabresa" num bar é meat). Use other quando nenhuma categoria servir.
+${Object.entries(ITEM_ICON_HINTS)
+  .map(([icon, hint]) => `  - ${icon}: ${hint}`)
+  .join("\n")}`;
 
 /**
  * Calls Gemini Flash-Lite to parse a receipt image into structured data.
@@ -170,6 +180,7 @@ export async function parseReceiptImage(
     if (typeof raw !== "object" || raw === null) continue;
     const r = raw as Record<string, unknown>;
     const description = typeof r.description === "string" ? r.description.trim() : "";
+    const icon = isItemIcon(r.icon) ? r.icon : undefined;
     const quantity = parseExpenseQuantity(r.quantity);
     const lineTotal = parseExpenseCents(r.totalCents, "positive");
     if (!description || !quantity.ok || !lineTotal.ok) {
@@ -185,6 +196,7 @@ export async function parseReceiptImage(
         quantity: r.quantity as number,
         unitPriceCents: printedUnit.value,
         totalCents: lineTotal.value,
+        icon,
       });
       continue;
     }
@@ -198,6 +210,7 @@ export async function parseReceiptImage(
         quantity: r.quantity as number,
         unitPriceCents: derivedUnit,
         totalCents: lineTotal.value,
+        icon,
       });
     } else {
       items.push({
@@ -205,6 +218,7 @@ export async function parseReceiptImage(
         quantity: 1,
         unitPriceCents: lineTotal.value,
         totalCents: lineTotal.value,
+        icon,
       });
     }
   }

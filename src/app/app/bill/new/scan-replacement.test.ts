@@ -36,6 +36,7 @@ const sampleOcrResult: ReceiptOcrResult = {
       quantity: 2000,
       unitPriceCents: 1200,
       totalCents: 2400,
+      icon: "beer",
     },
     {
       description: "Picanha 400g",
@@ -212,5 +213,6 @@ describe("scan-replacement & scan-commit", () => {
     expect(result.value.payload.items).toHaveLength(2);
     expect(result.value.payload.items[0].totalPriceCents).toBe(2400);
     expect(result.value.payload.items[1].totalPriceCents).toBe(4500);
+    expect(result.value.payload.items.map((item) => item.icon)).toEqual(["beer", undefined]);
   });
 });
