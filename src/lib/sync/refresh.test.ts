@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Conversation, ExpenseDetail, GroupSnapshot, Me, Settlement } from "@/types/ledger";
-import type { AssignmentRoomSummary, OpenAssignmentRoom } from "@/types/assignment-room";
+import type {
+  AssignmentRoomSummary,
+  HostedAssignmentRoom,
+  OpenAssignmentRoom,
+} from "@/types/assignment-room";
 import {
   expensePageReadKey,
   expenseReadKey,
@@ -17,6 +21,7 @@ import {
   loadMoreExpenses,
   refreshExpense,
   refreshGroup,
+  refreshHostedAssignmentRooms,
   refreshOpenAssignmentRooms,
   refreshSettlement,
 } from "./refresh";
@@ -442,6 +447,69 @@ describe("refreshOpenAssignmentRooms", () => {
       status: "error",
       code: "network",
     });
+  });
+});
+
+describe("refreshHostedAssignmentRooms", () => {
+  function hosted(ownedItemCount: number): HostedAssignmentRoom {
+    return {
+      id: "00000000-0000-4000-8000-000000000009",
+      groupId: null,
+      groupName: null,
+      status: "open",
+      revision: ownedItemCount + 1,
+      title: "Bar do Zé",
+      occurredOn: "2026-09-27",
+      totalCents: 111,
+      host: { id: "user-me", handle: "me_user", name: "Eu Mesmo", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-27T12:00:00.000Z",
+      itemCount: 2,
+      ownedItemCount,
+      claimers: [],
+      expenseId: null,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("coalesces refreshes during a read into one follow-up that publishes the newer list", async () => {
+    const first = Promise.withResolvers<HostedAssignmentRoom[]>();
+    const second = Promise.withResolvers<HostedAssignmentRoom[]>();
+    vi.mocked(rpc)
+      .mockReturnValueOnce(first.promise as never)
+      .mockReturnValueOnce(second.promise as never);
+
+    const initial = refreshHostedAssignmentRooms();
+    const followUp = refreshHostedAssignmentRooms();
+    expect(refreshHostedAssignmentRooms()).toBe(followUp);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    first.resolve([hosted(0)]);
+    await initial;
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    second.resolve([hosted(1)]);
+    await followUp;
+
+    expect(useAppStore.getState().hostedAssignmentRooms).toEqual([hosted(1)]);
+  });
+
+  it("drops a queued follow-up after sign-out", async () => {
+    const first = Promise.withResolvers<HostedAssignmentRoom[]>();
+    vi.mocked(rpc).mockReturnValueOnce(first.promise as never);
+
+    refreshHostedAssignmentRooms();
+    const followUp = refreshHostedAssignmentRooms();
+    clientState.authGeneration += 1;
+    first.resolve([hosted(0)]);
+    await followUp;
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().hostedAssignmentRooms).toEqual([]);
   });
 });
 

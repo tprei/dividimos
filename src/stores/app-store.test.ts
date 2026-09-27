@@ -11,7 +11,11 @@ import type {
   Settlement,
   VendorCharge,
 } from "@/types/ledger";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type {
+  AssignmentRoomSummary,
+  HostedAssignmentRoom,
+  OpenAssignmentRoom,
+} from "@/types/assignment-room";
 import { migrateAppState, settlementReadKey, useAppStore } from "./app-store";
 
 const me: Me = {
@@ -509,6 +513,87 @@ describe("openAssignmentRoomsByGroupId", () => {
 
     useAppStore.getState().markOpenAssignmentRoomJoined("g-missing", "room-1");
     expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toHaveLength(2);
+  });
+});
+
+describe("hostedAssignmentRooms", () => {
+  function summary(overrides: Partial<AssignmentRoomSummary> = {}): AssignmentRoomSummary {
+    return {
+      id: "room-1",
+      groupId: "g1",
+      status: "open",
+      revision: 1,
+      title: "Almoço",
+      occurredOn: "2026-09-19",
+      totalCents: 100,
+      host: { id: "user-1", handle: "ana", name: "Ana", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-19T12:00:00Z",
+      itemCount: 2,
+      ownedItemCount: 0,
+      claimers: [],
+      expenseId: null,
+      ...overrides,
+    };
+  }
+
+  function hostedRoom(overrides: Partial<HostedAssignmentRoom> = {}): HostedAssignmentRoom {
+    return { ...summary(), groupName: "Viagem", ...overrides };
+  }
+
+  it("follows live summaries: progress and review stay, finalized and stale ones don't", () => {
+    useAppStore.getState().applyHostedAssignmentRooms([
+      hostedRoom(),
+      hostedRoom({ id: "room-2", groupId: null, groupName: null }),
+    ]);
+
+    useAppStore.getState().applyAssignmentRoomSummaries([
+      summary({ revision: 3, status: "closed", ownedItemCount: 2 }),
+    ]);
+    expect(useAppStore.getState().hostedAssignmentRooms[0]).toMatchObject({
+      status: "closed",
+      ownedItemCount: 2,
+      groupName: "Viagem",
+    });
+
+    useAppStore.getState().applyAssignmentRoomSummaries([summary({ revision: 2 })]);
+    expect(useAppStore.getState().hostedAssignmentRooms[0]?.status).toBe("closed");
+
+    useAppStore.getState().applyAssignmentRoomSummaries([
+      summary({ revision: 4, status: "finalized" }),
+    ]);
+    expect(useAppStore.getState().hostedAssignmentRooms.map((room) => room.id)).toEqual(["room-2"]);
+  });
+
+  it("keeps the home card in step with a fresher group open-rooms list", () => {
+    useAppStore.setState({ me, groups: { g1: snapshot("g1", []) } });
+    useAppStore.getState().applyHostedAssignmentRooms([hostedRoom({ revision: 5 })]);
+
+    useAppStore
+      .getState()
+      .applyOpenAssignmentRooms("g1", [{ ...summary({ revision: 8, ownedItemCount: 2 }), joined: true }]);
+    useAppStore.getState().applyAssignmentRoomSummaries([summary({ revision: 8, ownedItemCount: 2 })]);
+
+    expect(useAppStore.getState().hostedAssignmentRooms).toEqual([
+      hostedRoom({ revision: 8, ownedItemCount: 2 }),
+    ]);
+  });
+
+  it("prefers a newer live summary over an older list response", () => {
+    useAppStore.getState().applyAssignmentRoomSummaries([
+      summary({ revision: 5, status: "cancelled" }),
+    ]);
+
+    useAppStore.getState().applyHostedAssignmentRooms([hostedRoom({ revision: 2 })]);
+
+    expect(useAppStore.getState().hostedAssignmentRooms).toEqual([]);
+  });
+
+  it("keeps persisted rooms, drops junk, and starts empty for a v7 cache", () => {
+    expect(
+      migrateAppState({ hostedAssignmentRooms: [hostedRoom(), null, "x", { title: "no id" }] })
+        .hostedAssignmentRooms,
+    ).toEqual([hostedRoom()]);
+    expect(migrateAppState({ groupOrder: [] }).hostedAssignmentRooms).toEqual([]);
   });
 });
 

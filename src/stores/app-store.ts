@@ -13,6 +13,7 @@ import type {
   AssignmentRoomAccess,
   AssignmentRoomAccessEntry,
   AssignmentRoomSummary,
+  HostedAssignmentRoom,
   OpenAssignmentRoom,
 } from "@/types/assignment-room";
 import type {
@@ -99,6 +100,7 @@ export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
 export const settlementReadKey = (settlementId: string) => `settlement:${settlementId}`;
 export const CHARGES_READ_KEY = "charges";
 export const MY_EXPENSES_READ_KEY = "myExpenses";
+export const HOSTED_ASSIGNMENT_ROOMS_READ_KEY = "hostedAssignmentRooms";
 
 /** Nothing has been attempted for this resource yet. */
 export const IDLE_READ: ResourceReadState = { status: "idle" };
@@ -115,6 +117,8 @@ interface AppStateData {
   expenseDetails: Record<string, ExpenseDetail>;
   assignmentRoomsByExpenseId: Record<string, AssignmentRoomExpenseMetadata>;
   openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]>;
+  /** Open and in-review rooms the signed-in account hosts, newest first. */
+  hostedAssignmentRooms: HostedAssignmentRoom[];
   assignmentRoomSummaries: Record<string, AssignmentRoomSummary>;
   assignmentRoomAccess: Record<string, AssignmentRoomAccess>;
   activity: {
@@ -168,6 +172,7 @@ export interface AppState extends AppStateData {
   setBootstrapError(code: LedgerErrorCode): void;
   applyGroup(s: GroupSnapshot): void;
   applyOpenAssignmentRooms(groupId: string, rooms: OpenAssignmentRoom[]): void;
+  applyHostedAssignmentRooms(rooms: HostedAssignmentRoom[]): void;
   applyAssignmentRoomSummaries(summaries: AssignmentRoomSummary[]): void;
   setAssignmentRoomAccess(entries: AssignmentRoomAccessEntry[]): void;
   markOpenAssignmentRoomJoined(groupId: string, roomId: string): void;
@@ -205,6 +210,7 @@ const initialData: AppStateData = {
   expenseDetails: {},
   assignmentRoomsByExpenseId: {},
   openAssignmentRoomsByGroupId: {},
+  hostedAssignmentRooms: [],
   assignmentRoomSummaries: {},
   assignmentRoomAccess: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
@@ -225,6 +231,44 @@ const initialData: AppStateData = {
   bootstrapErrorCode: null,
   lastBootstrappedAccountId: null,
 };
+
+function isHostedStatus(status: AssignmentRoomSummary["status"]): boolean {
+  return status === "open" || status === "closed";
+}
+
+function hostedFromSummary(
+  summary: AssignmentRoomSummary,
+  groupName: string | null,
+): HostedAssignmentRoom {
+  return {
+    id: summary.id,
+    groupId: summary.groupId,
+    groupName,
+    status: summary.status,
+    revision: summary.revision,
+    title: summary.title,
+    occurredOn: summary.occurredOn,
+    totalCents: summary.totalCents,
+    host: summary.host,
+    createdAt: summary.createdAt,
+    itemCount: summary.itemCount,
+    ownedItemCount: summary.ownedItemCount,
+    claimers: summary.claimers,
+    expenseId: summary.expenseId,
+  };
+}
+
+function patchHostedRoom(
+  rooms: HostedAssignmentRoom[],
+  summary: AssignmentRoomSummary,
+): HostedAssignmentRoom[] {
+  const listed = rooms.find((room) => room.id === summary.id);
+  if (listed === undefined || summary.revision <= listed.revision) return rooms;
+  if (!isHostedStatus(summary.status)) return rooms.filter((room) => room.id !== summary.id);
+  return rooms.map((room) =>
+    room.id === summary.id ? hostedFromSummary(summary, room.groupName) : room,
+  );
+}
 
 function normalizeCursor(value: unknown): PageCursor | null {
   const record =
@@ -457,6 +501,15 @@ export function migrateAppState(persisted: unknown): AppStateData {
         typeof (room as Record<string, unknown>).id === "string",
     );
   }
+  const hostedAssignmentRooms = Array.isArray(root.hostedAssignmentRooms)
+    ? root.hostedAssignmentRooms.filter(
+        (room): room is HostedAssignmentRoom =>
+          typeof room === "object" &&
+          room !== null &&
+          !Array.isArray(room) &&
+          typeof (room as Record<string, unknown>).id === "string",
+      )
+    : [];
   const groupOrder = Array.isArray(root.groupOrder)
     ? root.groupOrder.filter((id): id is string => typeof id === "string")
     : [];
@@ -491,6 +544,7 @@ export function migrateAppState(persisted: unknown): AppStateData {
     expenseDetails,
     assignmentRoomsByExpenseId,
     openAssignmentRoomsByGroupId,
+    hostedAssignmentRooms,
     activity,
     activityViewedAt,
     conversations,
@@ -690,6 +744,10 @@ export const useAppStore = create<AppState>()(
               assignmentRoomSummaries[room.id] = room;
             }
           }
+          let hostedAssignmentRooms = state.hostedAssignmentRooms;
+          for (const room of rooms) {
+            hostedAssignmentRooms = patchHostedRoom(hostedAssignmentRooms, room);
+          }
           const list = rooms
             .map((room) => {
               const cached = assignmentRoomSummaries[room.id];
@@ -703,6 +761,7 @@ export const useAppStore = create<AppState>()(
             if (room.joined) assignmentRoomAccess[room.id] = "joined";
           }
           return {
+            hostedAssignmentRooms,
             assignmentRoomSummaries,
             assignmentRoomAccess,
             openAssignmentRoomsByGroupId: {
@@ -712,12 +771,27 @@ export const useAppStore = create<AppState>()(
           };
         }),
 
+      applyHostedAssignmentRooms: (rooms) =>
+        set((state) => ({
+          hostedAssignmentRooms: rooms
+            .map((room) => {
+              const cached =
+                room.groupId === null ? undefined : state.assignmentRoomSummaries[room.id];
+              return cached !== undefined && cached.revision > room.revision
+                ? hostedFromSummary(cached, room.groupName)
+                : room;
+            })
+            .filter((room) => isHostedStatus(room.status)),
+        })),
+
       applyAssignmentRoomSummaries: (summaries) =>
         set((state) => {
           const assignmentRoomSummaries = { ...state.assignmentRoomSummaries };
           let openAssignmentRoomsByGroupId = state.openAssignmentRoomsByGroupId;
+          let hostedAssignmentRooms = state.hostedAssignmentRooms;
           const meId = state.me?.id ?? null;
           for (const summary of summaries) {
+            hostedAssignmentRooms = patchHostedRoom(hostedAssignmentRooms, summary);
             const cached = assignmentRoomSummaries[summary.id];
             if (cached !== undefined && summary.revision <= cached.revision) continue;
             assignmentRoomSummaries[summary.id] = summary;
@@ -742,7 +816,7 @@ export const useAppStore = create<AppState>()(
               ),
             };
           }
-          return { assignmentRoomSummaries, openAssignmentRoomsByGroupId };
+          return { assignmentRoomSummaries, openAssignmentRoomsByGroupId, hostedAssignmentRooms };
         }),
 
       setAssignmentRoomAccess: (entries) =>
@@ -999,6 +1073,7 @@ export const useAppStore = create<AppState>()(
         expenseDetails: state.expenseDetails,
         assignmentRoomsByExpenseId: state.assignmentRoomsByExpenseId,
         openAssignmentRoomsByGroupId: state.openAssignmentRoomsByGroupId,
+        hostedAssignmentRooms: state.hostedAssignmentRooms,
         activity: state.activity,
         activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,
@@ -1012,10 +1087,7 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      // Bumped for archivedAt/formerMembers/financialHistorySharedAt: without
-      // it `migrate` never runs and an existing cache rehydrates snapshots
-      // missing those fields.
-      version: 7,
+      version: 8,
     },
   ),
 );

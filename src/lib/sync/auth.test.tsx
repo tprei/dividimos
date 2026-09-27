@@ -4,6 +4,7 @@ import { useAppStore } from "@/stores/app-store";
 import { attachAuthListener, signOut } from "./auth";
 import { getAuthGeneration, rpc } from "./client";
 import { runBootstrap } from "./bootstrap";
+import type * as RefreshModule from "./refresh";
 
 vi.mock("./client", async () => {
   const actual = await vi.importActual<typeof import("./client")>("./client");
@@ -14,6 +15,10 @@ vi.mock("./client", async () => {
     getSupabase: vi.fn(),
   };
 });
+vi.mock("./refresh", async () => ({
+  ...(await vi.importActual<typeof RefreshModule>("./refresh")),
+  refreshHostedAssignmentRooms: vi.fn(async () => {}),
+}));
 
 const mockDetachPush = vi.fn(async () => {});
 const mockLocalDetach = vi.fn<(accountId: string | null) => void>();

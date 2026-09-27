@@ -14,6 +14,7 @@ vi.mock("./client", () => ({
     return authState.generation;
   },
 }));
+vi.mock("./refresh", () => ({ refreshHostedAssignmentRooms: vi.fn(async () => {}) }));
 
 const rpcMock = vi.mocked(rpc);
 const bootstrapResponse: Bootstrap = {
