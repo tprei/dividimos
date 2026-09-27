@@ -45,7 +45,9 @@ beforeEach(() => {
         lastActivityAt: null,
         expenseCount: 0,
         pairwiseEdges: [],
-        overview: { avatar: { kind: "initials" }, spending: null },
+        archivedAt: null,
+        formerMembers: [],
+        financialHistorySharedAt: null,
       },
     },
   });

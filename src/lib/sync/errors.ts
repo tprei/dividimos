@@ -93,7 +93,7 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   invitation_not_accepted: "Alguém recusou o convite e ainda não entrou no grupo.",
   group_has_history: "Esse grupo já tem contas ou pagamentos e não pode ser apagado.",
   cannot_leave_dm: "Não dá para sair de uma conversa direta.",
-  outstanding_balance: "Ainda tem saldo pendente nesse grupo. Para sair, o saldo precisa estar em dia.",
+  outstanding_balance: "Ainda tem saldo pendente nesse grupo. Acertem as contas antes.",
   not_creator: "Só quem criou o grupo pode fazer isso.",
   member_excluded: "Essa pessoa foi removida do grupo.",
   invalid_link: "Esse convite não é mais válido.",

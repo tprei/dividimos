@@ -102,6 +102,9 @@ const groupNormal: GroupSnapshot = {
   lastMessage: null,
   lastActivityAt: "2026-09-06T12:00:00Z",
   pairwiseEdges: [],
+  archivedAt: null,
+  formerMembers: [],
+  financialHistorySharedAt: null,
 };
 
 const groupDm: GroupSnapshot = {
@@ -143,6 +146,9 @@ const groupDm: GroupSnapshot = {
   lastMessage: null,
   lastActivityAt: "2026-09-06T12:00:00Z",
   pairwiseEdges: [],
+  archivedAt: null,
+  formerMembers: [],
+  financialHistorySharedAt: null,
 };
 
 const expenseCreatedEvent: GroupEvent = {

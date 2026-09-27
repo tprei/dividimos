@@ -91,6 +91,9 @@ function makeSnapshot(
     lastMessage: null,
     lastActivityAt: "",
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
   };
 }
 

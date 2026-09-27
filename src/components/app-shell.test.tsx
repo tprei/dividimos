@@ -722,6 +722,9 @@ describe("AppShell activity bell", () => {
     lastActivityAt,
     expenseCount: 0,
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
   });
 
   beforeEach(() => {

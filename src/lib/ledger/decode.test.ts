@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Bootstrap } from "@/types/ledger";
+import type { WireBootstrap } from "@/types/ledger";
 import {
   decodeBootstrap,
   decodeChatMessage,
@@ -21,7 +21,7 @@ import {
 import { decodeSettlementDetail } from "./decode-settlement-detail";
 
 describe("decodeBootstrap", () => {
-  const fixture: Bootstrap = {
+  const fixture: WireBootstrap = {
     me: {
       id: "user-1",
       handle: "alice",
@@ -243,6 +243,25 @@ describe("decodeBootstrap", () => {
     if (!result.ok) {
       expect(result.issue.code).toBe("invalid_wire");
       expect(result.issue.path).toEqual(["groups", 0, "pairwiseEdges", 0, "amountCents"]);
+    }
+  });
+
+  it("rejects a v1 snapshot that grew lifecycle keys", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    invalid.groups[0].archivedAt = null;
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.code).toBe("invalid_wire");
+      expect(result.issue.path).toEqual(["groups", 0, "archivedAt"]);
+    }
+
+    const withGroupLatch = JSON.parse(JSON.stringify(fixture));
+    withGroupLatch.groups[0].group.financialHistorySharedAt = null;
+    const groupResult = decodeBootstrap(withGroupLatch);
+    expect(groupResult.ok).toBe(false);
+    if (!groupResult.ok) {
+      expect(groupResult.issue.path).toEqual(["groups", 0, "group", "financialHistorySharedAt"]);
     }
   });
 });

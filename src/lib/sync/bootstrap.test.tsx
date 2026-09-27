@@ -87,7 +87,7 @@ describe("catchUpBootstrap", () => {
     await catchUpBootstrap();
 
     expect(rpcMock).toHaveBeenCalledExactlyOnceWith(
-      "bootstrap_overview",
+      "bootstrap_overview_v2",
       {},
       expect.any(Function),
     );

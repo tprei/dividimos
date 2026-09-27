@@ -12,6 +12,7 @@ import { LedgerError, type LedgerErrorCode } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type {
+  GroupArchiveAck,
   InviteLink,
   Me,
   MutationAck,
@@ -105,6 +106,17 @@ function decodeGroupId(raw: unknown): ValidationResult<{ groupId: string }, Wire
     return { ok: true, value: { groupId: raw.groupId } };
   }
   return { ok: false, issue: { code: "invalid_wire", path: ["groupId"] } };
+}
+
+function decodeGroupArchiveAck(raw: unknown): ValidationResult<GroupArchiveAck, WireIssue> {
+  if (
+    isObject(raw) &&
+    typeof raw.groupId === "string" &&
+    (raw.archivedAt === null || typeof raw.archivedAt === "string")
+  ) {
+    return { ok: true, value: { groupId: raw.groupId, archivedAt: raw.archivedAt } };
+  }
+  return { ok: false, issue: { code: "invalid_wire", path: ["archivedAt"] } };
 }
 
 function decodeGuestClaimToken(raw: unknown): ValidationResult<GuestClaimToken, WireIssue> {
@@ -260,6 +272,46 @@ export async function retryNudgeDispatch(eventId: number): Promise<NudgeDelivery
 export async function deleteGroup(groupId: string): Promise<void> {
   await rpc("delete_group", { p_group_id: groupId }, decodeGroupId);
   useAppStore.getState().removeGroup(groupId);
+}
+
+async function commitGroupArchive(
+  groupId: string,
+  optimisticArchivedAt: string | null,
+  name: "archive_group" | "unarchive_group",
+): Promise<void> {
+  const generation = getAuthGeneration();
+  const prior = useAppStore.getState().groups[groupId];
+  useAppStore.getState().setGroupArchivedAt(groupId, optimisticArchivedAt);
+  const patched = useAppStore.getState().groups[groupId];
+  try {
+    const ack = await rpc(name, { p_group_id: groupId }, decodeGroupArchiveAck);
+    if (getAuthGeneration() !== generation) return;
+    const state = useAppStore.getState();
+    if (state.groups[groupId] !== patched) return;
+    state.setGroupArchivedAt(groupId, ack.archivedAt);
+  } catch (error) {
+    if (getAuthGeneration() !== generation) throw error;
+    rollbackAndReconcile(
+      [
+        () => {
+          const state = useAppStore.getState();
+          if (prior === undefined || state.groups[groupId] !== patched) return;
+          state.patch((s) => ({ groups: { ...s.groups, [groupId]: prior } }));
+        },
+      ],
+      groupId,
+      error,
+      refreshGroup,
+    );
+  }
+}
+
+export async function archiveGroup(groupId: string): Promise<void> {
+  await commitGroupArchive(groupId, new Date().toISOString(), "archive_group");
+}
+
+export async function unarchiveGroup(groupId: string): Promise<void> {
+  await commitGroupArchive(groupId, null, "unarchive_group");
 }
 
 export async function getOrCreateDm(userId: string): Promise<{ groupId: string; created: boolean }> {

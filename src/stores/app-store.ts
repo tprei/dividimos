@@ -171,6 +171,7 @@ export interface AppState extends AppStateData {
   applyAssignmentRoomSummaries(summaries: AssignmentRoomSummary[]): void;
   setAssignmentRoomAccess(entries: AssignmentRoomAccessEntry[]): void;
   markOpenAssignmentRoomJoined(groupId: string, roomId: string): void;
+  setGroupArchivedAt(groupId: string, archivedAt: string | null): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpenseContext(context: ExpenseContext): void;
@@ -299,6 +300,9 @@ export function migrateAppState(persisted: unknown): AppStateData {
       members,
       expenseCount: snapshot.expenseCount ?? 0,
       pairwiseEdges: snapshot.pairwiseEdges ?? [],
+      archivedAt: snapshot.archivedAt ?? null,
+      financialHistorySharedAt: snapshot.financialHistorySharedAt ?? null,
+      formerMembers: Array.isArray(snapshot.formerMembers) ? snapshot.formerMembers : [],
     };
   }
 
@@ -611,6 +615,15 @@ export const useAppStore = create<AppState>()(
               ...state.expenseLists,
               [id]: listFromSeed(state.expenseLists[id], s.recentExpenses),
             },
+          };
+        }),
+
+      setGroupArchivedAt: (groupId, archivedAt) =>
+        set((state) => {
+          const current = state.groups[groupId];
+          if (current === undefined || current.archivedAt === archivedAt) return {};
+          return {
+            groups: { ...state.groups, [groupId]: { ...current, archivedAt } },
           };
         }),
 
@@ -999,9 +1012,10 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      // Bumped for openAssignmentRoomsByGroupId: without it `migrate` never
-      // runs and an existing v5 cache rehydrates the field as undefined.
-      version: 6,
+      // Bumped for archivedAt/formerMembers/financialHistorySharedAt: without
+      // it `migrate` never runs and an existing cache rehydrates snapshots
+      // missing those fields.
+      version: 7,
     },
   ),
 );

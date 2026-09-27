@@ -12,6 +12,8 @@ import type {
   GroupSnapshot,
   GroupSpending,
   GroupSpendingRow,
+  WireBootstrap,
+  WireGroupSnapshot,
   WireIssue,
 } from "@/types/ledger";
 import {
@@ -20,12 +22,20 @@ import {
   fail,
   id,
   isRecord,
+  nullableStr,
   ok,
   oneOf,
   str,
 } from "@/lib/ledger/decode-expense";
 
 const GROUP_OVERVIEW_KEYS = ["snapshot", "overview"] as const;
+const GROUP_OVERVIEW_V2_KEYS = [
+  "snapshot",
+  "overview",
+  "archivedAt",
+  "financialHistorySharedAt",
+  "formerMembers",
+] as const;
 const GROUP_OVERVIEW_DATA_KEYS = ["avatar", "spending"] as const;
 const GROUP_AVATAR_INITIALS_KEYS = ["kind"] as const;
 const GROUP_AVATAR_EMOJI_KEYS = ["kind", "emoji"] as const;
@@ -128,7 +138,7 @@ function decodeOverview(
 export function decodeGroupOverview(
   raw: unknown,
   path: Path = [],
-): ValidationResult<GroupSnapshot, WireIssue> {
+): ValidationResult<WireGroupSnapshot, WireIssue> {
   if (!isRecord(raw)) return fail(path);
   const keys = exactKeys(raw, GROUP_OVERVIEW_KEYS, path);
   if (!keys.ok) return keys;
@@ -138,9 +148,60 @@ export function decodeGroupOverview(
   return overview.ok ? ok({ ...snapshot.value, overview: overview.value }) : overview;
 }
 
+export function decodeGroupOverviewV2(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<GroupSnapshot, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, GROUP_OVERVIEW_V2_KEYS, path);
+  if (!keys.ok) return keys;
+  const snapshot = decodeGroupSnapshot(raw.snapshot, [...path, "snapshot"]);
+  if (!snapshot.ok) return snapshot;
+  const overview = decodeOverview(raw.overview, [...path, "overview"]);
+  if (!overview.ok) return overview;
+  const archivedAt = nullableStr(raw.archivedAt, [...path, "archivedAt"]);
+  if (!archivedAt.ok) return archivedAt;
+  const financialHistorySharedAt = nullableStr(raw.financialHistorySharedAt, [
+    ...path,
+    "financialHistorySharedAt",
+  ]);
+  if (!financialHistorySharedAt.ok) return financialHistorySharedAt;
+  const formerMembers = arrayOf(
+    raw.formerMembers,
+    [...path, "formerMembers"],
+    decodeUserProfile,
+  );
+  if (!formerMembers.ok) return formerMembers;
+
+  return ok({
+    ...snapshot.value,
+    overview: overview.value,
+    archivedAt: archivedAt.value,
+    financialHistorySharedAt: financialHistorySharedAt.value,
+    formerMembers: formerMembers.value,
+  });
+}
+
 
 
 export function decodeBootstrapOverview(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<WireBootstrap, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, BOOTSTRAP_OVERVIEW_KEYS, path);
+  if (!keys.ok) return keys;
+  const me = decodeMe(raw.me, [...path, "me"]);
+  if (!me.ok) return me;
+  const groups = arrayOf(raw.groups, [...path, "groups"], decodeGroupOverview);
+  if (!groups.ok) return groups;
+  const serverTime = str(raw.serverTime, [...path, "serverTime"]);
+  return serverTime.ok
+    ? ok({ me: me.value, groups: groups.value, serverTime: serverTime.value })
+    : serverTime;
+}
+
+export function decodeBootstrapOverviewV2(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<Bootstrap, WireIssue> {
@@ -149,7 +210,7 @@ export function decodeBootstrapOverview(
   if (!keys.ok) return keys;
   const me = decodeMe(raw.me, [...path, "me"]);
   if (!me.ok) return me;
-  const groups = arrayOf(raw.groups, [...path, "groups"], decodeGroupOverview);
+  const groups = arrayOf(raw.groups, [...path, "groups"], decodeGroupOverviewV2);
   if (!groups.ok) return groups;
   const serverTime = str(raw.serverTime, [...path, "serverTime"]);
   return serverTime.ok

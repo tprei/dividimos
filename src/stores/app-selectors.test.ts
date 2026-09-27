@@ -55,6 +55,9 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     },
     members: [],
     balances: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -342,6 +345,9 @@ describe("selectDmMembership", () => {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00.000Z",
     },
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
     members:
       status === null
         ? []

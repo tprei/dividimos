@@ -11,7 +11,7 @@ import {
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import { propertyConfig } from "@/test/property";
-import type { GroupSnapshot } from "@/types/ledger";
+import type { WireGroupSnapshot } from "@/types/ledger";
 import {
   type ExpenseFact,
   type LedgerFact,
@@ -118,7 +118,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger model parity", () => {
     users = await createTestUsers(USER_COUNT);
   });
 
-  async function readSnapshot(groupId: string): Promise<GroupSnapshot> {
+  async function readSnapshot(groupId: string): Promise<WireGroupSnapshot> {
     const client = authenticateAs(users[0]);
     const { data, error } = await client.rpc("get_group", { p_group_id: groupId });
     if (error) {

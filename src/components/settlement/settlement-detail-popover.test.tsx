@@ -66,6 +66,9 @@ function groupSnapshot(): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    formerMembers: [],
+    financialHistorySharedAt: null,
   };
 }
 

@@ -6,7 +6,7 @@ import {
 } from "@/lib/ledger/decode";
 import { decodeExpenseContext, decodeOpenAssignmentRooms } from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
-import { decodeGroupOverview } from "@/lib/ledger/decode-group-overview";
+import { decodeGroupOverviewV2 } from "@/lib/ledger/decode-group-overview";
 import {
   CHARGES_READ_KEY,
   conversationReadKey,
@@ -199,7 +199,7 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   const overviewRead = trackedRead(
     key,
     attempt,
-    () => rpc("get_group_overview", { p_group_id: groupId }, decodeGroupOverview),
+    () => rpc("get_group_overview_v2", { p_group_id: groupId }, decodeGroupOverviewV2),
     (value) => useAppStore.getState().applyGroup(value),
   );
   const roomsRead = startOpenAssignmentRoomsRead(groupId);

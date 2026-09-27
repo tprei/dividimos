@@ -372,6 +372,9 @@ describe("ItemDivisionEditor pending invite", () => {
       lastMessage: null,
       lastActivityAt: "2026-09-01T00:00:00Z",
       pairwiseEdges: [],
+      archivedAt: null,
+      formerMembers: [],
+      financialHistorySharedAt: null,
     };
     useAppStore.setState({ groups: { g1: snapshot } });
 

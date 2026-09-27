@@ -46,6 +46,9 @@ const churras: GroupSnapshot = {
   lastMessage: null,
   lastActivityAt: "",
   pairwiseEdges: [],
+  archivedAt: null,
+  formerMembers: [],
+  financialHistorySharedAt: null,
 };
 
 interface HostProps {

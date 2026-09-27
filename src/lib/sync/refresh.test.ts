@@ -64,6 +64,9 @@ function snapshot(groupId: string, ledgerVersion: number): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
 }
 
@@ -221,7 +224,7 @@ describe("refreshGroup", () => {
       expect.any(Function),
     );
     expect(rpc).toHaveBeenCalledWith(
-      "get_group_overview",
+      "get_group_overview_v2",
       { p_group_id: "g1" },
       expect.any(Function),
     );
