@@ -11,7 +11,8 @@ export type RateLimitBucket =
   | "chat.parse"
   | "receipt.ocr"
   | "push.send"
-  | "push.send-pair";
+  | "push.send-pair"
+  | "reports.create";
 
 export interface RateLimitConfig {
   limit: number;
@@ -28,6 +29,7 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "receipt.ocr":        { limit: 30,  windowSeconds: 60 },
   "push.send":          { limit: 60,  windowSeconds: 60 },
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
+  "reports.create":     { limit: 5,   windowSeconds: 60 },
 };
 
 const MAX_SUBJECT_BYTES = 512;
