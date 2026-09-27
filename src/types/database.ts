@@ -217,24 +217,27 @@ export type Database = {
       chat_messages: {
         Row: {
           client_id: string
-          content: string
+          content: string | null
           created_at: string
+          erased_at: string | null
           group_id: string
           id: string
           sender_id: string
         }
         Insert: {
           client_id: string
-          content: string
+          content?: string | null
           created_at?: string
+          erased_at?: string | null
           group_id: string
           id?: string
           sender_id: string
         }
         Update: {
           client_id?: string
-          content?: string
+          content?: string | null
           created_at?: string
+          erased_at?: string | null
           group_id?: string
           id?: string
           sender_id?: string
@@ -994,6 +997,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          deleted_at: string | null
           email: string
           handle: string
           id: string
@@ -1009,6 +1013,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           email: string
           handle: string
           id: string
@@ -1024,6 +1029,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           created_at?: string
+          deleted_at?: string | null
           email?: string
           handle?: string
           id?: string
