@@ -73,6 +73,7 @@ export type Database = {
       assignment_room_items: {
         Row: {
           description: string
+          icon: Database["public"]["Enums"]["expense_item_icon"] | null
           id: string
           ordinal: number
           quantity_milliunits: number
@@ -83,6 +84,7 @@ export type Database = {
         }
         Insert: {
           description: string
+          icon?: Database["public"]["Enums"]["expense_item_icon"] | null
           id: string
           ordinal: number
           quantity_milliunits: number
@@ -93,6 +95,7 @@ export type Database = {
         }
         Update: {
           description?: string
+          icon?: Database["public"]["Enums"]["expense_item_icon"] | null
           id?: string
           ordinal?: number
           quantity_milliunits?: number

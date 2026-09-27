@@ -589,6 +589,7 @@ function buildAssignmentDivisionState(
     quantityMilliunits: item.quantityMilliunits,
     unitPriceCents: item.unitPriceCents,
     totalPriceCents: item.totalPriceCents,
+    icon: item.icon,
   }));
   const participants: ParticipantRef[] = active.map(({ participant }) => {
     const ref = refByParticipantId.get(participant.id);
