@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAppStore } from "@/stores/app-store";
 import type { Database } from "@/types/database";
 import type { ChatMessage, GroupSnapshot, Me } from "@/types/ledger";
-import { runBootstrap } from "./bootstrap";
-import { getSupabase } from "./client";
+import { catchUpBootstrap } from "./bootstrap";
+import { getSupabase, rpc } from "./client";
 import {
   mergeChatBroadcast,
   parseMembershipPayload,
@@ -16,10 +16,12 @@ import { refreshGroup } from "./refresh";
 const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("./client", () => ({
   getSupabase: vi.fn(),
+  rpc: vi.fn(),
   getAuthGeneration: () => authState.generation,
 }));
-vi.mock("./bootstrap", () => ({ runBootstrap: vi.fn() }));
 vi.mock("./refresh", () => ({ refreshGroup: vi.fn(async () => {}) }));
+
+const rpcMock = vi.mocked(rpc);
 
 const meUser: Me = {
   id: "user-1",
@@ -36,6 +38,12 @@ const meUser: Me = {
     settlements: true,
     messages: true,
   },
+};
+
+const bootstrapResponse = {
+  me: meUser,
+  groups: [],
+  serverTime: "2026-09-26T12:00:00.000Z",
 };
 
 const baseSnapshot: GroupSnapshot = {
@@ -320,8 +328,6 @@ class FakeChannel {
 
 let createdChannels: FakeChannel[] = [];
 let removedChannels: FakeChannel[] = [];
-const bootstrapResolvers: Array<(value: void) => void> = [];
-const bootstrapPromises: Promise<void>[] = [];
 
 describe("parseMembershipPayload", () => {
   it("accepts a payload with a string group_id", () => {
@@ -342,19 +348,21 @@ describe("parseMembershipPayload", () => {
 describe("startRealtime", () => {
   let stop: (() => void) | null = null;
 
-  afterEach(() => {
+  afterEach(async () => {
     stop?.();
     stop = null;
+    await Promise.resolve();
+    await Promise.resolve();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await catchUpBootstrap().catch(() => {});
     vi.clearAllMocks();
     createdChannels = [];
     removedChannels = [];
     authState.generation = 0;
-    bootstrapResolvers.length = 0;
-    bootstrapPromises.length = 0;
     useAppStore.getState().reset();
+    rpcMock.mockResolvedValue(bootstrapResponse as never);
 
     const fakeSupabase = {
       channel: (topic: string, config?: unknown) => {
@@ -364,18 +372,20 @@ describe("startRealtime", () => {
       },
       removeChannel: (channel: FakeChannel) => {
         removedChannels.push(channel);
+        channel.emitStatus("CLOSED");
+        return Promise.resolve("ok");
       },
     };
     vi.mocked(getSupabase).mockImplementation(
       () => fakeSupabase as unknown as SupabaseClient<Database>,
     );
-    vi.mocked(runBootstrap).mockImplementation(() => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      bootstrapResolvers.push(resolve);
-      bootstrapPromises.push(promise);
-      return promise;
-    });
   });
+
+  function groupChannel(groupId: string): FakeChannel {
+    const channel = createdChannels.find((c) => c.topic === `group:${groupId}`);
+    if (!channel) throw new Error(`group channel ${groupId} not opened`);
+    return channel;
+  }
 
   function userChannel(userId: string): FakeChannel {
     const channel = createdChannels.find((c) => c.topic === `user:${userId}`);
@@ -383,8 +393,8 @@ describe("startRealtime", () => {
     return channel;
   }
 
-  async function settleRefreshes(): Promise<void> {
-    await Promise.allSettled(bootstrapPromises);
+  function bootstrapReads(): number {
+    return rpcMock.mock.calls.filter(([name]) => name === "bootstrap_overview").length;
   }
 
   it("opens the user channel with the membership event once me exists", () => {
@@ -395,18 +405,6 @@ describe("startRealtime", () => {
     expect(channel.config).toEqual({ config: { private: true } });
     expect(channel.subscribed).toBe(true);
     expect(channel.listeners.has("membership")).toBe(true);
-  });
-  it("ignores chat broadcasts from the previous account", () => {
-    useAppStore.setState({ me: meUser });
-    const stopChat = subscribeChat("group-1");
-    const channel = createdChannels.find((item) => item.topic === "chat:group-1");
-    if (!channel) throw new Error("chat channel not opened");
-
-    authState.generation = 1;
-    channel.emit("message", incomingMessage);
-
-    expect(useAppStore.getState().conversations).toEqual({});
-    stopChat();
   });
 
   it("opens no user channel before sign-in and opens it when me appears", () => {
@@ -442,20 +440,29 @@ describe("startRealtime", () => {
     expect(removedChannels).toStrictEqual([first]);
   });
 
-  it("refreshes bootstrap exactly once for a valid membership broadcast", async () => {
+  it("ignores chat broadcasts from the previous account", () => {
     useAppStore.setState({ me: meUser });
-    stop = startRealtime();
-    const channel = userChannel(meUser.id);
+    const stopChat = subscribeChat("group-1");
+    const channel = createdChannels.find((item) => item.topic === "chat:group-1");
+    if (!channel) throw new Error("chat channel not opened");
 
-    channel.emit("membership", { group_id: "group-9" });
-    expect(runBootstrap).toHaveBeenCalledTimes(1);
+    authState.generation = 1;
+    channel.emit("message", incomingMessage);
 
-    bootstrapResolvers[0]?.();
-    await settleRefreshes();
-    expect(runBootstrap).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().conversations).toEqual({});
+    stopChat();
   });
 
-  it("ignores malformed membership broadcasts", async () => {
+  it("reads bootstrap once for a valid membership broadcast", () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+
+    userChannel(meUser.id).emit("membership", { group_id: "group-9" });
+
+    expect(bootstrapReads()).toBe(1);
+  });
+
+  it("ignores malformed membership broadcasts", () => {
     useAppStore.setState({ me: meUser });
     stop = startRealtime();
     const channel = userChannel(meUser.id);
@@ -464,26 +471,183 @@ describe("startRealtime", () => {
     channel.emit("membership", "group-9");
     channel.emit("membership", null);
 
-    await settleRefreshes();
-    expect(runBootstrap).not.toHaveBeenCalled();
+    expect(bootstrapReads()).toBe(0);
   });
 
-  it("coalesces overlapping membership broadcasts into one in-flight refresh", async () => {
-    useAppStore.setState({ me: meUser });
+  it("catches up a first join through its pass and refreshes a group once per recovery", () => {
+    useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
     stop = startRealtime();
-    const channel = userChannel(meUser.id);
+    const channel = createdChannels.find((c) => c.topic === "group:group-1");
+    if (!channel) throw new Error("group channel not opened");
 
-    channel.emit("membership", { group_id: "group-9" });
-    channel.emit("membership", { group_id: "group-10" });
-    channel.emit("membership", { group_id: "group-11" });
-    expect(runBootstrap).toHaveBeenCalledTimes(1);
+    channel.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).not.toHaveBeenCalled();
+    expect(bootstrapReads()).toBe(0);
 
-    bootstrapResolvers[0]?.();
-    await vi.waitFor(() => expect(runBootstrap).toHaveBeenCalledTimes(2));
+    userChannel(meUser.id).emitStatus("SUBSCRIBED");
+    expect(bootstrapReads()).toBe(1);
+    expect(refreshGroup).not.toHaveBeenCalled();
 
-    bootstrapResolvers[1]?.();
-    await settleRefreshes();
-    expect(runBootstrap).toHaveBeenCalledTimes(2);
+    channel.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).not.toHaveBeenCalled();
+    expect(bootstrapReads()).toBe(1);
+
+    channel.emitStatus("CHANNEL_ERROR");
+    channel.emitStatus("TIMED_OUT");
+    channel.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledTimes(1);
+    expect(refreshGroup).toHaveBeenCalledWith("group-1");
+    expect(bootstrapReads()).toBe(1);
+
+    channel.emitStatus("CHANNEL_ERROR");
+    channel.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes a group whose first join failed once it later subscribes", () => {
+    useAppStore.setState({ groupOrder: ["group-error", "group-timeout"] });
+    stop = startRealtime();
+    const failed = groupChannel("group-error");
+    const timedOut = groupChannel("group-timeout");
+
+    failed.emitStatus("CHANNEL_ERROR");
+    timedOut.emitStatus("TIMED_OUT");
+    expect(bootstrapReads()).toBe(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
+
+    failed.emitStatus("SUBSCRIBED");
+    timedOut.emitStatus("SUBSCRIBED");
+
+    expect(refreshGroup).toHaveBeenCalledTimes(2);
+    expect(refreshGroup).toHaveBeenNthCalledWith(1, "group-error");
+    expect(refreshGroup).toHaveBeenNthCalledWith(2, "group-timeout");
+  });
+
+  it("catches up again for a group channel added after startup", () => {
+    useAppStore.setState({ groupOrder: ["group-1"] });
+    stop = startRealtime();
+    groupChannel("group-1").emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-1");
+    expect(bootstrapReads()).toBe(0);
+
+    useAppStore.setState({ groupOrder: ["group-1", "group-2"] });
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+
+    expect(refreshGroup).toHaveBeenLastCalledWith("group-2");
+    expect(refreshGroup).toHaveBeenCalledTimes(2);
+    expect(bootstrapReads()).toBe(0);
+  });
+
+  it("catches up once for several groups joining in one pass", () => {
+    useAppStore.setState({ groupOrder: ["group-1", "group-2", "group-3"] });
+    stop = startRealtime();
+
+    groupChannel("group-1").emitStatus("SUBSCRIBED");
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+    expect(bootstrapReads()).toBe(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
+
+    groupChannel("group-3").emitStatus("SUBSCRIBED");
+
+    expect(bootstrapReads()).toBe(1);
+    expect(refreshGroup).not.toHaveBeenCalled();
+  });
+
+  it("catches up once for the user channel plus groups in one pass", () => {
+    useAppStore.setState({ me: meUser, groupOrder: ["group-1", "group-2"] });
+    stop = startRealtime();
+
+    groupChannel("group-1").emitStatus("SUBSCRIBED");
+    userChannel(meUser.id).emitStatus("SUBSCRIBED");
+    expect(bootstrapReads()).toBe(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
+
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+
+    expect(bootstrapReads()).toBe(1);
+    expect(refreshGroup).not.toHaveBeenCalled();
+  });
+
+  it("drops a group removed while pending and flushes the rest of its pass", () => {
+    useAppStore.setState({ groupOrder: ["group-1", "group-2"] });
+    stop = startRealtime();
+    const removed = groupChannel("group-1");
+
+    useAppStore.setState({ groupOrder: ["group-2"] });
+
+    expect(removedChannels).toContain(removed);
+    expect(bootstrapReads()).toBe(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
+
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+
+    expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-2");
+    expect(bootstrapReads()).toBe(0);
+  });
+
+  it("does not catch up a group that joined and was removed before its pass flushed", () => {
+    useAppStore.setState({ groupOrder: ["group-1", "group-2"] });
+    stop = startRealtime();
+
+    groupChannel("group-1").emitStatus("SUBSCRIBED");
+    useAppStore.setState({ groupOrder: ["group-2"] });
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+
+    expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-2");
+    expect(bootstrapReads()).toBe(0);
+  });
+
+  it("flushes a later pass independently while an earlier pass is pending", () => {
+    useAppStore.setState({ groupOrder: ["group-1"] });
+    stop = startRealtime();
+
+    useAppStore.setState({ groupOrder: ["group-1", "group-2"] });
+    groupChannel("group-2").emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-2");
+    expect(bootstrapReads()).toBe(0);
+
+    groupChannel("group-1").emitStatus("SUBSCRIBED");
+
+    expect(refreshGroup).toHaveBeenLastCalledWith("group-1");
+    expect(refreshGroup).toHaveBeenCalledTimes(2);
+    expect(bootstrapReads()).toBe(0);
+  });
+
+  it("subscribes a fresh channel for a group removed and re-added", () => {
+    useAppStore.setState({ groupOrder: ["group-1"] });
+    stop = startRealtime();
+    const original = groupChannel("group-1");
+    original.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-1");
+
+    useAppStore.setState({ groupOrder: [] });
+    useAppStore.setState({ groupOrder: ["group-1"] });
+
+    expect(removedChannels).toEqual([original]);
+    const fresh = createdChannels[1];
+    if (!fresh) throw new Error("re-added group channel not opened");
+    expect(fresh.topic).toBe("group:group-1");
+    expect(fresh.subscribed).toBe(true);
+
+    fresh.emitStatus("SUBSCRIBED");
+    expect(refreshGroup).toHaveBeenCalledTimes(2);
+
+    fresh.emit("ledger", { group_id: "group-1", ledger_version: 6, event_id: 21 });
+    expect(refreshGroup).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignores channel statuses after the signed-in account changed", () => {
+    useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+    stop = startRealtime();
+    authState.generation = 1;
+    const channel = groupChannel("group-1");
+
+    channel.emitStatus("SUBSCRIBED");
+    channel.emitStatus("CHANNEL_ERROR");
+    channel.emitStatus("SUBSCRIBED");
+
+    expect(bootstrapReads()).toBe(0);
+    expect(refreshGroup).not.toHaveBeenCalled();
   });
 
   it("removes the user channel on cleanup", () => {
@@ -496,37 +660,18 @@ describe("startRealtime", () => {
     expect(removedChannels).toStrictEqual([channel]);
   });
 
-  it("refreshes a group once when its channel recovers, not on first subscribe", () => {
-    useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
-    stop = startRealtime();
-    const channel = createdChannels.find((c) => c.topic === "group:group-1");
-    if (!channel) throw new Error("group channel not opened");
-
-    channel.emitStatus("SUBSCRIBED");
-    expect(refreshGroup).not.toHaveBeenCalled();
-
-    channel.emitStatus("CHANNEL_ERROR");
-    channel.emitStatus("TIMED_OUT");
-    channel.emitStatus("SUBSCRIBED");
-    expect(refreshGroup).toHaveBeenCalledTimes(1);
-    expect(refreshGroup).toHaveBeenCalledWith("group-1");
-
-    channel.emitStatus("CHANNEL_ERROR");
-    channel.emitStatus("SUBSCRIBED");
-    expect(refreshGroup).toHaveBeenCalledTimes(2);
-  });
-
-  it("refreshes memberships when the user channel recovers after a drop", () => {
+  it("catches up when the user channel recovers after a drop", () => {
     useAppStore.setState({ me: meUser });
     stop = startRealtime();
     const channel = userChannel(meUser.id);
 
-    channel.emitStatus("SUBSCRIBED");
-    expect(runBootstrap).not.toHaveBeenCalled();
+    channel.emitStatus("CHANNEL_ERROR");
+    expect(bootstrapReads()).toBe(0);
 
-    channel.emitStatus("CLOSED");
     channel.emitStatus("SUBSCRIBED");
-    expect(runBootstrap).toHaveBeenCalledTimes(1);
+
+    expect(bootstrapReads()).toBe(1);
+    expect(refreshGroup).not.toHaveBeenCalled();
   });
 
   describe("assignment_room broadcasts", () => {
