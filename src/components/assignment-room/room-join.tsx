@@ -1,18 +1,15 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { ArrowRight, LoaderCircle } from "lucide-react";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { haptics } from "@/hooks/use-haptics";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RoomJoinIntro, RoomJoinSteps } from "./room-join-intro";
+import { roomJoinFirstName } from "./room-join-name";
 
-/**
- * Presentation-only identity resolved at the route load boundary so the join
- * form can match the invitee: an authenticated account skips the guest-name
- * field, an anonymous visitor keeps it. It never grants access — the join RPC
- * still identifies the actor server-side.
- */
 export type RoomJoinIdentity =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -63,16 +60,24 @@ export function RoomJoin({
     onJoin(normalized);
   }
 
-  const firstName = identity.status === "account" ? identity.name?.trim().split(/\s+/)[0] : null;
+  const firstName = identity.status === "account" ? roomJoinFirstName(identity.name) : null;
+  let joinLabel = firstName ? `Entrar como ${firstName}` : "Entrar";
+  if (pending) joinLabel = "Entrando...";
 
   return (
-    <section className="mx-auto w-full max-w-md space-y-6 rounded-2xl border bg-card p-4">
-      <div className="-mx-4 -mt-4">
-        <ScreenHeader title="Sala de itens" subtitle="Cada um escolhe sua parte" back={Boolean(onBack)} onBack={leave} />
-      </div>
+    <section className="mx-auto w-full max-w-4xl space-y-3 text-card-foreground">
+      <ScreenHeader title="Sala de itens" back={Boolean(onBack)} onBack={leave} />
+      <div className="grid gap-5 md:grid-cols-2 md:items-center md:gap-8">
+        <RoomJoinIntro />
+        <div className="min-w-0 space-y-5 rounded-3xl border bg-card p-5 shadow-sm sm:p-7 md:col-start-2 md:row-span-2 md:row-start-1 md:p-8" aria-busy={pending}>
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold tracking-tight">Sua parte começa aqui</h2>
+            <p className="text-sm text-muted-foreground">Entre pra ver os itens e escolher os seus.</p>
+          </div>
 
       {identity.status === "loading" && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="size-5 motion-safe:animate-spin" />
           Verificando sua conta...
         </p>
       )}
@@ -99,7 +104,7 @@ export function RoomJoin({
             <label className="text-sm font-medium" htmlFor="room-display-name">
               Seu nome
             </label>
-            <div className="flex gap-2">
+            <div className="space-y-3">
               <Input
                 id="room-display-name"
                 className="h-12 min-w-0 flex-1 text-base md:text-sm"
@@ -118,11 +123,12 @@ export function RoomJoin({
               <Button
                 type="submit"
                 variant="default"
-                className="min-h-12 px-4 motion-reduce:transform-none motion-reduce:transition-none"
+                className="min-h-12 w-full px-4 motion-reduce:transform-none motion-reduce:transition-none"
                 aria-label="Entrar na sala"
                 disabled={pending}
               >
                 {pending ? "Entrando..." : "Entrar"}
+                <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
               </Button>
             </div>
           </div>
@@ -131,7 +137,7 @@ export function RoomJoin({
               {localError || errorMessage}
             </p>
           )}
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-center text-sm text-muted-foreground">
             Você pode vincular sua conta depois.
           </p>
         </form>
@@ -151,10 +157,14 @@ export function RoomJoin({
             disabled={pending}
             onClick={() => { haptics.tap(); onJoin(""); }}
           >
-            {pending ? "Entrando..." : firstName ? `Entrar como ${firstName}` : "Entrar"}
+            <span className="truncate">{joinLabel}</span>
+            <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
           </Button>
         </div>
       )}
+        </div>
+        <RoomJoinSteps />
+      </div>
     </section>
   );
 }

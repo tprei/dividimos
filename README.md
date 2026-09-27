@@ -55,6 +55,7 @@ Participantes junta nome da conta, data, grupo e quem participa. Depois de escan
 A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O anfitrião escaneia, cria a sala e mostra o QR Code. Cada pessoa entra pelo próprio celular e marca o que consumiu.
 
 - **Entra quem tem o link.** Quem tem conta entra com o próprio nome. Quem não tem digita um nome e vincula a conta depois. Cabem até 50 pessoas.
+- **Convite que explica a sala.** Antes de entrar, a tela mostra em três passos como funciona: escolher o que consumiu, ver a parte calculada e acertar pelo Pix. Ela não mostra nada da sala antes de a pessoa entrar.
 - **Frações de item.** Dá pra marcar o item inteiro, metade, um terço ou uma quantidade exata. Cada item mostra quanto ainda resta até a sala ficar com **Tudo com dono**.
 - **O anfitrião divide junto.** Ao abrir um item, escolhe **Igual** para dividir entre todos ou só algumas pessoas, ou **Ajustar** para mudar proporções e unidades. Os anéis nos avatares mostram cada parte. **Salvar divisão** envia as mudanças de uma vez; se alguém mudar o item enquanto ele edita, **Atualizar** recarrega a divisão antes de salvar.
 - **Ao vivo.** Cada marcação aparece pra todo mundo na hora.
