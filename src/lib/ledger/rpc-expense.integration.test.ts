@@ -1220,6 +1220,64 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     }
     expect(typeof guestRef.guestId).toBe("string");
   });
+
+  describe("item icons", () => {
+    function iconPayload(firstItemIcon: unknown): Record<string, unknown> {
+      return {
+        items: [
+          {
+            description: "Chopp",
+            quantityMilliunits: 2000,
+            unitPriceCents: 1200,
+            totalPriceCents: 2400,
+            icon: firstItemIcon,
+          },
+          {
+            description: "Porção da casa",
+            quantityMilliunits: 1000,
+            unitPriceCents: 3600,
+            totalPriceCents: 3600,
+          },
+        ],
+        participants: [{ kind: "user", userId: alice.id }],
+        shares: [6000],
+        payers: [{ participantIndex: 0, amountCents: 6000 }],
+        itemAssignments: [
+          { itemIndex: 0, participantIndex: 0, amountCents: 2400 },
+          { itemIndex: 1, participantIndex: 0, amountCents: 3600 },
+        ],
+      };
+    }
+
+    it("stores the icon of a classified item and none for an unclassified one", async () => {
+      const groupId = await createGroupWithMembers(alice, [], "Ícones");
+
+      const ack = await createExpenseAck(alice, {
+        groupId,
+        totalCents: 6000,
+        expenseType: "itemized",
+        payload: iconPayload("beer"),
+      });
+
+      const detail = await getExpense(ack.expenseId);
+      expect(detail.current.payload.items.map((item) => item.icon)).toEqual(["beer", undefined]);
+      expect(Object.keys(detail.current.payload.items[1])).not.toContain("icon");
+    });
+
+    it("rejects an icon outside the closed set, including null", async () => {
+      for (const icon of ["caviar", "Beer", null, 3]) {
+        expect(
+          await expectRpcError(
+            callRpc(
+              aliceClient,
+              "create_expense",
+              createArgs(validationGroupId, 6000, iconPayload(icon), { expenseType: "itemized" }),
+            ),
+          ),
+        ).toBe("invalid_payload");
+      }
+    });
+  });
 });
 
 describe("authored split method", () => {

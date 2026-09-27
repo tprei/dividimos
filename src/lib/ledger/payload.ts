@@ -165,11 +165,12 @@ export function buildExpensePayload(
     receiptAccessKey: state.receiptAccessKey,
   };
 
-  const payloadItems: ExpenseItemPayload[] = money.items.map((item) => ({
+  const payloadItems: ExpenseItemPayload[] = money.items.map((item, index) => ({
     description: item.description,
     quantityMilliunits: item.quantity,
     unitPriceCents: item.unitPriceCents,
     totalPriceCents: item.totalPriceCents,
+    icon: items[index].icon,
   }));
 
   const payloadParticipants: ParticipantRef[] = [

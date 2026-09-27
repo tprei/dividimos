@@ -1,4 +1,5 @@
 import type { ValidationResult } from "@/lib/expense-money";
+import { isItemIcon } from "@/lib/item-icons";
 import type {
   ChangeSummary,
   ExpenseDetail,
@@ -176,12 +177,14 @@ const EXPENSE_ITEM_KEYS = [
   "totalPriceCents",
 ] as const;
 
+const EXPENSE_ITEM_OPTIONAL_KEYS = ["icon"] as const;
+
 export function decodeExpenseItemPayload(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ExpenseItemPayload, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, EXPENSE_ITEM_KEYS, path);
+  const k = exactKeys(raw, EXPENSE_ITEM_KEYS, path, EXPENSE_ITEM_OPTIONAL_KEYS);
   if (!k.ok) return k;
   const desc = str(raw.description, [...path, "description"]);
   if (!desc.ok) return desc;
@@ -191,12 +194,15 @@ export function decodeExpenseItemPayload(
   if (!unit.ok) return unit;
   const total = int(raw.totalPriceCents, [...path, "totalPriceCents"]);
   if (!total.ok) return total;
-  return ok({
+  const item: ExpenseItemPayload = {
     description: desc.value,
     quantityMilliunits: qty.value,
     unitPriceCents: unit.value,
     totalPriceCents: total.value,
-  });
+  };
+  if (raw.icon === undefined) return ok(item);
+  if (!isItemIcon(raw.icon)) return fail([...path, "icon"]);
+  return ok({ ...item, icon: raw.icon });
 }
 
 const USER_REF_KEYS = ["kind", "userId"] as const;

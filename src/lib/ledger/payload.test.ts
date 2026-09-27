@@ -237,6 +237,41 @@ describe("buildExpensePayload", () => {
     expect(payload.shares).toEqual([5000, 5000]);
   });
 
+  it("keeps item icons when a scanned expense is reopened for editing", () => {
+    useBillStore.getState().hydrateFromDetail(
+      makeExpenseDetail({
+        expense: { id: "exp-scanned", groupId: "group-1" },
+        current: makeExpenseVersion({
+          expenseId: "exp-scanned",
+          title: "Pizzaria",
+          expenseType: "itemized",
+          totalCents: 6000,
+          serviceFeeBasisPoints: 0,
+          payload: {
+            items: [
+              { description: "Calabresa G", quantityMilliunits: 1000, unitPriceCents: 5000, totalPriceCents: 5000, icon: "pizza" },
+              { description: "Item manual", quantityMilliunits: 1000, unitPriceCents: 1000, totalPriceCents: 1000 },
+            ],
+            participants: [{ kind: "user", userId: "user-alice" }],
+            shares: [6000],
+            payers: [{ participantIndex: 0, amountCents: 6000 }],
+            itemAssignments: [
+              { itemIndex: 0, participantIndex: 0, amountCents: 5000 },
+              { itemIndex: 1, participantIndex: 0, amountCents: 1000 },
+            ],
+          },
+        }),
+        participants: [makeUserParticipant(0, 6000, 6000)],
+      }),
+      [],
+    );
+
+    const result = buildExpensePayload(useBillStore.getState(), "2026-09-05");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.payload.items.map((item) => item.icon)).toEqual(["pizza", undefined]);
+  });
+
   it("builds a single_amount expense split equally", () => {
     const store = useBillStore.getState();
     store.createExpense("Cinema", "single_amount");

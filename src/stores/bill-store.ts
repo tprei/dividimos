@@ -411,6 +411,7 @@ function detailToWizardState(
     quantity: item.quantityMilliunits,
     unitPriceCents: item.unitPriceCents,
     totalPriceCents: item.totalPriceCents,
+    icon: item.icon,
     createdAt: current.createdAt,
   }));
 

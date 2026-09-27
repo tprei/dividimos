@@ -402,6 +402,27 @@ describe("decodeExpensePayload", () => {
     if (!result.ok) expect(result.issue.path).toEqual(["splitMethod"]);
   });
 
+  it("rejects an item icon outside the closed set", () => {
+    const raw = {
+      items: [
+        {
+          description: "Chopp",
+          quantityMilliunits: 1000,
+          unitPriceCents: 1200,
+          totalPriceCents: 1200,
+          icon: "caviar",
+        },
+      ],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1200],
+      payers: [{ participantIndex: 0, amountCents: 1200 }],
+      itemAssignments: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issue.path).toEqual(["items", 0, "icon"]);
+  });
+
   it("rejects a payer with a non-integer amount", () => {
     const raw = {
       items: [],
