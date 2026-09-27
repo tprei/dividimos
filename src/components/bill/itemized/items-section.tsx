@@ -5,6 +5,7 @@ import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
 import { Money } from "@/components/shared/money";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { Button } from "@/components/ui/button";
 import { springs } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
@@ -50,6 +51,7 @@ export function ItemsSection({
   const [composing, setComposing] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const reducedMotion = useReducedMotion();
+  const showItemIcons = items.some((item) => item.icon !== undefined);
   // Only while the keyboard is up (see the `keyboard:` classes below): the
   // filled rows fold into one line so the form sits where the thumb is.
   const folded = addingItem && composing && !listOpen;
@@ -115,6 +117,7 @@ export function ItemsSection({
                     className="overflow-hidden pr-1 pl-3"
                   >
                     <div className="flex min-h-11 items-center gap-1">
+                      {showItemIcons && <ItemIcon icon={item.icon} className="mr-1" />}
                       <div className="min-w-0 flex-1">
                         <input
                           value={item.description}

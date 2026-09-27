@@ -1,0 +1,17 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g transform="rotate(-40 16 16)">
+<rect x="2.5" y="9.6" width="27" height="13.4" rx="3.2" fill="#D67D00"/>
+<rect x="2.5" y="8.5" width="27" height="13.5" rx="3.2" fill="#FFB02E"/>
+<path d="M2.5 18.8H29.5V18.8C29.5 20.6 28.1 22 26.3 22H5.7C3.9 22 2.5 20.6 2.5 18.8Z" fill="#F59A12"/>
+<path d="M15 19.3v2.1M17.5 19.3v2.1M20 19.3v2.1M22.5 19.3v2.1M25 19.3v2.1M27.3 11.5h1.5M27.3 14h1.5M27.3 16.5h1.5" stroke="#D67D00" stroke-width="1.1" stroke-linecap="round"/>
+<circle cx="19" cy="12.4" r="1.7" fill="#FCD53F"/>
+<circle cx="23.6" cy="14.2" r="1.3" fill="#FCD53F"/>
+<circle cx="16.4" cy="15.6" r="1.1" fill="#FCD53F"/>
+<circle cx="21" cy="16.4" r="0.8" fill="#FCD53F"/>
+<circle cx="25.9" cy="11.4" r="0.8" fill="#FCD53F"/>
+<circle cx="18.5" cy="11.8" r="0.5" fill="#FFE8B5"/>
+<path d="M2.5 7C1.9 7 1.5 7.4 1.5 8V23.5C1.5 24.1 1.9 24.5 2.5 24.5H14L11.2 15.75L14 7H2.5Z" fill="#F4F4F4"/>
+<path d="M14 7L11.2 15.75L14 24.5H12.2L9.4 15.75L12.2 7H14Z" fill="#D3D3D3"/>
+<path d="M5.2 7.8L4.4 23.7M8.1 7.8L7.2 23.7" stroke="#E1E1E1" stroke-width="0.9" stroke-linecap="round"/>
+</g>
+</svg>

@@ -2,9 +2,11 @@
 
 import { AvatarStack } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { formatBRL } from "@/lib/currency";
 import { attributeItem, type PayerAttribution } from "@/lib/expense-attribution";
 import { displayNames } from "@/lib/people";
+import { cn } from "@/lib/utils";
 import {
   formatExpenseQuantity,
   type ExpenseQuantity,
@@ -54,6 +56,7 @@ export function ExpenseItems({
   participantIsGuest,
   showHeading = true,
 }: ExpenseItemsProps) {
+  const showItemIcons = items.some((item) => item.icon !== undefined);
   const solePayerName =
     payers.length === 1 ? participantName(payers[0].participantIndex) : null;
   const names = displayNames([...new Set(itemAssignments?.map((assignment) => assignment.participantIndex))].map((index) => ({
@@ -75,10 +78,17 @@ export function ExpenseItems({
               key={`${item.description}-${itemIndex}`}
               className="rounded-xl border bg-card px-3 py-2.5"
             >
-              <div className="flex items-baseline justify-between gap-3">
-                <p title={item.description} className="min-w-0 truncate text-base font-semibold leading-5 text-foreground">
-                  {item.description}
-                </p>
+              <div className={cn("flex justify-between gap-3", showItemIcons ? "items-center" : "items-baseline")}>
+                {showItemIcons ? (
+                  <p title={item.description} className="flex min-w-0 items-center gap-2 text-base font-semibold leading-5 text-foreground">
+                    <ItemIcon icon={item.icon} />
+                    <span className="truncate">{item.description}</span>
+                  </p>
+                ) : (
+                  <p title={item.description} className="min-w-0 truncate text-base font-semibold leading-5 text-foreground">
+                    {item.description}
+                  </p>
+                )}
                 <Money cents={item.totalPriceCents} size="sm" className="shrink-0 font-semibold" />
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">

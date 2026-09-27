@@ -8,6 +8,7 @@ import {
   parseExpenseQuantity,
   unitPriceCentsForLineTotal,
 } from "@/lib/expense-quantity";
+import type { ItemIcon } from "@/types";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -21,6 +22,7 @@ export interface ReceiptItem {
   quantity: number;
   unitPriceCents: number;
   totalCents: number;
+  icon?: ItemIcon;
 }
 
 /** Structured result from receipt OCR. Fees are already integer basis

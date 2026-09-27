@@ -200,6 +200,8 @@ export function ScannedItemsReview({
     onShare(normalized.result, normalized.occurredOn);
   };
 
+  const showItemIcons = items.some((item) => item.icon !== undefined);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       <ScreenHeader back onBack={onCancel} subtitle="Leitura" title="Recibo" />
@@ -232,6 +234,7 @@ export function ScannedItemsReview({
             <ReceiptItemRow
               key={index}
               item={item}
+              showIcon={showItemIcons}
               index={index}
               amountText={amountTexts[index] ?? centsText(item.totalCents)}
               amountInvalid={!isAmountValid(item, amountTexts[index] ?? centsText(item.totalCents))}

@@ -6,6 +6,7 @@ import { Money } from "@/components/shared/money";
 import type { ReactNode } from "react";
 import { PersonShareButton } from "@/components/bill/person-toggle";
 import { shareToPercent } from "@/lib/assignment-room-split";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { AvatarStack } from "@/components/shared/avatar-stack";
 import { Chip } from "@/components/ui/chip";
 import { springs } from "@/lib/animations";
@@ -21,6 +22,7 @@ const VISIBLE_OWNERS = 3;
 
 interface RoomItemRowProps {
   item: AssignmentRoomItem;
+  showIcon: boolean;
   availableTicks: number;
   ownTicks: number;
   owners: AssignmentRoomParticipant[];
@@ -40,6 +42,7 @@ interface RoomItemRowProps {
 
 export function RoomItemRow({
   item,
+  showIcon,
   availableTicks,
   ownTicks,
   owners,
@@ -81,6 +84,7 @@ export function RoomItemRow({
             onClick={(event) => onOpen(event.currentTarget)}
             className="flex min-h-14 min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:pointer-events-none"
           >
+            {showIcon && <ItemIcon icon={item.icon} />}
             <span className="min-w-0 flex-1">
               <span className="block text-base leading-5 font-semibold wrap-anywhere">{item.description}</span>
               {mode === "available" && (
@@ -130,6 +134,7 @@ export function RoomItemRow({
         onClick={onToggleDetails}
         className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
       >
+        {showIcon && <ItemIcon icon={item.icon} />}
         <span className="min-w-0 flex-1">
           <span className="block text-base leading-5 font-semibold wrap-anywhere">{item.description}</span>
           <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">

@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Money } from "@/components/shared/money";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ReceiptItem } from "@/lib/receipt-ocr";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 export interface ReceiptItemRowProps {
   item: ReceiptItem;
+  showIcon: boolean;
   index: number;
   amountText: string;
   amountInvalid: boolean;
@@ -23,6 +25,7 @@ export interface ReceiptItemRowProps {
 
 export function ReceiptItemRow({
   item,
+  showIcon,
   index,
   amountText,
   amountInvalid,
@@ -51,6 +54,7 @@ export function ReceiptItemRow({
         onClick={() => onTogglePanel(index)}
         className="flex min-h-14 w-full items-center px-4 py-2 text-left transition-colors hover:bg-muted/40"
       >
+        {showIcon && <ItemIcon icon={item.icon} className="mr-2" />}
         <span
           className={cn(
             "min-w-0 break-words text-sm leading-5 font-semibold",
