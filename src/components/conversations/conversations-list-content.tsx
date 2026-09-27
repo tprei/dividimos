@@ -172,6 +172,7 @@ export function ConversationsListContent() {
           <SectionCard>
             <ListRow
               title="Arquivadas"
+              trailingAlign="center"
               onClick={() => setArchivedView(true)}
               leading={
                 <span className="relative flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">

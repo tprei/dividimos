@@ -110,6 +110,7 @@ describe("UserAvatar", () => {
       const img = screen.getByAltText("");
       expect(img.className).toContain("opacity-100");
       expect(img.className).not.toContain("opacity-0");
+      expect(img).not.toHaveClass("transition-opacity");
       expect(screen.getByText("MS").className).not.toContain("animate-pulse");
     });
 
