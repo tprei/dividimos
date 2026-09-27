@@ -23,6 +23,7 @@ import { springs } from "@/lib/animations";
 import { haptics } from "@/hooks/use-haptics";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import { PULL_IGNORE_CONTROLS, PULL_THRESHOLD, usePullGesture } from "@/hooks/use-pull-gesture";
+import { usePendingNavigation } from "@/hooks/use-pending-navigation";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
 import { hasNativePushConsent } from "@/lib/push/native-consent";
 import { registerNativePushToken } from "@/lib/push/native-registration";
@@ -44,7 +45,7 @@ import { useAppStore } from "@/stores/app-store";
 const WIZARD_PREFIX = "/app/bill/new";
 
 const navItems = [
-  { href: "/app", icon: Home, label: "Início" },
+  { href: "/app", icon: Home, label: "Início", skeleton: DashboardSkeleton },
   {
     href: "/app/conversations",
     icon: MessageSquare,
@@ -56,13 +57,28 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
+function pendingSkeletonFor(href: string | null) {
+  const item = navItems.find((candidate) => candidate.href === href);
+  return item && "skeleton" in item ? item.skeleton : null;
+}
 
-function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
+
+function NavBar({
+  keyboardOpen,
+  pendingHref,
+  onNavigate,
+}: {
+  keyboardOpen: boolean;
+  pendingHref: string | null;
+  onNavigate: (href: string) => void;
+}) {
   const pathname = usePathname();
   const unreadTotal = useAppStore(selectUnreadTotal);
   const reducedMotion = useReducedMotion();
 
   if (keyboardOpen || pathname.startsWith(WIZARD_PREFIX)) return null;
+
+  const location = pendingHref ?? pathname;
 
   return (
     <nav
@@ -72,7 +88,7 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
     >
       <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2 md:h-full md:flex-col md:justify-start md:gap-3 md:px-3 md:py-6 compact:h-12 compact:md:flex-row compact:md:justify-around compact:md:gap-0 compact:md:px-2 compact:md:py-0">
         {navItems.map((item) => {
-          const isActive = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+          const isActive = item.href === "/app" ? location === "/app" : location.startsWith(item.href);
           const primary = "primary" in item;
           return (
             <Link
@@ -81,6 +97,7 @@ function NavBar({ keyboardOpen }: { keyboardOpen: boolean }) {
               aria-label={primary ? "Nova conta" : `${item.label}${"badge" in item && unreadTotal > 0 ? `, ${unreadTotal} não lidas` : ""}`}
               aria-current={isActive ? "page" : undefined}
               onClick={() => haptics.tap()}
+              onNavigate={() => onNavigate(item.href)}
               className={cn(
                 "relative flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:w-full md:py-3 compact:md:w-auto compact:md:py-0",
                 primary && "-mt-5 md:order-first md:mt-0 md:mb-3 compact:mt-0 compact:md:order-none compact:md:mb-0 max-md:group-has-[[data-slot=chat-composer]]/shell:mt-0",
@@ -122,6 +139,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { keyboardOpen } = useAppViewport();
+  const pendingNavigation = usePendingNavigation();
   const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsAnchor, setNotificationsAnchor] = useState<HTMLElement | null>(null);
@@ -325,7 +343,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Wizards, detail screens, and settings never reload from a pull: the
   // gesture there is almost always a mis-read scroll or slider drag.
   const refreshEligible =
-    PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen && !refreshing;
+    PULL_TO_REFRESH_PATHS[pathname] === true && !keyboardOpen && !notificationsOpen && !refreshing && pendingNavigation.href === null;
 
   // The hook reports the release synchronously; the refresh itself stays
   // async here so the pill keeps riding the offset until the data settles.
@@ -346,12 +364,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   let contentOffset = 0;
   if (!reducedMotion) contentOffset = firing ? 52 : pullDistance * 0.55;
 
+  const PendingSkeleton = pendingNavigation.showSkeleton
+    ? pendingSkeletonFor(pendingNavigation.href)
+    : null;
+
   return (
     <>
       {!hydrated || (!knownGood && bootstrapStatus !== "error") ? (
-        <div className="px-4 py-6">
-          <DashboardSkeleton />
-        </div>
+        <DashboardSkeleton />
       ) : !knownGood ? (
         <div className="flex h-full min-h-0 flex-col items-center justify-center">
           <SyncErrorState
@@ -408,10 +428,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <motion.div
                   animate={{ y: contentOffset }}
                   transition={pullDistance > 0 ? { duration: 0 } : springs.snappy}
+                  hidden={PendingSkeleton !== null}
                   className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0 has-[[data-slot=chat-composer]]:pb-0")}
                 >
                   {children}
                 </motion.div>
+                {PendingSkeleton && (
+                  <div className={cn("mx-auto h-full w-full max-w-lg md:max-w-2xl md:[&>*]:max-w-none", !navHidden && "pb-4 compact:pb-0")}>
+                    <PendingSkeleton />
+                  </div>
+                )}
               </ScreenRefreshContext.Provider>
             </ScreenHeaderActionsContext.Provider>
           </main>
@@ -426,7 +452,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             anchor={notificationsAnchor}
           />
 
-          <NavBar keyboardOpen={keyboardOpen} />
+          <NavBar
+            keyboardOpen={keyboardOpen}
+            pendingHref={pendingNavigation.href}
+            onNavigate={pendingNavigation.begin}
+          />
         </div>
       )}
     </>
