@@ -189,6 +189,36 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(err).toBe("user_not_found");
       });
 
+      it("fails with invalid_argument above 50 member ids and leaves no group behind", async () => {
+        const before = await withPg((pg) =>
+          pg.query("select count(*)::int as n from groups where creator_id = $1", [u1.id]),
+        );
+        const err = await expectError(
+          c1.rpc("create_group", {
+            p_name: "Grupo Cheio",
+            p_member_ids: Array.from({ length: 51 }, () => crypto.randomUUID()),
+          }),
+        );
+        expect(err).toBe("invalid_argument");
+        const after = await withPg((pg) =>
+          pg.query("select count(*)::int as n from groups where creator_id = $1", [u1.id]),
+        );
+        expect(after.rows[0].n).toBe(before.rows[0].n);
+      });
+
+      it("accepts a 50-member invite list", async () => {
+        const members = await createTestUsers(50);
+        const ack = await rpc<MutationAck>(c1, "create_group", {
+          p_name: "Grupo Cinquenta",
+          p_member_ids: members.map((member) => member.id),
+        });
+        const snap = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: ack.groupId,
+        });
+        expect(snap.members).toHaveLength(51);
+        expect(snap.members.filter((member) => member.status === "invited")).toHaveLength(50);
+      });
+
       it("handles creation with invitees, bootstrap status, accept, decline, re-accept, and invite by member", async () => {
         const createData = await rpc<MutationAck>(c1, "create_group", {
           p_name: "Projeto Viagem",
