@@ -62,6 +62,9 @@ import type {
 /** Room tick resolution: ticks per milliunit of item quantity. */
 export const ROOM_TICKS_PER_MILLIUNIT = 120 as const;
 
+/** Ticks in one whole item. */
+export const ROOM_TICKS_PER_UNIT = 1_000 * ROOM_TICKS_PER_MILLIUNIT;
+
 /**
  * Tick capacity of the largest claimable quantity:
  * `MAX_EXPENSE_QUANTITY_MILLIUNITS * ROOM_TICKS_PER_MILLIUNIT`. Stays below

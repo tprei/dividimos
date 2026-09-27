@@ -12,6 +12,7 @@ import {
 import type {
   AssignmentRoomItem,
   AssignmentRoomSnapshot,
+  AssignmentItemShare,
 } from "@/types/assignment-room";
 
 export interface RoomParticipantMoney {
@@ -186,4 +187,57 @@ export function previewClaimCents(
   const line = allocateLine(item, lineClaims);
   if (!line.ok) return line;
   return { ok: true, value: line.value.owned.get(participantId) ?? 0 };
+}
+
+/**
+ * Line cents per participant when `shares` became the item's split: the line
+ * keeps the active saved claims, with every participant in `shares` replaced
+ * by its share ticks (0 drops the claim) and shares for unknown or removed
+ * participants ignored. Only participants with ticks over 0 appear. An
+ * unknown item previews as an empty map; an over-capacity split fails with
+ * the same error the projection reports.
+ */
+export function previewItemSplitCents(
+  room: AssignmentRoomSnapshot,
+  itemId: string,
+  shares: readonly AssignmentItemShare[],
+): ValidationResult<ReadonlyMap<string, number>> {
+  const item = room.items.find((candidate) => candidate.id === itemId);
+  if (!item) return { ok: true, value: new Map() };
+  const ordinalById = new Map(
+    room.participants
+      .filter((participant) => !participant.removed)
+      .map((participant) => [participant.id, participant.ordinal]),
+  );
+  const shareTicks = new Map(
+    shares.map((share) => [share.participantId, share.ticks]),
+  );
+  const lineClaims: LineClaim[] = room.claims
+    .filter((claim) => claim.itemId === itemId && ordinalById.has(claim.participantId))
+    .map((claim) => ({
+      participantId: claim.participantId,
+      ordinal: ordinalById.get(claim.participantId)!,
+      ticks: shareTicks.get(claim.participantId) ?? claim.ticks,
+    }));
+  for (const [participantId, ticks] of shareTicks) {
+    if (
+      ticks > 0 &&
+      ordinalById.has(participantId) &&
+      !lineClaims.some((claim) => claim.participantId === participantId)
+    ) {
+      lineClaims.push({
+        participantId,
+        ordinal: ordinalById.get(participantId)!,
+        ticks,
+      });
+    }
+  }
+  const claimed = lineClaims.filter((claim) => claim.ticks > 0);
+  const line = allocateLine(item, claimed);
+  if (!line.ok) return line;
+  const value = new Map<string, number>();
+  for (const claim of claimed) {
+    value.set(claim.participantId, line.value.owned.get(claim.participantId) ?? 0);
+  }
+  return { ok: true, value };
 }
