@@ -1352,6 +1352,37 @@ describe("mutations", () => {
       expect(useAppStore.getState().me).toEqual({ ...ME, name: "Nome Novo" });
     });
 
+    it("a profile response cannot resurrect a consent revoked while it was in flight", async () => {
+      useAppStore.setState({
+        me: { ...ME, aiConsentVersion: 1, aiConsentGrantedAt: "2026-01-01T00:00:00Z" },
+      });
+
+      const pending = Promise.withResolvers<Me>();
+      vi.mocked(rpc).mockImplementationOnce(() => pending.promise);
+      const saving = updateProfile({ name: "Nome Novo" });
+
+      useAppStore.getState().patch((state) =>
+        state.me
+          ? {
+              me: {
+                ...state.me,
+                aiConsentVersion: null,
+                aiConsentGrantedAt: null,
+              },
+              aiConsentRevision: state.aiConsentRevision + 1,
+            }
+          : {},
+      );
+
+      pending.resolve({ ...ME, name: "Nome Novo" });
+      await expect(saving).resolves.toMatchObject({ name: "Nome Novo" });
+      expect(useAppStore.getState().me).toMatchObject({
+        name: "Nome Novo",
+        aiConsentVersion: null,
+        aiConsentGrantedAt: null,
+      });
+    });
+
     it("creates DM, links, and updates profile", async () => {
       useAppStore.setState({ me: ME });
 

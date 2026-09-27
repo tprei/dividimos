@@ -1,7 +1,7 @@
 import type { ValidationResult } from "@/lib/expense-money";
 import {
   decodeInviteLink,
-  decodeMe,
+  decodeProfileUpdate,
   decodeMutationAck,
   decodeUserProfile,
   decodeVendorCharge,
@@ -326,16 +326,26 @@ export async function updateProfile(input: {
   useAppStore.getState().patch(() => ({ me: optimisticMe }));
 
   try {
-    const me = await rpc(
+    const profile = await rpc(
       "update_profile",
       {
         p_name: input.name,
         p_handle: input.handle,
         p_notification_preferences: input.notificationPreferences,
       },
-      decodeMe,
+      decodeProfileUpdate,
     );
-    if (getAuthGeneration() !== generation) return me;
+    if (getAuthGeneration() !== generation) {
+      return { ...priorMe, ...profile };
+    }
+    // Merge into the *current* Me, not the pre-request snapshot: a profile
+    // save that resolves late must not resurrect consent another action
+    // revoked in between.
+    const currentMe = useAppStore.getState().me;
+    if (!currentMe || currentMe.id !== priorMe.id || profile.id !== priorMe.id) {
+      throw new LedgerError("unauthenticated");
+    }
+    const me: Me = { ...currentMe, ...profile };
     useAppStore.getState().patch(() => ({ me }));
     return me;
   } catch (error) {

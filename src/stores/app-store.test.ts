@@ -759,6 +759,55 @@ describe("migrateAppState", () => {
     expect(migrated.me?.isBot).toBe(false);
     expect(migrated.groups.g1?.members[0]?.user.isBot).toBe(false);
   });
+
+  it("gives a cached me null consent fields instead of trusting pre-feature data", () => {
+    const legacyMe = {
+      id: "u1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      isBot: false,
+      aiConsentVersion: 1,
+      aiConsentGrantedAt: "2026-01-01T00:00:00Z",
+    };
+
+    const migrated = migrateAppState({ me: legacyMe });
+
+    expect(migrated.me?.aiConsentVersion).toBeNull();
+    expect(migrated.me?.aiConsentGrantedAt).toBeNull();
+    expect(migrated.aiConsentRevision).toBe(0);
+    expect(migrated.aiConsentMutationPending).toBe(false);
+  });
+});
+
+describe("aiConsentRevision", () => {
+  const grantedMe: Me = { ...me, aiConsentVersion: 1, aiConsentGrantedAt: "2026-01-02T00:00:00Z" };
+
+  it("bumps the revision when a bootstrap changes the consent fields", () => {
+    useAppStore.setState({ me, aiConsentRevision: 3 });
+    useAppStore.getState().applyBootstrap({ me: grantedMe, serverTime: "2026-01-06T00:00:00Z", groups: [] });
+    expect(useAppStore.getState().aiConsentRevision).toBe(4);
+  });
+
+  it("bumps the revision when a bootstrap replaces the account", () => {
+    const other: Me = { ...me, id: "user-2" };
+    useAppStore.setState({ me, aiConsentRevision: 2 });
+    useAppStore.getState().applyBootstrap({ me: other, serverTime: "2026-01-06T00:00:00Z", groups: [] });
+    expect(useAppStore.getState().aiConsentRevision).toBe(3);
+  });
+
+  it("keeps the revision when neither consent nor account changed", () => {
+    useAppStore.setState({ me, aiConsentRevision: 5 });
+    useAppStore.getState().applyBootstrap({ me, serverTime: "2026-01-06T00:00:00Z", groups: [] });
+    expect(useAppStore.getState().aiConsentRevision).toBe(5);
+  });
+
+  it("reset restores the initial revision and pending flag", () => {
+    useAppStore.setState({ aiConsentRevision: 9, aiConsentMutationPending: true });
+    useAppStore.getState().reset();
+    expect(useAppStore.getState().aiConsentRevision).toBe(0);
+    expect(useAppStore.getState().aiConsentMutationPending).toBe(false);
+  });
 });
 
 describe("settlement details", () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { attachAuthListener, signOut } from "./auth";
+import { canUseAi } from "./ai-consent";
 import { getAuthGeneration, rpc } from "./client";
 import { runBootstrap } from "./bootstrap";
 
@@ -454,6 +455,47 @@ describe("avatar cache on sign-out", () => {
     emit("SIGNED_IN", "user-b");
 
     expect(mockClearAvatarCaches).not.toHaveBeenCalled();
+    detach();
+  });
+});
+
+describe("AI consent isolation across accounts", () => {
+  it("account B inherits neither a pending mutation nor A's usable grant", async () => {
+    const detach = attachAuthListener(() => {}, () => {});
+
+    useAppStore.setState({
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: "user-a",
+      aiConsentMutationPending: true,
+      aiConsentRevision: 7,
+      me: {
+        id: "user-a",
+        handle: "user_a",
+        name: "A",
+        avatarUrl: null,
+        isBot: false,
+        email: "a@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: {},
+        aiConsentVersion: 1,
+        aiConsentGrantedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    const bootstrap = Promise.withResolvers<Bootstrap>();
+    vi.mocked(rpc).mockImplementationOnce(() => bootstrap.promise as never);
+    emit("SIGNED_IN", "user-b");
+    bootstrap.resolve(bootstrapFor("user-b"));
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().lastBootstrappedAccountId).toBe("user-b");
+    });
+
+    const state = useAppStore.getState();
+    expect(state.me?.id).toBe("user-b");
+    expect(state.aiConsentMutationPending).toBe(false);
+    expect(canUseAi()).toBe(false);
     detach();
   });
 });

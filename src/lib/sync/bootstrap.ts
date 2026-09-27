@@ -10,6 +10,9 @@ async function executeBootstrap(generation: number): Promise<void> {
   // The membership set as it stood when the request left: the response cannot
   // speak for groups created or removed after this point.
   const knownGroupIds = Object.keys(store.groups);
+  // Consent state at request time: a grant, revoke, or 403 invalidation that
+  // happens while the read is in flight must win over the older response.
+  const consentRevision = store.aiConsentRevision;
   store.setBootstrapLoading();
 
   let data;
@@ -30,6 +33,22 @@ async function executeBootstrap(generation: number): Promise<void> {
   // while this request was in flight; publishing then would resurrect data
   // belonging to a previous session.
   if (getAuthGeneration() !== generation) return;
+  const current = useAppStore.getState();
+  const currentMe = current.me;
+  if (
+    currentMe !== null &&
+    currentMe.id === data.me.id &&
+    (current.aiConsentMutationPending || current.aiConsentRevision !== consentRevision)
+  ) {
+    data = {
+      ...data,
+      me: {
+        ...data.me,
+        aiConsentVersion: currentMe.aiConsentVersion,
+        aiConsentGrantedAt: currentMe.aiConsentGrantedAt,
+      },
+    };
+  }
   useAppStore.getState().applyBootstrap(data, knownGroupIds);
 }
 

@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createIdbStorage } from "@/lib/idb-storage";
 import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
+import { getAuthGeneration } from "@/lib/sync/client";
 import { type LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   AssignmentRoomExpenseMetadata,
@@ -148,6 +149,19 @@ interface AppStateData {
    * "known-good data for this account" from "some account's stale cache".
    */
   lastBootstrappedAccountId: string | null;
+  /**
+   * Bumped whenever the consent pair or the owning account changes, so
+   * in-flight AI attempts can detect invalidation. Runtime only.
+   */
+  aiConsentRevision: number;
+  /** A grant/revoke RPC is in flight; recordings and uploads must stand down. */
+  aiConsentMutationPending: boolean;
+  /**
+   * Auth generation whose bootstrap last committed for the current account.
+   * Runtime only: a persisted grant is never usable until this generation
+   * has bootstrapped, independent of any later refresh status.
+   */
+  lastBootstrappedGeneration: number | null;
 }
 
 export interface AppState extends AppStateData {
@@ -205,6 +219,9 @@ const initialData: AppStateData = {
   bootstrapStatus: "idle",
   bootstrapErrorCode: null,
   lastBootstrappedAccountId: null,
+  aiConsentRevision: 0,
+  aiConsentMutationPending: false,
+  lastBootstrappedGeneration: null,
 };
 
 function normalizeCursor(value: unknown): PageCursor | null {
@@ -443,7 +460,14 @@ export function migrateAppState(persisted: unknown): AppStateData {
 
   return {
     ...initialData,
-    me: legacy.me ? { ...legacy.me, isBot: legacy.me.isBot ?? false } : null,
+    // Deliberately discards any pre-feature cached consent-shaped data:
+    // the authoritative bootstrap restores the real server grant.
+    me: legacy.me ? {
+      ...legacy.me,
+      isBot: legacy.me.isBot ?? false,
+      aiConsentVersion: null,
+      aiConsentGrantedAt: null,
+    } : null,
     groups,
     groupOrder,
     expenseLists,
@@ -527,6 +551,14 @@ export const useAppStore = create<AppState>()(
             }
           }
 
+          // A bootstrap that changes the consent pair or the account invalidates
+          // every AI attempt captured against the previous state.
+          const consentChanged =
+            state.me === null ||
+            state.me.id !== b.me.id ||
+            state.me.aiConsentVersion !== b.me.aiConsentVersion ||
+            state.me.aiConsentGrantedAt !== b.me.aiConsentGrantedAt;
+
           return {
             me: b.me,
             groups,
@@ -538,6 +570,10 @@ export const useAppStore = create<AppState>()(
             bootstrapStatus: "ready" as const,
             bootstrapErrorCode: null,
             lastBootstrappedAccountId: b.me.id,
+            aiConsentRevision: consentChanged
+              ? state.aiConsentRevision + 1
+              : state.aiConsentRevision,
+            lastBootstrappedGeneration: getAuthGeneration(),
           };
         }),
 
@@ -842,9 +878,9 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      // Bumped for activity.readIds/dismissedIds: without it `migrate` never
-      // runs and an existing cache rehydrates those lists as undefined.
-      version: 5,
+      // Bumped for the AI consent fields: without it `migrate` never runs and
+      // a cached me rehydrates without the required consent pair.
+      version: 6,
     },
   ),
 );
