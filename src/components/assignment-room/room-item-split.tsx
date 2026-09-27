@@ -60,6 +60,7 @@ export interface RoomItemSplitProps {
   onSave: (shares: AssignmentItemShare[], expectedItemRevision: number) => Promise<boolean>;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  onDismissError: () => void;
 }
 
 interface SplitPerson {
@@ -264,6 +265,7 @@ function SplitSliders({ people, multiUnit, maximum, activeName, onFocus, onChang
             variant="outline"
             size="sm"
             className="min-h-11 rounded-full"
+            aria-label={`+1 para ${activeName}`}
             onClick={() => onHelper("unit")}
           >
             +1
@@ -276,6 +278,7 @@ function SplitSliders({ people, multiUnit, maximum, activeName, onFocus, onChang
             variant="outline"
             size="sm"
             className="min-h-11 min-w-11 rounded-full"
+            aria-label={`${label} para ${activeName}`}
             onClick={() => onHelper(denominator)}
           >
             {label}
@@ -286,6 +289,7 @@ function SplitSliders({ people, multiUnit, maximum, activeName, onFocus, onChang
           variant="outline"
           size="sm"
           className="min-h-11 rounded-full"
+          aria-label={`Resto para ${activeName}`}
           onClick={() => onHelper("rest")}
         >
           Resto
@@ -375,6 +379,7 @@ export function RoomItemSplit({
   onSave,
   onClose,
   onDirtyChange,
+  onDismissError,
 }: RoomItemSplitProps): React.JSX.Element {
   const capacity = item.quantityMilliunits * ROOM_TICKS_PER_MILLIUNIT;
   const saved = claims.map(({ participantId, ticks }) => ({ participantId, ticks }));
@@ -386,28 +391,30 @@ export function RoomItemSplit({
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
   const rootRef = useRef<HTMLFormElement>(null);
+  const onDirtyChangeRef = useRef(onDirtyChange);
   const activeIds = new Set(participants.map((person) => person.id));
+  const liveDraft = draft.filter((share) => activeIds.has(share.participantId));
   const changes = changedShares(
     base.shares.filter((share) => activeIds.has(share.participantId)),
-    draft.filter((share) => activeIds.has(share.participantId)),
+    liveDraft,
   );
   const dirty = changes.length > 0;
   const busy = pending || saving;
   const stale = base.revision !== item.revision;
   const locked = disabled || busy || stale;
   const multiUnit = item.quantityMilliunits >= 2_000;
-  const status = splitDraftStatus(capacity, draft);
-  const amounts = previewCents(changedShares(saved, draft));
+  const status = splitDraftStatus(capacity, liveDraft);
+  const amounts = previewCents(changedShares(saved, liveDraft));
   const selectedIds = participants
-    .filter((person) => draft.some((share) => share.participantId === person.id))
+    .filter((person) => liveDraft.some((share) => share.participantId === person.id))
     .map((person) => person.id);
   const activeId = selectedIds.includes(lastTouched ?? "") ? lastTouched : selectedIds[0];
-  const activeShare = draft.find((share) => share.participantId === activeId);
+  const activeShare = liveDraft.find((share) => share.participantId === activeId);
   const remainingCents = amounts
     ? Math.max(0, item.totalPriceCents - Array.from(amounts.values()).reduce((sum, cents) => sum + cents, 0))
     : null;
   const people: SplitPerson[] = participants.map((person) => {
-    const share = draft.find((entry) => entry.participantId === person.id);
+    const share = liveDraft.find((entry) => entry.participantId === person.id);
     const ticks = share?.ticks ?? 0;
     let label = labels.get(person.id) ?? person.displayName;
     if (!labels.has(person.id) && person.id === selfParticipantId) label = "Você";
@@ -415,7 +422,7 @@ export function RoomItemSplit({
       person,
       label,
       selected: Boolean(share),
-      sweepDegrees: shareToPercent(capacity, ticks) * 3.6,
+      sweepDegrees: (ticks / capacity) * 360,
       quantity: claimQuantityLabel(item.quantityMilliunits, ticks),
       amount: amounts?.get(person.id),
       sliderValue: multiUnit ? ticks / ROOM_TICKS_PER_UNIT : shareToPercent(capacity, ticks),
@@ -428,8 +435,11 @@ export function RoomItemSplit({
   const sliderMax = multiUnit ? Math.floor(capacity / ROOM_TICKS_PER_UNIT) : 100;
 
   useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
     onDirtyChange(dirty || saving);
   }, [dirty, saving, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChangeRef.current(false), []);
 
   useEffect(() => {
     if (!dirty) return;
@@ -448,7 +458,7 @@ export function RoomItemSplit({
   function refresh() {
     setBase({ revision: item.revision, shares: saved });
     setDraft(saved);
-    setMode(initialMode(capacity, saved, null));
+    setMode((current) => (current === "custom" ? "custom" : initialMode(capacity, saved, null)));
     setSaveError(null);
   }
 
@@ -457,6 +467,7 @@ export function RoomItemSplit({
   function close() {
     if (busy) return;
     if (dirty && !window.confirm("Descartar as divisões não salvas?")) return;
+    onDismissError();
     onClose();
   }
 
@@ -495,15 +506,15 @@ export function RoomItemSplit({
   }
 
   function changeSlider(participantId: string, value: number) {
+    const whole = Math.round(value);
     if (multiUnit) {
-      setTicks(participantId, value * ROOM_TICKS_PER_UNIT);
+      setTicks(participantId, whole * ROOM_TICKS_PER_UNIT);
       return;
     }
-    const otherTicks = draft.reduce(
-      (sum, share) => (share.participantId === participantId ? sum : sum + share.ticks),
-      0,
-    );
-    setTicks(participantId, sliderTicks(capacity, value, otherTicks, draft.length));
+    const otherShareTicks = liveDraft
+      .filter((share) => share.participantId !== participantId)
+      .map((share) => share.ticks);
+    setTicks(participantId, sliderTicks(capacity, whole, otherShareTicks));
   }
 
   function applyHelper(helper: SplitHelper) {
@@ -611,7 +622,10 @@ export function RoomItemSplit({
             variant="outline"
             className="min-h-11"
             disabled={busy}
-            onClick={refresh}
+            onClick={() => {
+              refresh();
+              onDismissError();
+            }}
           >
             Atualizar
           </Button>
@@ -628,7 +642,7 @@ export function RoomItemSplit({
       <SplitFooter
         busy={busy}
         canSave={canSave}
-        releasing={draft.every((share) => share.ticks === 0)}
+        releasing={dirty && liveDraft.every((share) => share.ticks === 0)}
         onClose={close}
       />
     </form>

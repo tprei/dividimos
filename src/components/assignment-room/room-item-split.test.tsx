@@ -20,7 +20,7 @@ function props(overrides: Partial<RoomItemSplitProps> = {}): RoomItemSplitProps 
     labels: new Map(participants.map((person) => [person.id, person.displayName])),
     focusParticipantId: null, pending: false, disabled: false, error: null,
     previewCents: () => new Map(), onSave: vi.fn(async () => true),
-    onClose: vi.fn(), onDirtyChange: vi.fn(), ...overrides,
+    onClose: vi.fn(), onDirtyChange: vi.fn(), onDismissError: vi.fn(), ...overrides,
   };
 }
 
@@ -137,5 +137,33 @@ describe("RoomItemSplit", () => {
     await user.click(screen.getByRole("button", { name: "Limpar" }));
     await user.click(screen.getByRole("button", { name: "Liberar item" }));
     expect(input.onSave).toHaveBeenCalledWith([{ participantId: "person-0", ticks: 0 }], 4);
+  });
+
+  it("follows the remaining shares when someone leaves while the editor is open", async () => {
+    const user = userEvent.setup();
+    const input = props({ claims: [claim(0, 60_000), claim(1, 60_000)] });
+    const { rerender } = render(<RoomItemSplit {...input} />);
+    rerender(<RoomItemSplit {...input} participants={[participants[0], ...participants.slice(2)]} claims={[claim(0, 60_000)]} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Falta metade");
+    await user.click(screen.getByRole("radio", { name: "Ajustar" }));
+    fireEvent.change(screen.getByRole("slider", { name: "Parte de Ana" }), { target: { value: "100" } });
+    await user.click(screen.getByRole("button", { name: "Salvar divisão" }));
+    expect(input.onSave).toHaveBeenCalledWith([{ participantId: "person-0", ticks: 120_000 }], 4);
+  });
+
+  it("keeps whole units when paging a multi-unit slider after an uneven split", async () => {
+    const user = userEvent.setup();
+    const chopp = { ...item, quantityMilliunits: 2_000, unitPriceCents: 350 };
+    render(<RoomItemSplit {...props({ item: chopp, participants: participants.slice(0, 3) })} />);
+    await user.click(screen.getByRole("button", { name: "Todos" }));
+    await user.click(screen.getByRole("radio", { name: "Ajustar" }));
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Parte de Ana" }), { key: "PageUp" });
+    expect(screen.getByRole("slider", { name: "Parte de Ana" })).toHaveValue("2");
+    expect(screen.getByRole("status")).toHaveTextContent("Passou");
+  });
+
+  it("only offers to release an item that someone owns", () => {
+    render(<RoomItemSplit {...props()} />);
+    expect(screen.queryByRole("button", { name: "Liberar item" })).not.toBeInTheDocument();
   });
 });
