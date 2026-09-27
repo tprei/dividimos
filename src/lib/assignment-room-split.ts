@@ -87,17 +87,36 @@ export function shareToPercent(capacityTicks: number, ticks: number): number {
   return Math.min(100, Math.max(0, halfUpDiv(ticks * 100, capacityTicks)));
 }
 
-/**
- * Ticks `percent` of `capacityTicks` represents, rounded half-up; 100 returns
- * exactly `capacityTicks`.
- */
+/** Ticks `percent` of `capacityTicks` represents, rounded half-up. */
 export function percentToTicks(capacityTicks: number, percent: number): number {
   assertCapacityTicks(capacityTicks);
   if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
     throw new RangeError(`invalid percent: ${percent}`);
   }
-  if (percent === 100) return capacityTicks;
   return halfUpDiv(capacityTicks * percent, 100);
+}
+
+/**
+ * Ticks for one percent slider moved to `percent` while the other shares hold
+ * `otherTicks` in total across `shareCount` shares (including this one). Each
+ * slider rounds on its own, so percents that add to 100 can miss the capacity
+ * by up to one tick per share; when the result lands that close to filling
+ * the item, it fills the item exactly instead.
+ */
+export function sliderTicks(
+  capacityTicks: number,
+  percent: number,
+  otherTicks: number,
+  shareCount: number,
+): number {
+  assertTicks(otherTicks, "other ticks");
+  if (!Number.isSafeInteger(shareCount) || shareCount < 1) {
+    throw new RangeError(`invalid share count: ${shareCount}`);
+  }
+  const ticks = percentToTicks(capacityTicks, percent);
+  const fill = capacityTicks - otherTicks;
+  if (fill >= 0 && Math.abs(fill - ticks) <= shareCount) return fill;
+  return ticks;
 }
 
 /** How a host's draft split covers one item's tick capacity. */

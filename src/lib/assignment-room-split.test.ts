@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { ROOM_TICKS_PER_UNIT } from "@/lib/assignment-room-money";
+import { ROOM_TICKS_PER_MILLIUNIT, ROOM_TICKS_PER_UNIT } from "@/lib/assignment-room-money";
 import {
   changedShares,
   isEvenSplit,
   percentToTicks,
   shareToPercent,
+  sliderTicks,
   splitDraftStatus,
   splitTicksEvenly,
 } from "@/lib/assignment-room-split";
@@ -48,14 +49,43 @@ describe("shareToPercent & percentToTicks", () => {
     }
   });
 
-  it("returns the exact capacity for 100 percent on an odd capacity", () => {
-    expect(percentToTicks(999_999, 100)).toBe(999_999);
+  it("maps 100 percent to the whole capacity of a weighed line", () => {
+    const capacity = 1_237 * ROOM_TICKS_PER_MILLIUNIT;
+    expect(percentToTicks(capacity, 100)).toBe(capacity);
   });
 
   it("rejects non-integer and out-of-range percents", () => {
     expect(() => percentToTicks(CAPACITY, 33.5)).toThrow(RangeError);
     expect(() => percentToTicks(CAPACITY, -1)).toThrow(RangeError);
     expect(() => percentToTicks(CAPACITY, 101)).toThrow(RangeError);
+  });
+});
+
+describe("sliderTicks", () => {
+  function setSliders(capacity: number, percents: readonly number[]): number[] {
+    const ticks = percents.map(() => 0);
+    percents.forEach((percent, index) => {
+      const otherTicks = ticks.reduce((sum, value, other) => (other === index ? sum : sum + value), 0);
+      ticks[index] = sliderTicks(capacity, percent, otherTicks, percents.length);
+    });
+    return ticks;
+  }
+
+  it("fills odd capacities exactly when the percents add to 100", () => {
+    const vectors = [[33, 33, 34], [14, 14, 14, 14, 14, 15, 15], [50, 50], [1, 99]];
+    for (const milliunits of [999, 1_001, 1_237, 1_500, 1_999]) {
+      const capacity = milliunits * ROOM_TICKS_PER_MILLIUNIT;
+      for (const percents of vectors) {
+        const total = setSliders(capacity, percents).reduce((sum, ticks) => sum + ticks, 0);
+        expect(total).toBe(capacity);
+      }
+    }
+  });
+
+  it("leaves a real gap unassigned", () => {
+    const capacity = 1_237 * ROOM_TICKS_PER_MILLIUNIT;
+    const ticks = setSliders(capacity, [30, 30, 35]);
+    expect(ticks).toEqual([30, 30, 35].map((percent) => percentToTicks(capacity, percent)));
   });
 });
 

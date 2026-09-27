@@ -10,6 +10,7 @@ import {
   previewItemSplitCents,
   projectAssignmentRoomMoney,
 } from "@/lib/assignment-room-projection";
+import { splitTicksEvenly } from "@/lib/assignment-room-split";
 import {
   MAX_EXPENSE_CENTS,
   computeServiceFeeCents,
@@ -626,6 +627,40 @@ describe("previewItemSplitCents", () => {
     for (const claim of claims) {
       expect(preview.value.get(claim.participantId)).toBe(claim.amountCents);
     }
+  });
+
+  it("hands leftover cents of an even seven-way split to the remainder ticks", () => {
+    const ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+    const room: AssignmentRoomSnapshot = {
+      ...baseRoom,
+      items: [
+        {
+          id: "item-pizza",
+          ordinal: 0,
+          revision: 1,
+          description: "Pizza",
+          quantityMilliunits: 1000,
+          unitPriceCents: 1000,
+          totalPriceCents: 1000,
+        },
+      ],
+      participants: ids.map((id, ordinal) => makeParticipant(id, ordinal)),
+      claims: [],
+    };
+
+    const preview = previewItemSplitCents(room, "item-pizza", splitTicksEvenly(120_000, ids));
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    expect(Object.fromEntries(preview.value)).toEqual({
+      p1: 143,
+      p2: 143,
+      p3: 143,
+      p4: 143,
+      p5: 143,
+      p6: 143,
+      p7: 142,
+    });
   });
 
   it("fails with the allocation error when shares exceed the capacity", () => {
