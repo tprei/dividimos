@@ -248,9 +248,10 @@ function NewBillPageContent() {
   const scanGroup = selectedGroup ?? (
     modes.entryGroupId ? groups[modes.entryGroupId] ?? null : null
   );
+  const scanRoomGroupId = scanDraftContext?.groupId ?? scanGroup?.group.id ?? null;
   const assignmentRoomEntry = useAssignmentRoomEntry({
     host: me ? { id: me.id, name: me.name } : null,
-    groupId: scanDraftContext?.groupId ?? scanGroup?.group.id ?? null,
+    groupId: scanRoomGroupId,
   });
   const activeParticipants = reviewingScan && scanDraftContext ? scanDraftContext.participants : store.participants;
   const activeGuests = reviewingScan && scanDraftContext ? scanDraftContext.guests : store.guests;
@@ -770,6 +771,7 @@ function NewBillPageContent() {
           onScanShare={assignmentRoomEntry.shareReceipt}
           scanSharePending={assignmentRoomEntry.pending}
           scanShareError={assignmentRoomEntry.error}
+          scanInGroup={scanRoomGroupId !== null}
           onVoiceConfirm={handleVoiceConfirm}
           onReviewingChange={handleReviewingChange}
           onManageParticipants={() => setScanParticipantsOpen(true)}

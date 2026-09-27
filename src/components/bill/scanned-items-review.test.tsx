@@ -56,6 +56,7 @@ function renderReview(
     participants?: ItemDivisionParticipant[];
     sharePending?: boolean;
     shareError?: string | null;
+    inGroup?: boolean;
   } = {},
 ) {
   const onShare = vi.fn();
@@ -69,6 +70,7 @@ function renderReview(
       onManageParticipants={vi.fn()}
       sharePending={overrides.sharePending}
       shareError={overrides.shareError}
+      inGroup={overrides.inGroup}
     />,
   );
   return { onConfirm, onCancel, onShare };
@@ -135,6 +137,21 @@ describe("ScannedItemsReview", () => {
     expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
     expect(screen.getByText(blockedMessage)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
+  });
+
+  it("opens a room for a group scan even with every member selected", () => {
+    const { onConfirm, onShare } = renderReview(makeResult(), vi.fn(), vi.fn(), {
+      inGroup: true,
+    });
+
+    const createRoom = screen.getByRole("button", { name: "Criar sala de divisão" });
+    expect(createRoom).toBeEnabled();
+    expect(screen.queryByText(blockedMessage)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeEnabled();
+
+    fireEvent.click(createRoom);
+    expect(onShare).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it("re-enables room creation after the added people are removed", () => {
