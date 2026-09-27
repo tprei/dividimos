@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
+import { HostedRoomsCard } from "@/components/dashboard/hosted-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import {
@@ -65,6 +66,7 @@ export function DashboardContent() {
   const rows = useAppStore(selectDebtRows);
   const homeMode = useAppStore(selectHomeMode);
   const recentBills = useAppStore(selectHomeRecentBills);
+  const hostedRooms = useAppStore((state) => state.hostedAssignmentRooms);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
   /**
@@ -320,6 +322,7 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
+      <HostedRoomsCard rooms={hostedRooms} />
       <NotificationPrompt />
 
       <div className="space-y-6 empty:hidden" data-tour="debt-lists">
