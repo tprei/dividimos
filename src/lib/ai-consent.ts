@@ -1,5 +1,5 @@
 export const AI_CONSENT_VERSION = 1;
-const AI_CONSENT_KEY = "dividimos.ai.consent";
+export const AI_CONSENT_KEY = "dividimos.ai.consent";
 
 interface AiConsentEntry {
   version: number;

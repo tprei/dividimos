@@ -3,6 +3,8 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AiConsentDialog } from "@/components/ai/ai-consent-dialog";
+import { useAiConsentGate } from "@/hooks/use-ai-consent-gate";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
@@ -58,6 +60,7 @@ export function TypeStep({
   onManageParticipants,
 }: TypeStepProps) {
   const searchParams = useSearchParams();
+  const { requestConsent, dialogProps } = useAiConsentGate();
 
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
@@ -127,15 +130,16 @@ export function TypeStep({
   const scanParamRef = useRef(false);
   useEffect(() => {
     if (scanParamRef.current) return;
-    if (searchParams.get("scan") && !showScanner && !scanResult) {
-      scanParamRef.current = true;
-      setShowScanner(true);
-    }
-  }, [searchParams, showScanner, scanResult]);
+    if (!searchParams.get("scan")) return;
+    if (showScanner || scanResult) return;
+    if (accountId === null) return;
+    scanParamRef.current = true;
+    requestConsent(() => setShowScanner(true));
+  }, [searchParams, showScanner, scanResult, accountId, requestConsent]);
 
   const openScanner = useCallback(() => {
-    setShowScanner(true);
-  }, []);
+    requestConsent(() => setShowScanner(true));
+  }, [requestConsent]);
 
   const reviewing = scanResult !== null;
   useEffect(() => {
@@ -218,23 +222,31 @@ export function TypeStep({
 
   if (scanResult) {
     return (
-      <ScannedItemsReview
-        result={scanResult}
-        participants={participants}
-        initialOccurredOn={occurredOn}
-        onConfirm={handleScanConfirm}
-        onShare={handleScanShare}
-        sharePending={scanSharePending}
-        shareError={scanShareError}
-        inGroup={scanInGroup}
-        onCancel={handleScanCancel}
-        onManageParticipants={onManageParticipants}
-      />
+      <>
+        <ScannedItemsReview
+          result={scanResult}
+          participants={participants}
+          initialOccurredOn={occurredOn}
+          onConfirm={handleScanConfirm}
+          onShare={handleScanShare}
+          sharePending={scanSharePending}
+          shareError={scanShareError}
+          inGroup={scanInGroup}
+          onCancel={handleScanCancel}
+          onManageParticipants={onManageParticipants}
+        />
+        <AiConsentDialog {...dialogProps} />
+      </>
     );
   }
 
   if (scanProcessingPhoto) {
-    return <ScanSkeletonLoader />;
+    return (
+      <>
+        <ScanSkeletonLoader />
+        <AiConsentDialog {...dialogProps} />
+      </>
+    );
   }
 
   if (showScanner) {
@@ -257,6 +269,7 @@ export function TypeStep({
             {scanError}
           </motion.p>
         )}
+        <AiConsentDialog {...dialogProps} />
       </div>
     );
   }
@@ -298,15 +311,19 @@ export function TypeStep({
             Voltar
           </Button>
         )}
+        <AiConsentDialog {...dialogProps} />
       </div>
     );
   }
 
   return (
-    <BillTypeSelector
-      onSelect={onTypeSelect}
-      onScanReceipt={openScanner}
-      onVoiceExpense={() => setShowVoiceInput(true)}
-    />
+    <>
+      <BillTypeSelector
+        onSelect={onTypeSelect}
+        onScanReceipt={openScanner}
+        onVoiceExpense={() => setShowVoiceInput(true)}
+      />
+      <AiConsentDialog {...dialogProps} />
+    </>
   );
 }

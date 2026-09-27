@@ -4,6 +4,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Loader2, Mic, MicOff, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { useAiConsentGate } from "@/hooks/use-ai-consent-gate";
+import { AiConsentDialog } from "@/components/ai/ai-consent-dialog";
 import { haptics } from "@/hooks/use-haptics";
 import { parseVoiceExpenseCommand } from "@/lib/sync/voice";
 import { sketchVoiceBill } from "@/lib/voice-bill-sketch";
@@ -60,6 +62,7 @@ export function VoiceExpenseButton({
     level,
     engine,
   } = useVoiceInput();
+  const { requestConsent, dialogProps } = useAiConsentGate();
   const reduceMotion = useReducedMotion();
   const [parsing, setParsing] = useState(false);
   const [attempted, setAttempted] = useState(false);
@@ -144,7 +147,13 @@ export function VoiceExpenseButton({
             onClick={() => {
               haptics.tap();
               if (recording) stopListening();
-              else { setAttempted(true); onRecordStart(); startListening(); }
+              else {
+                requestConsent(() => {
+                  setAttempted(true);
+                  onRecordStart();
+                  startListening();
+                });
+              }
             }}
             className="relative size-14 rounded-full shadow-sm">
             {micIcon}
@@ -182,6 +191,7 @@ export function VoiceExpenseButton({
           <VoiceExamples />
         </>
       )}
+      <AiConsentDialog {...dialogProps} />
     </div>
   );
 }

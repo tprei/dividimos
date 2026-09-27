@@ -6,6 +6,7 @@ import { RotateCcw, ScanLine, X } from "lucide-react";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
+import { useAiConsent } from "@/hooks/use-ai-consent";
 import { popIn } from "@/lib/animations";
 import {
   isNativeCameraAvailable,
@@ -29,6 +30,7 @@ export function ReceiptScanner({
   processing = false,
 }: ReceiptScannerProps) {
   const isNative = isNativeCameraAvailable();
+  const { granted } = useAiConsent();
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export function ReceiptScanner({
   }, []);
 
   const showFile = useCallback((next: File) => {
+    if (!granted) return;
     haptics.success();
     setFile(next);
     setCaptureError(null);
@@ -68,7 +71,7 @@ export function ReceiptScanner({
       if (prev) URL.revokeObjectURL(prev);
       return url;
     });
-  }, []);
+  }, [granted]);
 
   const handleFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,8 +95,8 @@ export function ReceiptScanner({
   }, []);
 
   const handleProcess = useCallback(() => {
-    if (file) onProcess(file);
-  }, [file, onProcess]);
+    if (file && granted) onProcess(file);
+  }, [file, granted, onProcess]);
 
   const applyNativeOutcome = useCallback(
     (outcome: PhotoOutcome) => {
@@ -121,7 +124,7 @@ export function ReceiptScanner({
   // outcome exactly once, and ignore handlers from StrictMode replays
   // (cleaned up) or superseded intents.
   useEffect(() => {
-    if (!nativeCamera) return;
+    if (!nativeCamera || !granted) return;
     if (nativeIntentRef.current === null) {
       nativeIntentRef.current = takeNativePhoto();
     }
@@ -144,17 +147,19 @@ export function ReceiptScanner({
     return () => {
       active = false;
     };
-  }, [nativeCamera, applyNativeOutcome]);
+  }, [nativeCamera, granted, applyNativeOutcome]);
 
   const startWebCamera = useCallback(() => {
+    if (!granted) return;
     setCaptureError(null);
     setCameraOpen(true);
-  }, []);
+  }, [granted]);
 
   const startNativeCamera = useCallback(() => {
+    if (!granted) return;
     setCaptureError(null);
     setNativeCamera(true);
-  }, []);
+  }, [granted]);
 
   const handleCameraCapture = useCallback(
     (captured: File) => {
@@ -167,11 +172,13 @@ export function ReceiptScanner({
   // The gallery must open inside the user gesture, so the camera stops and
   // the hidden input is clicked synchronously in the same event.
   const handleCameraGallery = useCallback(() => {
+    if (!granted) return;
     setCameraOpen(false);
     galleryRef.current?.click();
-  }, []);
+  }, [granted]);
 
   const handleNativeGallery = useCallback(() => {
+    if (!granted) return;
     void pickNativeGalleryPhoto().then(
       (outcome) => {
         if (outcome.kind === "captured") {
@@ -187,13 +194,26 @@ export function ReceiptScanner({
       },
       () => setCaptureError("Não foi possível abrir a câmera."),
     );
-  }, [showFile]);
+  }, [granted, showFile]);
 
   const handleRetake = useCallback(() => {
     clearPreview();
     if (isNative) startNativeCamera();
     else startWebCamera();
   }, [clearPreview, isNative, startNativeCamera, startWebCamera]);
+
+  if (!granted) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm leading-relaxed">
+          Permita o uso de IA antes de escanear uma nota.
+        </p>
+        <Button variant="outline" className="min-h-11 w-full" onClick={onBack}>
+          Voltar e preencher manualmente
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -279,11 +299,7 @@ export function ReceiptScanner({
             <Button
               variant="outline"
               className="min-h-11 w-full"
-              onClick={
-                isNative
-                  ? handleNativeGallery
-                  : () => galleryRef.current?.click()
-              }
+              onClick={isNative ? handleNativeGallery : handleCameraGallery}
             >
               Escolher da galeria
             </Button>

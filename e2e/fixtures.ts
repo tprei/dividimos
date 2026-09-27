@@ -1,6 +1,7 @@
 import { test as base, type BrowserContext, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SeedHelper, type SeededUser } from "./seed-helper";
+import { AI_CONSENT_KEY, AI_CONSENT_VERSION } from "../src/lib/ai-consent";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,13 +61,22 @@ export async function loginInContext(
     },
   ]);
 
-  await ctx.addInitScript((userId: string) => {
-    try {
-      window.localStorage.setItem(`dividimos_tour_completed_${userId}`, "true");
-    } catch {
-      // localStorage unavailable; tour will show but test can still proceed
-    }
-  }, user.id);
+  await ctx.addInitScript(
+    ({ userId, consentKey, consentVersion }) => {
+      try {
+        window.localStorage.setItem(`dividimos_tour_completed_${userId}`, "true");
+        window.localStorage.setItem(
+          consentKey,
+          JSON.stringify({
+            [userId]: { version: consentVersion, grantedAt: new Date().toISOString() },
+          }),
+        );
+      } catch {
+        // localStorage unavailable; tour will show but test can still proceed
+      }
+    },
+    { userId: user.id, consentKey: AI_CONSENT_KEY, consentVersion: AI_CONSENT_VERSION },
+  );
 }
 
 // ---------------------------------------------------------------------------

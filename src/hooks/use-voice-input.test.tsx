@@ -13,6 +13,9 @@ vi.mock("@/lib/capacitor/speech", () => ({
 }));
 
 import { useVoiceInput } from "./use-voice-input";
+import { __resetAiConsentForTests, grantAiConsent } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
+import type { Me } from "@/types/ledger";
 
 type ResultEntry = { transcript: string; isFinal: boolean; 0: { transcript: string } };
 
@@ -70,6 +73,8 @@ function makeMockCtor() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  useAppStore.setState({ me: makeMe("user-a") });
+  grantAiConsent("user-a");
   nativeSpeechAvailable.mockReturnValue(false);
   nativeSpeechSupported.mockResolvedValue(false);
   startNativeListening.mockReset();
@@ -95,6 +100,26 @@ afterEach(() => {
   });
 });
 
+afterEach(() => {
+  __resetAiConsentForTests();
+  useAppStore.setState({ me: null });
+});
+
+function makeMe(id: string): Me {
+  return {
+    id,
+    email: `${id}@example.com`,
+    handle: id,
+    name: id,
+    avatarUrl: null,
+    isBot: false,
+    pixKeyType: "email",
+    pixKeyHint: "",
+    onboarded: true,
+    notificationPreferences: {},
+  };
+}
+
 describe("useVoiceInput", () => {
   it("reports isSupported=true when webkitSpeechRecognition exists", () => {
     const { result } = renderHook(() => useVoiceInput());
@@ -109,6 +134,19 @@ describe("useVoiceInput", () => {
     });
     const { result } = renderHook(() => useVoiceInput());
     expect(result.current.isSupported).toBe(false);
+  });
+
+  it("starts no engine and no microphone without AI consent", () => {
+    __resetAiConsentForTests();
+    const { result } = renderHook(() => useVoiceInput());
+
+    act(() => {
+      result.current.startListening();
+    });
+
+    expect(MockSpeechRecognition.callCount).toBe(0);
+    expect(result.current.isListening).toBe(false);
+    expect(result.current.phase).toBe("idle");
   });
 
   it("starts listening and configures pt-BR", () => {

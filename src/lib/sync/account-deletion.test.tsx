@@ -24,6 +24,7 @@ const removeAccountDraft = vi.fn();
 const removeConfirmationPreferences = vi.fn();
 const removeOnboardingTour = vi.fn();
 const removeNativePushConsent = vi.fn();
+const revokeAiConsent = vi.fn();
 const clearStorage = vi.fn(async () => {});
 
 vi.mock("@/lib/bill-draft-isolation", () => ({
@@ -38,6 +39,9 @@ vi.mock("@/hooks/use-onboarding-tour", () => ({
 }));
 vi.mock("@/lib/push/native-consent", () => ({
   removeNativePushConsent: (...args: unknown[]) => removeNativePushConsent(...(args as [string])),
+}));
+vi.mock("@/lib/ai-consent", () => ({
+  revokeAiConsent: (...args: unknown[]) => revokeAiConsent(...(args as [string])),
 }));
 
 vi.mock("@/stores/app-store", () => ({
@@ -83,6 +87,7 @@ describe("deleteAccount", () => {
     expect(removeConfirmationPreferences).toHaveBeenCalledWith("0a000000-0000-4000-8000-00000000000a");
     expect(removeOnboardingTour).toHaveBeenCalledWith("0a000000-0000-4000-8000-00000000000a");
     expect(removeNativePushConsent).toHaveBeenCalledWith("0a000000-0000-4000-8000-00000000000a");
+    expect(revokeAiConsent).toHaveBeenCalledWith("0a000000-0000-4000-8000-00000000000a");
     expect(clearStorage).toHaveBeenCalled();
   });
 
