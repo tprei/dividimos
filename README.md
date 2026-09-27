@@ -144,6 +144,7 @@ stateDiagram-v2
 - **Tokens guardados como hash.** Os tokens de claim, de entrada na sala e de membro da sala ficam no banco só como SHA-256. Claim e entrada valem 7 dias; o de membro vale 30 dias e renova com o uso.
 - **Rate limit que falha fechado.** Contadores no Postgres limitam IA, Pix, push e busca por usuário. Se o limitador cai, a rota responde 503 em vez de liberar.
 - **Conta excluída não volta.** Depois que a exclusão da conta grava o marcador, qualquer RPC comum dessa identidade falha com `account_deleted`, e o registro de push não recria inscrição para o perfil apagado — nem disputando com a própria exclusão em transação.
+- **Textos legais junto com o código.** A Política de Privacidade fica em `src/app/privacy/page.tsx` (`/privacy`), os Termos de Uso em `src/app/terms/page.tsx` (`/terms`) e as instruções públicas de exclusão em `/excluir-conta`. Mudou o que sai do aparelho, um provedor, uma permissão, o consentimento, a retenção ou a exclusão de dados? Atualize esses textos e a declaração Data safety do Google Play no mesmo PR. O aviso de aceite no login fica em `src/app/auth/auth-panel.tsx`.
 
 ## Como o saldo fecha
 
