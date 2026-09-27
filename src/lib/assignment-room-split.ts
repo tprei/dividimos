@@ -97,25 +97,29 @@ export function percentToTicks(capacityTicks: number, percent: number): number {
 }
 
 /**
- * Ticks for one percent slider moved to `percent` while the other shares hold
- * `otherTicks` in total across `shareCount` shares (including this one). Each
- * slider rounds on its own, so percents that add to 100 can miss the capacity
- * by up to one tick per share; when the result lands that close to filling
- * the item, it fills the item exactly instead.
+ * Ticks for one percent slider moved to `percent` while the other sliders
+ * hold `otherShareTicks`. Each slider rounds half a tick on its own, so
+ * percents that add to 100 can miss the capacity by up to one tick per
+ * slider. When the sliders as shown add to 100% and the gap is only that
+ * rounding, this slider takes whatever fills the item; any larger gap is a
+ * real difference and stays visible.
  */
 export function sliderTicks(
   capacityTicks: number,
   percent: number,
-  otherTicks: number,
-  shareCount: number,
+  otherShareTicks: readonly number[],
 ): number {
-  assertTicks(otherTicks, "other ticks");
-  if (!Number.isSafeInteger(shareCount) || shareCount < 1) {
-    throw new RangeError(`invalid share count: ${shareCount}`);
-  }
   const ticks = percentToTicks(capacityTicks, percent);
+  let otherTicks = 0;
+  let otherPercent = 0;
+  for (const share of otherShareTicks) {
+    assertTicks(share, "other share ticks");
+    otherTicks += share;
+    otherPercent += shareToPercent(capacityTicks, share);
+  }
   const fill = capacityTicks - otherTicks;
-  if (fill >= 0 && Math.abs(fill - ticks) <= shareCount) return fill;
+  const roundingGap = Math.abs(fill - ticks) <= otherShareTicks.length + 1;
+  if (percent + otherPercent === 100 && fill >= 0 && roundingGap) return fill;
   return ticks;
 }
 

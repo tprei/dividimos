@@ -65,8 +65,8 @@ describe("sliderTicks", () => {
   function setSliders(capacity: number, percents: readonly number[]): number[] {
     const ticks = percents.map(() => 0);
     percents.forEach((percent, index) => {
-      const otherTicks = ticks.reduce((sum, value, other) => (other === index ? sum : sum + value), 0);
-      ticks[index] = sliderTicks(capacity, percent, otherTicks, percents.length);
+      const others = ticks.filter((_, other) => other !== index);
+      ticks[index] = sliderTicks(capacity, percent, others);
     });
     return ticks;
   }
@@ -86,6 +86,16 @@ describe("sliderTicks", () => {
     const capacity = 1_237 * ROOM_TICKS_PER_MILLIUNIT;
     const ticks = setSliders(capacity, [30, 30, 35]);
     expect(ticks).toEqual([30, 30, 35].map((percent) => percentToTicks(capacity, percent)));
+  });
+
+  it("never rounds a partial share up to the whole item", () => {
+    const capacity = 1 * ROOM_TICKS_PER_MILLIUNIT;
+    expect(sliderTicks(capacity, 99, [])).toBe(119);
+  });
+
+  it("does not stretch a slider when rounded percents only look like 100", () => {
+    const others = Array.from({ length: 49 }, () => 2_000);
+    expect(sliderTicks(ROOM_TICKS_PER_UNIT, 2, others)).toBe(2_400);
   });
 });
 
