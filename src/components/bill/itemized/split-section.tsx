@@ -6,6 +6,7 @@ import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { PersonShareButton, PersonToggle } from "@/components/bill/person-toggle";
 import { Money } from "@/components/shared/money";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { formatBRL } from "@/lib/currency";
@@ -85,6 +86,7 @@ export function SplitSection({
 
   const selected = new Set(selectedIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const showItemIcons = items.some((item) => item.icon !== undefined);
 
   function divideAllEqually(): void {
     for (const item of items) {
@@ -216,6 +218,7 @@ export function SplitSection({
                       className="size-4 shrink-0 accent-primary"
                     />
                   )}
+                  {showItemIcons && <ItemIcon icon={item.icon} />}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold" title={name}>{name}</p>
                     {item.quantity !== 1000 && (

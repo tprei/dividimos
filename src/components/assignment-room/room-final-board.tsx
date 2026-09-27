@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Money } from "@/components/shared/money";
+import { ItemIcon } from "@/components/shared/item-icon";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { haptics } from "@/hooks/use-haptics";
@@ -36,6 +37,7 @@ export function RoomFinalBoard({ bill, selfParticipantIndex = null }: RoomFinalB
         {bill.participants.map((participant) => {
           const index = participant.participantIndex;
           const assignments = assignmentsByParticipant.get(index) ?? [];
+          const showItemIcons = assignments.some((assignment) => bill.items[assignment.itemIndex]?.icon !== undefined);
           const expanded = expandedIndex === index;
           const isSelf = index === selfParticipantIndex;
           const detailsId = `${id}-person-${index}`;
@@ -60,8 +62,15 @@ export function RoomFinalBoard({ bill, selfParticipantIndex = null }: RoomFinalB
               </button>
               <div id={detailsId} hidden={!expanded} className="mr-4 ml-15 border-t border-dashed py-3">
                 {assignments.map((assignment) => (
-                  <div key={assignment.itemIndex} className="flex items-baseline justify-between gap-3 py-1 text-sm">
-                    <span className="min-w-0 wrap-anywhere">{bill.items[assignment.itemIndex]?.description ?? "Item"}</span>
+                  <div key={assignment.itemIndex} className={cn("flex justify-between gap-3 py-1 text-sm", showItemIcons ? "items-center" : "items-baseline")}>
+                    {showItemIcons ? (
+                      <span className="flex min-w-0 items-center gap-2 wrap-anywhere">
+                        <ItemIcon icon={bill.items[assignment.itemIndex]?.icon} size="sm" />
+                        <span>{bill.items[assignment.itemIndex]?.description ?? "Item"}</span>
+                      </span>
+                    ) : (
+                      <span className="min-w-0 wrap-anywhere">{bill.items[assignment.itemIndex]?.description ?? "Item"}</span>
+                    )}
                     <Money cents={assignment.amountCents} className="shrink-0" />
                   </div>
                 ))}

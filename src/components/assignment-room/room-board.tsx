@@ -93,6 +93,7 @@ export function RoomBoard({
   const projection = projectAssignmentRoomMoney(view.room);
   const roomMoney = projection?.ok ? projection.value : null;
   const selfMoney = roomMoney?.byParticipant[view.room.selfParticipantId] ?? null;
+  const showItemIcons = view.room.items.some((item) => item.icon !== undefined);
   const rowMoney = (item: AssignmentRoomItem) =>
     roomMoney
       ? {
@@ -168,6 +169,8 @@ export function RoomBoard({
   const inviteVisible = view.role === "host" && view.room.status === "open";
   const availableRows = itemRows.filter((row) => row.availableTicks > 0);
   const mineRows = itemRows.filter((row) => row.ownClaimedTicks > 0);
+  const showAvailableIcons = availableRows.some((row) => row.item.icon !== undefined);
+  const showMineIcons = mineRows.some((row) => row.item.icon !== undefined);
   const selectedItem = selectedItemId
     ? itemRows.find((row) => row.item.id === selectedItemId) ?? null
     : null;
@@ -384,6 +387,7 @@ export function RoomBoard({
                     <RoomItemRow
                       key={row.item.id}
                       item={row.item}
+                      showIcon={showItemIcons}
                       availableTicks={row.availableTicks}
                       ownTicks={row.ownClaimedTicks}
                       owners={row.owners}
@@ -438,6 +442,7 @@ export function RoomBoard({
                         <RoomItemRow
                           key={row.item.id}
                           item={row.item}
+                          showIcon={showAvailableIcons}
                           availableTicks={row.availableTicks}
                           ownTicks={row.ownClaimedTicks}
                           owners={row.owners}
@@ -463,6 +468,7 @@ export function RoomBoard({
                       <RoomItemRow
                         key={row.item.id}
                         item={row.item}
+                        showIcon={showMineIcons}
                         availableTicks={row.availableTicks}
                         ownTicks={row.ownClaimedTicks}
                         owners={row.owners}
