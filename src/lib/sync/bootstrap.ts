@@ -1,11 +1,23 @@
 import { decodeBootstrapOverview } from "@/lib/ledger/decode-group-overview";
+import { arrayOf, decodeUserProfile } from "@/lib/ledger/decode-expense";
 import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
+import type { UserProfile } from "@/types/ledger";
 import { getAuthGeneration, rpc } from "./client";
 
-let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
+export function readUserBlocks(): Promise<UserProfile[]> {
+  return rpc("get_user_blocks", {}, (raw) => arrayOf(raw, [], decodeUserProfile));
+}
 
-async function executeBootstrap(generation: number): Promise<void> {
+let blockListEpoch = 0;
+
+export function advanceBlockListEpoch(): void {
+  blockListEpoch += 1;
+}
+
+let bootstrapInFlight: { generation: number; epoch: number; promise: Promise<void> } | null = null;
+
+async function executeBootstrap(generation: number, epoch: number): Promise<void> {
   const store = useAppStore.getState();
   // The membership set as it stood when the request left: the response cannot
   // speak for groups created or removed after this point.
@@ -13,8 +25,12 @@ async function executeBootstrap(generation: number): Promise<void> {
   store.setBootstrapLoading();
 
   let data;
+  let blockedUsers: UserProfile[];
   try {
-    data = await rpc("bootstrap_overview", {}, decodeBootstrapOverview);
+    [data, blockedUsers] = await Promise.all([
+      rpc("bootstrap_overview", {}, decodeBootstrapOverview),
+      readUserBlocks(),
+    ]);
   } catch (error) {
     // A failed read must not clear projections; it records why and rethrows so
     // the caller can retry.
@@ -30,15 +46,27 @@ async function executeBootstrap(generation: number): Promise<void> {
   // while this request was in flight; publishing then would resurrect data
   // belonging to a previous session.
   if (getAuthGeneration() !== generation) return;
-  useAppStore.getState().applyBootstrap(data, knownGroupIds);
+  const state = useAppStore.getState();
+  if (blockListEpoch === epoch) state.applyUserBlocks(blockedUsers);
+  state.applyBootstrap(data, knownGroupIds);
 }
 
 export function runBootstrap(): Promise<void> {
   const generation = getAuthGeneration();
-  if (bootstrapInFlight === null || bootstrapInFlight.generation !== generation) {
-    const entry: { generation: number; promise: Promise<void> } = {
+  const epoch = blockListEpoch;
+  if (
+    bootstrapInFlight === null ||
+    bootstrapInFlight.generation !== generation ||
+    bootstrapInFlight.epoch !== epoch
+  ) {
+    const stale = bootstrapInFlight?.generation === generation ? bootstrapInFlight.promise : null;
+    const run = stale
+      ? stale.catch(() => undefined).then(() => executeBootstrap(generation, epoch))
+      : executeBootstrap(generation, epoch);
+    const entry: { generation: number; epoch: number; promise: Promise<void> } = {
       generation,
-      promise: executeBootstrap(generation).finally(() => {
+      epoch,
+      promise: run.finally(() => {
         // Clear only this request's entry: a newer generation's request must
         // survive an older one settling late.
         if (bootstrapInFlight === entry) bootstrapInFlight = null;

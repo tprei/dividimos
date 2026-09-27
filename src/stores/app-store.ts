@@ -23,6 +23,7 @@ import type {
   Me,
   Settlement,
   Transfer,
+  UserProfile,
   VendorCharge,
 } from "@/types/ledger";
 import {
@@ -148,6 +149,7 @@ interface AppStateData {
    * "known-good data for this account" from "some account's stale cache".
    */
   lastBootstrappedAccountId: string | null;
+  blockedUsers: UserProfile[];
 }
 
 export interface AppState extends AppStateData {
@@ -169,6 +171,7 @@ export interface AppState extends AppStateData {
   markEventRead(eventId: number): void;
   dismissEvent(eventId: number): void;
   applyConversation(groupId: string, merge: ConversationMerge): void;
+  applyUserBlocks(users: UserProfile[]): void;
   setConversationReconcile(groupId: string, status: ConversationReconcileState["status"]): void;
   upsertExpense(summary: ExpenseSummary): void;
   replaceExpenseId(oldId: string, newId: string): void;
@@ -205,6 +208,7 @@ const initialData: AppStateData = {
   bootstrapStatus: "idle",
   bootstrapErrorCode: null,
   lastBootstrappedAccountId: null,
+  blockedUsers: [],
 };
 
 function normalizeCursor(value: unknown): PageCursor | null {
@@ -716,16 +720,39 @@ export const useAppStore = create<AppState>()(
         ),
 
       applyConversation: (groupId, merge) =>
-        set((state) => ({
-          conversations: {
-            ...state.conversations,
-            [groupId]: mergeConversation(
-              state.conversations[groupId],
-              merge,
-              state.me?.id ?? null,
-            ),
-          },
-        })),
+        set((state) => {
+          const merged = mergeConversation(
+            state.conversations[groupId],
+            merge,
+            state.me?.id ?? null,
+          );
+          const blockedIds = new Set(state.blockedUsers.map((user) => user.id));
+          return {
+            conversations: {
+              ...state.conversations,
+              [groupId]: {
+                ...merged,
+                messages: merged.messages.filter((message) => !blockedIds.has(message.senderId)),
+              },
+            },
+          };
+        }),
+
+      applyUserBlocks: (users) =>
+        set((state) => {
+          const blockedIds = new Set(users.map((user) => user.id));
+          const unblocked = state.blockedUsers.some((user) => !blockedIds.has(user.id));
+          const conversations: Record<string, ConversationState> = {};
+          for (const [id, conversation] of Object.entries(state.conversations)) {
+            conversations[id] = unblocked
+              ? { ...conversation, messages: [], messageCursor: null, messagesComplete: false }
+              : {
+                  ...conversation,
+                  messages: conversation.messages.filter((message) => !blockedIds.has(message.senderId)),
+                };
+          }
+          return { blockedUsers: users, conversations };
+        }),
 
       setConversationReconcile: (groupId, status) =>
         set((state) => {
@@ -840,6 +867,7 @@ export const useAppStore = create<AppState>()(
         chargeSummary: state.chargeSummary,
         lastBootstrapAt: state.lastBootstrapAt,
         lastBootstrappedAccountId: state.lastBootstrappedAccountId,
+        blockedUsers: state.blockedUsers,
       }),
       onRehydrateStorage: () => () => {
         useAppStore.setState({ hydrated: true });

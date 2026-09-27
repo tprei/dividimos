@@ -194,6 +194,19 @@ describe("mergeChatBroadcast", () => {
     });
   });
 
+  it("ignores a broadcast from a blocked sender without touching preview or unread", () => {
+    useAppStore.setState({
+      me: meUser,
+      groups: { "group-1": baseSnapshot },
+      conversations: {},
+      blockedUsers: [{ id: incomingMessage.senderId, handle: "blocked", name: "Blocked", avatarUrl: null, isBot: false }],
+    });
+
+    const patch = mergeChatBroadcast(useAppStore.getState(), "group-1", incomingMessage);
+
+    expect(patch).toEqual({});
+  });
+
   it("does not bump unreadCount when message sender is me", () => {
     const myMessage: ChatMessage = {
       ...incomingMessage,

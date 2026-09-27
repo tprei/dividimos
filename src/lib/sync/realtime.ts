@@ -9,7 +9,7 @@ import {
   reconcileChat,
 } from "./chat-reconcile";
 import type { ChatLastMessage, ChatMessage, GroupSnapshot } from "@/types/ledger";
-import { runBootstrap } from "./bootstrap";
+import { advanceBlockListEpoch, runBootstrap } from "./bootstrap";
 import { getAuthGeneration, getSupabase } from "./client";
 import { refreshGroup } from "./refresh";
 
@@ -69,6 +69,7 @@ export function mergeChatBroadcast(
   groupId: string,
   message: ChatMessage,
 ): Partial<AppState> {
+  if (state.blockedUsers.some((user) => user.id === message.senderId)) return {};
   const existingConv = state.conversations[groupId];
   const isDuplicate =
     existingConv?.messages.some(
@@ -255,6 +256,10 @@ export function startRealtime(): () => void {
           .channel(`user:${meId}`, { config: { private: true } })
           .on("broadcast", { event: "membership" }, ({ payload }) => {
             handleMembershipBroadcast(payload);
+          })
+          .on("broadcast", { event: "blocks_changed" }, () => {
+            advanceBlockListEpoch();
+            void runBootstrap().catch(() => {});
           })
           .subscribe(
             onRecovery(() => {

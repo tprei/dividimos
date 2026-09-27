@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "./errors";
 import { rpc } from "./client";
-import { attachVisibilityRefresh } from "./bootstrap";
+import { advanceBlockListEpoch, attachVisibilityRefresh, runBootstrap } from "./bootstrap";
 
 vi.mock("./client", () => ({
   rpc: vi.fn(),
@@ -45,5 +45,39 @@ describe("attachVisibilityRefresh", () => {
     becomeVisible();
 
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runBootstrap and the block list", () => {
+  it("never lets a bootstrap that started before a block overwrite the acknowledged list", async () => {
+    useAppStore.getState().reset();
+    const blocked = { id: "u-x", handle: "x", name: "X", avatarUrl: null, isBot: false };
+    const overview = Promise.withResolvers<unknown>();
+    const staleList = Promise.withResolvers<unknown>();
+    rpcMock.mockReturnValueOnce(overview.promise as never).mockReturnValueOnce(staleList.promise as never);
+
+    const stale = runBootstrap();
+    advanceBlockListEpoch();
+    useAppStore.getState().applyUserBlocks([blocked]);
+    overview.resolve({
+      me: {
+        id: "u-me",
+        handle: "me",
+        name: "Me",
+        avatarUrl: null,
+        isBot: false,
+        email: "me@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: { expenses: true, settlements: true, nudges: true },
+      },
+      groups: [],
+      serverTime: "2026-09-27T10:00:00.000Z",
+    });
+    staleList.resolve([]);
+    await stale;
+
+    expect(useAppStore.getState().blockedUsers).toEqual([blocked]);
   });
 });

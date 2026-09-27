@@ -77,14 +77,14 @@ describe("JoinActions", () => {
     expect(screen.getByText("Entrar no grupo")).toBeEnabled();
   });
 
-  it("shows the removal message when the caller was excluded from the group", async () => {
+  it("explains the refusal when the caller was excluded from the group", async () => {
     joinMock.mockRejectedValue(new LedgerError("member_excluded"));
     const user = userEvent.setup();
     render(<JoinActions {...defaultProps} />);
 
     await user.click(screen.getByText("Entrar no grupo"));
 
-    expect(screen.getByText("Essa pessoa foi removida do grupo.")).toBeInTheDocument();
+    expect(screen.getByText("Não foi possível incluir essa pessoa nessa interação.")).toBeInTheDocument();
   });
 
   it("shows the shared fallback for an unrecognized failure", async () => {
