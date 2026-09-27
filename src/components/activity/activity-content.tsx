@@ -24,6 +24,7 @@ import { getGroupName, makeNameOf } from "@/lib/ledger/group-names";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
+import { selectVisibleActivityEvents } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 
@@ -216,7 +217,7 @@ function ActivityRow({ event, groups, meId, actorLabel }: ActivityRowProps) {
 
 export function ActivityContent() {
   const hydrated = useAppStore((s) => s.hydrated);
-  const items = useAppStore(useShallow((s) => s.activity.items));
+  const items = useAppStore(selectVisibleActivityEvents);
   const oldestId = useAppStore((s) => s.activity.oldestId);
   const complete = useAppStore((s) => s.activity.complete);
   const read = useAppStore(useShallow((s) => s.activity.read));

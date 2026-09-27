@@ -68,11 +68,13 @@ function memberRow(
   userId: string,
   status: "accepted" | "invited" = "accepted",
   preferences: Record<string, boolean> = {},
+  archivedAt: string | null = null,
 ) {
   return {
     group_id: "group-1",
     user_id: userId,
     status,
+    archived_at: archivedAt,
     users: { name: MEMBER_NAMES[userId], notification_preferences: preferences },
   };
 }
@@ -344,6 +346,37 @@ describe("POST /api/notify", () => {
     expect(targets).toEqual(["bruno", "carol"]);
   });
 
+  it("skips members whose archived_at is set", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    const eventRow = {
+      id: 109,
+      group_id: "group-1",
+      actor_id: "ana",
+      kind: "expense_created" as const,
+      expense_id: "expense-1",
+      settlement_id: null,
+      subject_user_id: null,
+      payload: {},
+      created_at: "2026-09-06T12:00:00Z",
+      notified_at: null,
+    };
+
+    adminMock.onTable("group_events", { data: eventRow });
+    adminMock.onTable("groups", {
+      data: { id: "group-1", kind: "regular", name: "Viagem" },
+    });
+    adminMock.onTable("group_members", {
+      data: [memberRow("bruno"), memberRow("carol", "accepted", {}, "2026-09-10T08:00:00Z")],
+    });
+
+    const res = await POST(makeRequest({ eventId: 109 }));
+    expect(res.status).toBe(200);
+
+    const targets = mockNotifyUser.mock.calls.map((call) => call[0]);
+    expect(targets).toEqual(["bruno"]);
+  });
+
   it("filters expense_created recipients by preferences", async () => {
     serverMock.setUser({ id: "ana" });
 
@@ -570,8 +603,8 @@ describe("POST /api/notify", () => {
     adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
     adminMock.onTable("group_members", {
       data: [
-        { group_id: "group-1", user_id: "ana", status: "accepted", users: { name: "Ana", notification_preferences: { nudges: true } } },
-        { group_id: "group-1", user_id: "bob", status: "accepted", users: { name: "Bob", notification_preferences: { nudges: true } } },
+        { group_id: "group-1", user_id: "ana", status: "accepted", archived_at: null, users: { name: "Ana", notification_preferences: { nudges: true } } },
+        { group_id: "group-1", user_id: "bob", status: "accepted", archived_at: null, users: { name: "Bob", notification_preferences: { nudges: true } } },
       ],
     });
     const res = await POST(makeRequest({ eventId: 130 }));

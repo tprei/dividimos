@@ -16,9 +16,6 @@ function group(id: string, lastActivityAt: string): GroupSnapshot {
     },
     members: [],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -28,6 +25,9 @@ function group(id: string, lastActivityAt: string): GroupSnapshot {
     lastActivityAt,
     expenseCount: 0,
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
 }
 
@@ -57,6 +57,19 @@ describe("newestActivityAt", () => {
         c: group("c", "2026-01-03T10:00:00.000Z"),
       }),
     ).toBe("2026-01-05T10:00:00.000Z");
+  });
+
+  it("ignores archived groups when the bell looks for new activity", () => {
+    const archived = group("arch", "2026-01-09T10:00:00.000Z");
+    archived.archivedAt = "2026-01-09T12:00:00.000Z";
+
+    expect(
+      newestActivityAt({
+        a: group("a", "2026-01-02T10:00:00.000Z"),
+        arch: archived,
+      }),
+    ).toBe("2026-01-02T10:00:00.000Z");
+    expect(newestActivityAt({ arch: archived })).toBeNull();
   });
 });
 

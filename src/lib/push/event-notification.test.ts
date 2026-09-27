@@ -34,11 +34,13 @@ function member(
   userId: string,
   status: "invited" | "accepted" = "accepted",
   prefs: EventNotificationMember["notificationPreferences"] = {},
+  archived = false,
 ): EventNotificationMember {
   return {
     userId,
     name: NAMES[userId] ?? userId,
     status,
+    archived,
     notificationPreferences: prefs,
   };
 }
@@ -63,6 +65,29 @@ describe("recipientsFor", () => {
   it("sends expense events to accepted members except the actor", () => {
     const members = [member("ana"), member("bruno"), member("carol", "invited")];
     expect(recipientsFor(event(), members)).toEqual(["bruno"]);
+  });
+
+  it("never sends to an archived member, in any branch", () => {
+    const members = [
+      member("ana", "accepted", {}, true),
+      member("bruno"),
+      member("carol", "accepted", {}, true),
+    ];
+    expect(recipientsFor(event(), members)).toEqual(["bruno"]);
+
+    const nudge = event({
+      kind: "nudge",
+      expense_id: null,
+      subject_user_id: "carol",
+    });
+    expect(recipientsFor(nudge, members)).toEqual([]);
+
+    const invited = event({
+      kind: "member_invited",
+      expense_id: null,
+      payload: { userIds: ["carol"] },
+    });
+    expect(recipientsFor(invited, members)).toEqual([]);
   });
 
   it("keeps every accepted member when the event has no actor", () => {

@@ -1,4 +1,5 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
+import { isGroupArchived } from "@/lib/group-lifecycle";
 import {
   formatOccurredOn,
   groupNameOf,
@@ -32,7 +33,9 @@ export function selectHomeRecentBills(state: AppState): RecentBillItem[] {
   if (state.me) {
     const recent = Object.values(state.groups).flatMap(
       (group) =>
-        group?.recentExpenses.map((expense) => ({ expense, group })) ?? []
+        isGroupArchived(group)
+          ? []
+          : group.recentExpenses.map((expense) => ({ expense, group }))
     );
     recent.sort((a, b) =>
       b.expense.createdAt.localeCompare(a.expense.createdAt)

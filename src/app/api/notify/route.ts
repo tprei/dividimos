@@ -112,13 +112,14 @@ export async function POST(request: Request): Promise<Response> {
 
     const { data: memberRows } = await admin
       .from("group_members")
-      .select("user_id, status, users!group_members_user_id_fkey ( name, notification_preferences )")
+      .select("user_id, status, archived_at, users!group_members_user_id_fkey ( name, notification_preferences )")
       .eq("group_id", event.group_id);
 
     const members: EventNotificationMember[] = (memberRows ?? []).map((row) => ({
       userId: row.user_id,
       name: row.users?.name ?? "",
       status: row.status,
+      archived: row.archived_at !== null,
       notificationPreferences: readPreferences(
         row.users?.notification_preferences ?? null,
       ),

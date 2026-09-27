@@ -63,9 +63,6 @@ function makeSnapshot(
     },
     members: kind === "dm" ? [member(groupId, me), member(groupId, carol)] : [member(groupId, me), member(groupId, carol), member(groupId, dan)],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -75,6 +72,9 @@ function makeSnapshot(
     lastActivityAt: "2026-01-01T00:00:00Z",
     expenseCount: 0,
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
     ...overrides,
   };
 }

@@ -35,9 +35,6 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
       { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
     ],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -47,6 +44,9 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
@@ -142,5 +142,42 @@ describe("selectHomeMode", () => {
       groupOrder: [debtGroup.group.id],
     });
     expect(selectHomeMode(useAppStore.getState())).toBe("outstanding");
+  });
+});
+
+describe("selectHomeRecentBills", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("skips expenses of archived groups", () => {
+    const archivedGroup = snapshot({
+      archivedAt: "2026-01-03T00:00:00Z",
+      recentExpenses: [{
+        id: "expense-archived", groupId: "g1", creatorId: me.id, status: "active",
+        occurredOn: "2026-09-23", createdAt: "2026-09-23T12:00:00Z", versionNo: 1,
+        title: "Arquivada", merchantName: null, expenseType: "single_amount",
+        totalCents: 15000, myShareCents: 7500, myPaidCents: 15000, participantCount: 2,
+      }],
+    });
+    const activeGroup = snapshot({
+      group: { id: "g2", kind: "group", name: "Active", creatorId: me.id, dmUserA: null, dmUserB: null, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
+      recentExpenses: [{
+        id: "expense-active", groupId: "g2", creatorId: me.id, status: "active",
+        occurredOn: "2026-09-24", createdAt: "2026-09-24T12:00:00Z", versionNo: 1,
+        title: "Ativa", merchantName: null, expenseType: "single_amount",
+        totalCents: 9000, myShareCents: 4500, myPaidCents: 9000, participantCount: 2,
+      }],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: archivedGroup, g2: activeGroup },
+      groupOrder: ["g1", "g2"],
+    });
+
+    expect(selectHomeRecentBills(useAppStore.getState()).map((bill) => bill.title)).toEqual([
+      "Ativa",
+    ]);
   });
 });

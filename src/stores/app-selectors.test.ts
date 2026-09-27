@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type {
   BalanceRow,
   ExpenseSummary,
+  GroupEvent,
   GroupMember,
   GroupSnapshot,
   Me,
@@ -11,7 +12,7 @@ import { useAppStore } from "./app-store";
 import {
   formatOccurredOn,
   groupNameOf,
-  selectConversationRows,
+  selectConversationListSections,
   selectDmMembership,
   selectExpenseList,
   selectHomeRecentBills,
@@ -22,6 +23,8 @@ import {
   selectRecentBills,
   selectTransfers,
   selectUnreadTotal,
+  selectVisibleActivityEvents,
+  selectGroupListSections,
 } from "./app-selectors";
 
 const me: Me = {
@@ -55,9 +58,6 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     },
     members: [],
     balances: [],
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     guests: [],
     settlements: [],
     recentExpenses: [],
@@ -67,6 +67,9 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   };
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
@@ -224,6 +227,87 @@ describe("selectUnreadTotal", () => {
 
     expect(selectUnreadTotal(useAppStore.getState())).toBe(7);
   });
+
+  it("skips archived groups", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", { unreadCount: 2 }),
+        g2: snapshot("g2", { unreadCount: 5, archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+      groupOrder: ["g1", "g2"],
+    });
+
+    expect(selectUnreadTotal(useAppStore.getState())).toBe(2);
+  });
+});
+
+describe("selectGroupListSections", () => {
+  it("splits accepted groups by archive state, keeping groupOrder order", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", { members: [member(me.id, "accepted")] }),
+        g2: snapshot("g2", {
+          members: [member(me.id, "accepted")],
+          unreadCount: 3,
+          archivedAt: "2026-01-03T00:00:00Z",
+        }),
+        g3: snapshot("g3", {
+          members: [member(me.id, "accepted")],
+          archivedAt: "2026-01-03T00:00:00Z",
+        }),
+      },
+      groupOrder: ["g2", "g1", "g3"],
+    });
+
+    const sections = selectGroupListSections(useAppStore.getState());
+
+    expect(sections.active.map((s) => s.group.id)).toEqual(["g1"]);
+    expect(sections.archived.map((s) => s.group.id)).toEqual(["g2", "g3"]);
+    expect(sections.archivedUnreadCount).toBe(1);
+  });
+
+  it("applies today's joined rule: only kind group with my accepted membership", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        invited: snapshot("invited", { members: [member(me.id, "invited", "user-2")] }),
+        dm: snapshot("dm", {
+          members: [member(me.id, "accepted")],
+          group: {
+            id: "dm",
+            kind: "dm",
+            name: "",
+            creatorId: me.id,
+            dmUserA: me.id,
+            dmUserB: "user-2",
+            ledgerVersion: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        }),
+      },
+      groupOrder: ["invited", "dm"],
+    });
+
+    const sections = selectGroupListSections(useAppStore.getState());
+
+    expect(sections.active).toEqual([]);
+    expect(sections.archived).toEqual([]);
+  });
+
+  it("keeps the sections while groups identity is unchanged", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
+      groupOrder: ["g1"],
+    });
+    const before = selectGroupListSections(useAppStore.getState());
+
+    useAppStore.setState({ activityViewedAt: { [me.id]: "2026-02-01T00:00:00Z" } });
+
+    expect(selectGroupListSections(useAppStore.getState())).toBe(before);
+  });
 });
 
 describe("selectExpenseList", () => {
@@ -345,9 +429,6 @@ describe("selectDmMembership", () => {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00.000Z",
     },
-    archivedAt: null,
-    financialHistorySharedAt: null,
-    formerMembers: [],
     members:
       status === null
         ? []
@@ -371,6 +452,9 @@ describe("selectDmMembership", () => {
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     expenseCount: 0,
     pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
   });
 
   it("does not call an unread group absent until a read finished", () => {
@@ -494,10 +578,33 @@ describe("selectMyExpenseRows", () => {
     expect(retitled).not.toBe(renamed);
     expect(retitled[0]?.title).toBe("Novo título");
   });
+
+  it("keeps expenses of archived groups and after an unarchive", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1"),
+        g2: snapshot("g2", { archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+      expenses: { e1: summary("e1", "g1"), e2: summary("e2", "g2") },
+      myExpenses: { ids: ["e1", "e2"], cursor: null, complete: true, total: 2 },
+    });
+
+    expect(selectMyExpenseRows(useAppStore.getState()).map((row) => row.id)).toEqual(["e1", "e2"]);
+
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1"),
+        g2: snapshot("g2"),
+      },
+    });
+
+    expect(selectMyExpenseRows(useAppStore.getState()).map((row) => row.id)).toEqual(["e1", "e2"]);
+  });
 });
 
-describe("selectConversationRows", () => {
-  it("builds one row per conversable group in groupOrder order", () => {
+describe("selectConversationListSections", () => {
+  it("builds one active row per conversable group in groupOrder order", () => {
     useAppStore.setState({
       me,
       groups: {
@@ -507,13 +614,47 @@ describe("selectConversationRows", () => {
       groupOrder: ["dm1", "g1"],
     });
 
-    const rows = selectConversationRows(useAppStore.getState(), me.id);
+    const { active, archived, archivedUnreadCount } = selectConversationListSections(
+      useAppStore.getState(),
+    );
 
-    expect(rows.map((row) => row.groupId)).toEqual(["dm1", "g1"]);
-    expect(rows[0]?.kind).toBe("dm");
-    expect(rows[0]?.title).toBe("User user-2");
-    expect(rows[1]?.kind).toBe("group");
-    expect(rows[1]?.title).toBe("Group g1");
+    expect(active.map((row) => row.groupId)).toEqual(["dm1", "g1"]);
+    expect(active[0]?.kind).toBe("dm");
+    expect(active[0]?.title).toBe("User user-2");
+    expect(active[1]?.kind).toBe("group");
+    expect(active[1]?.title).toBe("Group g1");
+    expect(archived).toEqual([]);
+    expect(archivedUnreadCount).toBe(0);
+  });
+
+  it("moves archived conversations into the archived section with their unread count", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", { members: [member(me.id, "accepted")], unreadCount: 2 }),
+        g2: snapshot("g2", {
+          members: [member(me.id, "accepted")],
+          unreadCount: 5,
+          archivedAt: "2026-01-03T00:00:00Z",
+        }),
+        g3: snapshot("g3", {
+          members: [member(me.id, "accepted")],
+          archivedAt: "2026-01-03T00:00:00Z",
+        }),
+      },
+      groupOrder: ["g1", "g2", "g3"],
+    });
+
+    const { active, archived, archivedUnreadCount } = selectConversationListSections(
+      useAppStore.getState(),
+    );
+
+    expect(active.map((row) => row.groupId)).toEqual(["g1"]);
+    expect(archived.map((row) => row.groupId)).toEqual(["g2", "g3"]);
+    expect(archivedUnreadCount).toBe(1);
+    expect(active[0]?.archiveAction).toBe("archive");
+    expect(archived[0]?.archiveAction).toBe("unarchive");
+    expect(archived[1]?.archiveAction).toBe("unarchive");
   });
 
   it("returns no rows without a viewer", () => {
@@ -523,35 +664,36 @@ describe("selectConversationRows", () => {
       groupOrder: ["g1"],
     });
 
-    expect(selectConversationRows(useAppStore.getState(), null)).toEqual([]);
+    expect(selectConversationListSections(useAppStore.getState()).active).toEqual([]);
+    expect(selectConversationListSections(useAppStore.getState()).archived).toEqual([]);
   });
 
-  it("keeps the array when a store write touches no group snapshot", () => {
+  it("keeps the sections when a store write touches no group snapshot", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
       groupOrder: ["g1"],
     });
-    const before = selectConversationRows(useAppStore.getState(), me.id);
-    expect(before).toHaveLength(1);
+    const before = selectConversationListSections(useAppStore.getState());
+    expect(before.active).toHaveLength(1);
 
     useAppStore.setState({ reads: { charges: { status: "ready" } } });
 
-    expect(selectConversationRows(useAppStore.getState(), me.id)).toBe(before);
+    expect(selectConversationListSections(useAppStore.getState())).toBe(before);
   });
 
-  it("keeps the array when groupOrder is rebuilt with identical snapshots", () => {
+  it("keeps the arrays when groupOrder is rebuilt with identical snapshots", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
       groupOrder: ["g1"],
     });
-    const before = selectConversationRows(useAppStore.getState(), me.id);
+    const before = selectConversationListSections(useAppStore.getState());
 
     const state = useAppStore.getState();
     useAppStore.setState({ groups: { ...state.groups }, groupOrder: ["g1"] });
 
-    expect(selectConversationRows(useAppStore.getState(), me.id)).toBe(before);
+    expect(selectConversationListSections(useAppStore.getState())).toBe(before);
   });
 
   it("rebuilds only the changed conversation's row", () => {
@@ -562,7 +704,7 @@ describe("selectConversationRows", () => {
       groups: { g1: original, g2: other },
       groupOrder: ["g1", "g2"],
     });
-    const before = selectConversationRows(useAppStore.getState(), me.id);
+    const before = selectConversationListSections(useAppStore.getState());
 
     useAppStore.setState({
       groups: {
@@ -570,11 +712,11 @@ describe("selectConversationRows", () => {
         g2: useAppStore.getState().groups.g2,
       },
     });
-    const after = selectConversationRows(useAppStore.getState(), me.id);
+    const after = selectConversationListSections(useAppStore.getState());
 
-    expect(after).not.toBe(before);
-    expect(after[0]?.unreadCount).toBe(7);
-    expect(after[1]).toBe(before[1]);
+    expect(after.active).not.toBe(before.active);
+    expect(after.active[0]?.unreadCount).toBe(7);
+    expect(after.active[1]).toBe(before.active[1]);
   });
 });
 
@@ -608,7 +750,6 @@ describe("selectHomeRecentBills", () => {
     const before = selectHomeRecentBills(useAppStore.getState());
 
     useAppStore.setState({ activityViewedAt: { [me.id]: "2026-02-01T00:00:00Z" } });
-
     expect(selectHomeRecentBills(useAppStore.getState())).toBe(before);
   });
 
@@ -629,6 +770,20 @@ describe("selectHomeRecentBills", () => {
 
     expect(after).not.toBe(before);
     expect(after.map((bill) => bill.id)).toEqual(["e2", "e1"]);
+  });
+
+  it("skips bills from archived groups, filling from the remaining history", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1"),
+        g2: snapshot("g2", { archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+      expenses: { e1: summary("e1", "g2"), e2: summary("e2", "g1") },
+      myExpenses: { ids: ["e1", "e2"], cursor: null, complete: true, total: 2 },
+    });
+
+    expect(selectHomeRecentBills(useAppStore.getState()).map((bill) => bill.id)).toEqual(["e2"]);
   });
 });
 
@@ -688,5 +843,117 @@ describe("selectRecentBills", () => {
     });
 
     expect(selectRecentBills(useAppStore.getState(), 3)).toEqual([]);
+  });
+});
+
+describe("selectVisibleActivityEvents", () => {
+  function event(id: number, groupId: string): GroupEvent {
+    return {
+      id,
+      groupId,
+      actorId: null,
+      kind: "expense_created",
+      expenseId: null,
+      settlementId: null,
+      subjectUserId: null,
+      payload: {},
+      createdAt: "2026-01-02T00:00:00Z",
+      actor: null,
+      expenseTitle: null,
+    };
+  }
+
+  it("drops events whose group is archived and keeps the rest in order", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1"),
+        g2: snapshot("g2", { archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+      activity: {
+        items: [event(1, "g2"), event(2, "g1"), event(3, "g2"), event(4, "g1")],
+        oldestId: 1,
+        complete: true,
+        read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
+      },
+    });
+
+    expect(selectVisibleActivityEvents(useAppStore.getState()).map((e) => e.id)).toEqual([2, 4]);
+  });
+
+  it("keeps events for groups missing from the store", () => {
+    useAppStore.setState({
+      me,
+      groups: {},
+      activity: {
+        items: [event(9, "unknown")],
+        oldestId: 9,
+        complete: true,
+        read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
+      },
+    });
+
+    expect(selectVisibleActivityEvents(useAppStore.getState()).map((e) => e.id)).toEqual([9]);
+  });
+
+  it("keeps the array while activity items and groups are unchanged", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1") },
+      activity: {
+        items: [event(1, "g1")],
+        oldestId: 1,
+        complete: true,
+        read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
+      },
+    });
+    const before = selectVisibleActivityEvents(useAppStore.getState());
+
+    useAppStore.setState({ activityViewedAt: { [me.id]: "2026-02-01T00:00:00Z" } });
+
+    expect(selectVisibleActivityEvents(useAppStore.getState())).toBe(before);
+  });
+
+  it("keeps the array when an unrelated group refresh replaces the groups record", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1"),
+        g2: snapshot("g2", { archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+      activity: {
+        items: [event(1, "g2"), event(2, "g1")],
+        oldestId: 1,
+        complete: true,
+        read: { status: "ready" },
+        readIds: [],
+        dismissedIds: [],
+      },
+    });
+    const before = selectVisibleActivityEvents(useAppStore.getState());
+
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", { unreadCount: 3 }),
+        g2: snapshot("g2", { archivedAt: "2026-01-03T00:00:00Z" }),
+      },
+    });
+
+    expect(selectVisibleActivityEvents(useAppStore.getState())).toBe(before);
+
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", { unreadCount: 3 }),
+        g2: snapshot("g2"),
+      },
+    });
+
+    expect(selectVisibleActivityEvents(useAppStore.getState()).map((e) => e.id)).toEqual([1, 2]);
   });
 });
