@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
+import { ReportContentAction } from "@/components/reports/report-content-action";
 import { ChatRailRow, formatChatTime, type ChatRailMarker, type RailPerson } from "@/components/chat/chat-rail-row";
 import { displayNames } from "@/lib/people";
 import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/chat-date-separator";
@@ -254,15 +255,29 @@ export function ChatThread({
             {showSeparator && <ChatDateSeparator date={item.at} />}
             <ChatRailRow marker={marker} spaced={spaced}>
               {item.kind === "message" ? (
-                <ChatMessageBubble
-                  message={item.message}
-                  isOwn={item.message.senderId === meId}
-                  senderLabel={
-                    showSenderNames && marker.kind === "people"
-                      ? senderNames.get(item.message.senderId)
-                      : undefined
-                  }
-                />
+                <div className="flex min-w-0 items-start gap-1">
+                  <div className="min-w-0 flex-1">
+                    <ChatMessageBubble
+                      message={item.message}
+                      isOwn={item.message.senderId === meId}
+                      senderLabel={
+                        showSenderNames && marker.kind === "people"
+                          ? senderNames.get(item.message.senderId)
+                          : undefined
+                      }
+                    />
+                  </div>
+                  {item.message.senderId !== meId && item.message.sender !== null && (
+                    <ReportContentAction
+                      key={`${meId}:${item.message.id}`}
+                      subject={item.message.sender}
+                      messageId={item.message.id}
+                      messagePreview={item.message.content}
+                      presentation="message-menu"
+                      messageErased={item.message.erased}
+                    />
+                  )}
+                </div>
               ) : membershipEvent && memberIds.length > 1 ? (
                 <div className="flex min-h-6 items-baseline gap-2">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground">
