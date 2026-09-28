@@ -7,6 +7,8 @@ AS $function$
 DECLARE
   generated_handle TEXT;
   base TEXT;
+  retry_stem TEXT;
+  fallback_stem TEXT;
   raw_name TEXT;
   user_name TEXT;
   attempt INT := 0;
@@ -56,14 +58,23 @@ BEGIN
   );
   user_name := left(user_name, 80);
 
+  retry_stem := left(base, 26);
+  IF public.is_reserved_handle(retry_stem) THEN
+    retry_stem := 'usuario';
+  END IF;
+  fallback_stem := left(base, 22);
+  IF public.is_reserved_handle(fallback_stem) THEN
+    fallback_stem := 'usuario';
+  END IF;
+
   LOOP
     IF generated_handle IS NULL THEN
       IF attempt = 0 THEN
         generated_handle := base;
       ELSIF attempt <= 20 THEN
-        generated_handle := left(base, 26) || (1000 + floor(random() * 9000))::int::text;
+        generated_handle := retry_stem || (1000 + floor(random() * 9000))::int::text;
       ELSE
-        generated_handle := left(base, 22) || (100000 + floor(random() * 900000))::int::text;
+        generated_handle := fallback_stem || (100000 + floor(random() * 900000))::int::text;
       END IF;
       attempt := attempt + 1;
       IF EXISTS (SELECT 1 FROM public.users WHERE handle = generated_handle)

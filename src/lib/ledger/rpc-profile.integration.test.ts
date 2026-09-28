@@ -730,6 +730,89 @@ describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
     }
   });
 
+  it("falls back to the usuario stem when truncation reserves the retry candidates", async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL;
+    if (!databaseUrl) {
+      throw new Error("SUPABASE_DB_URL is required for signup contention tests");
+    }
+
+    const crafted = "pix00000000000000000000000abcd";
+    const insertSignup =
+      "insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, created_at, updated_at) " +
+      "values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, $3::jsonb, now(), now())";
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    const signup = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    const describeError = (error: unknown): string =>
+      error instanceof Error ? error.message : String(error);
+    const cleanupErrors: string[] = [];
+    const cleanup = async (label: string, step: () => Promise<unknown>) => {
+      try {
+        await step();
+      } catch (error) {
+        cleanupErrors.push(`${label}: ${describeError(error)}`);
+      }
+    };
+
+    let bodyError: unknown = null;
+    try {
+      await Promise.all([signup.connect(), monitor.connect()]);
+
+      const free = await monitor.query(
+        "select 1 from public.users where handle = $1",
+        [crafted],
+      );
+      expect(free.rowCount).toBe(0);
+
+      await signup.query(insertSignup, [
+        ids[0],
+        `${ids[0]}@${runId}.test.dividimos.local`,
+        JSON.stringify({ full_name: crafted }),
+      ]);
+      await signup.query("set statement_timeout = '4s'");
+      await signup.query(insertSignup, [
+        ids[1],
+        `${ids[1]}@${runId}.test.dividimos.local`,
+        JSON.stringify({ full_name: crafted }),
+      ]);
+      await signup.query("set statement_timeout = 0");
+
+      const stored = (
+        await monitor.query(
+          "select handle, public.is_reserved_handle(handle) as reserved " +
+            "from public.users where id = any($1::uuid[]) order by handle",
+          [ids],
+        )
+      ).rows as Array<{ handle: string; reserved: boolean }>;
+      expect(stored).toHaveLength(2);
+      expect(stored[0].handle).toBe(crafted);
+      expect(stored[0].reserved).toBe(false);
+      expect(stored[1].handle).toMatch(/^usuario\d+$/);
+      expect(stored[1].reserved).toBe(false);
+    } catch (error) {
+      bodyError = error;
+    }
+    await cleanup("signup end", () => signup.end());
+    await cleanup("user cleanup", () =>
+      monitor.query("delete from public.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("auth cleanup", () =>
+      monitor.query("delete from auth.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("monitor end", () => monitor.end());
+    if (cleanupErrors.length > 0) {
+      const detail = cleanupErrors.join("; ");
+      throw new Error(
+        bodyError === null
+          ? `truncated stem signup cleanup failed: ${detail}`
+          : `truncated stem signup cleanup failed: ${detail}; original failure: ${describeError(bodyError)}`,
+      );
+    }
+    if (bodyError !== null) {
+      throw bodyError;
+    }
+  });
+
   it("denies direct execution of the signup trigger", async () => {
     await withPg(async (db) => {
       await db.query("begin");
