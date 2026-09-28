@@ -36,6 +36,7 @@ import {
   dmErrorMessage,
   getOrCreateDm,
 } from "@/lib/sync/mutations-group";
+import { reconcileChat } from "@/lib/sync/chat-reconcile";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { loadConversation, refreshGroup } from "@/lib/sync/refresh";
@@ -151,9 +152,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const splitKey = useRef(crypto.randomUUID());
   const draftKey = useRef(crypto.randomUUID());
   const requestedKeyRef = useRef<string | null>(null);
-  const loadedRef = useRef<Set<string>>(new Set());
   const groupId = dm?.group.id ?? null;
-  const loadKey = me && groupId ? `${me.id}:${groupId}` : null;
   const accountKey = me === null ? null : `${me.id}:${counterpartyId}`;
   const activeResolveError =
     !dm && resolveError?.accountKey === accountKey ? resolveError.message : null;
@@ -246,22 +245,10 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     return subscribeChat(groupId);
   }, [groupId, me?.id]);
 
-  const loadInitialConversation = useCallback(() => {
-    if (!groupId || loadKey === null) return;
-    loadedRef.current.add(loadKey);
-    loadConversation(groupId).catch((error) => {
-      // With messages already on screen a toast is enough; with none, the
-      // thread renders a retry from the recorded read state.
-      if ((useAppStore.getState().conversations[groupId]?.messages.length ?? 0) > 0) {
-        toast.error(ledgerErrorMessage(error));
-      }
-    });
-  }, [groupId, loadKey]);
-
-  useEffect(() => {
-    if (loadKey === null || loadedRef.current.has(loadKey)) return;
-    loadInitialConversation();
-  }, [loadInitialConversation, loadKey]);
+  const handleRetryHistory = useCallback(() => {
+    if (groupId === null) return;
+    reconcileChat(groupId);
+  }, [groupId]);
 
 
   useEffect(() => {
@@ -589,7 +576,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         <div className="flex-1">
           <SyncErrorState
             message={ledgerErrorMessage(new LedgerError(conversationRead.code))}
-            onRetry={loadInitialConversation}
+            onRetry={handleRetryHistory}
           />
         </div>
       ) : (

@@ -14,7 +14,7 @@ import {
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { catchUpBootstrap } from "./bootstrap";
 import { getAuthGeneration, getSupabase } from "./client";
-import { refreshGroup } from "./refresh";
+import { refreshGroup, refreshOpenAssignmentRooms } from "./refresh";
 
 interface LedgerBroadcastPayload {
   group_id: string;
@@ -131,35 +131,78 @@ export function parseAssignmentRoomBroadcast(raw: unknown): AssignmentRoomSummar
   return decoded.ok ? decoded.value : null;
 }
 
-function handleAssignmentRoomBroadcast(
-  groupId: string,
-  payload: unknown,
-  authGeneration: number,
-): void {
-  if (getAuthGeneration() !== authGeneration) return;
-  const room = parseAssignmentRoomBroadcast(payload);
-  if (room === null || room.groupId !== groupId) return;
-  useAppStore.getState().applyAssignmentRoomSummaries([room]);
+interface UserChatBroadcastPayload {
+  group_id: string;
+  message: unknown;
 }
 
-function handleChatBroadcast(
-  groupId: string,
-  payload: unknown,
-  authGeneration: number,
-): void {
+function parseUserChatBroadcast(raw: unknown): UserChatBroadcastPayload | null {
+  if (!isRecord(raw)) return null;
+  if (!exactKeys(raw, ["group_id", "message"], [], ["id"]).ok) return null;
+  if (typeof raw.group_id !== "string") return null;
+  return { group_id: raw.group_id, message: raw.message };
+}
+
+function handleUserChatBroadcast(payload: unknown, authGeneration: number): void {
   if (getAuthGeneration() !== authGeneration) return;
-  const decoded = decodeChatMessage(payload);
+  const parsed = parseUserChatBroadcast(payload);
+  if (parsed === null || !useAppStore.getState().groups[parsed.group_id]) return;
+  if (!activeChatSubscriptions.has(parsed.group_id)) return;
+  const decoded = decodeChatMessage(parsed.message);
   if (!decoded.ok) return;
+
+  const reconcileStatus =
+    useAppStore.getState().conversations[parsed.group_id]?.reconcile.status;
+  if (reconcileStatus === "loading" || reconcileStatus === "error") {
+    reconcileChat(parsed.group_id);
+    return;
+  }
 
   // A row older than everything we hold proves a gap the live stream cannot
   // fill, so schedule one coalesced reconciliation instead of a query burst.
-  const gapped = isMalformedHint(groupId, decoded.value.createdAt);
+  const gapped = isMalformedHint(parsed.group_id, decoded.value.createdAt);
 
   useAppStore
     .getState()
-    .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
+    .patch((state) => mergeChatBroadcast(state, parsed.group_id, decoded.value));
 
-  if (gapped) reconcileChat(groupId);
+  if (gapped) reconcileChat(parsed.group_id);
+}
+
+function handleUserRoomBroadcast(payload: unknown, authGeneration: number): void {
+  if (getAuthGeneration() !== authGeneration) return;
+  const room = parseAssignmentRoomBroadcast(payload);
+  if (room === null || !useAppStore.getState().groups[room.groupId]) return;
+  useAppStore.getState().applyAssignmentRoomSummaries([room]);
+}
+
+const activeChatSubscriptions = new Map<string, number>();
+let userTopicSubscribed = false;
+
+function acceptedNonDmGroupIds(): string[] {
+  const state = useAppStore.getState();
+  const viewerId = state.me?.id ?? null;
+  if (viewerId === null) return [];
+  return Object.values(state.groups)
+    .filter(
+      (snapshot) =>
+        snapshot.group.kind !== "dm" &&
+        snapshot.members.some(
+          (member) =>
+            member.userId === viewerId && member.status === "accepted",
+        ),
+    )
+    .map((snapshot) => snapshot.group.id);
+}
+
+function onUserTopicJoined(): void {
+  userTopicSubscribed = true;
+  for (const groupId of activeChatSubscriptions.keys()) {
+    reconcileChat(groupId);
+  }
+  for (const groupId of acceptedNonDmGroupIds()) {
+    void refreshOpenAssignmentRooms(groupId);
+  }
 }
 
 function catchUpMemberships(): void {
@@ -268,9 +311,6 @@ export function startRealtime(): () => void {
         .on("broadcast", { event: "ledger" }, ({ payload }) => {
           handleLedgerBroadcast(id, payload);
         })
-        .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
-          handleAssignmentRoomBroadcast(id, payload, authGeneration);
-        })
         .on("broadcast", { event: "chat_activity" }, () => {
           // Wakes conversation previews and unread badges through the one
           // coalesced group refresh; never a per-event query burst.
@@ -291,6 +331,7 @@ export function startRealtime(): () => void {
         userChannel = null;
       }
       userChannelUserId = meId;
+      userTopicSubscribed = false;
       if (meId) {
         const token = Symbol();
         pass.pending.add(token);
@@ -301,8 +342,19 @@ export function startRealtime(): () => void {
           .on("broadcast", { event: "membership" }, ({ payload }) => {
             handleMembershipBroadcast(payload);
           })
+          .on("broadcast", { event: "message" }, ({ payload }) => {
+            handleUserChatBroadcast(payload, authGeneration);
+          })
+          .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
+            handleUserRoomBroadcast(payload, authGeneration);
+          })
           .subscribe((status) => {
             if (getAuthGeneration() !== authGeneration) return;
+            if (status === "SUBSCRIBED") {
+              if (!userTopicSubscribed) onUserTopicJoined();
+            } else {
+              userTopicSubscribed = false;
+            }
             handleRecovery(status);
             settlePass(pass, token, status === "SUBSCRIBED", null);
           });
@@ -330,6 +382,7 @@ export function startRealtime(): () => void {
     stopped = true;
     passes = [];
     unsubscribe();
+    userTopicSubscribed = false;
     if (userChannel) {
       void getSupabase().removeChannel(userChannel);
     }
@@ -343,20 +396,13 @@ export function startRealtime(): () => void {
 }
 
 export function subscribeChat(groupId: string): () => void {
-  const authGeneration = getAuthGeneration();
-  const channel = getSupabase()
-    .channel(`chat:${groupId}`, { config: { private: true } })
-    .on("broadcast", { event: "message" }, ({ payload }) => {
-      handleChatBroadcast(groupId, payload, authGeneration);
-    })
-    .subscribe((status) => {
-      // Reconcile once the subscription is live: anything inserted before this
-      // point was never broadcast to us.
-      if (status === "SUBSCRIBED" && getAuthGeneration() === authGeneration) {
-        reconcileChat(groupId);
-      }
-    });
+  activeChatSubscriptions.set(
+    groupId,
+    (activeChatSubscriptions.get(groupId) ?? 0) + 1,
+  );
+  reconcileChat(groupId);
 
+  const authGeneration = getAuthGeneration();
   const handleVisibility = () => {
     if (
       document.visibilityState === "visible" &&
@@ -373,8 +419,12 @@ export function subscribeChat(groupId: string): () => void {
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", handleVisibility);
     }
-    // Invalidate before removing the channel so in-flight pages cannot publish.
+    const remaining = (activeChatSubscriptions.get(groupId) ?? 0) - 1;
+    if (remaining > 0) {
+      activeChatSubscriptions.set(groupId, remaining);
+      return;
+    }
+    activeChatSubscriptions.delete(groupId);
     invalidateChatReconciliation(groupId);
-    void getSupabase().removeChannel(channel);
   };
 }

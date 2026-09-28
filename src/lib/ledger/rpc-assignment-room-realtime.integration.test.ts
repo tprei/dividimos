@@ -14,6 +14,7 @@ import { decodeMutationAck } from "@/lib/ledger/decode";
 import type { Database } from "@/types/database";
 import {
   authenticateAs,
+  createGroupWithMembers,
   createTestUsers,
   rpcDecoded,
   withPg,
@@ -97,7 +98,7 @@ async function joinSubscribed(
 
 function nextBroadcast(
   channel: RealtimeChannel,
-  event: "assignment" | "access_changed",
+  event: "assignment" | "access_changed" | "assignment_room",
   timeoutMs = 8_000
 ): Promise<{ payload: Record<string, unknown>; receivedAt: number }> {
   const { promise, resolve, reject } = Promise.withResolvers<{
@@ -140,7 +141,7 @@ function nextRevisionBroadcast(
 
 function expectNoBroadcast(
   channel: RealtimeChannel,
-  event: "assignment" | "access_changed",
+  event: "assignment" | "access_changed" | "assignment_room",
   timeoutMs = 1_000
 ): Promise<void> {
   const { promise, resolve, reject } = Promise.withResolvers<void>();
@@ -161,6 +162,42 @@ function expectRevisionPayload(
   // The local Realtime server injects a transport id. The application payload
   // has no room, participant, credential, or financial fields.
   expect(Object.keys(payload).sort()).toEqual(["id", "revision"]);
+}
+
+function channelObserver(channel: RealtimeChannel, event: string) {
+  const seen: Array<Record<string, unknown>> = [];
+  const waiters: Array<(payload: Record<string, unknown>) => void> = [];
+  channel.on("broadcast", { event }, ({ payload }) => {
+    seen.push(payload);
+    for (const wake of waiters.splice(0)) wake(payload);
+  });
+  return {
+    next(timeoutMs = 8_000): Promise<Record<string, unknown>> {
+      const { promise, resolve, reject } = Promise.withResolvers<Record<string, unknown>>();
+      if (seen.length > 0) {
+        resolve(seen[0]!);
+        return promise;
+      }
+      const timer = setTimeout(() => reject(new Error(`missing ${event} broadcast`)), timeoutMs);
+      waiters.push((payload) => {
+        clearTimeout(timer);
+        resolve(payload);
+      });
+      return promise;
+    },
+    expectNone(): Promise<void> {
+      if (seen.length > 0) {
+        return Promise.reject(new Error(`unexpected ${event} broadcast`));
+      }
+      const { promise, resolve, reject } = Promise.withResolvers<void>();
+      const timer = setTimeout(resolve, 1_500);
+      waiters.push(() => {
+        clearTimeout(timer);
+        reject(new Error(`unexpected ${event} broadcast`));
+      });
+      return promise;
+    },
+  };
 }
 
 describe.skipIf(!isIntegrationTestReady)(
@@ -460,6 +497,121 @@ describe.skipIf(!isIntegrationTestReady)(
       ]);
 
       await channel.unsubscribe();
+    }, 180_000);
+
+    function groupRoomArgs(hostUser: TestUser, groupId: string, roomId: string, fill: string) {
+      return {
+        p_room_id: roomId,
+        p_group_target: { kind: "existing", groupId },
+        p_header: HEADER,
+        p_items: ITEMS,
+        p_participants: [
+          { id: crypto.randomUUID(), displayName: hostUser.name, userId: hostUser.id },
+        ],
+        p_join_token: capability("armj1", fill),
+      };
+    }
+
+    function expectRoomSummaryPayload(
+      payload: Record<string, unknown>,
+      roomId: string,
+      groupId: string
+    ): void {
+      expect(Object.keys(payload).filter((key) => key !== "id")).toEqual(["room"]);
+      expect(payload.room).toMatchObject({
+        id: roomId,
+        groupId,
+        title: HEADER.title,
+        status: "open",
+        totalCents: 4_000,
+      });
+    }
+
+    async function claimHostItem(
+      roomId: string,
+      participantId: string,
+      item: { id: string; revision: number }
+    ): Promise<void> {
+      await rpcRoom(hostClient, "set_assignment_room_claim", {
+        p_room_id: roomId,
+        p_member_token: null,
+        p_item_id: item.id,
+        p_participant_id: participantId,
+        p_expected_item_revision: item.revision,
+        p_ticks: 120_000,
+      });
+    }
+
+    it("fans the room summary out to accepted members' user topics and never onto the group topic", async () => {
+      const [member] = await createTestUsers(1);
+      const memberClient = authenticateAs(member);
+      await memberClient.realtime.setAuth(member.accessToken!);
+      const groupId = await createGroupWithMembers(host, [member], "Grupo sala em tempo real");
+      const roomId = crypto.randomUUID();
+      const created = await rpcRoom(
+        hostClient,
+        "create_assignment_room",
+        groupRoomArgs(host, groupId, roomId, "W")
+      );
+
+      const memberUserChannel = await joinSubscribed(() =>
+        memberClient.channel(`user:${member.id}`, { config: { private: true } })
+      );
+      const groupChannel = await joinSubscribed(() =>
+        memberClient.channel(`group:${groupId}`, { config: { private: true } })
+      );
+      const memberSummaries = channelObserver(memberUserChannel, "assignment_room");
+      const groupSummaries = channelObserver(groupChannel, "assignment_room");
+
+      const channels = [memberUserChannel, groupChannel];
+      try {
+        await claimHostItem(roomId, created.room.selfParticipantId, created.room.items[0]);
+        expectRoomSummaryPayload(await memberSummaries.next(), roomId, groupId);
+        await groupSummaries.expectNone();
+      } finally {
+        await Promise.all(channels.map((channel) => channel.unsubscribe()));
+      }
+    }, 180_000);
+
+    it("stops the room summary fanout for a member removed from the group", async () => {
+      const [member, former] = await createTestUsers(2);
+      const memberClient = authenticateAs(member);
+      const formerClient = authenticateAs(former);
+      await Promise.all([
+        memberClient.realtime.setAuth(member.accessToken!),
+        formerClient.realtime.setAuth(former.accessToken!),
+      ]);
+      const groupId = await createGroupWithMembers(host, [member, former], "Grupo sala removida");
+      const formerUserChannel = await joinSubscribed(() =>
+        formerClient.channel(`user:${former.id}`, { config: { private: true } })
+      );
+      const { error } = await hostClient.rpc("remove_member", {
+        p_group_id: groupId,
+        p_user_id: former.id,
+      });
+      if (error) throw new Error(`remove_member failed: ${error.message}`);
+
+      const roomId = crypto.randomUUID();
+      const created = await rpcRoom(
+        hostClient,
+        "create_assignment_room",
+        groupRoomArgs(host, groupId, roomId, "X")
+      );
+
+      const memberUserChannel = await joinSubscribed(() =>
+        memberClient.channel(`user:${member.id}`, { config: { private: true } })
+      );
+      const memberSummaries = channelObserver(memberUserChannel, "assignment_room");
+      const formerSummaries = channelObserver(formerUserChannel, "assignment_room");
+
+      const channels = [memberUserChannel, formerUserChannel];
+      try {
+        await claimHostItem(roomId, created.room.selfParticipantId, created.room.items[0]);
+        expectRoomSummaryPayload(await memberSummaries.next(), roomId, groupId);
+        await formerSummaries.expectNone();
+      } finally {
+        await Promise.all(channels.map((channel) => channel.unsubscribe()));
+      }
     }, 180_000);
   }
 );

@@ -27,6 +27,7 @@ vi.mock("@/lib/sync/refresh", () => refresh);
 
 const realtime = vi.hoisted(() => ({
   subscribeChat: vi.fn(() => vi.fn()),
+  reconcileChat: vi.fn(),
 }));
 vi.mock("@/lib/sync/realtime", () => realtime);
 
@@ -229,16 +230,6 @@ describe("ConversationPageClient", () => {
     const text1 = screen.getByText("Primeira mensagem");
     const text2 = screen.getByText("Segunda mensagem");
     expect(text1.compareDocumentPosition(text2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("loads DM history on mount without waiting for realtime", async () => {
-    seedDm(makeDmSnapshot(), { messages: [], events: [] });
-
-    render(<ConversationPageClient counterpartyId={counterparty.id} />);
-
-    await waitFor(() => {
-      expect(refresh.loadConversation).toHaveBeenCalledWith("dm-1");
-    });
   });
 
   it("shows the archived banner and unarchives through the mutation", async () => {

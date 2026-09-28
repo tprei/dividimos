@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAppStore } from "@/stores/app-store";
 import type { Database } from "@/types/database";
-import type { ChatMessage, GroupSnapshot, Me } from "@/types/ledger";
+import type { ChatMessage, GroupMember, GroupSnapshot, Me } from "@/types/ledger";
 import { catchUpBootstrap } from "./bootstrap";
+import {
+  invalidateChatReconciliation,
+  reconcileChat,
+} from "./chat-reconcile";
 import { getSupabase, rpc } from "./client";
 import {
   mergeChatBroadcast,
@@ -12,7 +16,7 @@ import {
   startRealtime,
   subscribeChat,
 } from "./realtime";
-import { refreshGroup } from "./refresh";
+import { refreshGroup, refreshOpenAssignmentRooms } from "./refresh";
 const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("./client", () => ({
   getSupabase: vi.fn(),
@@ -20,9 +24,19 @@ vi.mock("./client", () => ({
   getAuthGeneration: () => authState.generation,
 }));
 vi.mock("./refresh", () => ({
+  loadConversation: vi.fn(async () => null),
   refreshGroup: vi.fn(async () => {}),
+  refreshOpenAssignmentRooms: vi.fn(async () => {}),
   refreshHostedAssignmentRooms: vi.fn(async () => {}),
 }));
+vi.mock("./chat-reconcile", async (importOriginal) => {
+  const actual = await importOriginal<object>();
+  return {
+    ...actual,
+    reconcileChat: vi.fn(),
+    invalidateChatReconciliation: vi.fn(),
+  };
+});
 
 const rpcMock = vi.mocked(rpc);
 
@@ -446,19 +460,6 @@ describe("startRealtime", () => {
     expect(removedChannels).toStrictEqual([first]);
   });
 
-  it("ignores chat broadcasts from the previous account", () => {
-    useAppStore.setState({ me: meUser });
-    const stopChat = subscribeChat("group-1");
-    const channel = createdChannels.find((item) => item.topic === "chat:group-1");
-    if (!channel) throw new Error("chat channel not opened");
-
-    authState.generation = 1;
-    channel.emit("message", incomingMessage);
-
-    expect(useAppStore.getState().conversations).toEqual({});
-    stopChat();
-  });
-
   it("reads bootstrap once for a valid membership broadcast", () => {
     useAppStore.setState({ me: meUser });
     stop = startRealtime();
@@ -680,7 +681,7 @@ describe("startRealtime", () => {
     expect(refreshGroup).not.toHaveBeenCalled();
   });
 
-  describe("assignment_room broadcasts", () => {
+  describe("private user topic content", () => {
     const roomSummary = {
       id: "00000000-0000-4000-8000-000000000021",
       groupId: "group-1",
@@ -699,26 +700,200 @@ describe("startRealtime", () => {
       expenseId: null,
     };
 
-    function groupChannel(): FakeChannel {
-      const channel = createdChannels.find((c) => c.topic === "group:group-1");
-      if (!channel) throw new Error("group channel not opened");
-      return channel;
+    function chatPayload(overrides: { groupId?: string; message?: unknown } = {}): Record<string, unknown> {
+      return {
+        group_id: overrides.groupId ?? incomingMessage.groupId,
+        message: overrides.message ?? incomingMessage,
+        id: "transport-1",
+      };
     }
 
-    it("patches the store from a room summary, tolerating the transport id", () => {
-      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+    let chatSubscriptions: Array<() => void> = [];
+
+    afterEach(() => {
+      for (const unsubscribe of chatSubscriptions) unsubscribe();
+      chatSubscriptions = [];
+    });
+
+    function member(
+      groupId: string,
+      user: typeof meUser | typeof incomingMessage.sender,
+      status: GroupMember["status"],
+    ): GroupMember {
+      return {
+        groupId,
+        userId: user.id,
+        status,
+        invitedBy: null,
+        acceptedAt: null,
+        user,
+      };
+    }
+
+    function snapshotWith(
+      groupId: string,
+      members: GroupMember[],
+    ): GroupSnapshot {
+      return {
+        ...baseSnapshot,
+        group: { ...baseSnapshot.group, id: groupId },
+        members,
+      };
+    }
+
+    function openChat(groupId: string): void {
+      chatSubscriptions.push(subscribeChat(groupId));
+    }
+
+    function joinUserTopic(): void {
+      userChannel(meUser.id).emitStatus("SUBSCRIBED");
+    }
+
+    function seedConversation(
+      status: "loading" | "error",
+      readableThroughMessageId: string | null,
+    ): void {
+      useAppStore.setState({
+        conversations: {
+          "group-1": {
+            messages: [],
+            events: [],
+            messageCursor: null,
+            messagesComplete: true,
+            eventCursor: null,
+            eventsComplete: true,
+            readWatermark: null,
+            reconcile: { status, readableThroughMessageId },
+          },
+        },
+      });
+    }
+
+    function seedGroup(): void {
+      useAppStore.setState({
+        me: meUser,
+        groupOrder: ["group-1"],
+        groups: { "group-1": baseSnapshot },
+      });
       stop = startRealtime();
+    }
 
-      groupChannel().emit("assignment_room", { room: roomSummary, id: "transport-1" });
+    it("patches the conversation from a user-topic chat message", () => {
+      seedGroup();
+      openChat("group-1");
+      expect(reconcileChat).toHaveBeenCalledExactlyOnceWith("group-1");
+      joinUserTopic();
+      expect(reconcileChat).toHaveBeenCalledTimes(2);
+      expect(reconcileChat).toHaveBeenLastCalledWith("group-1");
 
-      expect(useAppStore.getState().assignmentRoomSummaries[roomSummary.id]).toEqual(roomSummary);
+      userChannel(meUser.id).emit("message", chatPayload());
+
+      const state = useAppStore.getState();
+      expect(state.conversations["group-1"]?.messages).toEqual([incomingMessage]);
+      expect(state.groups["group-1"]?.unreadCount).toBe(1);
+      expect(state.groups["group-1"]?.lastMessage).toEqual({
+        content: "E aí pessoal!",
+        senderId: "user-2",
+        createdAt: "2026-09-05T12:00:00.000Z",
+      });
+      expect(refreshGroup).not.toHaveBeenCalled();
+      expect(reconcileChat).toHaveBeenCalledTimes(2);
+    });
+
+    it("merges a repeated message once", () => {
+      seedGroup();
+      openChat("group-1");
+      joinUserTopic();
+      const channel = userChannel(meUser.id);
+
+      channel.emit("message", chatPayload());
+      channel.emit("message", chatPayload());
+
+      const state = useAppStore.getState();
+      expect(state.conversations["group-1"]?.messages).toHaveLength(1);
+      expect(state.groups["group-1"]?.unreadCount).toBe(1);
+    });
+
+    it("does not merge a user-topic message for a chat without an active subscription", () => {
+      seedGroup();
+      joinUserTopic();
+      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+      const channel = userChannel(meUser.id);
+
+      channel.emit("message", chatPayload());
+
+      const state = useAppStore.getState();
+      expect(state.conversations).toEqual({});
+      expect(state.groups["group-1"]?.unreadCount).toBe(0);
+      expect(state.groups["group-1"]?.lastMessage).toBeNull();
+      expect(refreshGroup).not.toHaveBeenCalled();
+      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+      expect(reconcileChat).not.toHaveBeenCalled();
+    });
+
+    it("holds a live row while a head catch-up is in flight and marks the run dirty", () => {
+      seedGroup();
+      openChat("group-1");
+      joinUserTopic();
+      seedConversation("loading", "msg-99");
+      vi.mocked(reconcileChat).mockClear();
+
+      userChannel(meUser.id).emit("message", chatPayload());
+
+      const conversation = useAppStore.getState().conversations["group-1"];
+      expect(conversation?.messages).toEqual([]);
+      expect(conversation?.reconcile.status).toBe("loading");
+      expect(conversation?.reconcile.readableThroughMessageId).toBe("msg-99");
+      expect(conversation?.messagesComplete).toBe(true);
+      expect(reconcileChat).toHaveBeenCalledExactlyOnceWith("group-1");
+    });
+
+    it("holds a live row while a failed catch-up left an error status", () => {
+      seedGroup();
+      openChat("group-1");
+      joinUserTopic();
+      seedConversation("error", null);
+      vi.mocked(reconcileChat).mockClear();
+
+      userChannel(meUser.id).emit("message", chatPayload());
+
+      const conversation = useAppStore.getState().conversations["group-1"];
+      expect(conversation?.messages).toEqual([]);
+      expect(conversation?.reconcile.status).toBe("error");
+      expect(reconcileChat).toHaveBeenCalledExactlyOnceWith("group-1");
+    });
+
+    it("drops malformed payloads and messages for groups not in state", () => {
+      seedGroup();
+      openChat("group-1");
+      joinUserTopic();
+      const channel = userChannel(meUser.id);
+
+      channel.emit("message", null);
+      channel.emit("message", { group_id: "group-1" });
+      channel.emit("message", { ...chatPayload(), extra: true });
+      channel.emit("message", chatPayload({ message: { ...incomingMessage, content: 42 } }));
+      channel.emit("message", chatPayload({ groupId: "group-unknown" }));
+
+      const state = useAppStore.getState();
+      expect(state.conversations).toEqual({});
+      expect(state.groups["group-1"]?.unreadCount).toBe(0);
       expect(refreshGroup).not.toHaveBeenCalled();
     });
 
-    it("drops malformed payloads and summaries for another group", () => {
-      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
-      stop = startRealtime();
-      const channel = groupChannel();
+    it("patches the store from a user-topic room summary, tolerating the transport id", () => {
+      seedGroup();
+
+      userChannel(meUser.id).emit("assignment_room", { room: roomSummary, id: "transport-1" });
+
+      expect(useAppStore.getState().assignmentRoomSummaries[roomSummary.id]).toEqual(roomSummary);
+      expect(refreshGroup).not.toHaveBeenCalled();
+      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+    });
+
+    it("drops malformed room payloads and summaries for groups not in state", () => {
+      seedGroup();
+      const channel = userChannel(meUser.id);
 
       channel.emit("assignment_room", { room: { ...roomSummary, revision: "4" } });
       channel.emit("assignment_room", { room: roomSummary, extra: true });
@@ -728,15 +903,76 @@ describe("startRealtime", () => {
       expect(useAppStore.getState().assignmentRoomSummaries).toEqual({});
     });
 
-    it("ignores room summaries once the signed-in account changed", () => {
-      useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
-      stop = startRealtime();
-      const channel = groupChannel();
+    it("ignores user-topic content once the signed-in account changed", () => {
+      seedGroup();
+      openChat("group-1");
+      joinUserTopic();
+      const channel = userChannel(meUser.id);
 
       authState.generation = 1;
+      channel.emit("message", chatPayload());
       channel.emit("assignment_room", { room: roomSummary });
 
+      expect(useAppStore.getState().conversations).toEqual({});
       expect(useAppStore.getState().assignmentRoomSummaries).toEqual({});
+    });
+
+    it("refreshes group previews for a closed chat through chat_activity only", () => {
+      seedGroup();
+      joinUserTopic();
+      const channel = groupChannel("group-1");
+
+      channel.emit("chat_activity", { group_id: "group-1" });
+
+      expect(refreshGroup).toHaveBeenCalledExactlyOnceWith("group-1");
+      expect(useAppStore.getState().conversations).toEqual({});
+    });
+
+    function seedAcceptedGroup(): void {
+      useAppStore.setState({
+        me: meUser,
+        groupOrder: ["group-1"],
+        groups: {
+          "group-1": snapshotWith("group-1", [
+            member("group-1", meUser, "accepted"),
+          ]),
+        },
+      });
+      stop = startRealtime();
+    }
+
+    it("reconciles active chats and refreshes rooms once per user-topic recovery", () => {
+      seedAcceptedGroup();
+      openChat("group-1");
+      expect(reconcileChat).toHaveBeenCalledTimes(1);
+      const channel = userChannel(meUser.id);
+
+      channel.emitStatus("SUBSCRIBED");
+      expect(reconcileChat).toHaveBeenCalledTimes(2);
+      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(1);
+
+      channel.emitStatus("SUBSCRIBED");
+      expect(reconcileChat).toHaveBeenCalledTimes(2);
+      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(1);
+
+      channel.emitStatus("CHANNEL_ERROR");
+      channel.emitStatus("SUBSCRIBED");
+      expect(reconcileChat).toHaveBeenCalledTimes(3);
+      expect(reconcileChat).toHaveBeenLastCalledWith("group-1");
+      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(2);
+      expect(refreshOpenAssignmentRooms).toHaveBeenLastCalledWith("group-1");
+    });
+
+    it("invalidates reconciliation only when the final subscriber closes", () => {
+      seedGroup();
+      const first = subscribeChat("group-1");
+      const second = subscribeChat("group-1");
+
+      first();
+      expect(invalidateChatReconciliation).not.toHaveBeenCalled();
+
+      second();
+      expect(invalidateChatReconciliation).toHaveBeenCalledExactlyOnceWith("group-1");
     });
   });
 });
