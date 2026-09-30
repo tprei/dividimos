@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { Client } from "pg";
 import type { Database } from "@/types/database";
 import type { ValidationResult } from "@/lib/expense-money";
 import type { WireIssue } from "@/types/ledger";
@@ -22,6 +23,7 @@ import {
   createGroupWithMembers,
   createTestUser,
   expectRpcError,
+  withPg,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -570,6 +572,259 @@ describe.skipIf(!isIntegrationTestReady)("reserved handles", () => {
       );
       expect(handle).toMatch(/^usuario\d*$/);
     }
+  });
+
+  it("re-rolls forbidden retry handles when concurrent signups resolve a collision", async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL;
+    if (!databaseUrl) {
+      throw new Error("SUPABASE_DB_URL is required for signup contention tests");
+    }
+
+    const insertSignup =
+      "insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, created_at, updated_at) " +
+      "values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, " +
+      "'{\"full_name\":\"suport\"}'::jsonb, now(), now())";
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    const holder = new Client(databaseUrl);
+    const contender = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    const describeError = (error: unknown): string =>
+      error instanceof Error ? error.message : String(error);
+    const cleanupErrors: string[] = [];
+    const cleanup = async (label: string, step: () => Promise<unknown>) => {
+      try {
+        await step();
+      } catch (error) {
+        cleanupErrors.push(`${label}: ${describeError(error)}`);
+      }
+    };
+
+    let holderActive = false;
+    let contenderActive = false;
+    let competing: Promise<unknown> | null = null;
+    let competingError: unknown = null;
+    let bodyError: unknown = null;
+    try {
+      await Promise.all([holder.connect(), contender.connect(), monitor.connect()]);
+
+      const free = await monitor.query(
+        "select 1 from public.users where handle = 'suport'",
+      );
+      expect(free.rowCount).toBe(0);
+
+      let seed: number | null = null;
+      let forbidden = "";
+      for (let n = 1; n < 500 && seed === null; n++) {
+        await monitor.query("select setseed($1)", [n / 1000]);
+        const candidate = (
+          await monitor.query(
+            "select 'suport' || (1000 + floor(random() * 9000))::int::text as handle",
+          )
+        ).rows[0].handle as string;
+        const reserved = (
+          await monitor.query(
+            "select public.is_reserved_handle($1) as reserved",
+            [candidate],
+          )
+        ).rows[0].reserved as boolean;
+        if (reserved) {
+          seed = n / 1000;
+          forbidden = candidate;
+        }
+      }
+      if (seed === null) {
+        throw new Error("no seed produces a reserved retry suffix");
+      }
+
+      await holder.query("begin");
+      holderActive = true;
+      await contender.query("begin");
+      contenderActive = true;
+      await contender.query("select setseed($1)", [seed]);
+
+      const backendPid = (
+        await contender.query<{ pid: number }>("select pg_backend_pid() as pid")
+      ).rows[0].pid;
+      await holder.query(insertSignup, [
+        ids[0],
+        `${ids[0]}@${runId}.test.dividimos.local`,
+      ]);
+      competing = contender
+        .query(insertSignup, [ids[1], `${ids[1]}@${runId}.test.dividimos.local`])
+        .then(
+          (result) => result,
+          (error) => {
+            competingError = error;
+            return null;
+          },
+        );
+
+      const deadline = Date.now() + 5000;
+      let contended = false;
+      while (Date.now() < deadline) {
+        const waiting = await monitor.query(
+          "select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock'",
+          [backendPid],
+        );
+        if ((waiting.rowCount ?? 0) > 0) {
+          contended = true;
+          break;
+        }
+        const { promise, resolve } = Promise.withResolvers<void>();
+        setTimeout(resolve, 20);
+        await promise;
+      }
+      expect(contended).toBe(true);
+
+      await holder.query("commit");
+      holderActive = false;
+      await competing;
+      expect(competingError).toBeNull();
+      await contender.query("commit");
+      contenderActive = false;
+
+      const stored = (
+        await monitor.query(
+          "select handle, public.is_reserved_handle(handle) as reserved " +
+            "from public.users where id = any($1::uuid[]) order by handle",
+          [ids],
+        )
+      ).rows as Array<{ handle: string; reserved: boolean }>;
+      expect(stored).toHaveLength(2);
+      expect(stored.map((row) => row.handle)).not.toContain(forbidden);
+      for (const row of stored) {
+        expect(row.reserved).toBe(false);
+        expect(row.handle).toMatch(/^[a-z0-9_]{3,30}$/);
+      }
+    } catch (error) {
+      bodyError = error;
+    }
+    if (holderActive) {
+      await cleanup("holder rollback", () => holder.query("rollback"));
+    }
+    if (competing) {
+      await competing;
+    }
+    if (contenderActive) {
+      await cleanup("contender rollback", () => contender.query("rollback"));
+    }
+    await cleanup("user cleanup", () =>
+      monitor.query("delete from public.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("auth cleanup", () =>
+      monitor.query("delete from auth.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("holder end", () => holder.end());
+    await cleanup("contender end", () => contender.end());
+    await cleanup("monitor end", () => monitor.end());
+    if (cleanupErrors.length > 0) {
+      const detail = cleanupErrors.join("; ");
+      throw new Error(
+        bodyError === null
+          ? `signup contention cleanup failed: ${detail}`
+          : `signup contention cleanup failed: ${detail}; original failure: ${describeError(bodyError)}`,
+      );
+    }
+    if (bodyError !== null) {
+      throw bodyError;
+    }
+  });
+
+  it("falls back to the usuario stem when truncation reserves the retry candidates", async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL;
+    if (!databaseUrl) {
+      throw new Error("SUPABASE_DB_URL is required for signup contention tests");
+    }
+
+    const crafted = "pix00000000000000000000000abcd";
+    const insertSignup =
+      "insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, created_at, updated_at) " +
+      "values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, $3::jsonb, now(), now())";
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    const signup = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    const describeError = (error: unknown): string =>
+      error instanceof Error ? error.message : String(error);
+    const cleanupErrors: string[] = [];
+    const cleanup = async (label: string, step: () => Promise<unknown>) => {
+      try {
+        await step();
+      } catch (error) {
+        cleanupErrors.push(`${label}: ${describeError(error)}`);
+      }
+    };
+
+    let bodyError: unknown = null;
+    try {
+      await Promise.all([signup.connect(), monitor.connect()]);
+
+      const free = await monitor.query(
+        "select 1 from public.users where handle = $1",
+        [crafted],
+      );
+      expect(free.rowCount).toBe(0);
+
+      await signup.query(insertSignup, [
+        ids[0],
+        `${ids[0]}@${runId}.test.dividimos.local`,
+        JSON.stringify({ full_name: crafted }),
+      ]);
+      await signup.query("set statement_timeout = '4s'");
+      await signup.query(insertSignup, [
+        ids[1],
+        `${ids[1]}@${runId}.test.dividimos.local`,
+        JSON.stringify({ full_name: crafted }),
+      ]);
+      await signup.query("set statement_timeout = 0");
+
+      const stored = (
+        await monitor.query(
+          "select handle, public.is_reserved_handle(handle) as reserved " +
+            "from public.users where id = any($1::uuid[]) order by handle",
+          [ids],
+        )
+      ).rows as Array<{ handle: string; reserved: boolean }>;
+      expect(stored).toHaveLength(2);
+      expect(stored[0].handle).toBe(crafted);
+      expect(stored[0].reserved).toBe(false);
+      expect(stored[1].handle).toMatch(/^usuario\d+$/);
+      expect(stored[1].reserved).toBe(false);
+    } catch (error) {
+      bodyError = error;
+    }
+    await cleanup("signup end", () => signup.end());
+    await cleanup("user cleanup", () =>
+      monitor.query("delete from public.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("auth cleanup", () =>
+      monitor.query("delete from auth.users where id = any($1::uuid[])", [ids]),
+    );
+    await cleanup("monitor end", () => monitor.end());
+    if (cleanupErrors.length > 0) {
+      const detail = cleanupErrors.join("; ");
+      throw new Error(
+        bodyError === null
+          ? `truncated stem signup cleanup failed: ${detail}`
+          : `truncated stem signup cleanup failed: ${detail}; original failure: ${describeError(bodyError)}`,
+      );
+    }
+    if (bodyError !== null) {
+      throw bodyError;
+    }
+  });
+
+  it("denies direct execution of the signup trigger", async () => {
+    await withPg(async (db) => {
+      await db.query("begin");
+      try {
+        await db.query("set local role anon");
+        await expect(db.query("select public.handle_new_user()")).rejects.toMatchObject({
+          code: "42501",
+        });
+      } finally {
+        await db.query("rollback");
+      }
+    });
   });
 });
 
