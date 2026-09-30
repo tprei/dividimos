@@ -105,6 +105,8 @@ interface ChatThreadProps {
   onLoadMore?: () => void;
   pendingRoomId?: string | null;
   onOpenRoom?: (room: OpenableGroupRoom) => void;
+  /** Makes other people's rail avatars open their profile. */
+  onOpenPerson?: (userId: string) => void;
 }
 
 export function ChatThread({
@@ -124,6 +126,7 @@ export function ChatThread({
   onLoadMore,
   pendingRoomId = null,
   onOpenRoom,
+  onOpenPerson,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -276,7 +279,7 @@ export function ChatThread({
         return (
           <div key={item.kind === "message" ? item.message.id : `event-${item.event.id}`}>
             {showSeparator && <ChatDateSeparator date={item.at} />}
-            <ChatRailRow marker={marker} spaced={spaced}>
+            <ChatRailRow marker={marker} spaced={spaced} onOpenPerson={onOpenPerson} meId={meId}>
               {item.kind === "message" ? (
                 <div className="flex min-w-0 items-start gap-1">
                   <div className="min-w-0 flex-1">

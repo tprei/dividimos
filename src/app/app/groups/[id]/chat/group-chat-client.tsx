@@ -257,6 +257,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           onLoadMore={handleLoadMore}
           pendingRoomId={pendingRoomId}
           onOpenRoom={openRoom}
+          onOpenPerson={(id) => router.push(`/app/people/${id}`)}
         />
       </div>
       {paymentOpen && paymentCounterparties.length > 0 && (

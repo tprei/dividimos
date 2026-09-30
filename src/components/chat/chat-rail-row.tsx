@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Check } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { haptics } from "@/hooks/use-haptics";
 import { cn } from "@/lib/utils";
 
 export interface RailPerson {
@@ -28,31 +29,82 @@ const DOT_CLASSES = {
   message: "top-3.5 size-1.5 bg-muted-foreground/35",
 } as const;
 
-function PeopleStack({ people }: { people: RailPerson[] }) {
+function RailAvatar({
+  person,
+  position,
+  ring,
+  onOpen,
+}: {
+  person: RailPerson;
+  position: string;
+  ring: string;
+  onOpen?: (userId: string) => void;
+}) {
+  if (!onOpen) {
+    return (
+      <span aria-hidden="true" className={position}>
+        <UserAvatar
+          id={person.id}
+          name={person.name}
+          avatarUrl={person.avatarUrl}
+          isBot={person.isBot}
+          size="xs"
+          className={ring}
+        />
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Ver perfil de ${person.name}`}
+      onClick={() => {
+        haptics.tap();
+        onOpen(person.id);
+      }}
+      className={cn(
+        position,
+        "flex size-6 rounded-full after:absolute after:-inset-2.5 after:rounded-full focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring motion-safe:transition-transform motion-safe:active:scale-[0.92]",
+      )}
+    >
+      <UserAvatar
+        id={person.id}
+        name={person.name}
+        avatarUrl={person.avatarUrl}
+        isBot={person.isBot}
+        size="xs"
+        className={ring}
+      />
+    </button>
+  );
+}
+
+interface PersonTap {
+  /** Makes rail avatars open that person's profile; never offered for `meId`. */
+  onOpenPerson?: (userId: string) => void;
+  meId?: string;
+}
+
+function PeopleStack({ people, onOpenPerson, meId }: { people: RailPerson[] } & PersonTap) {
   const [front, behind] = people;
   const hiddenCount = people.length - (behind ? 2 : 1);
   return (
     <>
       {behind && (
-        <UserAvatar
-          id={behind.id}
-          name={behind.name}
-          avatarUrl={behind.avatarUrl}
-          isBot={behind.isBot}
-          size="xs"
-          className="absolute top-0.5 -left-2.5 z-10 text-[0px] ring-2 ring-background"
+        <RailAvatar
+          person={behind}
+          position="absolute top-0.5 -left-2.5 z-10"
+          ring="text-[0px] ring-2 ring-background"
         />
       )}
-      <UserAvatar
-        id={front.id}
-        name={front.name}
-        avatarUrl={front.avatarUrl}
-        isBot={front.isBot}
-        size="xs"
-        className="absolute top-0.5 left-0 z-20 ring-3 ring-background"
+      <RailAvatar
+        person={front}
+        position="absolute top-0.5 left-0 z-20"
+        ring="ring-3 ring-background"
+        onOpen={front.id !== meId ? onOpenPerson : undefined}
       />
       {hiddenCount > 0 && (
-        <span className="absolute top-4 -right-2 z-30 flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-2xs font-semibold leading-none tabular-nums text-foreground ring-2 ring-background">
+        <span aria-hidden="true" className="pointer-events-none absolute top-4 -right-2 z-30 flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-2xs font-semibold leading-none tabular-nums text-foreground ring-2 ring-background">
           +{hiddenCount}
         </span>
       )}
@@ -60,7 +112,7 @@ function PeopleStack({ people }: { people: RailPerson[] }) {
   );
 }
 
-function MarkerGraphic({ marker }: { marker: ChatRailMarker }) {
+function MarkerGraphic({ marker, onOpenPerson, meId }: { marker: ChatRailMarker } & PersonTap) {
   if (marker.kind === "payment") {
     return (
       <span className="absolute top-2.5 left-1/2 flex size-4 -translate-x-1/2 items-center justify-center rounded-full bg-success text-success-foreground ring-3 ring-background">
@@ -69,7 +121,7 @@ function MarkerGraphic({ marker }: { marker: ChatRailMarker }) {
     );
   }
   if (marker.kind === "people") {
-    return <PeopleStack people={marker.people} />;
+    return <PeopleStack people={marker.people} onOpenPerson={onOpenPerson} meId={meId} />;
   }
   return (
     <span
@@ -81,13 +133,13 @@ function MarkerGraphic({ marker }: { marker: ChatRailMarker }) {
   );
 }
 
-interface ChatRailRowProps {
+interface ChatRailRowProps extends PersonTap {
   marker: ChatRailMarker;
   spaced?: boolean;
   children: ReactNode;
 }
 
-export function ChatRailRow({ marker, spaced = false, children }: ChatRailRowProps) {
+export function ChatRailRow({ marker, spaced = false, onOpenPerson, meId, children }: ChatRailRowProps) {
   return (
     <div
       className={cn(
@@ -95,8 +147,8 @@ export function ChatRailRow({ marker, spaced = false, children }: ChatRailRowPro
         spaced && "pt-2.5",
       )}
     >
-      <div aria-hidden="true" className="relative">
-        <MarkerGraphic marker={marker} />
+      <div className="relative">
+        <MarkerGraphic marker={marker} onOpenPerson={onOpenPerson} meId={meId} />
       </div>
       <div className="min-w-0 pb-1.5">{children}</div>
     </div>
