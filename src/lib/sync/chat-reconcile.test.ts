@@ -145,6 +145,22 @@ describe("reconcileChat", () => {
     });
   });
 
+  it("retries when another conversation read supersedes its head page", async () => {
+    const superseded = Promise.withResolvers<Conversation | null>();
+    const recovered = message("m1", "2026-01-02T10:00:00.000000Z");
+    respondWith([page({ messages: [recovered] })]);
+    vi.mocked(loadConversation).mockReturnValueOnce(superseded.promise);
+
+    reconcileChat("g1");
+    superseded.resolve(null);
+
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().conversations.g1?.reconcile.status).toBe("ready");
+    });
+    expect(useAppStore.getState().conversations.g1?.messages).toEqual([recovered]);
+    expect(loadConversation).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps prior rows and cursors when a page fails", async () => {
     useAppStore.setState({
       conversations: {

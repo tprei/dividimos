@@ -119,7 +119,11 @@ async function runReconciliation(groupId: string, run: Run): Promise<void> {
     const page: Conversation | null = firstPage
       ? await loadConversation(groupId)
       : await loadConversation(groupId, { messageBefore, eventBefore });
-    if (page === null || !isCurrent(groupId, run)) return;
+    if (!isCurrent(groupId, run)) return;
+    if (page === null) {
+      entryFor(groupId).dirty = true;
+      return;
+    }
     firstPage = false;
 
     messagesSettled =
