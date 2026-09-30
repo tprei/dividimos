@@ -13,6 +13,8 @@ import {
   type SpeechEngine,
 } from "@/lib/speech-engine";
 import { transcribeVoiceAudio } from "@/lib/sync/voice";
+import { hasAiConsent } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
@@ -421,6 +423,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
   }, [clearSilenceTimer, engine]);
 
   const startListening = useCallback(() => {
+    if (!hasAiConsent(useAppStore.getState().me?.id ?? null)) return;
     setTranscript("");
     setInterimTranscript("");
     setError(null);

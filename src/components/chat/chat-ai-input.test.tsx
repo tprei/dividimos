@@ -2,6 +2,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatAiInput } from "./chat-ai-input";
+import { act } from "@testing-library/react";
+import {
+  __resetAiConsentForTests,
+  grantAiConsent,
+  revokeAiConsent,
+} from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
+import type { Me } from "@/types/ledger";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 const mockResult: ChatExpenseResult = {
@@ -29,16 +37,22 @@ function setup(props = {}) {
   return { user, ...utils };
 }
 
-describe("ChatAiInput", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
+beforeEach(() => {
+  useAppStore.setState({ me: makeMe("user-a") });
+  grantAiConsent("user-a");
+  vi.stubGlobal("fetch", vi.fn());
+});
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+afterEach(() => {
+  __resetAiConsentForTests();
+  useAppStore.setState({ me: null });
+  vi.restoreAllMocks();
+});
+
+describe("ChatAiInput", () => {
 
   it("renders sparkle toggle and input in normal mode", () => {
+
     setup();
     expect(screen.getByTestId("sparkle-toggle")).toBeInTheDocument();
     expect(screen.getByTestId("chat-input")).toBeInTheDocument();
@@ -340,6 +354,21 @@ describe("ChatAiInput", () => {
   });
 });
 
+function makeMe(id: string): Me {
+  return {
+    id,
+    email: `${id}@example.com`,
+    handle: id,
+    name: id,
+    avatarUrl: null,
+    isBot: false,
+    pixKeyType: "email",
+    pixKeyHint: "",
+    onboarded: true,
+    notificationPreferences: {},
+  };
+}
+
 describe("send acknowledgement", () => {
   it("keeps the text until the send is acknowledged, then clears it", async () => {
     const gate = Promise.withResolvers<{ ok: true }>();
@@ -439,5 +468,85 @@ describe("send acknowledgement", () => {
       expect(screen.getByTestId("send-error")).toBeInTheDocument();
     });
     expect(input.value).toBe("Oi");
+  });
+});
+
+describe("ChatAiInput AI consent gate", () => {
+  it("asks before entering AI mode and declines back to normal without parsing", async () => {
+    __resetAiConsentForTests();
+    const { user } = setup();
+    const toggle = screen.getByTestId("sparkle-toggle");
+
+    await user.click(toggle);
+
+    expect(screen.getByText("Usar IA no Dividimos?")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(screen.getByRole("button", { name: "Continuar sem IA" }));
+
+    expect(screen.queryByText("Usar IA no Dividimos?")).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
+  });
+
+  it("enters AI mode after accepting the consent dialog", async () => {
+    __resetAiConsentForTests();
+    const { user } = setup();
+    const toggle = screen.getByTestId("sparkle-toggle");
+
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Permitir uso de IA" }));
+
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Usar IA no Dividimos?")).not.toBeInTheDocument();
+  });
+
+  it("declining an AI submit keeps the typed text and the normal send", async () => {
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
+    const { user } = setup({ onSend });
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "pizza 80 com João");
+    act(() => {
+      revokeAiConsent("user-a");
+    });
+
+    await user.click(screen.getByTestId("send-button"));
+
+    expect(screen.getByText("Usar IA no Dividimos?")).toBeInTheDocument();
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Continuar sem IA" }));
+
+    expect(screen.getByTestId("chat-input")).toHaveValue("pizza 80 com João");
+    expect(screen.getByTestId("sparkle-toggle")).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(screen.getByTestId("send-button"));
+
+    expect(onSend).toHaveBeenCalledWith("pizza 80 com João");
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
+  });
+
+  it("accepting an AI submit proceeds to the parse transport", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResult),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = setup();
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "pizza 80 com João");
+    act(() => {
+      revokeAiConsent("user-a");
+    });
+
+    await user.click(screen.getByTestId("send-button"));
+    await user.click(screen.getByRole("button", { name: "Permitir uso de IA" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/chat/parse",
+        expect.anything(),
+      );
+    });
   });
 });

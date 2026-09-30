@@ -1,7 +1,11 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { VoiceExpenseButton } from "./voice-expense-button";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
+import { __resetAiConsentForTests, grantAiConsent } from "@/lib/ai-consent";
+import { useAppStore } from "@/stores/app-store";
+import type { Me } from "@/types/ledger";
 
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
@@ -33,6 +37,8 @@ vi.mock("@/hooks/use-voice-input", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  useAppStore.setState({ me: makeMe("user-a") });
+  grantAiConsent("user-a");
   mockVoiceInput.isListening = false;
   mockVoiceInput.transcript = "";
   mockVoiceInput.interimTranscript = "";
@@ -41,6 +47,26 @@ beforeEach(() => {
   mockVoiceInput.phase = "idle";
   mockVoiceInput.level = 0;
 });
+
+afterEach(() => {
+  __resetAiConsentForTests();
+  useAppStore.setState({ me: null });
+});
+
+function makeMe(id: string): Me {
+  return {
+    id,
+    email: `${id}@example.com`,
+    handle: id,
+    name: id,
+    avatarUrl: null,
+    isBot: false,
+    pixKeyType: "email",
+    pixKeyHint: "",
+    onboarded: true,
+    notificationPreferences: {},
+  };
+}
 
 describe("VoiceExpenseButton", () => {
 
@@ -594,5 +620,44 @@ describe("VoiceExpenseButton", () => {
       expect(body.text).toBe("uber com João 25 reais");
       expect(body.members).toBeUndefined();
     });
+  });
+});
+
+describe("VoiceExpenseButton AI consent gate", () => {
+  it("asks before the mic tap starts any capture and declines to nothing", async () => {
+    __resetAiConsentForTests();
+    const onRecordStart = vi.fn();
+    render(
+      <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={onRecordStart} />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Gravar conta" }));
+
+    expect(screen.getByText("Usar IA no Dividimos?")).toBeInTheDocument();
+    expect(mockVoiceInput.startListening).not.toHaveBeenCalled();
+    expect(onRecordStart).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Continuar sem IA" }));
+
+    expect(screen.queryByText("Usar IA no Dividimos?")).not.toBeInTheDocument();
+    expect(mockVoiceInput.startListening).not.toHaveBeenCalled();
+    expect(onRecordStart).not.toHaveBeenCalled();
+  });
+
+  it("starts the recording after accepting the consent dialog", async () => {
+    __resetAiConsentForTests();
+    const onRecordStart = vi.fn();
+    render(
+      <VoiceExpenseButton onResult={vi.fn()} onError={vi.fn()} onRecordStart={onRecordStart} />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Gravar conta" }));
+    await user.click(screen.getByRole("button", { name: "Permitir uso de IA" }));
+
+    expect(mockVoiceInput.startListening).toHaveBeenCalledTimes(1);
+    expect(onRecordStart).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Usar IA no Dividimos?")).not.toBeInTheDocument();
   });
 });

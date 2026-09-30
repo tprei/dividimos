@@ -5,6 +5,7 @@ import { clearDraftIntent } from "@/lib/draft-intent";
 import { removeAccountDraft } from "@/lib/bill-draft-isolation";
 import { removeConfirmationPreferences } from "@/lib/confirmation-preferences";
 import { removeNativePushConsent } from "@/lib/push/native-consent";
+import { revokeAiConsent } from "@/lib/ai-consent";
 import { removeOnboardingTour } from "@/hooks/use-onboarding-tour";
 import { useAppStore } from "@/stores/app-store";
 import {
@@ -49,6 +50,7 @@ async function finishSuccessfulDeletion(userId: string): Promise<void> {
     removeAccountDraft,
     removeConfirmationPreferences,
     removeOnboardingTour,
+    revokeAiConsent,
   ]) {
     try {
       removeKey(userId);
