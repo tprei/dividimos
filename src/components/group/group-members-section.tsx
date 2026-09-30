@@ -1,6 +1,7 @@
 "use client";
 
-import { Archive, ArchiveRestore, Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -9,6 +10,7 @@ import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Chip } from "@/components/ui/chip";
 import { displayNames } from "@/lib/people";
+import { cn } from "@/lib/utils";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle } from "@/components/ui/popover";
@@ -176,56 +178,77 @@ export function GroupMembersSection({ snapshot, meId, onDepart, settingsOnly = f
   return (
     <section>
       <div className="space-y-2">
-        {!settingsOnly && snapshot.members.map((member) => (
-          <div
-            key={member.userId}
-            className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3"
-          >
-            <UserAvatar
-              id={member.userId}
-              name={member.user.name}
-              avatarUrl={member.user.avatarUrl}
-              size="sm"
-              isBot={member.user.isBot}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <PersonLabel name={member.user.name} overrideName={labels.get(member.userId)} nameClassName="text-base" />
-                {member.userId === creatorId && (
-                  <Chip tone="primary" icon={<Crown />}>Criador</Chip>
-                )}
-                {member.userId === meId && (
-                  <Chip tone="primary">Você</Chip>
-                )}
+        {!settingsOnly && snapshot.members.map((member) => {
+          const identity = (
+            <>
+              <UserAvatar
+                id={member.userId}
+                name={member.user.name}
+                avatarUrl={member.user.avatarUrl}
+                size="sm"
+                isBot={member.user.isBot}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <PersonLabel name={member.user.name} overrideName={labels.get(member.userId)} nameClassName="text-base" />
+                  {member.userId === creatorId && (
+                    <Chip tone="primary" icon={<Crown />}>Criador</Chip>
+                  )}
+                  {member.userId === meId && (
+                    <Chip tone="primary">Você</Chip>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <p title={`@${member.user.handle}`} className="truncate text-xs text-muted-foreground">
+                    @{member.user.handle}
+                  </p>
+                  {member.status === "invited" && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      Pendente
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <p title={`@${member.user.handle}`} className="truncate text-xs text-muted-foreground">
-                  @{member.user.handle}
-                </p>
-                {member.status === "invited" && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    Pendente
-                  </span>
-                )}
-              </div>
+            </>
+          );
+          const canRemove = isCreator && member.userId !== meId;
+          return (
+            <div
+              key={member.userId}
+              className="flex items-center overflow-hidden rounded-2xl border border-border bg-card"
+            >
+              {member.userId === meId ? (
+                <div className="flex min-w-0 flex-1 items-center gap-3 p-3">{identity}</div>
+              ) : (
+                <Link
+                  href={`/app/people/${member.userId}`}
+                  className={cn(
+                    "flex min-h-14 min-w-0 flex-1 items-center gap-3 p-3 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring active:bg-muted/60",
+                    canRemove && "pr-1",
+                  )}
+                >
+                  {identity}
+                  {!canRemove && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                </Link>
+              )}
+              {canRemove && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(event) => {
+                    haptics.tap();
+                    setConfirmRemove({ userId: member.userId, name: member.user.name, anchor: event.currentTarget, pending: member.status === "invited" });
+                  }}
+                  aria-label={member.status === "invited" ? `Cancelar convite de ${member.user.name}` : `Remover ${member.user.name}`}
+                  className="mr-3 ml-2 shrink-0 text-muted-foreground hover:text-destructive-text"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
             </div>
-            {isCreator && member.userId !== meId && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(event) => {
-                  haptics.tap();
-                  setConfirmRemove({ userId: member.userId, name: member.user.name, anchor: event.currentTarget, pending: member.status === "invited" });
-                }}
-                aria-label={member.status === "invited" ? `Cancelar convite de ${member.user.name}` : `Remover ${member.user.name}`}
-                className="shrink-0 text-muted-foreground hover:text-destructive-text"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            )}
-          </div>
-        ))}
+          );
+        })}
 
 
         {!settingsOnly && snapshot.guests.length > 0 && (
