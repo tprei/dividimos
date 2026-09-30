@@ -167,6 +167,49 @@ describe.skipIf(!isIntegrationTestReady)("claim_push_subscription", () => {
     expect(await ownersOf(laptop)).toEqual([userA.id]);
   });
 
+  it("evicts the least recently updated subscription past ten devices", async () => {
+    const oldest = `https://push.example.com/${crypto.randomUUID()}`;
+    await claim(service, userA.id, oldest);
+
+    const newer = [oldest];
+    for (let i = 0; i < 10; i++) {
+      const endpoint = `https://push.example.com/${crypto.randomUUID()}`;
+      newer.push(endpoint);
+      await claim(service, userA.id, endpoint);
+    }
+
+    const stored = await withPg(async (pg) => {
+      const rows = await pg.query<{ endpoint: string }>(
+        `select encode(endpoint_digest, 'escape') as endpoint
+         from push_subscriptions
+         where user_id = $1`,
+        [userA.id],
+      );
+      return rows.rows.map((row) => row.endpoint);
+    });
+
+    expect(stored).toHaveLength(10);
+    expect(stored).not.toContain(oldest);
+    expect(stored).toContain(newer[10]!);
+  });
+
+  it("rejects a subscription ciphertext beyond the stored size bound", async () => {
+    const endpoint = `https://push.example.com/${crypto.randomUUID()}`;
+
+    expect(
+      await expectRpcError(
+        service.rpc("claim_push_subscription", {
+          p_user_id: userA.id,
+          p_channel: "web",
+          p_endpoint_digest: `\\x${Buffer.from(endpoint, "utf8").toString("hex")}`,
+          p_subscription_encrypted: "x".repeat(16385),
+        }),
+      ),
+    ).toContain("push_subscriptions_encrypted_size");
+
+    expect(await ownersOf(endpoint)).toEqual([]);
+  });
+
   it("rejects an unknown owner and an unknown channel", async () => {
     const endpoint = `https://push.example.com/${crypto.randomUUID()}`;
     expect(

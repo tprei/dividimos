@@ -41,7 +41,13 @@ vi.mock("@/lib/crypto", () => ({
   hashEndpoint: (val: string) => `\\x${val}`,
 }));
 
+const mockEnforceRateLimit = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
 import { POST } from "./route";
+import { AppError } from "@/lib/errors";
 
 const validSubscription = {
   endpoint: "https://fcm.googleapis.com/fcm/send/abc",
@@ -74,6 +80,8 @@ describe("POST /api/push/subscribe", () => {
     mockEncrypt.mockClear();
     mockDecrypt.mockReset();
     mockEncrypt.mockReturnValue("encrypted-blob");
+    mockEnforceRateLimit.mockReset();
+    mockEnforceRateLimit.mockResolvedValue(undefined);
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -156,6 +164,91 @@ describe("POST /api/push/subscribe", () => {
       p_channel: "fcm",
       p_endpoint_digest: "\\xdevice-token",
     });
+  });
+
+  it("returns 400 for an FCM token with invalid characters without reaching the claim", async () => {
+    serverMock.setUser({ id: "u1" });
+
+    const res = await POST(
+      makeRequest({ channel: "fcm", token: "tokento:espacos não permitidos" }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Token FCM inválido");
+    expect(adminMock.findCalls("rpc:claim_push_subscription", "rpc")).toHaveLength(0);
+  });
+
+  it("returns 400 for an FCM token above 4096 characters without reaching the claim", async () => {
+    serverMock.setUser({ id: "u1" });
+
+    const res = await POST(makeRequest({ channel: "fcm", token: "a".repeat(4097) }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Token FCM inválido");
+    expect(adminMock.findCalls("rpc:claim_push_subscription", "rpc")).toHaveLength(0);
+  });
+
+  it("returns 400 when the FCM token is missing", async () => {
+    serverMock.setUser({ id: "u1" });
+
+    const res = await POST(makeRequest({ channel: "fcm" }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Token FCM inválido");
+    expect(adminMock.findCalls("rpc:claim_push_subscription", "rpc")).toHaveLength(0);
+  });
+
+  it("accepts a valid FCM token at the 4096-character boundary", async () => {
+    serverMock.setUser({ id: "u1" });
+    adminMock.onRpc("claim_push_subscription", { data: { transferred: false } });
+
+    const token = `${"a".repeat(4095)}:`;
+    const res = await POST(makeRequest({ channel: "fcm", token }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("spends the push.subscribe bucket for both channels before any claim", async () => {
+    serverMock.setUser({ id: "u1" });
+    adminMock.onRpc("claim_push_subscription", { data: { transferred: false } });
+
+    await POST(makeRequest({ channel: "fcm", token: "device-token" }));
+    await POST(makeRequest({ subscription: validSubscription }));
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, "push.subscribe", "u1");
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, "push.subscribe", "u1");
+  });
+
+  it("returns 429 without claiming when the limiter is saturated", async () => {
+    serverMock.setUser({ id: "u1" });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+        statusCode: 429,
+      }),
+    );
+
+    const res = await POST(makeRequest({ channel: "fcm", token: "device-token" }));
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toBe("Muitas requisições. Tente novamente em alguns segundos.");
+    expect(adminMock.findCalls("rpc:claim_push_subscription", "rpc")).toHaveLength(0);
+  });
+
+  it("returns the safe 503 body without claiming when the limiter is unavailable", async () => {
+    serverMock.setUser({ id: "u1" });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Não foi possível verificar o limite de requisições."),
+    );
+
+    const res = await POST(makeRequest({ subscription: validSubscription }));
+
+    const body = await res.json();
+    expect(res.status).toBe(503);
+    expect(body.error).toBe("Serviço temporariamente indisponível");
+    expect(JSON.stringify(body)).not.toContain("verificar o limite");
+    expect(adminMock.findCalls("rpc:claim_push_subscription", "rpc")).toHaveLength(0);
   });
 
   it("returns 500 when the claim fails", async () => {

@@ -12,6 +12,7 @@ export type RateLimitBucket =
   | "receipt.ocr"
   | "push.send"
   | "push.send-pair"
+  | "push.subscribe"
   | "reports.create";
 
 export interface RateLimitConfig {
@@ -29,6 +30,7 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "receipt.ocr":        { limit: 30,  windowSeconds: 60 },
   "push.send":          { limit: 60,  windowSeconds: 60 },
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
+  "push.subscribe":     { limit: 20,  windowSeconds: 3600 },
   "reports.create":     { limit: 5,   windowSeconds: 60 },
 };
 
