@@ -472,7 +472,7 @@ describe.skipIf(!isIntegrationTestReady)("blocked contact — joining paths", ()
     ).toBe(1);
   });
 
-  it("refuses the blocked person's invite link but not another member's", async () => {
+  it("refuses every invite link into the blocker's own group", async () => {
     const [ana, bruno, carol] = await createTestUsers(3);
     const groupId = await createGroupWithMembers(ana, [carol], "Grupo do link");
     const anaLink = await rpcOk<{ token: string }>(authenticateAs(ana), "create_invite_link", {
@@ -484,16 +484,36 @@ describe.skipIf(!isIntegrationTestReady)("blocked contact — joining paths", ()
     expect(await rpcErrorCode(brunoClient, "join_via_link", { p_token: anaLink.token })).toBe(
       "member_excluded",
     );
-    expect(
-      await countRows("select count(*) from group_invite_links where token = $1 and use_count > 0", [
-        anaLink.token,
-      ]),
-    ).toBe(0);
 
     const carolLink = await rpcOk<{ token: string }>(authenticateAs(carol), "create_invite_link", {
       p_group_id: groupId,
     });
-    await rpcOk(brunoClient, "join_via_link", { p_token: carolLink.token });
+    expect(await rpcErrorCode(brunoClient, "join_via_link", { p_token: carolLink.token })).toBe(
+      "member_excluded",
+    );
+    expect(
+      await countRows(
+        "select count(*) from group_invite_links where group_id = $1 and use_count > 0",
+        [groupId],
+      ),
+    ).toBe(0);
+    expect(
+      await countRows(
+        "select count(*) from group_members where group_id = $1 and user_id = $2",
+        [groupId, bruno.id],
+      ),
+    ).toBe(0);
+  });
+
+  it("still admits a user blocked only by a non-creator member through the creator's link", async () => {
+    const [ana, bruno, carol] = await createTestUsers(3);
+    const groupId = await createGroupWithMembers(ana, [carol], "Grupo aberto");
+    await rpcOk(authenticateAs(carol), "block_user", { p_user_id: bruno.id });
+    const anaLink = await rpcOk<{ token: string }>(authenticateAs(ana), "create_invite_link", {
+      p_group_id: groupId,
+    });
+
+    await rpcOk(authenticateAs(bruno), "join_via_link", { p_token: anaLink.token });
     expect(
       await countRows(
         "select count(*) from group_members where group_id = $1 and user_id = $2 and status = 'accepted'",
