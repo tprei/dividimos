@@ -19,6 +19,7 @@ import type {
   Participant,
   ParticipantKind,
   ParticipantRef,
+  SharedSpending,
   UserProfile,
   WireIssue,
 } from "@/types/ledger";
@@ -163,6 +164,36 @@ export function decodeUserProfileOrNull(
 ): ValidationResult<UserProfile | null, WireIssue> {
   if (raw === null) return ok(null);
   return decodeUserProfile(raw, path);
+}
+
+const SHARED_SPENDING_KEYS = [
+  "expenseCount",
+  "totalCents",
+  "myShareCents",
+  "theirShareCents",
+] as const;
+
+export function decodeSharedSpending(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<SharedSpending, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, SHARED_SPENDING_KEYS, path);
+  if (!k.ok) return k;
+  const expenseCount = int(raw.expenseCount, [...path, "expenseCount"]);
+  if (!expenseCount.ok) return expenseCount;
+  const totalCents = int(raw.totalCents, [...path, "totalCents"]);
+  if (!totalCents.ok) return totalCents;
+  const myShareCents = int(raw.myShareCents, [...path, "myShareCents"]);
+  if (!myShareCents.ok) return myShareCents;
+  const theirShareCents = int(raw.theirShareCents, [...path, "theirShareCents"]);
+  if (!theirShareCents.ok) return theirShareCents;
+  return ok({
+    expenseCount: expenseCount.value,
+    totalCents: totalCents.value,
+    myShareCents: myShareCents.value,
+    theirShareCents: theirShareCents.value,
+  });
 }
 
 const EXPENSE_TYPES: readonly ExpenseType[] = ["itemized", "single_amount"];

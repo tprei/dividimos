@@ -1682,6 +1682,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_shared_spending: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
+      }
       get_user_blocks: {
         Args: Record<PropertyKey, never>
         Returns: Json

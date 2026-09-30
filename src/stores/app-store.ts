@@ -29,6 +29,7 @@ import type {
   GroupSnapshot,
   Me,
   Settlement,
+  SharedSpending,
   Transfer,
   UserProfile,
   VendorCharge,
@@ -99,6 +100,7 @@ export const expenseReadKey = (expenseId: string) => `expense:${expenseId}`;
 export const conversationReadKey = (groupId: string) => `conversation:${groupId}`;
 export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
 export const settlementReadKey = (settlementId: string) => `settlement:${settlementId}`;
+export const sharedSpendingReadKey = (userId: string) => `sharedSpending:${userId}`;
 export const CHARGES_READ_KEY = "charges";
 export const MY_EXPENSES_READ_KEY = "myExpenses";
 export const HOSTED_ASSIGNMENT_ROOMS_READ_KEY = "hostedAssignmentRooms";
@@ -140,6 +142,11 @@ interface AppStateData {
    * never persisted, cleared by reset(), and pruned with the owning group.
    */
   settlementDetails: Record<string, Settlement>;
+  /**
+   * Per-person shared-spending summaries, keyed by the other user's id.
+   * Runtime only: never persisted, cleared by reset().
+   */
+  sharedSpending: Record<string, SharedSpending>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
   /** Server-owned charge history metadata: cursor, totals and today's sum. */
@@ -183,6 +190,7 @@ export interface AppState extends AppStateData {
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpenseContext(context: ExpenseContext): void;
   applySettlementDetail(s: Settlement): void;
+  applySharedSpending(userId: string, spending: SharedSpending): void;
   applyExpensePage(groupId: string, page: ExpensePage): void;
   applyMyExpensePage(page: ExpensePage, reset: boolean): void;
   applyActivity(items: GroupEvent[], complete: boolean): void;
@@ -219,6 +227,7 @@ const initialData: AppStateData = {
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" }, readIds: [], dismissedIds: [] },
   activityViewedAt: {},
   settlementDetails: {},
+  sharedSpending: {},
   conversations: {},
   vendorCharges: [],
   chargeSummary: {
@@ -897,6 +906,11 @@ export const useAppStore = create<AppState>()(
           }
           return { settlementDetails: { ...state.settlementDetails, [s.id]: s } };
         }),
+
+      applySharedSpending: (userId, spending) =>
+        set((state) => ({
+          sharedSpending: { ...state.sharedSpending, [userId]: spending },
+        })),
 
       applyExpensePage: (groupId, page) =>
         set((state) => ({

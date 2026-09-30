@@ -379,6 +379,11 @@
       "authenticated": true,
       "note": "Authenticated membership-checked settlement detail read."
     },
+    "public.get_shared_spending(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated aggregate read over active expenses in the caller's accepted groups that both the caller and the target take part in; unknown targets return zeros."
+    },
     "public.get_user_blocks()": {
       "anon": false,
       "authenticated": true,

@@ -7,6 +7,7 @@ import type {
   GroupSnapshot,
   Me,
   MemberStatus,
+  UserProfile,
 } from "@/types/ledger";
 import { useAppStore } from "./app-store";
 import {
@@ -16,6 +17,7 @@ import {
   selectDmMembership,
   selectExpenseList,
   selectHomeRecentBills,
+  selectKnownUser,
   selectMyDebts,
   selectMyExpenseRows,
   selectPairEdgeCents,
@@ -25,6 +27,7 @@ import {
   selectUnreadTotal,
   selectVisibleActivityEvents,
   selectGroupListSections,
+  sharedGroupsWith,
 } from "./app-selectors";
 
 const me: Me = {
@@ -975,5 +978,88 @@ describe("selectVisibleActivityEvents", () => {
     });
 
     expect(selectVisibleActivityEvents(useAppStore.getState()).map((e) => e.id)).toEqual([1, 2]);
+  });
+});
+
+describe("selectKnownUser", () => {
+  it("prefers the current member profile over a former-member copy", () => {
+    const currentProfile: UserProfile = { id: "user-2", handle: "bob", name: "Bob Atual", avatarUrl: null, isBot: false };
+    const formerCopy: UserProfile = { id: "user-2", handle: "bob", name: "Bob Antigo", avatarUrl: null, isBot: false };
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", { members: [member(me.id, "accepted")], formerMembers: [formerCopy] }),
+        g2: snapshot("g2", {
+          members: [member(me.id, "accepted"), { ...member("user-2", "accepted"), user: currentProfile }],
+        }),
+      },
+      groupOrder: ["g1", "g2"],
+    });
+
+    expect(selectKnownUser(useAppStore.getState(), "user-2")).toBe(currentProfile);
+  });
+
+  it("resolves a DM counterparty missing from the member rows", () => {
+    const counterparty: UserProfile = { id: "user-2", handle: "bob", name: "Bob", avatarUrl: null, isBot: false };
+    useAppStore.setState({
+      me,
+      groups: {
+        dm1: { ...dmSnapshot("dm1"), dmCounterparty: counterparty, members: [member(me.id, "accepted")] },
+      },
+      groupOrder: ["dm1"],
+    });
+
+    expect(selectKnownUser(useAppStore.getState(), "user-2")).toBe(counterparty);
+  });
+
+  it("falls back to blockedUsers when no group knows the user", () => {
+    const blockedProfile: UserProfile = { id: "user-9", handle: "mala", name: "Mala", avatarUrl: null, isBot: false };
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) },
+      groupOrder: ["g1"],
+      blockedUsers: [blockedProfile],
+    });
+
+    expect(selectKnownUser(useAppStore.getState(), "user-9")).toBe(blockedProfile);
+  });
+
+  it("returns null for an unknown user", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", {
+          members: [member(me.id, "accepted")],
+          formerMembers: [member("user-3", "accepted").user],
+        }),
+      },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectKnownUser(useAppStore.getState(), "stranger")).toBeNull();
+  });
+});
+
+describe("sharedGroupsWith", () => {
+  it("keeps kind-group snapshots where both are accepted, in groupOrder order", () => {
+    const groups = {
+      g1: snapshot("g1", { members: [member(me.id, "accepted"), member("user-2", "accepted")] }),
+      g2: snapshot("g2", { members: [member(me.id, "accepted"), member("user-2", "invited", me.id)] }),
+      g3: snapshot("g3", { members: [member(me.id, "accepted"), member("user-2", "accepted")] }),
+      g4: snapshot("g4", { members: [member(me.id, "accepted")] }),
+      dm1: dmSnapshot("dm1"),
+    };
+    useAppStore.setState({ me, groups, groupOrder: ["g3", "dm1", "g1", "g2", "g4"] });
+
+    const state = useAppStore.getState();
+    expect(sharedGroupsWith(state.groups, state.groupOrder, me.id, "user-2").map((s) => s.group.id)).toEqual(["g3", "g1"]);
+  });
+
+  it("returns nothing when the other user shares no accepted group", () => {
+    const groups = { g1: snapshot("g1", { members: [member(me.id, "accepted")] }) };
+    useAppStore.setState({ me, groups, groupOrder: ["g1"] });
+
+    const state = useAppStore.getState();
+    expect(sharedGroupsWith(state.groups, state.groupOrder, me.id, "user-2")).toEqual([]);
   });
 });
