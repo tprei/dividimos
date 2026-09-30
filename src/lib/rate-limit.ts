@@ -6,6 +6,7 @@ export type RateLimitBucket =
   | "users.lookup"
   | "pix.generate"
   | "pix.generate-self"
+  | "pix.generate-pair"
   | "voice.parse"
   | "voice.transcribe"
   | "chat.parse"
@@ -23,6 +24,7 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "users.lookup":       { limit: 30,  windowSeconds: 60 },
   "pix.generate":       { limit: 60,  windowSeconds: 60 },
   "pix.generate-self":  { limit: 60,  windowSeconds: 60 },
+  "pix.generate-pair":  { limit: 20,  windowSeconds: 86400 },
   "voice.parse":        { limit: 30,  windowSeconds: 60 },
   "voice.transcribe":   { limit: 30,  windowSeconds: 60 },
   "chat.parse":         { limit: 30,  windowSeconds: 60 },

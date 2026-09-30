@@ -71,6 +71,11 @@ function bobHasKey() {
   });
 }
 
+/** Buckets the route tried to spend, in call order. */
+function spentBuckets(): unknown[] {
+  return mockEnforceRateLimit.mock.calls.map(([bucket]) => bucket);
+}
+
 describe("POST /api/pix/generate", () => {
   it("returns 401 when not authenticated", async () => {
     const response = await POST(
@@ -347,7 +352,8 @@ describe("POST /api/pix/generate", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("pix.generate", "user-alice");
+    // The pair budget for alice:bob is spent too — covered below.
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith("pix.generate", "user-alice");
   });
 
   it("returns 429 without authorization reads or key decryption when the bucket is saturated", async () => {
@@ -369,5 +375,100 @@ describe("POST /api/pix/generate", () => {
     expect(adminMock.findCalls("group_balances")).toHaveLength(0);
     expect(adminMock.findCalls("users")).toHaveLength(0);
     expect(decryptPixKey).not.toHaveBeenCalled();
+  });
+
+  describe("pair budget (pix.generate-pair)", () => {
+    it("spends the pair bucket keyed by caller and recipient once the gates pass", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(5000);
+      bobHasKey();
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toHaveProperty("copiaECola");
+      expect(spentBuckets()).toEqual(["pix.generate", "pix.generate-pair"]);
+      expect(mockEnforceRateLimit).toHaveBeenCalledWith(
+        "pix.generate-pair",
+        "user-alice:user-bob",
+      );
+    });
+
+    it("does not spend the pair bucket when the payable edge denies", async () => {
+      setupAcceptedMembers();
+      adminMock.onTable("group_balances", { data: null });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "Acesso negado" });
+      expect(spentBuckets()).toEqual(["pix.generate"]);
+    });
+
+    it("returns 429 without reading or decrypting the key when the pair bucket is saturated", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(5000);
+      mockEnforceRateLimit.mockImplementation(async (bucket: string) => {
+        if (bucket === "pix.generate-pair") {
+          throw new AppError(
+            "RATE_LIMIT_EXCEEDED",
+            "Muitas requisições. Tente novamente em alguns segundos.",
+            { statusCode: 429 },
+          );
+        }
+      });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(429);
+      expect(await response.json()).toEqual({
+        error: "Muitas requisições. Tente novamente em alguns segundos.",
+      });
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+      expect(decryptPixKey).not.toHaveBeenCalled();
+    });
+
+    it("returns 503 when the pair limiter cannot decide", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(5000);
+      mockEnforceRateLimit.mockImplementation(async (bucket: string) => {
+        if (bucket === "pix.generate-pair") {
+          throw new AppError(
+            "RATE_LIMIT_UNAVAILABLE",
+            "Não foi possível verificar o limite de requisições.",
+          );
+        }
+      });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: "Serviço temporariamente indisponível" });
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+    });
+
+    it("does not spend the pair bucket for self-generation", async () => {
+      serverMock.setUser({ id: "user-alice" });
+      adminMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
+      adminMock.onTable("users", {
+        data: { pix_key_encrypted: "encrypted-key", name: "Alice" },
+      });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-alice", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(spentBuckets()).toEqual(["pix.generate"]);
+    });
   });
 });

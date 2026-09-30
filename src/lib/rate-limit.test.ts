@@ -237,5 +237,18 @@ describe("enforceRateLimit", () => {
         p_window_seconds: 60,
       });
     });
+
+    it("passes correct config for pix.generate-pair bucket", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("pix.generate-pair", "user-a:user-b");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "pix.generate-pair",
+        p_subject:        "user-a:user-b",
+        p_limit:          20,
+        p_window_seconds: 86400,
+      });
+    });
   });
 });

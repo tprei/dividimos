@@ -13,6 +13,22 @@ import { jsonResponse } from "../response";
 // owes them, etc. By the time a caller has proven a real payable edge (or is
 const DENIED = { error: "Acesso negado" } as const;
 
+// Both limiter spends (per caller, per pair) map failures identically: a
+// saturated bucket is a 429, a limiter that could not decide fails closed
+// with 503.
+function rateLimitFailureResponse(error: unknown): Response {
+  if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+    return jsonResponse(
+      { error: "Muitas requisições. Tente novamente em alguns segundos." },
+      429,
+    );
+  }
+  if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+    console.error("[pix/generate] unexpected rate-limit failure:", error);
+  }
+  return jsonResponse({ error: "Serviço temporariamente indisponível" }, 503);
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
 
@@ -46,16 +62,7 @@ export async function POST(request: Request) {
   try {
     await enforceRateLimit("pix.generate", callerId);
   } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
-      return jsonResponse(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        429,
-      );
-    }
-    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
-      console.error("[pix/generate] unexpected rate-limit failure:", error);
-    }
-    return jsonResponse({ error: "Serviço temporariamente indisponível" }, 503);
+    return rateLimitFailureResponse(error);
   }
 
   // Authorization first. The encrypted key is never read before this resolves.
@@ -99,6 +106,20 @@ export async function POST(request: Request) {
 
     if (!transfer || amountCents > transfer.amountCents) {
       return jsonResponse(DENIED, 403);
+    }
+  }
+
+  // Spent only after every gate has passed: charging a token on a refusal or
+  // on self-generation would turn the pair budget into an oracle for probing
+  // membership and payable edges.
+  if (!isSelf) {
+    try {
+      await enforceRateLimit(
+        "pix.generate-pair",
+        `${callerId}:${recipientUserId}`,
+      );
+    } catch (error) {
+      return rateLimitFailureResponse(error);
     }
   }
 
