@@ -451,6 +451,7 @@ export function groupNameOf(
   if (snapshot.group.kind === "dm") {
     const other = snapshot.members.find((m) => m.userId !== meId);
     if (other) return other.user.name;
+    return snapshot.dmCounterparty?.name ?? snapshot.group.name;
   }
   return snapshot.group.name;
 }

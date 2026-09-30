@@ -129,4 +129,58 @@ describe("NewConversationButton", () => {
       { timeout: 1500 },
     );
   });
+
+  it("recognizes an existing DM through the projection when the counterpart membership is gone", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {
+        "g-1": useAppStore.getState().groups["g-1"]!,
+        "dm-gone": {
+          group: {
+            id: "dm-gone",
+            kind: "dm",
+            name: "",
+            creatorId: me.id,
+            dmUserA: me.id,
+            dmUserB: bob.id,
+            ledgerVersion: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+          dmCounterparty: { ...bob, name: "Conta excluída" },
+          members: [
+            { groupId: "dm-gone", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          ],
+          balances: [],
+          archivedAt: null,
+          financialHistorySharedAt: null,
+          formerMembers: [],
+          guests: [],
+          settlements: [],
+          recentExpenses: [],
+          expenseCount: 0,
+          lastEventId: 0,
+          unreadCount: 0,
+          lastMessage: null,
+          lastActivityAt: "2026-01-01T00:00:00Z",
+          pairwiseEdges: [],
+        },
+      },
+      groupOrder: ["g-1", "dm-gone"],
+    });
+    mutationsGroup.lookupUserByHandle.mockResolvedValue(bob);
+
+    render(<NewConversationButton />);
+
+    fireEvent.click(screen.getByLabelText("Nova conversa"));
+    await user.type(screen.getByPlaceholderText("buscar por handle"), "bob");
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Conversa já existe")).toBeDefined();
+      },
+      { timeout: 1500 },
+    );
+  });
 });

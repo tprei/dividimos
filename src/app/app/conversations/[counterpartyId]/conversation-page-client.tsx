@@ -159,8 +159,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const resolving = accountKey !== null && !dm && activeResolveError === null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
   const formerCounterparty = dm?.formerMembers.find((person) => person.id === counterpartyId);
-  const counterparty: UserProfile | null = counterpartyMember?.user ?? formerCounterparty ?? null;
-  const counterpartyDeparted = !counterpartyMember && formerCounterparty !== undefined;
+  const counterparty: UserProfile | null =
+    counterpartyMember?.user ?? dm?.dmCounterparty ?? formerCounterparty ?? null;
+  const counterpartyDeparted = counterparty !== null && !counterpartyMember;
   // Subscribe to stable references only: deriving the view inside the store
   // selector would return a fresh object every render and loop forever.
   const groupRead = useAppStore((s) =>
@@ -189,6 +190,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     for (const member of dm?.members ?? []) profiles.set(member.userId, member.user);
     for (const person of dm?.formerMembers ?? []) {
       if (!profiles.has(person.id)) profiles.set(person.id, person);
+    }
+    if (dm?.dmCounterparty && !profiles.has(dm.dmCounterparty.id)) {
+      profiles.set(dm.dmCounterparty.id, dm.dmCounterparty);
     }
     return profiles;
   }, [dm]);
@@ -544,7 +548,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       <ScreenHeader
         back
         title={counterparty.name}
-        subtitle={`@${counterparty.handle}`}
+        subtitle={counterpartyDeparted ? undefined : `@${counterparty.handle}`}
         leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
       />
       {isGroupArchived(dm) && <ArchivedGroupBanner groupId={dm.group.id} kind="conversation" />}
@@ -569,6 +573,13 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             />
           }
         />
+      )}
+      {counterpartyDeparted && netCents === 0 && (
+        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
+          <p className="text-center text-xs text-muted-foreground">
+            Essa pessoa não participa mais desta conversa. O histórico foi mantido.
+          </p>
+        </div>
       )}
       {conversationRead.status === "error" &&
       (conversation?.messages.length ?? 0) === 0 &&

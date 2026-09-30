@@ -42,7 +42,8 @@ export function NewConversationButton({ inline = false, label }: { inline?: bool
         if (!snapshot) continue;
         if (snapshot.group.kind === "dm") {
           const other = snapshot.members.find((m) => m.userId !== me.id);
-          if (other) dmIds.add(other.userId);
+          const counterpartId = other?.userId ?? snapshot.dmCounterparty?.id;
+          if (counterpartId) dmIds.add(counterpartId);
           continue;
         }
         for (const member of snapshot.members) {
