@@ -127,10 +127,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  IF NOT public.increment_rate_limit('invites_sent', v_actor::text, 100, 3600) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invite_rate_limited';
-  END IF;
-
   PERFORM public.lock_group(p_group_id);
   PERFORM public.assert_member(p_group_id, v_actor);
   PERFORM public.assert_dm_pair_allowed(p_group_id, p_user_id);
@@ -174,6 +170,10 @@ BEGIN
       AND gm.invited_by = v_actor
   ) >= 10 THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invite_limit';
+  END IF;
+
+  IF NOT public.increment_rate_limit('invites_sent', v_actor::text, 100, 3600) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invite_rate_limited';
   END IF;
 
   INSERT INTO public.group_members (group_id, user_id, status, invited_by)
@@ -355,10 +355,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  IF NOT public.increment_rate_limit('chat_messages', v_actor::text || ':' || p_group_id::text, 30, 60) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'message_rate_limited';
-  END IF;
-
   -- Serialise message creation with reads and other chat writers for this group.
   PERFORM public.lock_group(p_group_id);
   PERFORM public.assert_member(p_group_id, v_actor);
@@ -373,6 +369,11 @@ BEGIN
     END IF;
     RETURN public.ledger_chat_message_json(v_existing_id);
   END IF;
+
+  IF NOT public.increment_rate_limit('chat_messages', v_actor::text || ':' || p_group_id::text, 30, 60) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'message_rate_limited';
+  END IF;
+
   PERFORM public.assert_user_contact_allowed(
     v_actor,
     CASE WHEN g.dm_user_a = v_actor THEN g.dm_user_b ELSE g.dm_user_a END
@@ -510,6 +511,10 @@ BEGIN
   WHERE gm.user_id = v_actor
     AND gm.invited_by = p_user_id
     AND gm.status = 'invited'
+    AND EXISTS (
+      SELECT 1 FROM public.groups g
+      WHERE g.id = gm.group_id AND g.kind = 'group'
+    )
     AND NOT EXISTS (
       SELECT 1 FROM public.group_balances gb
       WHERE gb.group_id = gm.group_id AND gb.kind = 'user' AND gb.participant_id = v_actor

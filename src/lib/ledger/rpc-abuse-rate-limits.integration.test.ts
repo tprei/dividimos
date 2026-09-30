@@ -349,5 +349,54 @@ describe.skipIf(!isIntegrationTestReady)(
       });
       expect(victimBalance).toBe(0);
     });
+
+    it("keeps a pending DM intact across block and unblock so the DM works again", async () => {
+      const [opener, invitee] = await createTestUsers(2);
+      const openerClient = authenticateAs(opener);
+      const inviteeClient = authenticateAs(invitee);
+
+      const dm = await rpcOk<{ groupId: string }>(openerClient, "get_or_create_dm", {
+        p_user_id: invitee.id,
+      });
+      await rpcOk(inviteeClient, "block_user", { p_user_id: opener.id });
+      await rpcOk(inviteeClient, "unblock_user", { p_user_id: opener.id });
+
+      const reopened = await rpcOk<{ groupId: string; created: boolean }>(
+        inviteeClient,
+        "get_or_create_dm",
+        { p_user_id: opener.id },
+      );
+      expect(reopened.groupId).toBe(dm.groupId);
+      await rpcOk(inviteeClient, "accept_invitation", { p_group_id: dm.groupId });
+      const sent = await rpcOk<{ id: string }>(inviteeClient, "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: dm.groupId,
+        p_content: "voltei",
+      });
+      expect(sent.id).toBeDefined();
+    });
+
+    it("does not spend the chat budget on idempotent retries of a stored message", async () => {
+      const user = await createTestUser();
+      const client = authenticateAs(user);
+      const { groupId } = await rpcOk<{ groupId: string }>(client, "create_group", {
+        p_name: "Retry",
+        p_member_ids: [],
+      });
+      const clientId = crypto.randomUUID();
+      for (let i = 0; i < 40; i += 1) {
+        await rpcOk<{ id: string }>(client, "send_message", {
+          p_client_id: clientId,
+          p_group_id: groupId,
+          p_content: "mesma mensagem",
+        });
+      }
+      const fresh = await rpcOk<{ id: string }>(client, "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: groupId,
+        p_content: "nova",
+      });
+      expect(fresh.id).toBeDefined();
+    });
   },
 );
