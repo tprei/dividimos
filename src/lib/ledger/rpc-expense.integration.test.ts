@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createTestUsers,
@@ -11,6 +11,7 @@ import {
   expectRpcError,
   authenticateAs,
   withPg,
+  resetRateLimit,
   decodeRpcData,
   type CreateExpenseInput,
   type TestUser,
@@ -132,6 +133,12 @@ function editArgs(
     p_payload: payload,
   };
 }
+
+beforeEach(async () => {
+  if (alice?.id) {
+    await resetRateLimit("group_creates", alice.id);
+  }
+});
 
 describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
   beforeAll(async () => {

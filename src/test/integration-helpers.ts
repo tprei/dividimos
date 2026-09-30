@@ -302,6 +302,22 @@ export async function withPg<T>(
   }
 }
 
+/**
+ * Clears one rate-limit bucket for one subject. Only suites that reuse a
+ * fixed fixture user across more calls than a real person would make in
+ * the window may call it, and only for the bucket they would otherwise
+ * saturate; limiter behavior itself is covered in
+ * rpc-abuse-rate-limits.integration.test.ts, which never calls this.
+ */
+export async function resetRateLimit(bucket: string, subject: string): Promise<void> {
+  await withPg((client) =>
+    client.query("DELETE FROM public.rate_limit_counters WHERE bucket = $1 AND subject = $2", [
+      bucket,
+      subject,
+    ]),
+  );
+}
+
 export async function getBalances(
   groupId: string,
 ): Promise<Array<{ kind: string; participant_id: string; net_cents: number }>> {

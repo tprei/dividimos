@@ -12,6 +12,7 @@ import {
   expectRpcError,
   withPg,
   getBalances,
+  resetRateLimit,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -765,6 +766,9 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     const total = 55;
     const sent: string[] = [];
     for (let i = 0; i < total; i++) {
+      if (i % 25 === 0) {
+        await resetRateLimit("chat_messages", `${userB.id}:${pagingGroup}`);
+      }
       const row = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
         p_client_id: crypto.randomUUID(),
         p_group_id: pagingGroup,
