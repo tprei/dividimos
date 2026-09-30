@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, ArrowLeft, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
@@ -228,6 +229,18 @@ export function AuthPanel({ className }: AuthPanelProps) {
               {isGoogleLoading ? "Entrando..." : "Entrar com Google"}
             </Button>
 
+            <p className="text-center text-[11px] leading-[1.55] text-obj-ink-soft select-text">
+              Ao continuar, você aceita os{" "}
+              <Link href="/terms" className="font-medium underline underline-offset-3">
+                Termos de Uso
+              </Link>{" "}
+              e a{" "}
+              <Link href="/privacy" className="font-medium underline underline-offset-3">
+                Política de Privacidade
+              </Link>
+              .
+            </p>
+
             <div className="flex items-center gap-3 text-[12.5px] text-obj-ink-soft before:h-px before:flex-1 before:bg-obj-border after:h-px after:flex-1 after:bg-obj-border">
               ou
             </div>
@@ -238,8 +251,12 @@ export function AuthPanel({ className }: AuthPanelProps) {
             </Button>
           </div>
           <p className="mt-3.5 text-center text-[11px] leading-[1.55] text-obj-ink-soft select-text intro-tiny:mt-2.5">
-            Em conformidade com a LGPD (Lei 13.709/2018). Seus dados são protegidos e nunca
-            compartilhados sem consentimento. Você pode excluir sua conta a qualquer momento.
+            Você pode exercer seus direitos pela LGPD (Lei 13.709/2018). Para excluir sua conta do
+            Dividimos, primeiro acerte seus saldos.{" "}
+            <Link href="/excluir-conta" className="font-medium underline underline-offset-3">
+              Veja como excluir e o que é mantido
+            </Link>
+            .
           </p>
         </div>
       )}
