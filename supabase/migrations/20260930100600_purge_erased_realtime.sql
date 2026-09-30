@@ -2,7 +2,9 @@
 -- broadcast row for days and a member could re-read the original content (and
 -- a deleted account's name, handle, avatar and message text) from their own
 -- user topic via broadcast replay. The app client never subscribes with
--- replay, so purging the stored rows has no functional impact.
+-- replay, so purging the stored rows has no functional impact. delete_account
+-- also revokes the guest claim tokens the account minted, matching what
+-- leave_group and remove_member already do for one group.
 
 -- Verbatim copy of the previous erase_chat_message body. delete_account calls
 -- this helper directly so erasing every message costs no realtime scan.
@@ -91,7 +93,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 27110200));
-  PERFORM 1 FROM public.users u WHERE u.id = p_user_id FOR UPDATE;
   IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = p_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
   END IF;
@@ -116,7 +117,7 @@ BEGIN
     PERFORM 1 FROM public.assignment_rooms WHERE id = v_room_id FOR UPDATE;
   END LOOP;
 
-  SELECT deleted_at INTO v_deleted_at FROM public.users WHERE id = p_user_id;
+  SELECT deleted_at INTO v_deleted_at FROM public.users WHERE id = p_user_id FOR UPDATE;
   IF v_deleted_at IS NULL THEN
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'id', g.id,
@@ -161,6 +162,7 @@ BEGIN
 
   DELETE FROM public.group_members WHERE user_id = p_user_id;
   UPDATE public.group_invite_links SET is_active = false WHERE created_by = p_user_id AND is_active;
+  DELETE FROM guest_credentials.claim_tokens WHERE created_by = p_user_id;
   DELETE FROM public.push_subscriptions WHERE user_id = p_user_id;
   DELETE FROM public.conversation_reads WHERE user_id = p_user_id;
   DELETE FROM public.vendor_charges WHERE user_id = p_user_id;

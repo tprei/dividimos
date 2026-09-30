@@ -3,6 +3,7 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
+  createExpense,
   createGroupWithMembers,
   createTestUsers,
   withPg,
@@ -254,4 +255,39 @@ describe.skipIf(!isIntegrationTestReady)("realtime erasure purge", () => {
       });
     }
   }, 180_000);
+
+  it("delete_account revokes the guest claim tokens the account minted", async () => {
+    const [minter, payer, sockpuppet] = await createTestUsers(3);
+    const groupId = await createGroupWithMembers(payer, [minter], "Grupo convidado");
+    await createExpense(payer, {
+      groupId,
+      totalCents: 1000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: payer.id },
+          { kind: "guest", displayName: "Convidada" },
+        ],
+        shares: [500, 500],
+        payers: [{ participantIndex: 0, amountCents: 1000 }],
+        itemAssignments: null,
+      },
+    });
+    const guestId = await withPg(async (pg) => {
+      const { rows } = await pg.query<{ id: string }>(
+        "select g.id from public.guests g join public.expenses e on e.id = g.expense_id where e.group_id = $1",
+        [groupId],
+      );
+      return rows[0].id;
+    });
+    const token = await rpcOk<{ token: string }>(authenticateAs(minter), "create_guest_claim_token", {
+      p_guest_id: guestId,
+    });
+
+    const { error } = await service.rpc("delete_account", { p_user_id: minter.id });
+    expect(error).toBeNull();
+
+    const claim = await authenticateAs(sockpuppet).rpc("claim_guest", { p_token: token.token });
+    expect(claim.error?.message).toBe("invalid_token");
+  });
 });
