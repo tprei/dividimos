@@ -918,6 +918,76 @@ export type Database = {
         }
         Relationships: []
       }
+      reports: {
+        Row: {
+          created_at: string
+          details: string | null
+          group_id: string | null
+          id: string
+          message_id: string | null
+          message_snapshot: string | null
+          notified_at: string | null
+          reason: Database["public"]["Enums"]["report_reason"]
+          reporter_id: string
+          resolution_note: string | null
+          resolved_at: string | null
+          status: Database["public"]["Enums"]["report_status"]
+          target_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: string | null
+          group_id?: string | null
+          id?: string
+          message_id?: string | null
+          message_snapshot?: string | null
+          notified_at?: string | null
+          reason: Database["public"]["Enums"]["report_reason"]
+          reporter_id: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["report_status"]
+          target_user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: string | null
+          group_id?: string | null
+          id?: string
+          message_id?: string | null
+          message_snapshot?: string | null
+          notified_at?: string | null
+          reason?: Database["public"]["Enums"]["report_reason"]
+          reporter_id?: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          status?: Database["public"]["Enums"]["report_status"]
+          target_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_group_fk"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_reporter_fk"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_target_fk"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       settlements: {
         Row: {
           amount_cents: number
@@ -1742,6 +1812,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_report_notified: {
+        Args: {
+          p_report_id: string
+        }
+        Returns: undefined
+      }
       pairwise_from_nets: {
         Args: {
           p_kinds: Database["public"]["Enums"]["participant_kind"][]
@@ -1808,6 +1884,25 @@ export type Database = {
         }
         Returns: Json
       }
+      report_content: {
+        Args: {
+          p_reporter_id: string
+          p_target_user_id: string
+          p_reason: string
+          p_message_id?: string
+          p_details?: string
+        }
+        Returns: {
+          report_id: string
+          reason: Database["public"]["Enums"]["report_reason"]
+          details: string
+          message_snapshot: string
+          notified_at: string
+          reporter_handle: string
+          target_handle: string
+          group_name: string
+        }[]
+      }
       resolve_expense_participants: {
         Args: {
           p_expense_id: string
@@ -1820,6 +1915,14 @@ export type Database = {
           p_token: string
         }
         Returns: Json
+      }
+      resolve_report: {
+        Args: {
+          p_report_id: string
+          p_status: string
+          p_note: string
+        }
+        Returns: undefined
       }
       restore_expense: {
         Args: {
@@ -1943,6 +2046,14 @@ export type Database = {
       member_status: "invited" | "accepted"
       participant_kind: "user" | "guest"
       pix_key_type: "cpf" | "email" | "phone" | "random"
+      report_reason:
+        | "assedio"
+        | "discurso_de_odio"
+        | "ameaca_ou_violencia"
+        | "conteudo_sexual"
+        | "golpe_ou_spam"
+        | "outro"
+      report_status: "open" | "resolved" | "dismissed"
       settlement_status: "confirmed" | "voided"
     }
     CompositeTypes: {
