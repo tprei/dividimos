@@ -447,3 +447,101 @@ describe.skipIf(!isIntegrationTestReady)("blocked contact — authorization firs
     ).toBe("not_a_member");
   });
 });
+
+describe.skipIf(!isIntegrationTestReady)("blocked contact — joining paths", () => {
+  it.each([
+    ["inviter blocks", true],
+    ["invitee blocks", false],
+  ] as const)("refuses a stale invitation once the pair is blocked (%s)", async (_label, inviterBlocks) => {
+    const [ana, bruno] = await createTestUsers(2);
+    const { groupId } = await createGroup(ana, "Grupo do convite", [bruno.id]);
+    if (inviterBlocks) {
+      await rpcOk(authenticateAs(ana), "block_user", { p_user_id: bruno.id });
+    } else {
+      await rpcOk(authenticateAs(bruno), "block_user", { p_user_id: ana.id });
+    }
+
+    expect(
+      await rpcErrorCode(authenticateAs(bruno), "accept_invitation", { p_group_id: groupId }),
+    ).toBe("member_excluded");
+    expect(
+      await countRows(
+        "select count(*) from group_members where group_id = $1 and user_id = $2 and status = 'invited'",
+        [groupId, bruno.id],
+      ),
+    ).toBe(1);
+  });
+
+  it("refuses the blocked person's invite link but not another member's", async () => {
+    const [ana, bruno, carol] = await createTestUsers(3);
+    const groupId = await createGroupWithMembers(ana, [carol], "Grupo do link");
+    const anaLink = await rpcOk<{ token: string }>(authenticateAs(ana), "create_invite_link", {
+      p_group_id: groupId,
+    });
+    await rpcOk(authenticateAs(ana), "block_user", { p_user_id: bruno.id });
+    const brunoClient = authenticateAs(bruno);
+
+    expect(await rpcErrorCode(brunoClient, "join_via_link", { p_token: anaLink.token })).toBe(
+      "member_excluded",
+    );
+    expect(
+      await countRows("select count(*) from group_invite_links where token = $1 and use_count > 0", [
+        anaLink.token,
+      ]),
+    ).toBe(0);
+
+    const carolLink = await rpcOk<{ token: string }>(authenticateAs(carol), "create_invite_link", {
+      p_group_id: groupId,
+    });
+    await rpcOk(brunoClient, "join_via_link", { p_token: carolLink.token });
+    expect(
+      await countRows(
+        "select count(*) from group_members where group_id = $1 and user_id = $2 and status = 'accepted'",
+        [groupId, bruno.id],
+      ),
+    ).toBe(1);
+  });
+
+  it("refuses a guest claim on the blocked person's bill and leaves the guest unclaimed", async () => {
+    const [ana, bruno] = await createTestUsers(2);
+    const anaClient = authenticateAs(ana);
+    const { groupId } = await createGroup(ana, "Grupo do convidado");
+    const expense = await createExpense(ana, {
+      groupId,
+      totalCents: 1000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: ana.id },
+          { kind: "guest", displayName: "Bruno convidado" },
+        ],
+        shares: [500, 500],
+        payers: [{ participantIndex: 0, amountCents: 1000 }],
+        itemAssignments: null,
+      },
+    });
+    const view = await rpcOk<{ participants: Array<{ kind: string; guest: { id: string } | null }> }>(
+      anaClient,
+      "get_expense",
+      { p_expense_id: expense.expenseId },
+    );
+    const guestId = view.participants.find((entry) => entry.kind === "guest")?.guest?.id;
+    const token = await rpcOk<{ token: string }>(anaClient, "create_guest_claim_token", {
+      p_guest_id: guestId,
+    });
+    await rpcOk(authenticateAs(bruno), "block_user", { p_user_id: ana.id });
+
+    expect(await rpcErrorCode(authenticateAs(bruno), "claim_guest", { p_token: token.token })).toBe(
+      "member_excluded",
+    );
+    expect(
+      await countRows("select count(*) from guests where id = $1 and claimed_by is not null", [guestId]),
+    ).toBe(0);
+    expect(
+      await countRows("select count(*) from group_members where group_id = $1 and user_id = $2", [
+        groupId,
+        bruno.id,
+      ]),
+    ).toBe(0);
+  });
+});
