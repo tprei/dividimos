@@ -1498,6 +1498,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      current_user_is_active: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       current_user_is_member: {
         Args: {
           p_group_id: string
