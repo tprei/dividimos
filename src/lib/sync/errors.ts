@@ -95,7 +95,7 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   not_party: "Você não faz parte desse pagamento.",
   counterparty_not_member: "A outra pessoa não está no grupo.",
   former_member_balance:
-    "Essa mudança mexe no saldo de quem saiu do grupo. Convide a pessoa de volta para acertar antes.",
+    "Essa mudança mexe no saldo de quem saiu do grupo. Se a pessoa ainda tem conta no Dividimos, convide de volta para acertar antes.",
   amount_exceeds_debt: "Esse valor é maior que a dívida.",
   invalid_name: "O nome precisa ter de 1 a 80 caracteres.",
   user_not_found: "Não achamos esse usuário.",
