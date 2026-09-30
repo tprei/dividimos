@@ -115,6 +115,20 @@ export function selectDebtRows(state: AppState): DebtRow[] {
   return rows;
 }
 
+export function personDebtRows(
+  rows: readonly DebtRow[],
+  userId: string,
+): { netCents: number; rows: DebtRow[] } {
+  const matched = rows.filter(
+    (row) => row.counterpartyKind === "user" && row.counterpartyId === userId,
+  );
+  let netCents = 0;
+  for (const row of matched) {
+    netCents += row.direction === "owed" ? row.amountCents : -row.amountCents;
+  }
+  return { netCents, rows: matched };
+}
+
 export function departedCounterpartyLabel(rows: DebtRow[]): string | undefined {
   const parts = rows
     .filter((row) => row.counterpartyDeparted)

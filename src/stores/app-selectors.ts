@@ -1,7 +1,7 @@
 import { transfersFromBalances, transfersInvolving } from "@/lib/ledger/transfers";
 import { conversationRow, type ConversationRowData } from "@/lib/conversations";
 import { isGroupArchived } from "@/lib/group-lifecycle";
-import type { BalanceRow, ExpenseSummary, GroupEvent, GroupSnapshot, Me, Transfer } from "@/types/ledger";
+import type { BalanceRow, ExpenseSummary, GroupEvent, GroupSnapshot, Me, Transfer, UserProfile } from "@/types/ledger";
 import type { ExpenseListState } from "./app-store";
 import type { LedgerErrorCode } from "@/lib/sync/errors";
 import type { ResourceReadState } from "./app-store";
@@ -9,6 +9,52 @@ import type { AppState, MyDebts } from "./app-store";
 
 export function selectGroup(state: AppState, id: string): GroupSnapshot | null {
   return state.groups[id] ?? null;
+}
+
+export function selectKnownUser(state: AppState, userId: string): UserProfile | null {
+  for (const id of state.groupOrder) {
+    const snapshot = state.groups[id];
+    if (!snapshot) continue;
+    const member = snapshot.members.find((candidate) => candidate.userId === userId);
+    if (member) return member.user;
+  }
+  for (const id of state.groupOrder) {
+    const snapshot = state.groups[id];
+    if (!snapshot) continue;
+    if (snapshot.dmCounterparty?.id === userId) return snapshot.dmCounterparty;
+  }
+  for (const id of state.groupOrder) {
+    const snapshot = state.groups[id];
+    if (!snapshot) continue;
+    for (const former of snapshot.formerMembers) {
+      if (former.id === userId) return former;
+    }
+  }
+  for (const user of state.blockedUsers) {
+    if (user.id === userId) return user;
+  }
+  return null;
+}
+
+export function sharedGroupsWith(
+  groups: Record<string, GroupSnapshot>,
+  groupOrder: readonly string[],
+  meId: string,
+  userId: string,
+): GroupSnapshot[] {
+  const shared: GroupSnapshot[] = [];
+  for (const id of groupOrder) {
+    const snapshot = groups[id];
+    if (!snapshot || snapshot.group.kind !== "group") continue;
+    const mine = snapshot.members.some(
+      (candidate) => candidate.userId === meId && candidate.status === "accepted",
+    );
+    const theirs = snapshot.members.some(
+      (candidate) => candidate.userId === userId && candidate.status === "accepted",
+    );
+    if (mine && theirs) shared.push(snapshot);
+  }
+  return shared;
 }
 
 interface TransfersCacheEntry {

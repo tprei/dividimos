@@ -310,6 +310,13 @@ export interface GroupOverviewData {
   spending: GroupSpending | null;
 }
 
+export interface SharedSpending {
+  expenseCount: number;
+  totalCents: number;
+  myShareCents: number;
+  theirShareCents: number;
+}
+
 
 export interface GroupSnapshot {
   group: Group;

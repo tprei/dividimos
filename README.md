@@ -476,7 +476,7 @@ flowchart LR
 
 | Contexto | RPCs | Quem chama |
 |----------|------|------------|
-| Leitura | `bootstrap_overview`, `get_group_overview`, `get_group_expenses`, `get_expense_context`, `get_settlement`, `get_my_expenses`, `get_activity`, `get_conversation`, `get_conversation_v2`, `get_vendor_charges` | `src/lib/sync/bootstrap.ts` e `refresh.ts` |
+| Leitura | `bootstrap_overview`, `get_group_overview`, `get_group_expenses`, `get_expense_context`, `get_settlement`, `get_my_expenses`, `get_activity`, `get_conversation`, `get_conversation_v2`, `get_vendor_charges`, `get_shared_spending` | `src/lib/sync/bootstrap.ts` e `refresh.ts` |
 | | `get_my_profile` | `src/lib/auth.ts` |
 | Contas | `create_expense`, `create_expense_with_group`, `edit_expense`, `delete_expense`, `restore_expense` | `src/lib/sync/mutations.ts` |
 | Liquidação | `record_settlement`, `void_settlement`, `send_nudge` | `mutations-group.ts` |

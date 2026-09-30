@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BalanceRow, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { debtRowsForGroup, departedCounterpartyLabel, selectDebtRows, selectOutstandingCents } from "./debt-rows";
+import { debtRowsForGroup, departedCounterpartyLabel, personDebtRows, selectDebtRows, selectOutstandingCents } from "./debt-rows";
+import type { DebtRow } from "./debt-rows";
 
 const me: Me = {
   id: "user-1",
@@ -266,6 +267,70 @@ describe("selectDebtRows", () => {
     expect(selectDebtRows(useAppStore.getState())).toEqual([
       expect.objectContaining({ groupId: "g1", amountCents: 100, direction: "owes" }),
     ]);
+  });
+});
+
+describe("personDebtRows", () => {
+  it("nets owed minus owes across groups and keeps only the person's user rows", () => {
+    const rows: DebtRow[] = [
+      {
+        groupId: "g1",
+        groupName: "Group g1",
+        isDm: false,
+        counterpartyKind: "user",
+        counterpartyId: carol.id,
+        counterpartyName: carol.name,
+        counterpartyHandle: carol.handle,
+        counterpartyAvatarUrl: carol.avatarUrl,
+        counterpartyDeparted: false,
+        amountCents: 5000,
+        direction: "owed",
+      },
+      {
+        groupId: "dm-1",
+        groupName: carol.name,
+        isDm: true,
+        counterpartyKind: "user",
+        counterpartyId: carol.id,
+        counterpartyName: carol.name,
+        counterpartyHandle: carol.handle,
+        counterpartyAvatarUrl: carol.avatarUrl,
+        counterpartyDeparted: false,
+        amountCents: 2000,
+        direction: "owes",
+      },
+      {
+        groupId: "g1",
+        groupName: "Group g1",
+        isDm: false,
+        counterpartyKind: "guest",
+        counterpartyId: "guest-1",
+        counterpartyName: "Bruno Convidado",
+        counterpartyHandle: null,
+        counterpartyAvatarUrl: null,
+        counterpartyDeparted: false,
+        amountCents: 9000,
+        direction: "owed",
+      },
+      {
+        groupId: "g2",
+        groupName: "Group g2",
+        isDm: false,
+        counterpartyKind: "user",
+        counterpartyId: dave.id,
+        counterpartyName: dave.name,
+        counterpartyHandle: dave.handle,
+        counterpartyAvatarUrl: null,
+        counterpartyDeparted: false,
+        amountCents: 7000,
+        direction: "owed",
+      },
+    ];
+
+    const result = personDebtRows(rows, carol.id);
+
+    expect(result.netCents).toBe(3000);
+    expect(result.rows).toEqual([rows[0], rows[1]]);
   });
 });
 

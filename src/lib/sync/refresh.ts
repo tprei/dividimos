@@ -11,7 +11,7 @@ import {
 } from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
 import { decodeGroupOverviewV2 } from "@/lib/ledger/decode-group-overview";
-import { arrayOf, decodeUserProfile } from "@/lib/ledger/decode-expense";
+import { arrayOf, decodeSharedSpending, decodeUserProfile } from "@/lib/ledger/decode-expense";
 import {
   CHARGES_READ_KEY,
   conversationReadKey,
@@ -22,6 +22,7 @@ import {
   groupReadKey,
   openAssignmentRoomsReadKey,
   settlementReadKey,
+  sharedSpendingReadKey,
   useAppStore,
   type ResourceReadState,
 } from "@/stores/app-store";
@@ -39,6 +40,7 @@ const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
 const inFlightExpensePageOwners = new Map<string, symbol>();
 const inFlightSettlements = new Map<string, Promise<void>>();
+const inFlightSharedSpending = new Map<string, Promise<void>>();
 const inFlightOpenRooms = new Map<string, Promise<void>>();
 let inFlightHostedRooms: Promise<void> | null = null;
 let pendingHostedRooms: Promise<void> | null = null;
@@ -87,6 +89,7 @@ export function invalidateSyncReads(): void {
   inFlightExpensePages.clear();
   inFlightExpensePageOwners.clear();
   inFlightSettlements.clear();
+  inFlightSharedSpending.clear();
   inFlightOpenRooms.clear();
   inFlightHostedRooms = null;
   pendingHostedRooms = null;
@@ -361,6 +364,31 @@ export function refreshSettlement(settlementId: string): Promise<void> {
     }
   })();
   inFlightSettlements.set(settlementId, task);
+  return task;
+}
+
+export function refreshSharedSpending(userId: string): Promise<void> {
+  const inFlight = inFlightSharedSpending.get(userId);
+  if (inFlight) return inFlight;
+
+  const key = sharedSpendingReadKey(userId);
+  const attempt = beginRead(key);
+  let task = Promise.resolve();
+  task = (async () => {
+    try {
+      await trackedRead(
+        key,
+        attempt,
+        () => rpc("get_shared_spending", { p_user_id: userId }, decodeSharedSpending),
+        (spending) => useAppStore.getState().applySharedSpending(userId, spending),
+      );
+    } finally {
+      if (inFlightSharedSpending.get(userId) === task) {
+        inFlightSharedSpending.delete(userId);
+      }
+    }
+  })();
+  inFlightSharedSpending.set(userId, task);
   return task;
 }
 
