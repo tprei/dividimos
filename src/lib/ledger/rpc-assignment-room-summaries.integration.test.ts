@@ -235,7 +235,7 @@ async function joinSubscribed(
   throw new Error("group channel did not subscribe");
 }
 
-function nextGroupRoomBroadcast(
+function nextRoomBroadcast(
   channel: RealtimeChannel,
   timeoutMs = 8_000
 ): Promise<{ payload: Record<string, unknown>; receivedAt: number }> {
@@ -256,7 +256,7 @@ function nextGroupRoomBroadcast(
   return promise;
 }
 
-function expectNoGroupRoomBroadcast(
+function expectNoRoomBroadcast(
   channel: RealtimeChannel,
   timeoutMs = 1_200
 ): Promise<void> {
@@ -394,7 +394,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(remaining!.ownedItemCount).toBe(1);
     });
 
-    it("broadcasts the live summary on the group topic for existing rooms only", async () => {
+    it("broadcasts the live summary on each member's user topic for existing rooms only", async () => {
       const realtimeMember = createClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -402,7 +402,7 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       await realtimeMember.realtime.setAuth(member.accessToken!);
       const channel = await joinSubscribed(() =>
-        realtimeMember.channel(`group:${groupId}`, { config: { private: true } })
+        realtimeMember.channel(`user:${member.id}`, { config: { private: true } })
       );
 
       const created = await createRoom(hostClient, roomArgs(host, existingTarget(groupId)));
@@ -411,7 +411,7 @@ describe.skipIf(!isIntegrationTestReady)(
       let ticks = 120_000;
       let received: { payload: Record<string, unknown>; receivedAt: number } | null = null;
       for (let attempt = 1; ; attempt += 1) {
-        const message = nextGroupRoomBroadcast(channel, 4_000);
+        const message = nextRoomBroadcast(channel, 4_000);
         const updated = await claimItem(
           hostClient,
           created.room.id,
@@ -443,7 +443,7 @@ describe.skipIf(!isIntegrationTestReady)(
         roomArgs(host, { kind: "new", name: "Sala nova" })
       );
       await Promise.all([
-        expectNoGroupRoomBroadcast(channel),
+        expectNoRoomBroadcast(channel),
         claimItem(
           hostClient,
           newTarget.room.id,
