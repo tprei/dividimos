@@ -1429,6 +1429,12 @@ export type Database = {
         }
         Returns: Json
       }
+      consume_ai_request: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       create_assignment_room: {
         Args: {
           p_room_id: string

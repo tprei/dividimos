@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
+import { createTestUser } from "@/test/integration-helpers";
 
 // server-only unconditionally throws outside a Next.js server bundle. This
 // mocks the guard package itself (not business logic), matching the same
@@ -62,8 +63,8 @@ function voiceRequest(text = "pizza") {
   });
 }
 
-function freshUserId(): string {
-  return crypto.randomUUID();
+async function freshUserId(): Promise<string> {
+  return (await createTestUser()).id;
 }
 
 describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-limit RPC enforcement", () => {
@@ -80,7 +81,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("30 valid chat POSTs for user A succeed and invoke the chat parser 30 times; request 31 returns 429 with parser count pinned at 30", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 
@@ -108,7 +109,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("a valid chat POST for a different user B succeeds, proving subject isolation", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 
@@ -118,7 +119,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("31 concurrent valid chat POSTs on a fresh user/bucket produce exactly 30 successes, one 429, and 30 parser invocations", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 

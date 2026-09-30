@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import { createClient } from "@/lib/supabase/server";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
-import { enforceRateLimit } from "@/lib/rate-limit";
+import { detectImageMimeType } from "@/lib/image-format";
+import { enforceRateLimit, enforceAiBudget } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -10,6 +11,9 @@ export const maxDuration = 15;
 
 /** Max request body size: 4 MB (compressed JPEG should be well under this). */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+const UNSUPPORTED_IMAGE_MESSAGE =
+  "Formato de imagem não suportado. Envie uma foto em JPG, PNG ou WEBP.";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -28,7 +32,48 @@ export async function POST(request: Request) {
     );
   }
 
-  // Parse multipart form or JSON body
+  // The body readers buffer without a bound, so a declared length above the
+  // cap is rejected before the read. A missing header keeps the exact
+  // post-read size checks as the only gate.
+  const rawDeclaredLength = request.headers.get("content-length");
+  if (rawDeclaredLength !== null) {
+    const declaredLength = Number(rawDeclaredLength);
+    if (
+      !Number.isInteger(declaredLength) ||
+      declaredLength < 0 ||
+      declaredLength > MAX_BODY_BYTES
+    ) {
+      return NextResponse.json(
+        { error: "Imagem muito grande (max 4MB)" },
+        { status: 413 },
+      );
+    }
+  }
+
+  // Paid AI call: the per-minute token and the daily budget are spent before
+  // any body byte is read.
+  try {
+    await Promise.all([
+      enforceRateLimit("receipt.ocr", userId),
+      enforceAiBudget(userId),
+    ]);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "ACCOUNT_DELETED") {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[receipt/ocr] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
+  }
+
+  // Decode the multipart form or JSON body
   const contentType = request.headers.get("content-type") ?? "";
   let imageBase64: string;
   let mimeType: string;
@@ -48,11 +93,20 @@ export async function POST(request: Request) {
         { status: 413 },
       );
     }
-    mimeType = file.type || "image/jpeg";
     const buffer = await file.arrayBuffer();
-    imageBase64 = Buffer.from(buffer).toString("base64");
+    const bytes = new Uint8Array(buffer);
+    const detected = detectImageMimeType(bytes);
+    if (!detected) {
+      return NextResponse.json(
+        { error: UNSUPPORTED_IMAGE_MESSAGE },
+        { status: 415 },
+      );
+    }
+    mimeType = detected;
+    imageBase64 = Buffer.from(bytes).toString("base64");
   } else {
-    // JSON body: { image: base64string, mimeType?: string }
+    // JSON body: { image: base64string }. The caller's mimeType claim is
+    // ignored; Gemini receives only the type detected from magic bytes.
     const body = await request.json();
     if (!body.image || typeof body.image !== "string") {
       return NextResponse.json(
@@ -67,26 +121,15 @@ export async function POST(request: Request) {
         { status: 413 },
       );
     }
-    imageBase64 = body.image;
-    mimeType = body.mimeType ?? "image/jpeg";
-  }
-
-  try {
-    await enforceRateLimit("receipt.ocr", userId);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+    const detected = detectImageMimeType(rawBytes);
+    if (!detected) {
       return NextResponse.json(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        { status: 429 },
+        { error: UNSUPPORTED_IMAGE_MESSAGE },
+        { status: 415 },
       );
     }
-    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
-      console.error("[receipt/ocr] unexpected rate-limit failure:", error);
-    }
-    return NextResponse.json(
-      { error: "Serviço temporariamente indisponível" },
-      { status: 503 },
-    );
+    imageBase64 = body.image;
+    mimeType = detected;
   }
 
   try {

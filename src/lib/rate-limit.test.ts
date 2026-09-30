@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { AppError } from "@/lib/errors";
 
 vi.mock("server-only", () => ({}));
 
@@ -237,5 +238,141 @@ describe("enforceRateLimit", () => {
         p_window_seconds: 60,
       });
     });
+  });
+});
+
+describe("enforceAiBudget", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockRpc.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is a no-op when RATE_LIMIT_DISABLED=1, NODE_ENV=test, and VITEST=true", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VITEST", "true");
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("user-123")).resolves.toBeUndefined();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("calls consume_ai_request with the admin client and the user id", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockResolvedValueOnce({ data: true, error: null });
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("user-abc")).resolves.toBeUndefined();
+    expect(mockRpc).toHaveBeenCalledExactlyOnceWith("consume_ai_request", {
+      p_user_id: "user-abc",
+    });
+  });
+
+  it("throws RATE_LIMIT_EXCEEDED (429) with the daily copy when the RPC resolves data:false", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockResolvedValueOnce({ data: false, error: null });
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+    const { AppError } = await import("@/lib/errors");
+
+    try {
+      await enforceAiBudget("user-xyz");
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppError);
+      const appError = error as AppError;
+      expect(appError.code).toBe("RATE_LIMIT_EXCEEDED");
+      expect(appError.statusCode).toBe(429);
+      expect(appError.message).toBe(
+        "Você usou o limite diário de leituras com IA. Tente de novo amanhã.",
+      );
+    }
+  });
+
+  it("throws ACCOUNT_DELETED (403) when the RPC reports account_deleted", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: "account_deleted" } });
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+    const { AppError } = await import("@/lib/errors");
+
+    try {
+      await enforceAiBudget("user-deleted");
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppError);
+      const appError = error as AppError;
+      expect(appError.code).toBe("ACCOUNT_DELETED");
+      expect(appError.statusCode).toBe(403);
+      expect(appError.message).not.toContain("account_deleted");
+    }
+  });
+
+  it("never leaks raw RPC diagnostics into the thrown error", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "connection to postgresql://user:secret@host failed" },
+    });
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    try {
+      await enforceAiBudget("user-xyz");
+      expect.unreachable();
+    } catch (error) {
+      const serialized = JSON.stringify(error instanceof Error ? { ...error, message: error.message } : error);
+      expect(serialized).not.toContain("postgresql://");
+      expect(serialized).not.toContain("secret");
+    }
+  });
+
+  it.each([
+    ["an RPC error", { data: null, error: { message: "boom" } }],
+    ["a null result with no error", { data: null, error: null }],
+    ["a numeric result", { data: 1, error: null }],
+    ["a string result", { data: "true", error: null }],
+    ["a missing data key entirely", { error: null }],
+  ])("throws RATE_LIMIT_UNAVAILABLE (503) for %s", async (_label, mocked) => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockResolvedValueOnce(mocked);
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("user-xyz")).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+      statusCode: 503,
+    });
+  });
+
+  it("throws RATE_LIMIT_UNAVAILABLE (503) when the RPC promise rejects", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    mockRpc.mockRejectedValueOnce(new Error("connection refused"));
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("user-xyz")).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+      statusCode: 503,
+    });
+  });
+
+  it("fails closed for a blank user id before calling the RPC", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("   ")).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for an overlong user id before calling the RPC", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+    const { enforceAiBudget } = await import("@/lib/rate-limit");
+
+    await expect(enforceAiBudget("x".repeat(513))).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

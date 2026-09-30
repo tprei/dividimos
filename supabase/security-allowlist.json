@@ -151,6 +151,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.consume_ai_request(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal daily paid-AI budget gate; server-side callers only, via the admin client after route auth."
+    },
     "public.claim_assignment_room_guest(p_room_id uuid, p_member_token text)": {
       "anon": false,
       "authenticated": true,
