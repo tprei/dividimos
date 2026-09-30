@@ -96,6 +96,14 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
     const body31 = await res31.json();
     expect(body31).toEqual({ error: "Muitas requisições. Tente novamente em alguns segundos." });
     expect(mockParseChatExpense).toHaveBeenCalledTimes(30);
+
+    const { data: daily } = await adminClient!
+      .from("rate_limit_counters")
+      .select("count")
+      .eq("bucket", "ai.daily")
+      .eq("subject", currentUserId)
+      .single();
+    expect(daily?.count).toBe(30);
   }, 30_000);
 
   it("a valid voice POST for the same exhausted chat user still succeeds, proving route-bucket isolation", async () => {

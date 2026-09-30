@@ -53,10 +53,8 @@ export async function POST(request: Request) {
   // Paid AI call: the per-minute token and the daily budget are spent before
   // any body byte is read.
   try {
-    await Promise.all([
-      enforceRateLimit("receipt.ocr", userId),
-      enforceAiBudget(userId),
-    ]);
+    await enforceRateLimit("receipt.ocr", userId);
+    await enforceAiBudget(userId);
   } catch (error) {
     if (error instanceof AppError && error.code === "ACCOUNT_DELETED") {
       return NextResponse.json({ error: error.message }, { status: 403 });
