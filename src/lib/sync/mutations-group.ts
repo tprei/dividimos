@@ -8,7 +8,7 @@ import {
 } from "@/lib/ledger/decode";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
 import { getAuthGeneration, rpc, rpcVoid } from "@/lib/sync/client";
-import { LedgerError, type LedgerErrorCode } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage, type LedgerErrorCode } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type {
@@ -318,6 +318,13 @@ export async function getOrCreateDm(userId: string): Promise<{ groupId: string; 
   const ack = await rpc("get_or_create_dm", { p_user_id: userId }, decodeMutationAck);
   await refreshGroup(ack.groupId);
   return { groupId: ack.groupId, created: ack.created ?? false };
+}
+
+export function dmErrorMessage(error: unknown): string {
+  if (error instanceof LedgerError && error.code === "member_excluded") {
+    return "Essa pessoa não está aceitando conversas suas.";
+  }
+  return ledgerErrorMessage(error);
 }
 
 export async function createInviteLink(

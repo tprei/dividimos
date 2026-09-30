@@ -3,8 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
-import { getOrCreateDm } from "@/lib/sync/mutations-group";
+import { dmErrorMessage, getOrCreateDm } from "@/lib/sync/mutations-group";
 
 export function useStartBillWithUser() {
   const router = useRouter();
@@ -18,7 +17,7 @@ export function useStartBillWithUser() {
         const { groupId } = await getOrCreateDm(userId);
         router.push(`/app/bill/new?dm=${userId}&groupId=${groupId}&type=single_amount`);
       } catch (error) {
-        toast.error(ledgerErrorMessage(error));
+        toast.error(dmErrorMessage(error));
         setStarting(false);
       }
     },
@@ -33,7 +32,7 @@ export function useStartBillWithUser() {
         await getOrCreateDm(userId);
         router.push(`/app/conversations/${userId}`);
       } catch (error) {
-        toast.error(ledgerErrorMessage(error));
+        toast.error(dmErrorMessage(error));
         setStarting(false);
       }
     },

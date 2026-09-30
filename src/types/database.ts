@@ -302,6 +302,39 @@ export type Database = {
           },
         ]
       }
+      dm_opt_outs: {
+        Row: {
+          created_at: string
+          other_user_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          other_user_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          other_user_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dm_opt_outs_other_user_id_fkey"
+            columns: ["other_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dm_opt_outs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_versions: {
         Row: {
           author_id: string
