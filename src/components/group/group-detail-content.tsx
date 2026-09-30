@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, LayoutGroup, motion, useIsPresent, useReducedMotion, type HTMLMotionProps } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { Bot, MessageSquare, Share2, UserPlus, Users, UsersRound } from "lucide-react";
 import {
   Dialog,
@@ -11,10 +11,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAppViewport } from "@/hooks/use-app-viewport";
+import { useInfoView } from "@/hooks/use-info-view";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
@@ -23,7 +24,7 @@ import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
 import { GroupMembersSection } from "@/components/group/group-members-section";
 import { GroupProfileView } from "@/components/group/group-profile-view";
-import { GroupPullReveal, PullScale } from "@/components/group/group-pull-reveal";
+import { PullReveal, PullScale } from "@/components/shared/pull-reveal";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
 import { OpenRoomsCard } from "@/components/group/open-rooms-card";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -33,6 +34,7 @@ import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { UnreadBadge } from "@/components/shared/unread-badge";
+import { ViewLayer, viewLayerVariants } from "@/components/shared/view-layer";
 import { haptics } from "@/hooks/use-haptics";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
@@ -54,14 +56,6 @@ const UNAVAILABLE_CODES: Record<string, true> = {
 
 const TABS: Record<string, true> = { saldos: true, contas: true, membros: true };
 
-type GroupView = "main" | "profile";
-
-const viewVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { duration: 0.16 } },
-  exit: { opacity: 0, y: 10, transition: { duration: 0.15 } },
-};
-
 const mainContentVariants = {
   hidden: { opacity: 0, y: 12 },
   visible: { opacity: 1, y: 0, transition: { ...springs.reveal, delay: 0.04 } },
@@ -70,19 +64,12 @@ const mainContentVariants = {
 const MAIN_HINT = { idle: "Puxe para ver o grupo", armed: "Solte para ver o grupo" };
 const PROFILE_HINT = { idle: "Puxe para voltar", armed: "Solte para voltar" };
 
-/** A view animating out stays in the DOM for a moment; it must not take taps or be read. */
-function ViewLayer(props: HTMLMotionProps<"div">) {
-  const isPresent = useIsPresent();
-  return <motion.div {...props} inert={!isPresent} />;
-}
-
 const EMPTY_OPEN_ROOMS: OpenAssignmentRoom[] = [];
 
 export function GroupDetailContent({ groupId }: { groupId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const view: GroupView = searchParams.get("view") === "info" ? "profile" : "main";
   const reduced = useReducedMotion() ?? false;
   const { keyboardOpen } = useAppViewport();
   const { accept, decline, pendingGroupId } = useInvitationActions();
@@ -98,47 +85,13 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const departedRef = useRef(false);
   const screenRef = useRef<HTMLDivElement | null>(null);
   const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
-  const prevViewRef = useRef<GroupView>(view);
-  const swapping = useRef(false);
   const openRoomsRefreshRef = useRef<string | null>(null);
-
-  const openProfile = useCallback(() => {
-    const url = new URL(window.location.href);
-    if (swapping.current || url.searchParams.get("view") === "info") return;
-    swapping.current = true;
-    screenRef.current?.closest("main")?.scrollTo({ top: 0 });
-    url.searchParams.set("view", "info");
-    window.history.pushState({ groupProfile: true }, "", `${url.pathname}${url.search}`);
-  }, []);
-
-  // Going back only when this screen pushed the profile entry keeps history
-  // to one entry per visit; the marker survives remounts and reloads.
-  const closeProfile = useCallback(() => {
-    const url = new URL(window.location.href);
-    if (swapping.current || url.searchParams.get("view") !== "info") return;
-    swapping.current = true;
-    screenRef.current?.closest("main")?.scrollTo({ top: 0 });
-    if (window.history.state?.groupProfile === true) {
-      window.history.back();
-      return;
-    }
-    url.searchParams.delete("view");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-  }, []);
-
-  // A view swap must start from a re-measured top: reset scroll before paint
-  // and hand focus to where the swap leaves the user.
-  useLayoutEffect(() => {
-    const previous = prevViewRef.current;
-    prevViewRef.current = view;
-    swapping.current = false;
-    if (previous === view) return;
-    screenRef.current?.closest("main")?.scrollTo({ top: 0 });
-    const target = view === "main"
-      ? avatarButtonRef.current
-      : screenRef.current?.querySelector<HTMLElement>('[data-slot="group-hero"] [aria-label="Voltar"]');
-    target?.focus({ preventScroll: true });
-  }, [view]);
+  const { view, openProfile, closeProfile } = useInfoView({
+    historyKey: "groupProfile",
+    screenRef,
+    mainFocusRef: avatarButtonRef,
+    profileFocusSelector: '[data-slot="group-hero"] [aria-label="Voltar"]',
+  });
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
 
@@ -328,7 +281,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const invitePanelOpen = showInvitePanel && canInvite && tab === "membros" && view === "main";
   const gestureEnabled = !keyboardOpen && !showInviteModal && !invitePanelOpen;
   return (
-    <GroupPullReveal
+    <PullReveal
       ref={screenRef}
       enabled={gestureEnabled}
       hint={view === "profile" ? PROFILE_HINT : MAIN_HINT}
@@ -337,7 +290,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
       <LayoutGroup>
         <AnimatePresence mode="popLayout" initial={false}>
           {view === "profile" ? (
-            <ViewLayer key="profile" variants={reduced ? fade : viewVariants} initial="hidden" animate="visible" exit="exit">
+            <ViewLayer key="profile" variants={reduced ? fade : viewLayerVariants} initial="hidden" animate="visible" exit="exit">
               <GroupProfileView
                 groupId={groupId}
                 meId={meId}
@@ -350,7 +303,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           ) : (
             <ViewLayer
               key="main"
-              variants={reduced ? fade : viewVariants}
+              variants={reduced ? fade : viewLayerVariants}
               initial="hidden"
               animate="visible"
               exit="exit"
@@ -482,6 +435,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           )}
         </AnimatePresence>
       </LayoutGroup>
-    </GroupPullReveal>
+    </PullReveal>
   );
 }
