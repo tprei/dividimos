@@ -8,6 +8,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Chip } from "@/components/ui/chip";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton, SplitBillButton } from "./profile-actions";
+import { ReportContentAction } from "@/components/reports/report-content-action";
 import type { UserProfile } from "@/types/ledger";
 
 export default async function PublicProfilePage({
@@ -142,6 +143,13 @@ export default async function PublicProfilePage({
           <>
             <SplitBillButton targetUserId={profile.id} />
             <SendMessageButton targetUserId={profile.id} />
+            <ReportContentAction
+              key={`${callerId}:${profile.id}`}
+              subject={profile}
+              messageId={null}
+              messagePreview={null}
+              presentation="profile"
+            />
           </>
         )}
 

@@ -107,6 +107,7 @@ stateDiagram-v2
 
 - **Conversas 1-a-1.** Mensagens diretas com o saldo entre vocês no topo e cards de sistema para contas e pagamentos. Conversa nova também precisa de aceite. Quem recusa uma conversa não recebe convite de novo da mesma pessoa até puxar a conversa.
 - **Ações sem sair do chat.** **Nova cobrança** e **Dividir conta** (igual, % ou fixo) direto na conversa. O botão **Pagar** ou **Cobrar** abre o Pix com o saldo entre vocês e registra o pagamento.
+- **Denunciar.** Mensagens de outras pessoas têm um menu com **Denunciar mensagem**; perfis têm **Denunciar pessoa**. A denúncia vai pra moderação e a pessoa denunciada não fica sabendo.
 - **Perfil público.** `dividimos.ai/u/<handle>`, com QR Code pra compartilhar. Quem abre pode **Dividir uma conta** ou **Enviar mensagem**.
 
 ### Atividade e notificações
@@ -700,6 +701,8 @@ supabase db push --linked              # aplica
 Denúncias de mensagens e perfis chegam no mesmo chat do Telegram usado pelos alertas do ambient. Uma pessoa precisa copiar os valores existentes de `ALERT_TELEGRAM_BOT_TOKEN` e `ALERT_TELEGRAM_CHAT_ID` para as variáveis de ambiente da Vercel e fazer um novo deploy. Nunca use o prefixo `NEXT_PUBLIC_` nessas variáveis. Os secrets do GitHub Actions continuam configurados para o ambient.
 
 A denúncia só aparece como enviada no app depois que o Telegram aceita o aviso e o servidor registra `notified_at`. Se o envio falhar, o app informa o erro e permite tentar de novo usando a mesma denúncia. Uma falha entre o envio e o registro do recebimento pode repetir o aviso no Telegram: confira o id da denúncia, não trate o aviso repetido como uma nova denúncia.
+
+Se o envio falhar por algo temporário (rede, limite ou Telegram fora do ar), o app mantém a denúncia preenchida e oferece reenviar a mesma. Erros definitivos, como mensagem inexistente ou quem denuncia não estar mais no grupo, liberam os campos e não sugerem reenvio.
 
 Revisamos denúncias de abuso e pedidos enviados para `contato@dividimos.ai` em até 7 dias. Verifique a fila diariamente; um aviso no Telegram não substitui a revisão no dashboard.
 
