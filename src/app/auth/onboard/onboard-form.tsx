@@ -12,6 +12,7 @@ import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
 import { haptics } from "@/hooks/use-haptics";
 import { lookupUserByHandle } from "@/lib/sync/mutations-group";
+import { nameToHandle } from "@/lib/handle";
 
 type OnboardingFormProps = {
   me: Me;
@@ -25,18 +26,6 @@ const HANDLE_REGEX = /^[a-z0-9_]{3,30}$/;
 
 function isValidHandle(value: string): boolean {
   return HANDLE_REGEX.test(value);
-}
-
-function nameToHandle(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 30);
 }
 
 function formatCPF(digits: string): string {
