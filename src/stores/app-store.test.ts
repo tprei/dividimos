@@ -659,6 +659,37 @@ describe("applyConversation", () => {
     expect(conversation?.messages[0]?.id).toBe("srv-1");
   });
 
+  it("hides a blocked sender's cached and later messages", () => {
+    const other = { id: "u-other", handle: "other", name: "Other", avatarUrl: null, isBot: false };
+    const fromOther = (id: string, createdAt: string): ChatMessage => ({
+      ...message(id, id, createdAt),
+      senderId: other.id,
+      sender: other,
+    });
+    useAppStore.setState({ me, groups: { g1: snapshot("g1", []) }, conversations: {} });
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("m1", "m1", "2026-01-02T10:00:00Z"), fromOther("m2", "2026-01-02T10:01:00Z")],
+      events: [],
+    });
+
+    useAppStore.getState().applyUserBlocks([other]);
+    expect(useAppStore.getState().conversations.g1?.messages.map((m) => m.id)).toEqual(["m1"]);
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [fromOther("m3", "2026-01-02T10:02:00Z")],
+      events: [],
+    });
+    expect(useAppStore.getState().conversations.g1?.messages.map((m) => m.id)).toEqual(["m1"]);
+
+    useAppStore.getState().applyUserBlocks([]);
+    const cleared = useAppStore.getState().conversations.g1;
+    expect(cleared?.messages).toEqual([]);
+    expect(cleared?.messagesComplete).toBe(false);
+    expect(cleared?.messageCursor).toBeNull();
+  });
+
   it("keeps cursors untouched for a live row but adopts them from a page", () => {
     useAppStore.setState({
       me,

@@ -1,8 +1,19 @@
 import { decodeBootstrapOverviewV2 } from "@/lib/ledger/decode-group-overview";
 import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
+import type { UserProfile } from "@/types/ledger";
 import { getAuthGeneration, rpc } from "./client";
-import { refreshHostedAssignmentRooms } from "./refresh";
+import { readUserBlocks, refreshHostedAssignmentRooms } from "./refresh";
+
+let blockListEpoch = 0;
+
+export function advanceBlockListEpoch(): void {
+  blockListEpoch += 1;
+}
+
+export function currentBlockListEpoch(): number {
+  return blockListEpoch;
+}
 
 let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
 let bootstrapPending: { generation: number; promise: Promise<void> } | null = null;
@@ -12,12 +23,17 @@ async function executeBootstrap(generation: number): Promise<void> {
   // The membership set as it stood when the request left: the response cannot
   // speak for groups created or removed after this point.
   const knownGroupIds = Object.keys(store.groups);
+  const epoch = blockListEpoch;
   store.setBootstrapLoading();
   void refreshHostedAssignmentRooms();
 
   let data;
+  let blockedUsers: UserProfile[] | null;
   try {
-    data = await rpc("bootstrap_overview_v2", {}, decodeBootstrapOverviewV2);
+    [data, blockedUsers] = await Promise.all([
+      rpc("bootstrap_overview_v2", {}, decodeBootstrapOverviewV2),
+      readUserBlocks().catch(() => null),
+    ]);
   } catch (error) {
     // A failed read must not clear projections; it records why and rethrows so
     // the caller can retry.
@@ -33,7 +49,9 @@ async function executeBootstrap(generation: number): Promise<void> {
   // while this request was in flight; publishing then would resurrect data
   // belonging to a previous session.
   if (getAuthGeneration() !== generation) return;
-  useAppStore.getState().applyBootstrap(data, knownGroupIds);
+  const state = useAppStore.getState();
+  if (blockedUsers !== null && blockListEpoch === epoch) state.applyUserBlocks(blockedUsers);
+  state.applyBootstrap(data, knownGroupIds);
 }
 
 export function runBootstrap(): Promise<void> {

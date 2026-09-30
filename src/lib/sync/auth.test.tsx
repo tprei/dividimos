@@ -18,6 +18,7 @@ vi.mock("./client", async () => {
 vi.mock("./refresh", async () => ({
   ...(await vi.importActual<typeof RefreshModule>("./refresh")),
   refreshHostedAssignmentRooms: vi.fn(async () => {}),
+  readUserBlocks: vi.fn(async () => []),
 }));
 
 const mockDetachPush = vi.fn(async () => {});
@@ -93,11 +94,15 @@ beforeEach(async () => {
 });
 
 describe("bootstrap account epoch", () => {
+  function queueBootstrapOnce(bootstrap: Promise<Bootstrap>): void {
+    vi.mocked(rpc).mockReturnValueOnce(bootstrap as never);
+  }
+
   it("drops a pending bootstrap after sign-out but keeps a same-user refresh", async () => {
     const detach = attachAuthListener(() => {}, () => {});
 
     const first = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(first.promise as never);
+    queueBootstrapOnce(first.promise);
     const pending = runBootstrap();
 
     emit("SIGNED_OUT", null);
@@ -107,7 +112,7 @@ describe("bootstrap account epoch", () => {
     expect(useAppStore.getState().me).toBeNull();
 
     const second = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(second.promise as never);
+    queueBootstrapOnce(second.promise);
     const afterRefresh = runBootstrap();
     emit("TOKEN_REFRESHED", "user-a");
     second.resolve(bootstrapFor("user-a"));
@@ -124,7 +129,7 @@ describe("bootstrap account epoch", () => {
     emit("SIGNED_OUT", null);
 
     const fresh = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(fresh.promise as never);
+    queueBootstrapOnce(fresh.promise);
     emit("SIGNED_IN", "user-a");
     fresh.resolve(bootstrapFor("user-a"));
 
@@ -137,7 +142,7 @@ describe("bootstrap account epoch", () => {
     useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
 
     const stale = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(stale.promise as never);
+    queueBootstrapOnce(stale.promise);
     const pending = runBootstrap();
 
     // Signing in as B resets the store; signing back in as A must still be
@@ -168,7 +173,7 @@ describe("bootstrap account epoch", () => {
     const detach = attachAuthListener(() => {}, () => {});
 
     const stale = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(stale.promise as never);
+    queueBootstrapOnce(stale.promise);
     const pending = runBootstrap();
 
     detach();
@@ -193,13 +198,13 @@ describe("bootstrap account epoch", () => {
     const detach = attachAuthListener(() => {}, () => {});
 
     const stale = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(stale.promise as never);
+    queueBootstrapOnce(stale.promise);
     const pending = runBootstrap();
 
     emit("SIGNED_OUT", null);
 
     const fresh = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(fresh.promise as never);
+    queueBootstrapOnce(fresh.promise);
     const next = runBootstrap();
     expect(rpc).toHaveBeenCalledTimes(2);
 
@@ -218,7 +223,7 @@ describe("bootstrap account epoch", () => {
     const detach = attachAuthListener(() => {}, () => {});
 
     const first = Promise.withResolvers<Bootstrap>();
-    vi.mocked(rpc).mockReturnValueOnce(first.promise as never);
+    queueBootstrapOnce(first.promise);
     const pending = runBootstrap();
 
     emit("SIGNED_IN", "user-a");

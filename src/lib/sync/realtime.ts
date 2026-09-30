@@ -13,6 +13,7 @@ import {
 } from "./chat-reconcile";
 import type { ChatLastMessage, ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { catchUpBootstrap } from "./bootstrap";
+import { handleBlocksChanged } from "./user-blocks";
 import { getAuthGeneration, getSupabase } from "./client";
 import { refreshGroup, refreshOpenAssignmentRooms } from "./refresh";
 
@@ -72,6 +73,7 @@ export function mergeChatBroadcast(
   groupId: string,
   message: ChatMessage,
 ): Partial<AppState> {
+  if (state.blockedUsers.some((user) => user.id === message.senderId)) return {};
   const existingConv = state.conversations[groupId];
   const isDuplicate =
     existingConv?.messages.some(
@@ -365,6 +367,9 @@ export function startRealtime(): () => void {
           })
           .on("broadcast", { event: "assignment_room" }, ({ payload }) => {
             handleUserRoomBroadcast(payload, authGeneration);
+          })
+          .on("broadcast", { event: "blocks_changed" }, () => {
+            handleBlocksChanged();
           })
           .subscribe((status) => {
             if (getAuthGeneration() !== authGeneration) return;

@@ -106,7 +106,7 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   cannot_leave_dm: "Não dá para sair de uma conversa direta.",
   outstanding_balance: "Ainda tem saldo pendente nesse grupo. Acertem as contas antes.",
   not_creator: "Só quem criou o grupo pode fazer isso.",
-  member_excluded: "Essa pessoa foi removida do grupo.",
+  member_excluded: "Não foi possível incluir essa pessoa nessa interação.",
   invalid_link: "Esse convite não é mais válido.",
   handle_taken: "Esse @ já está em uso.",
   invalid_handle: "O @ deve ter de 3 a 30 caracteres: letras minúsculas, números ou _.",

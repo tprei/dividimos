@@ -11,6 +11,7 @@ import {
 } from "@/lib/ledger/decode-assignment-room";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
 import { decodeGroupOverviewV2 } from "@/lib/ledger/decode-group-overview";
+import { arrayOf, decodeUserProfile } from "@/lib/ledger/decode-expense";
 import {
   CHARGES_READ_KEY,
   conversationReadKey,
@@ -24,10 +25,14 @@ import {
   useAppStore,
   type ResourceReadState,
 } from "@/stores/app-store";
-import type { Conversation, ExpenseSummary, GroupSnapshot, PageCursor } from "@/types/ledger";
+import type { Conversation, ExpenseSummary, GroupSnapshot, PageCursor, UserProfile } from "@/types/ledger";
 import type { AssignmentRoomAccessEntry, AssignmentRoomSummary } from "@/types/assignment-room";
 import { getAuthGeneration, rpc } from "./client";
 import { LedgerError } from "./errors";
+
+export function readUserBlocks(): Promise<UserProfile[]> {
+  return rpc("get_user_blocks", {}, (raw) => arrayOf(raw, [], decodeUserProfile));
+}
 
 const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
