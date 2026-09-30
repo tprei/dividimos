@@ -35,6 +35,15 @@ function removeRaw(key: string): void {
   }
 }
 
+export function removeAccountDraft(userId: string): void {
+  window.localStorage.removeItem(archiveKey(userId));
+  const owner = getDraftOwner();
+  if (owner === null || owner === userId) {
+    window.localStorage.removeItem(liveDraftKey());
+    window.localStorage.removeItem(OWNER_KEY);
+  }
+}
+
 export function getDraftOwner(): string | null {
   return readRaw(OWNER_KEY);
 }

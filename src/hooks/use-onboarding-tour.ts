@@ -9,6 +9,10 @@ function getTourKey(userId: string): string {
   return `${TOUR_KEY_PREFIX}${userId}`;
 }
 
+export function removeOnboardingTour(userId: string): void {
+  localStorage.removeItem(getTourKey(userId));
+}
+
 function readShouldShow(userId: string | undefined): boolean {
   if (!userId) return false;
   try {

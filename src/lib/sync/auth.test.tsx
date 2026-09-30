@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { attachAuthListener, signOut } from "./auth";
+import {
+  attachAuthListener,
+  clearAccountDeletionMarker,
+  completeAccountDeletionSignOut,
+  signOut,
+} from "./auth";
 import { getAuthGeneration, rpc } from "./client";
 import { runBootstrap } from "./bootstrap";
 import type * as RefreshModule from "./refresh";
@@ -71,6 +76,7 @@ function emit(event: AuthEvent, userId: string | null) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  clearAccountDeletionMarker();
   handlers.length = 0;
   useAppStore.getState().reset();
   const { useBillStore } = await import("@/stores/bill-store");
@@ -91,6 +97,48 @@ beforeEach(async () => {
       signOut: (...args: unknown[]) => mockSignOut(...args),
     },
   } as never);
+});
+
+describe("account deletion sign-out", () => {
+  it("skips archiving the deleted draft and still runs the shared teardown", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    const { setDraftOwner } = await import("@/lib/bill-draft-isolation");
+    const { archiveCurrentDraft } = await import("@/lib/bill-draft-isolation");
+    useBillStore.setState({ expense: null, items: [] });
+    setDraftOwner("user-a");
+    archiveCurrentDraft("user-a");
+    const archiveKey = `${useBillStore.persist.getOptions().name}:user-a`;
+    expect(window.localStorage.getItem(archiveKey)).not.toBeNull();
+
+    const stop = attachAuthListener(() => {}, () => {});
+    const result = await completeAccountDeletionSignOut("user-a");
+
+    expect(result).toEqual({ ok: true });
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mockLocalDetach).toHaveBeenCalledWith("user-a");
+
+    emit("SIGNED_OUT", "user-a");
+    expect(window.localStorage.getItem(archiveKey)).not.toBeNull();
+    stop();
+    clearAccountDeletionMarker();
+  });
+
+  it("keeps archiving drafts for ordinary sign-outs without the marker", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    const { setDraftOwner, archiveCurrentDraft } = await import("@/lib/bill-draft-isolation");
+    useBillStore.setState({ expense: null, items: [] });
+    setDraftOwner("user-b");
+    archiveCurrentDraft("user-b");
+    const archiveKey = `${useBillStore.persist.getOptions().name}:user-b`;
+    expect(window.localStorage.getItem(archiveKey)).not.toBeNull();
+
+    const stop = attachAuthListener(() => {}, () => {});
+
+    emit("SIGNED_OUT", "user-b");
+
+    expect(window.localStorage.getItem(archiveKey)).not.toBeNull();
+    stop();
+  });
 });
 
 describe("bootstrap account epoch", () => {

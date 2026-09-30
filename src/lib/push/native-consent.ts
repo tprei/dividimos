@@ -32,6 +32,16 @@ function writeAll(entries: Record<string, boolean>): void {
   }
 }
 
+export function removeNativePushConsent(accountId: string): void {
+  const entries = readAll();
+  delete entries[accountId];
+  if (Object.keys(entries).length === 0) {
+    localStorage.removeItem(CONSENT_KEY);
+    return;
+  }
+  writeAll(entries);
+}
+
 /** Has this account opted in to push on this device? */
 export function hasNativePushConsent(accountId: string | null): boolean {
   if (!accountId) return false;
