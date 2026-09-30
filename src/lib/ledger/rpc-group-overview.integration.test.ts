@@ -146,7 +146,7 @@ describe.skipIf(!isIntegrationTestReady)("group overview reads", () => {
     ).then((code) => expect(code).toBe("not_a_member"));
   });
 
-  it("keeps legacy group reads on their exact old wire shape", async () => {
+  it("keeps legacy group reads on their snapshot wire shape", async () => {
     const groupId = await createGroupWithMembers(alice, [bob], "Overview compatibility");
     const legacy = await rpc<Record<string, unknown>>(aliceClient, "get_group", {
       p_group_id: groupId,
@@ -155,6 +155,7 @@ describe.skipIf(!isIntegrationTestReady)("group overview reads", () => {
     expect(Object.keys(legacy).sort()).toEqual(
       [
         "balances",
+        "dmCounterparty",
         "expenseCount",
         "group",
         "guests",

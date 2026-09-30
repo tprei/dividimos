@@ -33,6 +33,7 @@ function message(id: string, createdAt: string): ChatMessage {
     groupId: "g1",
     senderId: "user-other",
     content: "oi",
+    erased: false,
     createdAt,
     sender: { id: "user-other", handle: "outro", name: "Outro", avatarUrl: null, isBot: false },
   };

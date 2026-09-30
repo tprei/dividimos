@@ -27,6 +27,7 @@ import type {
   Settlement,
   SettlementStatus,
   Transfer,
+  UserProfile,
   VendorCharge,
   VendorChargeStatus,
   WireBootstrap,
@@ -487,15 +488,26 @@ const CHAT_MESSAGE_KEYS = [
   "senderId",
   "content",
   "createdAt",
-  "sender",
 ] as const;
+const CHAT_MESSAGE_OPTIONAL_KEYS = ["erased", "sender"] as const;
+
+function decodeChatSender(
+  raw: Record<string, unknown>,
+  path: Path,
+): ValidationResult<UserProfile | null, WireIssue> {
+  if (!("sender" in raw)) return ok(null);
+  if (raw.sender === null) return ok(null);
+  const sender = decodeUserProfile(raw.sender, path);
+  if (!sender.ok) return sender;
+  return ok(sender.value);
+}
 
 export function decodeChatMessage(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ChatMessage, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, CHAT_MESSAGE_KEYS, path);
+  const k = exactKeys(raw, CHAT_MESSAGE_KEYS, path, CHAT_MESSAGE_OPTIONAL_KEYS);
   if (!k.ok) return k;
 
   const mid = id(raw.id, [...path, "id"]);
@@ -506,40 +518,84 @@ export function decodeChatMessage(
   if (!gid.ok) return gid;
   const sid = id(raw.senderId, [...path, "senderId"]);
   if (!sid.ok) return sid;
-  const content = str(raw.content, [...path, "content"]);
-  if (!content.ok) return content;
   const ca = str(raw.createdAt, [...path, "createdAt"]);
   if (!ca.ok) return ca;
-  const sender = decodeUserProfile(raw.sender, [...path, "sender"]);
+  const sender = decodeChatSender(raw, [...path, "sender"]);
   if (!sender.ok) return sender;
 
+  let erased = false;
+  if ("erased" in raw) {
+    const e = bool(raw.erased, [...path, "erased"]);
+    if (!e.ok) return e;
+    erased = e.value;
+  }
+  if (erased) {
+    if (raw.content !== null) return fail([...path, "content"]);
+    return ok({
+      id: mid.value,
+      clientId: cid.value,
+      groupId: gid.value,
+      senderId: sid.value,
+      createdAt: ca.value,
+      sender: sender.value,
+      erased: true,
+      content: null,
+    });
+  }
+  if (typeof raw.content !== "string") return fail([...path, "content"]);
   return ok({
     id: mid.value,
     clientId: cid.value,
     groupId: gid.value,
     senderId: sid.value,
-    content: content.value,
     createdAt: ca.value,
     sender: sender.value,
+    erased: false,
+    content: raw.content,
   });
 }
 
 const CHAT_LAST_MESSAGE_KEYS = ["content", "senderId", "createdAt"] as const;
+const CHAT_LAST_MESSAGE_OPTIONAL_KEYS = ["erased", "sender"] as const;
 
 function decodeChatLastMessage(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ChatLastMessage, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, CHAT_LAST_MESSAGE_KEYS, path);
+  const k = exactKeys(raw, CHAT_LAST_MESSAGE_KEYS, path, CHAT_LAST_MESSAGE_OPTIONAL_KEYS);
   if (!k.ok) return k;
-  const content = str(raw.content, [...path, "content"]);
-  if (!content.ok) return content;
   const sid = id(raw.senderId, [...path, "senderId"]);
   if (!sid.ok) return sid;
   const ca = str(raw.createdAt, [...path, "createdAt"]);
   if (!ca.ok) return ca;
-  return ok({ content: content.value, senderId: sid.value, createdAt: ca.value });
+  const sender = decodeChatSender(raw, [...path, "sender"]);
+  if (!sender.ok) return sender;
+
+  let erased = false;
+  if ("erased" in raw) {
+    const e = bool(raw.erased, [...path, "erased"]);
+    if (!e.ok) return e;
+    erased = e.value;
+  }
+  if (erased) {
+    if (raw.content !== null) return fail([...path, "content"]);
+    return ok({
+      senderId: sid.value,
+      createdAt: ca.value,
+      sender: sender.value,
+      erased: true,
+      content: null,
+    });
+  }
+  if (typeof raw.content !== "string") return fail([...path, "content"]);
+  return ok({
+    senderId: sid.value,
+    createdAt: ca.value,
+    sender: sender.value,
+    erased: false,
+    content: raw.content,
+  });
 }
 
 const GROUP_GUEST_KEYS = ["id", "displayName", "expenseId"] as const;
@@ -574,6 +630,7 @@ const GROUP_SNAPSHOT_KEYS = [
   "expenseCount",
   "pairwiseEdges",
 ] as const;
+const GROUP_SNAPSHOT_OPTIONAL_KEYS = ["dmCounterparty"] as const;
 
 
 export function decodeGroupSnapshot(
@@ -581,10 +638,19 @@ export function decodeGroupSnapshot(
   path: Path = [],
 ): ValidationResult<WireGroupSnapshot, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, GROUP_SNAPSHOT_KEYS, path);
+  const k = exactKeys(raw, GROUP_SNAPSHOT_KEYS, path, GROUP_SNAPSHOT_OPTIONAL_KEYS);
   if (!k.ok) return k;
   const group = decodeGroup(raw.group, [...path, "group"]);
   if (!group.ok) return group;
+  let dmCounterparty: UserProfile | null = null;
+  if ("dmCounterparty" in raw && raw.dmCounterparty !== null) {
+    const cpRes = decodeUserProfile(raw.dmCounterparty, [...path, "dmCounterparty"]);
+    if (!cpRes.ok) return cpRes;
+    dmCounterparty = cpRes.value;
+  }
+  if (dmCounterparty !== null && group.value.kind !== "dm") {
+    return fail([...path, "dmCounterparty"]);
+  }
   const members = arrayOf(raw.members, [...path, "members"], decodeGroupMember);
   if (!members.ok) return members;
   const balances = arrayOf(raw.balances, [...path, "balances"], decodeBalanceRow);
@@ -628,6 +694,7 @@ export function decodeGroupSnapshot(
 
   return ok({
     group: group.value,
+    dmCounterparty,
     members: members.value,
     balances: balances.value,
     guests: guests.value,

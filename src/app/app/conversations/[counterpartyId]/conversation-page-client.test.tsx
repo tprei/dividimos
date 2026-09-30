@@ -82,6 +82,7 @@ const incomingMessage: ChatMessage = {
   groupId: "dm-1",
   senderId: counterparty.id,
   content: "Oi, Alice!",
+  erased: false,
   createdAt: "2026-01-01T00:01:00Z",
   sender: counterparty,
 };
@@ -99,6 +100,7 @@ function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: counterparty,
     members: [
       { groupId: "dm-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
       {
@@ -190,6 +192,7 @@ describe("ConversationPageClient", () => {
       groupId: "dm-1",
       senderId: counterparty.id,
       content: "Primeira mensagem",
+      erased: false,
       createdAt: "2026-01-01T10:00:00Z",
       sender: counterparty,
     };
@@ -212,6 +215,7 @@ describe("ConversationPageClient", () => {
       groupId: "dm-1",
       senderId: me.id,
       content: "Segunda mensagem",
+      erased: false,
       createdAt: "2026-01-01T12:00:00Z",
       sender: me,
     };
@@ -329,6 +333,7 @@ describe("ConversationPageClient", () => {
     const conflictingCounterparty = { ...counterparty, handle: me.handle };
     seedDm(
       makeDmSnapshot({
+        dmCounterparty: conflictingCounterparty,
         members: [
           makeDmSnapshot().members[0],
           {

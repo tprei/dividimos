@@ -44,6 +44,7 @@ function seedStoreWithContacts() {
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: [
       { groupId: "g-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
       { groupId: "g-1", userId: bob.id, status: "accepted", invitedBy: null, acceptedAt: null, user: bob },

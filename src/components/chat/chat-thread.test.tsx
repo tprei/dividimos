@@ -22,13 +22,16 @@ const bob: UserProfile = {
   isBot: false,
 };
 
-function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+function makeMessage(
+  overrides: Partial<Omit<ChatMessage, "erased" | "content">> & { content?: string } = {},
+): ChatMessage {
   return {
     id: "msg-1",
     clientId: "c-1",
     groupId: "g-1",
     senderId: bob.id,
     content: "Oi Alice",
+    erased: false,
     createdAt: "2026-01-01T12:00:00Z",
     sender: bob,
     ...overrides,

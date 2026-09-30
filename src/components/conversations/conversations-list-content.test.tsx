@@ -81,6 +81,7 @@ function makeDmSnapshot(
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: counterparty,
     members: [
       {
         groupId: "dm-1",
@@ -108,8 +109,10 @@ function makeDmSnapshot(
     unreadCount: 2,
     lastMessage: {
       content: "Tudo certo?",
+      erased: false,
       senderId: counterparty.id,
       createdAt: "2026-01-01T10:00:00Z",
+      sender: counterparty,
     },
     lastActivityAt: "2026-01-01T10:00:00Z",
     pairwiseEdges: [],
@@ -132,6 +135,7 @@ function makeGroupSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapsho
       ledgerVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
     },
+    dmCounterparty: null,
     members: [
       {
         groupId: "group-1",
@@ -151,8 +155,10 @@ function makeGroupSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapsho
     unreadCount: 0,
     lastMessage: {
       content: "Comprei o carvão",
+      erased: false,
       senderId: me.id,
       createdAt: "2026-01-01T09:00:00Z",
+      sender: me,
     },
     lastActivityAt: "2026-01-01T09:00:00Z",
     pairwiseEdges: [],
@@ -227,8 +233,10 @@ describe("ConversationsListContent", () => {
     const dm = makeDmSnapshot(carol, {
       lastMessage: {
         content: "Eu pago hoje",
+        erased: false,
         senderId: me.id,
         createdAt: "2026-01-01T10:00:00Z",
+        sender: me,
       },
     });
     seedGroups([dm]);

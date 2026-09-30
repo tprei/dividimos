@@ -130,7 +130,7 @@ export function ChatThread({
   const prevItemCount = useRef(messages.length + events.length);
 
   const items = mergeTimeline(messages, events);
-  const senderNames = displayNames([...messages.map(({ sender }) => sender), ...events.flatMap(({ actor }) => actor ? [actor] : [])], { style: "short", viewerId: meId });
+  const senderNames = displayNames([...messages.flatMap(({ sender }) => (sender ? [sender] : [])), ...events.flatMap(({ actor }) => actor ? [actor] : [])], { style: "short", viewerId: meId });
   const peopleMarker = (ids: string[]): ChatRailMarker => {
     const people: RailPerson[] = ids.map((id) => {
       const profile = profileOf?.(id) ?? events.find((event) => event.actor?.id === id)?.actor;
@@ -266,7 +266,9 @@ export function ChatThread({
             marker = { kind: "message" };
           }
         } else if (item.message.senderId !== meId && !continuesRun) {
-          marker = { kind: "people", people: [item.message.sender] };
+          marker = item.message.sender
+            ? { kind: "people", people: [item.message.sender] }
+            : { kind: "message" };
         } else {
           marker = { kind: "message" };
         }

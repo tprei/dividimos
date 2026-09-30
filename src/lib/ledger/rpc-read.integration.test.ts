@@ -45,6 +45,7 @@ interface GroupInfo {
 
 interface GroupSnapshot {
   group: GroupInfo;
+  dmCounterparty: UserProfile | null;
   members: Array<{
     groupId: string;
     userId: string;
@@ -59,7 +60,13 @@ interface GroupSnapshot {
   recentExpenses: ExpenseSummary[];
   lastEventId: number;
   unreadCount: number;
-  lastMessage: { content: string; senderId: string; createdAt: string } | null;
+  lastMessage: {
+    content: string | null;
+    erased: boolean;
+    senderId: string;
+    createdAt: string;
+    sender: UserProfile;
+  } | null;
   lastActivityAt: string | null;
   expenseCount: number;
   pairwiseEdges: Array<{
@@ -133,7 +140,8 @@ interface ChatMessage {
   clientId: string;
   groupId: string;
   senderId: string;
-  content: string;
+  content: string | null;
+  erased: boolean;
   createdAt: string;
   sender: UserProfile;
 }
@@ -221,6 +229,7 @@ const ME_KEYS = [
 
 const SNAPSHOT_KEYS = [
   "group",
+  "dmCounterparty",
   "members",
   "balances",
   "guests",
@@ -259,6 +268,7 @@ const CHAT_MESSAGE_KEYS = [
   "groupId",
   "senderId",
   "content",
+  "erased",
   "createdAt",
   "sender",
 ];
@@ -433,8 +443,10 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     expect(before.unreadCount).toBe(1);
     expect(before.lastMessage).toEqual({
       content: MSG_B,
+      erased: false,
       senderId: userB.id,
       createdAt: msgB.createdAt,
+      sender: expect.objectContaining({ id: userB.id }),
     });
 
     const { error } = await rpc(authenticateAs(userA), "mark_read", {
@@ -1148,6 +1160,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
+      expect(snap.dmCounterparty).toBeNull();
       expect(snap.lastActivityAt).toBeNull();
       expect(snap.lastEventId).toBe(0);
       expect(snap.group.ledgerVersion).toBe(0);
@@ -1188,6 +1201,9 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.expenseCount).toBe(1);
       expect(snap.unreadCount).toBe(1);
       expect(snap.lastMessage?.content).toBe(MESSAGE);
+      expect(snap.lastMessage?.erased).toBe(false);
+      expect(snap.lastMessage?.sender).toMatchObject({ id: inviter.id });
+      expect(snap.dmCounterparty).toBeNull();
     });
 
     it("applies the same invitation scoping inside bootstrap", async () => {
@@ -1202,6 +1218,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
+      expect(snap.dmCounterparty).toBeNull();
       expect(snap.lastActivityAt).toBeNull();
       expect(snap.lastEventId).toBe(0);
       expect(snap.group.ledgerVersion).toBe(0);
@@ -1835,6 +1852,41 @@ describe.skipIf(!isIntegrationTestReady)(
         }),
       );
       expect(createErr).toBe("invalid_operation");
+    });
+
+    it("projects dmCounterparty on accepted and invited DM snapshots", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const cAlice = authenticateAs(alice);
+
+      const dmRes = await cAlice.rpc("get_or_create_dm", { p_user_id: bob.id });
+      const dm = dmRes.data as { groupId: string };
+
+      const invitedSnap = await rpcOk<GroupSnapshot>(authenticateAs(bob), "get_group", {
+        p_group_id: dm.groupId,
+      });
+      expect(invitedSnap.dmCounterparty).toMatchObject({ id: alice.id });
+      expect(invitedSnap.lastMessage).toBeNull();
+
+      await acceptInvitation(bob, dm.groupId);
+      const sent = await rpcOk<ChatMessage>(authenticateAs(bob), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: dm.groupId,
+        p_content: "olá da DM",
+      });
+
+      const acceptedSnap = await rpcOk<GroupSnapshot>(authenticateAs(alice), "get_group", {
+        p_group_id: dm.groupId,
+      });
+      expect(acceptedSnap.dmCounterparty).toMatchObject({
+        id: bob.id,
+        handle: bob.handle,
+        name: bob.name,
+      });
+      expect(acceptedSnap.lastMessage?.erased).toBe(false);
+      expect(acceptedSnap.lastMessage?.content).toBe("olá da DM");
+      expect(acceptedSnap.lastMessage?.senderId).toBe(bob.id);
+      expect(acceptedSnap.lastMessage?.sender).toMatchObject({ id: bob.id });
+      expect(acceptedSnap.lastMessage?.createdAt).toBe(sent.createdAt);
     });
   },
 );

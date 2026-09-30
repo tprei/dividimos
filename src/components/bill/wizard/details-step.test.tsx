@@ -35,6 +35,7 @@ const churras: GroupSnapshot = {
     ledgerVersion: 1,
     createdAt: "",
   },
+  dmCounterparty: null,
   members: [],
   balances: [],
   guests: [],

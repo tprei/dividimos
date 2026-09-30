@@ -594,6 +594,7 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
         groupId,
         senderId: me.id,
         content,
+        erased: false,
         createdAt: optimisticCreatedAt(),
         sender: { id: me.id, handle: me.handle, name: me.name, avatarUrl: me.avatarUrl, isBot: me.isBot },
       },
