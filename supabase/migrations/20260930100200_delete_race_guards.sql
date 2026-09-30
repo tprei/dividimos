@@ -1,10 +1,15 @@
--- Serializes account deletion against in-flight mutating RPCs and prevents
--- ghost-account resurrection via concurrent writes or retried deletions.
+-- Serializes account deletion against the account's own in-flight RPCs and
+-- prevents ghost-account resurrection via concurrent writes or retried
+-- deletions.
 
--- 1.a. current_user_id: serialize caller against delete_account by taking a row
--- share lock on public.users. Under READ COMMITTED, an in-flight RPC whose
--- check started before delete_account commits now blocks, re-evaluates, and
--- sees deleted_at set.
+-- current_user_id takes the account's deletion advisory lock in shared mode.
+-- delete_account holds the same key exclusively for its whole transaction,
+-- so an RPC that starts during a deletion waits and then re-reads
+-- deleted_at, and one already running finishes before deletion begins.
+-- Shared holders never conflict with each other, and advisory locks never
+-- interact with row locks, so concurrent RPCs by the same user and peer
+-- RPCs that lock user rows keep their previous behavior. Advisory locks are
+-- permitted in the read-only transactions PostgREST uses for STABLE reads.
 CREATE OR REPLACE FUNCTION public.current_user_id() RETURNS uuid
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
@@ -14,11 +19,11 @@ BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'unauthenticated';
   END IF;
-  SELECT u.id INTO v_user_id
-  FROM public.users u
-  WHERE u.id = auth.uid() AND u.deleted_at IS NULL
-  FOR SHARE;
-  IF NOT FOUND THEN
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended(v_user_id::text, 27110200));
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = v_user_id AND u.deleted_at IS NULL
+  ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'account_deleted';
   END IF;
   RETURN v_user_id;
@@ -27,9 +32,10 @@ $$;
 
 REVOKE ALL ON FUNCTION public.current_user_id() FROM PUBLIC, anon, authenticated;
 
--- 1.b. delete_account: lock users row early for update so the lock order is
--- user-row then group-row, matching every other RPC; perform anonymization
--- and credential/membership cleanup unconditionally so a retry repairs ghosts.
+-- delete_account keeps its original lock order (advisory, groups, rooms,
+-- then the user row) so peer RPCs that lock a group before touching this
+-- user's row cannot deadlock with it, and anonymizes plus cleans up
+-- unconditionally so a retry repairs a half-written ghost.
 CREATE OR REPLACE FUNCTION public.delete_account(p_user_id uuid) RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
@@ -47,7 +53,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 27110200));
-  PERFORM 1 FROM public.users u WHERE u.id = p_user_id FOR UPDATE;
   IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = p_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
   END IF;
@@ -72,7 +77,7 @@ BEGIN
     PERFORM 1 FROM public.assignment_rooms WHERE id = v_room_id FOR UPDATE;
   END LOOP;
 
-  SELECT deleted_at INTO v_deleted_at FROM public.users WHERE id = p_user_id;
+  SELECT deleted_at INTO v_deleted_at FROM public.users WHERE id = p_user_id FOR UPDATE;
   IF v_deleted_at IS NULL THEN
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'id', g.id,
@@ -199,8 +204,6 @@ $$;
 REVOKE ALL ON FUNCTION public.delete_account(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_account(uuid) TO service_role;
 
--- 1.c. update_profile and complete_onboarding: guard users write with AND deleted_at IS NULL
--- and check row count to raise account_deleted if zero rows were modified.
 CREATE OR REPLACE FUNCTION public.update_profile(
   p_name text DEFAULT NULL::text,
   p_handle text DEFAULT NULL::text,
@@ -379,7 +382,6 @@ REVOKE ALL ON FUNCTION public.complete_onboarding(text, text, text, text, pix_ke
 GRANT EXECUTE ON FUNCTION public.complete_onboarding(text, text, text, text, pix_key_type)
   TO service_role, authenticated;
 
--- 1.d. lookup_user_by_handle: hide deleted accounts from handle lookup
 CREATE OR REPLACE FUNCTION public.lookup_user_by_handle(p_handle text) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
@@ -401,7 +403,21 @@ $$;
 REVOKE ALL ON FUNCTION public.lookup_user_by_handle(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.lookup_user_by_handle(text) TO service_role;
 
--- 1.e. group_broadcast_authz: extend user:% branch with non-deleted user check
+-- Realtime policies run as the subscribing role, which has no privilege on
+-- public.users, so the live-account check for user topics goes through a
+-- SECURITY DEFINER helper, mirroring current_user_is_member.
+CREATE OR REPLACE FUNCTION public.current_user_is_active() RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = auth.uid() AND u.deleted_at IS NULL
+  )
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_is_active() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_is_active() TO authenticated;
+
 DROP POLICY IF EXISTS group_broadcast_authz ON realtime.messages;
 CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authenticated
 USING (
@@ -411,10 +427,7 @@ USING (
         realtime.topic()
         FROM '^user:([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})$'
       )::uuid = auth.uid()
-      AND EXISTS (
-        SELECT 1 FROM public.users u
-        WHERE u.id = auth.uid() AND u.deleted_at IS NULL
-      )
+      AND public.current_user_is_active()
     ELSE
       public.current_user_is_member(
         substring(
@@ -425,8 +438,7 @@ USING (
   END
 );
 
--- 1.f. Peer RPC defense in depth: create_group, invite_member, get_or_create_dm
--- check u.deleted_at IS NULL on referenced users so error stays user_not_found.
+-- Peer RPCs refuse deleted referenced users with the existing user_not_found.
 CREATE OR REPLACE FUNCTION public.create_group(p_name text, p_member_ids uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
