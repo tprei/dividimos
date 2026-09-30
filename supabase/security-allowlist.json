@@ -226,6 +226,11 @@
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
     },
+    "public.current_user_is_active()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Realtime user-topic policy predicate; reports only whether the caller's own account is live."
+    },
     "public.current_user_is_member(p_group_id uuid)": {
       "anon": false,
       "authenticated": true,
