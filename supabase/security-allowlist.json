@@ -99,6 +99,16 @@
       "authenticated": false,
       "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
     },
+    "public.assert_user_contact_allowed(p_actor uuid, p_other uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal symmetric contact guard; invoked only after caller authorization."
+    },
+    "public.block_user(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated caller-owned explicit block lifecycle."
+    },
     "public.bootstrap()": {
       "anon": false,
       "authenticated": true,
@@ -354,10 +364,20 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.get_push_blockers(p_actor_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role-only push eligibility read."
+    },
     "public.get_settlement(p_settlement_id uuid)": {
       "anon": false,
       "authenticated": true,
       "note": "Authenticated membership-checked settlement detail read."
+    },
+    "public.get_user_blocks()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated own-block-list read; never returns incoming blocks."
     },
     "public.get_vendor_charges(p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
       "anon": false,
@@ -613,6 +633,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Table trigger; no client execution path."
+    },
+    "public.unblock_user(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated caller-owned explicit block lifecycle."
     },
     "public.update_profile(p_name text, p_handle text, p_notification_preferences jsonb)": {
       "anon": false,
