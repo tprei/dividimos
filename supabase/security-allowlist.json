@@ -276,6 +276,11 @@
       "authenticated": false,
       "note": "Service-role moderation and account-deletion erasure; preserves chat identity and ordering."
     },
+    "public.erase_chat_message_content(p_message_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal erasure helper; called only by erase_chat_message and delete_account."
+    },
     "public.emit_event(p_group_id uuid, p_kind event_kind, p_actor uuid, p_expense_id uuid, p_settlement_id uuid, p_subject_user_id uuid, p_payload jsonb)": {
       "anon": false,
       "authenticated": false,
@@ -555,6 +560,11 @@
       "anon": true,
       "authenticated": true,
       "note": "Anonymous token endpoint (invite/claim preview); the unguessable token is the authorization."
+    },
+    "public.purge_realtime_message(p_message_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal erasure helper; removes replayable fanout rows erased by erase_chat_message."
     },
     "public.recompute_group_balances(p_group_id uuid)": {
       "anon": false,
