@@ -18,7 +18,9 @@
     "realtime.messages.group_broadcast_authz": "Realtime is broadcast-only. This policy authorizes a member to read the private group:<id> and chat:<id> topics; no application table is exposed."
   },
   "grants": [],
-  "definerOwners": ["postgres"],
+  "definerOwners": [
+    "postgres"
+  ],
   "tablesWithoutRls": [],
   "schemas": [
     "_realtime",
@@ -418,6 +420,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Internal expense trigger; advances finalized room revisions without exposing a client execution path."
+    },
+    "public.is_former_member(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside recompute_group_balances and decline_invitation."
     },
     "public.invite_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
