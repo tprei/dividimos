@@ -4,7 +4,7 @@ import { motion, useMotionValue, useReducedMotion, useTransform } from "framer-m
 import { ArrowLeft, Camera, ImagePlus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
-import { usePullProgress } from "@/components/group/group-pull-reveal";
+import { usePullProgress } from "@/components/shared/pull-reveal";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { Button } from "@/components/ui/button";
 import { springs } from "@/lib/animations";

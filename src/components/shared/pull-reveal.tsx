@@ -14,21 +14,22 @@ export function usePullProgress() {
   return useContext(PullProgressContext);
 }
 
-export interface GroupPullRevealProps {
+export interface PullRevealProps {
   enabled: boolean;
   onPull: () => void;
   hint: { idle: string; armed: string };
   children: ReactNode;
+  className?: string;
   ref?: Ref<HTMLDivElement>;
 }
 
 /**
- * The group screen's pull affordance. It is the only holder of the gesture
+ * A screen's pull affordance. It is the only holder of the gesture
  * recognizer, so a touchmove re-renders just this wrapper: the view subtrees
  * arrive as stable `children`, and progress-driven visuals elsewhere read
  * `usePullProgress` instead of React state.
  */
-export function GroupPullReveal({ enabled, onPull, hint, children, ref }: GroupPullRevealProps) {
+export function PullReveal({ enabled, onPull, hint, children, className, ref }: PullRevealProps) {
   const reduced = useReducedMotion() ?? false;
   const progress = useMotionValue(0);
   const { distance, handlers } = usePullGesture({ enabled, ignore: PULL_IGNORE_FIELDS, onPull });
@@ -47,7 +48,7 @@ export function GroupPullReveal({ enabled, onPull, hint, children, ref }: GroupP
   return (
     <div
       ref={ref}
-      className="relative"
+      className={cn("relative", className)}
       onTouchStart={(event) => {
         // Portaled overlays (dialogs, popovers) bubble React touches here even
         // though they sit outside this subtree; a pull never starts on them.
@@ -58,7 +59,7 @@ export function GroupPullReveal({ enabled, onPull, hint, children, ref }: GroupP
         <motion.div
           animate={{ y: contentY }}
           transition={distance > 0 ? { duration: 0 } : springs.snappy}
-          className="relative"
+          className={cn("relative", className)}
         >
           {children}
         </motion.div>
