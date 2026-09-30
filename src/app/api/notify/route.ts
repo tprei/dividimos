@@ -101,19 +101,26 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const { data: group } = await admin
-      .from("groups")
-      .select("id, kind, name")
-      .eq("id", event.group_id)
-      .single();
+    const [groupResult, membersResult, blockersResult] = await Promise.all([
+      admin
+        .from("groups")
+        .select("id, kind, name")
+        .eq("id", event.group_id)
+        .single(),
+      admin
+        .from("group_members")
+        .select("user_id, status, archived_at, users!group_members_user_id_fkey ( name, notification_preferences )")
+        .eq("group_id", event.group_id),
+      admin.rpc("get_push_blockers", { p_actor_id: callerId }),
+    ]);
+    if (groupResult.error) throw groupResult.error;
+    if (blockersResult.error) throw blockersResult.error;
+    const group = groupResult.data;
     if (!group) {
       throw new Error(`group ${event.group_id} missing`);
     }
-
-    const { data: memberRows } = await admin
-      .from("group_members")
-      .select("user_id, status, archived_at, users!group_members_user_id_fkey ( name, notification_preferences )")
-      .eq("group_id", event.group_id);
+    const memberRows = membersResult.data;
+    const pushBlockers = new Set(blockersResult.data);
 
     const members: EventNotificationMember[] = (memberRows ?? []).map((row) => ({
       userId: row.user_id,
@@ -152,7 +159,11 @@ export async function POST(request: Request): Promise<Response> {
     const targets = [...new Set(recipientsFor(event, members))].flatMap(
       (userId) => {
         const member = memberById.get(userId);
-        if (!member || member.notificationPreferences[category] === false) {
+        if (
+          !member ||
+          pushBlockers.has(userId) ||
+          member.notificationPreferences[category] === false
+        ) {
           return [];
         }
         return [member];

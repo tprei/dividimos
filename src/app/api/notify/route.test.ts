@@ -637,6 +637,141 @@ describe("POST /api/notify", () => {
     expect(adminMock.findCalls("group_events", "update")).toHaveLength(1);
   });
 
+  it("suppresses push to a recipient who blocked the actor and keeps delivering to the rest", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    adminMock.onTable("group_events", {
+      data: {
+        id: 141,
+        group_id: "group-1",
+        actor_id: "ana",
+        kind: "expense_created" as const,
+        expense_id: "expense-1",
+        settlement_id: null,
+        subject_user_id: null,
+        payload: {},
+        created_at: "2026-09-06T12:00:00Z",
+        notified_at: null,
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      data: [memberRow("ana"), memberRow("bruno"), memberRow("carol")],
+    });
+    adminMock.onRpc("get_push_blockers", { data: ["bruno"] });
+
+    const res = await POST(makeRequest({ eventId: 141 }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: 1, recipients: 1 });
+    expect(mockNotifyUser).toHaveBeenCalledTimes(1);
+    expect(mockNotifyUser).toHaveBeenCalledWith("carol", expect.anything());
+  });
+
+  it("keeps the claim consumed when every target is blocked", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    adminMock.onTable("group_events", {
+      data: {
+        id: 142,
+        group_id: "group-1",
+        actor_id: "ana",
+        kind: "expense_created" as const,
+        expense_id: "expense-1",
+        settlement_id: null,
+        subject_user_id: null,
+        payload: {},
+        created_at: "2026-09-06T12:00:00Z",
+        notified_at: null,
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      data: [memberRow("ana"), memberRow("bruno"), memberRow("carol")],
+    });
+    adminMock.onRpc("get_push_blockers", { data: ["bruno", "carol"] });
+
+    const res = await POST(makeRequest({ eventId: 142 }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      sent: 0,
+      cleaned: 0,
+      failed: 0,
+      recipients: 0,
+      skipped: 0,
+    });
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(adminMock.findCalls("group_events", "update")).toHaveLength(1);
+  });
+
+  it("treats a failed member read as no recipients with the claim consumed", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    adminMock.onTable("group_events", {
+      data: {
+        id: 144,
+        group_id: "group-1",
+        actor_id: "ana",
+        kind: "expense_created" as const,
+        expense_id: "expense-1",
+        settlement_id: null,
+        subject_user_id: null,
+        payload: {},
+        created_at: "2026-09-06T12:00:00Z",
+        notified_at: null,
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      error: { message: "member read failed" },
+    });
+    adminMock.onRpc("get_push_blockers", { data: [] });
+
+    const res = await POST(makeRequest({ eventId: 144 }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: 0, recipients: 0 });
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(adminMock.findCalls("group_events", "update")).toHaveLength(1);
+  });
+
+  it("answers 500 and releases the claim when the blocker read fails", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    adminMock.onTable("group_events", {
+      data: {
+        id: 143,
+        group_id: "group-1",
+        actor_id: "ana",
+        kind: "expense_created" as const,
+        expense_id: "expense-1",
+        settlement_id: null,
+        subject_user_id: null,
+        payload: {},
+        created_at: "2026-09-06T12:00:00Z",
+        notified_at: null,
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      data: [memberRow("ana"), memberRow("bruno")],
+    });
+    adminMock.onRpc("get_push_blockers", {
+      error: { message: "blocker read failed" },
+    });
+
+    const res = await POST(makeRequest({ eventId: 143 }));
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ sent: 0, failed: 1 });
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+
+    const updates = adminMock.findCalls("group_events", "update");
+    expect(updates).toHaveLength(2);
+    expect(updates.at(-1)?.args[0]).toEqual({ notified_at: null });
+  });
+
   it("uses share_cents in notification body for expense recipients", async () => {
     serverMock.setUser({ id: "ana" });
 
