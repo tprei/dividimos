@@ -100,7 +100,7 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 - Touch targets are at least 44px.
 - Wizard footers sit in normal flow after the content, not fixed over it.
 - Pull-to-refresh is allowlisted to the top-level list routes in `app-shell.tsx`. Detail screens, wizards, settings, and anything with a slider never refresh from a gesture.
-- `usePullGesture` in `src/hooks/use-pull-gesture.ts` is the only pull-down recognizer. Besides the shell's refresh, the group screen uses it to open and close the group profile in place (`?view=info`); that pull never refreshes.
+- `usePullGesture` in `src/hooks/use-pull-gesture.ts` is the only pull-down recognizer. Besides the shell's refresh, the group screen uses it to open and close the group profile in place, and the DM screen uses it to open and close the other person's profile in place (both `?view=info`, via `useInfoView`); those pulls never refresh.
 - Honour `prefers-reduced-motion`: movement is removed, not merely shortened.
 
 ## Backend / Data Rules

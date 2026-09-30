@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useSyncExternalStore } from "react";
 import { ConversationPageClient } from "./conversation-page-client";
 import { useAppStore } from "@/stores/app-store";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -22,6 +23,7 @@ vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
 const refresh = vi.hoisted(() => ({
   loadConversation: vi.fn().mockResolvedValue(undefined),
   refreshGroup: vi.fn().mockResolvedValue(undefined),
+  refreshSharedSpending: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/sync/refresh", () => refresh);
 
@@ -46,9 +48,36 @@ vi.mock("@/hooks/use-ai-expense-parse", () => ({
   }),
 }));
 
+const URL_CHANGE = "test:urlchange";
+
+function subscribeToUrl(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  window.addEventListener(URL_CHANGE, notify);
+  return () => {
+    window.removeEventListener("popstate", notify);
+    window.removeEventListener(URL_CHANGE, notify);
+  };
+}
+
+function useLocationSearchParams() {
+  return new URLSearchParams(useSyncExternalStore(subscribeToUrl, () => window.location.search));
+}
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => useLocationSearchParams(),
 }));
+
+/** Next syncs history.pushState/replaceState into useSearchParams; so does this. */
+function syncHistoryWithSearchParams() {
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = window.history[method].bind(window.history);
+    vi.spyOn(window.history, method).mockImplementation((data, unused, url) => {
+      original(data, unused, url);
+      window.dispatchEvent(new Event(URL_CHANGE));
+    });
+  }
+}
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -385,5 +414,28 @@ describe("ConversationPageClient", () => {
       expect(screen.getByTestId("quick-charge-error")).toHaveTextContent("handles");
     });
     expect(mutations.createExpense).not.toHaveBeenCalled();
+  });
+  it("keeps the composer draft across a profile round trip", async () => {
+    syncHistoryWithSearchParams();
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "lembrete pro Bob" } });
+
+    fireEvent.click(screen.getAllByRole("button", { name: `Ver perfil de ${counterparty.name}` })[0]);
+
+    const hero = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-slot="person-hero"]');
+      if (el === null) throw new Error("profile hero did not mount");
+      return el;
+    });
+    fireEvent.click(within(hero).getByRole("button", { name: "Voltar" }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-slot="person-hero"]')).toBeNull();
+    });
+    expect(screen.getByTestId("chat-input")).toHaveValue("lembrete pro Bob");
   });
 });

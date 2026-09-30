@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,13 +19,20 @@ import {
   type QuickSplitStatus,
 } from "@/components/chat/quick-split-sheet";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
+import { PersonProfile } from "@/components/person/person-profile";
+import { personHeroLayoutId } from "@/components/person/person-profile-view";
 import { ChatBalanceStrip } from "@/components/chat/chat-balance-strip";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { PullReveal, PullScale } from "@/components/shared/pull-reveal";
+import { ViewLayer, viewLayerVariants } from "@/components/shared/view-layer";
 import { firstNameOf } from "@/lib/people";
 import { isGroupArchived } from "@/lib/group-lifecycle";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { ArchivedGroupBanner } from "@/components/shared/archived-group-banner";
 import { haptics } from "@/hooks/use-haptics";
+import { useAppViewport } from "@/hooks/use-app-viewport";
+import { useInfoView } from "@/hooks/use-info-view";
+import { fade, springs } from "@/lib/animations";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { getAuthGeneration } from "@/lib/sync/client";
@@ -64,6 +71,10 @@ import { ConversationInviteScreen } from "./conversation-invite-screen";
 interface ConversationPageClientProps {
   counterpartyId: string;
 }
+
+const CHAT_HINT = { idle: "Puxe para ver o perfil", armed: "Solte para ver o perfil" };
+const PROFILE_HINT = { idle: "Puxe para voltar", armed: "Solte para voltar" };
+
 function resolveQuickSplitActors(
   result: QuickSplitResult,
   me: Me,
@@ -126,6 +137,23 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
   const [splitError, setSplitError] = useState<string | undefined>();
+  const { keyboardOpen } = useAppViewport();
+  const reduced = useReducedMotion() ?? false;
+  const screenRef = useRef<HTMLDivElement | null>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
+  const { view, openProfile, closeProfile } = useInfoView({
+    historyKey: "personProfile",
+    screenRef,
+    mainFocusRef: avatarButtonRef,
+    profileFocusSelector: '[data-slot="person-hero"] [aria-label="Voltar"]',
+  });
+  const gestureEnabled = !keyboardOpen && !chargeSheetOpen && !splitSheetOpen;
+  const showProfile = useCallback(() => {
+    if (chargeStatus === "confirming") return;
+    setChargeSheetOpen(false);
+    setSplitSheetOpen(false);
+    openProfile();
+  }, [chargeStatus, openProfile]);
   // The store's boundary is what the server can prove is contiguous; the
   // thread confirms it actually rendered that far before we acknowledge it.
   const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
@@ -544,132 +572,187 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col md:max-w-2xl">
-      <ScreenHeader
-        back
-        title={counterparty.name}
-        subtitle={counterpartyDeparted ? undefined : `@${counterparty.handle}`}
-        leading={<UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />}
-      />
-      {isGroupArchived(dm) && <ArchivedGroupBanner groupId={dm.group.id} kind="conversation" />}
-      {isCounterpartyPending ? (
-        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
-          <p className="text-center text-xs text-muted-foreground">
-            Aguardando @{counterparty.handle} aceitar o convite
-          </p>
-        </div>
-      ) : (
-        <ChatBalanceStrip
-          netCents={netCents}
-          owedLabel={`${firstNameOf(counterparty.name)} te deve`}
-          departedLabel={counterpartyDeparted ? `${counterparty.name} · saiu do grupo` : undefined}
-          action={
-            <ConversationPayButton
-              groupId={dm.group.id}
-              meId={me.id}
-              counterpartyId={counterpartyId}
-              counterpartyName={counterparty.name}
-              rows={debtRows}
-            />
-          }
-        />
-      )}
-      {counterpartyDeparted && netCents === 0 && (
-        <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
-          <p className="text-center text-xs text-muted-foreground">
-            Essa pessoa não participa mais desta conversa. O histórico foi mantido.
-          </p>
-        </div>
-      )}
-      {conversationRead.status === "error" &&
-      (conversation?.messages.length ?? 0) === 0 &&
-      (conversation?.events.length ?? 0) === 0 ? (
-        <div className="flex-1">
-          <SyncErrorState
-            message={ledgerErrorMessage(new LedgerError(conversationRead.code))}
-            onRetry={handleRetryHistory}
-          />
-        </div>
-      ) : (
-      <div className="flex min-h-0 flex-1 flex-col justify-center">
-        <ChatThread
-          groupId={dm.group.id}
-          meId={me.id}
-          messages={conversation?.messages ?? []}
-          events={conversation?.events ?? []}
-          settlements={dm.settlements}
-          expenses={dm.recentExpenses}
-          nameOf={nameOf}
-          profileOf={profileOf}
-          showSenderNames={false}
-          hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
-          acknowledgeThroughId={readableThroughId}
-          onRenderedThrough={handleRenderedThrough}
-          onLoadMore={handleLoadMore}
-        />
-      </div>
-      )}
-      {!isCounterpartyPending && !counterpartyDeparted && groupId && (
-        <>
-          <AnimatePresence>
-            {chargeSheetOpen && (
-              <QuickChargeSheet
-                counterpartyName={counterparty.name}
-                counterpartyHandle={counterparty.handle}
-                currentUserHandle={me.handle}
-                onConfirm={handleQuickChargeConfirm}
-                onEdit={handleEditDraft}
-                onDismiss={() => {
-                  if (chargeStatus !== "confirming") setChargeSheetOpen(false);
-                }}
-                onLeavePending={() => setChargeSheetOpen(false)}
-                status={chargeStatus}
-                errorMessage={chargeError}
-                anchor={chargeAnchor}
-              />
-            )}
-          </AnimatePresence>
-          <QuickSplitSheet
-            open={splitSheetOpen}
-            onClose={() => setSplitSheetOpen(false)}
-            currentUserId={me.id}
-            currentUserHandle={me.handle}
-            counterparty={counterparty}
-            onConfirm={handleQuickSplitConfirm}
-            status={splitStatus}
-            errorMessage={splitError}
-          />
-          <ChatAiInput
-            groupId={dm.group.id}
-            members={[
-              { handle: me.handle, name: me.name },
-              { handle: counterparty.handle, name: counterparty.name },
-            ]}
-            onSend={handleSend}
-            onConfirmDraft={handleConfirmDraft}
-            onEditDraft={handleEditDraft}
-            actions={
-              <ConversationQuickActions
-                onCharge={(trigger) => {
-                  if (chargeStatus === "confirming") return;
-                  setSplitSheetOpen(false);
-                  setChargeStatus("idle");
-                  setChargeError(undefined);
-                  setChargeAnchor(trigger);
-                  setChargeSheetOpen((prev) => !prev);
-                }}
-                onSplit={() => {
-                  if (chargeStatus === "confirming") return;
-                  setChargeSheetOpen(false);
-                  setSplitStatus("idle");
-                  setSplitError(undefined);
-                  setSplitSheetOpen((prev) => !prev);
-                }}
-              />
+    <PullReveal
+      ref={screenRef}
+      className="h-full"
+      enabled={gestureEnabled}
+      hint={view === "profile" ? PROFILE_HINT : CHAT_HINT}
+      onPull={view === "profile" ? closeProfile : showProfile}
+    >
+      <LayoutGroup>
+        <div
+          className="isolate mx-auto flex h-full min-h-0 w-full max-w-lg flex-col md:max-w-2xl"
+          inert={view === "profile"}
+          aria-hidden={view === "profile"}
+        >
+          <ScreenHeader
+            back
+            title={counterparty.name}
+            subtitle={counterpartyDeparted ? undefined : `@${counterparty.handle}`}
+            leading={
+              <button
+                type="button"
+                ref={avatarButtonRef}
+                aria-label={`Ver perfil de ${counterparty.name}`}
+                onClick={() => { haptics.tap(); showProfile(); }}
+                className="flex size-11 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <motion.span
+                  layoutId={reduced ? undefined : personHeroLayoutId(counterpartyId)}
+                  transition={springs.reveal}
+                  style={{ borderRadius: "50%" }}
+                  className="block"
+                >
+                  <PullScale>
+                    <UserAvatar id={counterparty.id} name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="sm" />
+                  </PullScale>
+                </motion.span>
+              </button>
             }
+            onTitleClick={() => { haptics.tap(); showProfile(); }}
+            titleClickLabel={`Ver perfil de ${counterparty.name}`}
           />
-        </>
-      )}
-    </div>
+          {isGroupArchived(dm) && <ArchivedGroupBanner groupId={dm.group.id} kind="conversation" />}
+          {isCounterpartyPending ? (
+            <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
+              <p className="text-center text-xs text-muted-foreground">
+                Aguardando @{counterparty.handle} aceitar o convite
+              </p>
+            </div>
+          ) : (
+            <ChatBalanceStrip
+              netCents={netCents}
+              owedLabel={`${firstNameOf(counterparty.name)} te deve`}
+              departedLabel={counterpartyDeparted ? `${counterparty.name} · saiu do grupo` : undefined}
+              action={
+                <ConversationPayButton
+                  groupId={dm.group.id}
+                  meId={me.id}
+                  counterpartyId={counterpartyId}
+                  counterpartyName={counterparty.name}
+                  rows={debtRows}
+                />
+              }
+            />
+          )}
+          {counterpartyDeparted && netCents === 0 && (
+            <div className="flex min-h-8 items-center justify-center border-y border-border bg-muted/40 px-4 py-0.5">
+              <p className="text-center text-xs text-muted-foreground">
+                Essa pessoa não participa mais desta conversa. O histórico foi mantido.
+              </p>
+            </div>
+          )}
+          {conversationRead.status === "error" &&
+          (conversation?.messages.length ?? 0) === 0 &&
+          (conversation?.events.length ?? 0) === 0 ? (
+            <div className="flex-1">
+              <SyncErrorState
+                message={ledgerErrorMessage(new LedgerError(conversationRead.code))}
+                onRetry={handleRetryHistory}
+              />
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col justify-center">
+              <ChatThread
+                groupId={dm.group.id}
+                meId={me.id}
+                messages={conversation?.messages ?? []}
+                events={conversation?.events ?? []}
+                settlements={dm.settlements}
+                expenses={dm.recentExpenses}
+                nameOf={nameOf}
+                profileOf={profileOf}
+                showSenderNames={false}
+                hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
+                acknowledgeThroughId={readableThroughId}
+                onRenderedThrough={handleRenderedThrough}
+                onLoadMore={handleLoadMore}
+                onOpenPerson={(id) => { if (id === counterpartyId) showProfile(); }}
+              />
+            </div>
+          )}
+          {!isCounterpartyPending && !counterpartyDeparted && groupId && (
+            <>
+              <AnimatePresence>
+                {chargeSheetOpen && (
+                  <QuickChargeSheet
+                    counterpartyName={counterparty.name}
+                    counterpartyHandle={counterparty.handle}
+                    currentUserHandle={me.handle}
+                    onConfirm={handleQuickChargeConfirm}
+                    onEdit={handleEditDraft}
+                    onDismiss={() => {
+                      if (chargeStatus !== "confirming") setChargeSheetOpen(false);
+                    }}
+                    onLeavePending={() => setChargeSheetOpen(false)}
+                    status={chargeStatus}
+                    errorMessage={chargeError}
+                    anchor={chargeAnchor}
+                  />
+                )}
+              </AnimatePresence>
+              <QuickSplitSheet
+                open={splitSheetOpen}
+                onClose={() => setSplitSheetOpen(false)}
+                currentUserId={me.id}
+                currentUserHandle={me.handle}
+                counterparty={counterparty}
+                onConfirm={handleQuickSplitConfirm}
+                status={splitStatus}
+                errorMessage={splitError}
+              />
+              <ChatAiInput
+                groupId={dm.group.id}
+                members={[
+                  { handle: me.handle, name: me.name },
+                  { handle: counterparty.handle, name: counterparty.name },
+                ]}
+                onSend={handleSend}
+                onConfirmDraft={handleConfirmDraft}
+                onEditDraft={handleEditDraft}
+                actions={
+                  <ConversationQuickActions
+                    onCharge={(trigger) => {
+                      if (chargeStatus === "confirming") return;
+                      setSplitSheetOpen(false);
+                      setChargeStatus("idle");
+                      setChargeError(undefined);
+                      setChargeAnchor(trigger);
+                      setChargeSheetOpen((prev) => !prev);
+                    }}
+                    onSplit={() => {
+                      if (chargeStatus === "confirming") return;
+                      setChargeSheetOpen(false);
+                      setSplitStatus("idle");
+                      setSplitError(undefined);
+                      setSplitSheetOpen((prev) => !prev);
+                    }}
+                  />
+                }
+              />
+            </>
+          )}
+        </div>
+        <AnimatePresence initial={false}>
+          {view === "profile" && (
+            <ViewLayer
+              key="profile"
+              className="absolute inset-x-0 top-0 z-10 min-h-full bg-background"
+              variants={reduced ? fade : viewLayerVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <PersonProfile
+                userId={counterpartyId}
+                onBack={closeProfile}
+                onMessage={closeProfile}
+                heroLayoutId={reduced ? undefined : personHeroLayoutId(counterpartyId)}
+              />
+            </ViewLayer>
+          )}
+        </AnimatePresence>
+      </LayoutGroup>
+    </PullReveal>
   );
 }
