@@ -9,12 +9,13 @@ import {
   Banknote,
   LogOut,
   MessageSquare,
+  Trash2,
   Receipt,
   Users,
   BellRing,
 } from "lucide-react";
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { pushFailureMessage } from "@/lib/push/failures";
@@ -32,6 +33,9 @@ import { BlockedUsersSettings } from "@/components/settings/blocked-users-settin
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScreenHeader } from "@/components/shared/screen-header";
+import { DeleteAccountDialog, type DeleteAccountDialogState } from "@/components/settings/delete-account-dialog";
+import { deleteAccount } from "@/lib/sync/account-deletion";
+import { AccountLocalWipeError } from "@/lib/sync/account-deletion";
 import type { NotificationCategory } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -81,7 +85,7 @@ const SCAN_DRAFT_CHOICE_OPTIONS = [
   { value: "keep", label: "Manter o rascunho" },
 ];
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const me = useMe();
   const router = useRouter();
   const {
@@ -95,6 +99,64 @@ export default function SettingsPage() {
   } = usePushNotifications();
   const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
   const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
+  const searchParams = useSearchParams();
+  const [deletionOpen, setDeletionOpen] = useState(searchParams.get("excluir") === "1");
+  const [deletionConfirmed, setDeletionConfirmed] = useState(false);
+  const [deletionState, setDeletionState] = useState<DeleteAccountDialogState>({ status: "idle" });
+
+  const closeDeletionDialog = useCallback(() => {
+    setDeletionOpen(false);
+    setDeletionConfirmed(false);
+    setDeletionState({ status: "idle" });
+  }, []);
+
+  const confirmAccountDeletion = useCallback(async () => {
+    if (deletionState.status === "loading") return;
+    setDeletionState({ status: "loading" });
+    try {
+      const result = await deleteAccount();
+      if (result.ok) {
+        setDeletionState({ status: "success" });
+        router.replace("/excluir-conta?excluida=1");
+        return;
+      }
+      if (result.code === "outstanding_balance") {
+        setDeletionState({ status: "blocked", groups: result.groups });
+        return;
+      }
+      if (result.code === "auth_delete_failed") {
+        setDeletionState({
+          status: "error",
+          committed: true,
+          message: "Seus dados já foram apagados ou anonimizados. Falta encerrar o acesso. Tente novamente.",
+        });
+        return;
+      }
+      if (result.code === "unauthenticated") {
+        setDeletionState({
+          status: "error",
+          committed: false,
+          message: "Sua sessão foi encerrada. Entre de novo para verificar se a exclusão foi concluída.",
+        });
+        return;
+      }
+      setDeletionState({
+        status: "error",
+        committed: false,
+        message: "Não deu para excluir sua conta do Dividimos. Tente novamente.",
+      });
+    } catch (error) {
+      if (error instanceof AccountLocalWipeError) {
+        router.replace("/excluir-conta?excluida=1&limpeza=parcial");
+        return;
+      }
+      setDeletionState({
+        status: "error",
+        committed: false,
+        message: "Não deu para excluir sua conta do Dividimos. Tente novamente.",
+      });
+    }
+  }, [deletionState.status, router]);
 
   const handleSignOut = async () => {
     if (!signOutError && !window.confirm("Sair da conta?")) return;
@@ -225,6 +287,23 @@ export default function SettingsPage() {
         variants={popIn} initial="hidden" animate="visible"
         className="mt-6"
       >
+        <Button
+          variant="ghost"
+          className="w-full gap-2 text-destructive-text"
+          onClick={() => setDeletionOpen(true)}
+        >
+          <Trash2 className="h-4 w-4" />
+          Excluir sua conta do Dividimos
+        </Button>
+        <p className="mt-1 px-1 text-xs text-muted-foreground">
+          Apagar seus dados pessoais e sair de todos os grupos.
+        </p>
+      </motion.div>
+
+      <motion.div
+        variants={popIn} initial="hidden" animate="visible"
+        className="mt-6"
+      >
         {signOutError && (
           <div role="alert" className="mb-3 flex items-center justify-between gap-3 text-sm text-destructive">
             <span>{signOutError}</span>
@@ -248,6 +327,33 @@ export default function SettingsPage() {
           {signOutPending ? "Saindo..." : "Sair da conta"}
         </Button>
       </motion.div>
+
+      <DeleteAccountDialog
+        open={deletionOpen}
+        state={deletionState}
+        confirmed={deletionConfirmed}
+        onConfirmedChange={setDeletionConfirmed}
+        onClose={closeDeletionDialog}
+        onConfirm={() => void confirmAccountDeletion()}
+      />
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsSkeleton />}>
+      <SettingsPageContent />
+    </Suspense>
+  );
+}
+
+function SettingsSkeleton() {
+  return (
+    <div role="status" aria-label="Carregando" className="mx-auto max-w-lg px-4 py-6 space-y-6">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-32 rounded-2xl" />
+      <Skeleton className="h-48 rounded-2xl" />
     </div>
   );
 }

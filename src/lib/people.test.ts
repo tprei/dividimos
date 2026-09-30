@@ -58,6 +58,35 @@ describe("firstNameOf", () => {
 });
 
 describe("displayNames", () => {
+  it("keeps the full tombstone label for deleted accounts in both styles", () => {
+    const people: PersonRef[] = [
+      { id: "1", name: "Conta excluída" },
+      { id: "2", name: "Ana" },
+    ];
+    expect(displayNames(people, { style: "short" })).toEqual(
+      new Map([
+        ["1", "Conta excluída"],
+        ["2", "Ana"],
+      ]),
+    );
+    expect(displayNames(people, { style: "full" })).toEqual(
+      new Map([
+        ["1", "Conta excluída"],
+        ["2", "Ana"],
+      ]),
+    );
+  });
+
+  it("keeps distinct ids and identical tombstone labels for several deleted accounts", () => {
+    const people: PersonRef[] = [
+      { id: "1", name: "Conta excluída", handle: "deleted_1f" },
+      { id: "2", name: "Conta excluída", handle: "deleted_9c" },
+    ];
+    const labels = displayNames(people, { style: "full" });
+    expect(labels.get("1")).toBe("Conta excluída");
+    expect(labels.get("2")).toBe("Conta excluída");
+  });
+
   it("uses first names and disambiguates same first names by last initial", () => {
     const people: PersonRef[] = [
       { id: "1", name: "João Silva" },

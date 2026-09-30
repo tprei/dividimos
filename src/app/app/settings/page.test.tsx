@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { NotificationPreferences } from "@/types";
 import type { Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
+import { AccountLocalWipeError, deleteAccount } from "@/lib/sync/account-deletion";
 
 beforeEach(() => { window.confirm = vi.fn(() => true); });
 it("does not sign out when the confirmation is cancelled", () => {
@@ -37,9 +38,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: mockRouterReplace,
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+
+vi.mock("@/lib/sync/account-deletion", () => ({
+  deleteAccount: vi.fn(),
+  AccountLocalWipeError: class AccountLocalWipeError extends Error {},
+}));
 vi.mock("@/lib/sync/client", () => ({
   getSupabase: () => ({
     auth: {
@@ -143,6 +150,34 @@ function makeServerMerge() {
 }
 
 describe("SettingsPage", () => {
+  it("opens the account deletion dialog from the settings trigger", async () => {
+    const { useAppStore } = await import("@/stores/app-store");
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Excluir sua conta do Dividimos" }));
+
+    expect(await screen.findByText("Excluir sua conta do Dividimos?")).toBeDefined();
+    expect(screen.getByText("Essa ação não pode ser desfeita.")).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Excluir minha conta do Dividimos" }),
+    ).toBeDisabled();
+  });
+
+  it("sends a partially wiped device to the public page with the clean-up notice", async () => {
+    vi.mocked(deleteAccount).mockRejectedValueOnce(new AccountLocalWipeError([]));
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Excluir sua conta do Dividimos" }));
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Excluir minha conta do Dividimos" }));
+
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith("/excluir-conta?excluida=1&limpeza=parcial");
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.getState().reset();

@@ -121,6 +121,8 @@ export function sentenceStart(label: string): string {
   return firstGrapheme.toLocaleUpperCase("pt-BR") + label.slice(firstGrapheme.length);
 }
 
+const DELETED_TOMBSTONE_NAME = "Conta excluída";
+
 function disambiguateCollidingFullNames(colliding: readonly PersonRef[]): Map<string, string> {
   const assigned = new Map<string, string>();
   let ordinal = 1;
@@ -185,6 +187,8 @@ export function displayNames(
   for (const person of uniquePeople) {
     if (viewerId !== undefined && person.id === viewerId) {
       result.set(person.id, selfLabel);
+    } else if (person.name === DELETED_TOMBSTONE_NAME) {
+      result.set(person.id, DELETED_TOMBSTONE_NAME);
     } else {
       nonViewers.push(person);
     }

@@ -118,6 +118,10 @@ stateDiagram-v2
 - **Histórico de edições.** Cada edição de conta vira uma versão nova, com o resumo do que mudou. Excluir uma conta é reversível.
 - **Busca.** Grupos e contas são buscados no aparelho; pessoas, também pelo `@handle` exato no servidor.
 
+### Conta
+
+- **Excluir a conta.** Em Configurações, “Excluir sua conta do Dividimos” abre um diálogo de consequências com confirmação explícita. Enquanto houver saldo em qualquer grupo, a exclusão é recusada e o app lista os grupos pra acertar. Confirmada, a conta é anonimizada, o acesso é encerrado e o aparelho é limpo. A página pública `dividimos.ai/excluir-conta` explica o passo a passo sem precisar entrar.
+
 ### App
 
 - **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão. A página offline (`public/offline.html`) é a mesma página do boteco do Android (`native-shell/offline.html`), só que "Tentar novamente" e a volta da conexão recarregam a página que a pessoa tentou abrir.
@@ -575,7 +579,7 @@ agent-guidance/                 # Guias para agentes: migrations, TypeScript, st
 
 ## Orientação rápida
 
-- `src/app/` é o App Router do Next.js 16. Fluxos principais: landing (`page.tsx`), auth (`auth/`), o shell autenticado (`app/`, pré-renderizado e servido cache-first pelo `public/sw.js`) e os destinos de link públicos `room/`, `claim/`, `join/` e `u/`.
+- `src/app/` é o App Router do Next.js 16. Fluxos principais: landing (`page.tsx`), auth (`auth/`), o shell autenticado (`app/`, pré-renderizado e servido cache-first pelo `public/sw.js`) e os destinos de link públicos `room/`, `claim/`, `join/`, `u/` e `excluir-conta/`.
 - `src/proxy.ts` é o proxy do Next 16. Renova a sessão do Supabase via `src/lib/supabase/middleware.ts`, libera as rotas públicas, responde 503 quando a verificação de auth está fora do ar e manda quem está logado pra `/manutencao` quando o banco e o app estão em versões financeiramente incompatíveis.
 - `src/app/auth/` faz login com um ID token do Google: redirect de página inteira na web (`popup/` é a página pra onde o Google volta) e `@capgo/capacitor-social-login` no Android. `page.tsx` lê o cookie `dividimos_intro_seen` pra decidir se abre na apresentação (`src/components/auth-intro/`) ou no login, e `auth-panel.tsx` é o cartão de login. `continue/` decide se precisa de onboarding, e `onboard/` coleta o handle e a chave Pix. Sem telefone, sem 2FA.
 - `src/app/api/` guarda só o que precisa de segredo: chaves Pix (`pix/generate`, `pix/generate-self`), Gemini (`receipt/ocr`, `voice/parse`, `chat/parse`), push (`notify`, `push/*`), fotos de grupo (`groups/[groupId]/avatar`) e busca por handle (`users/lookup`), além do `dev/login`, que só existe em dev. As outras rotas checam a sessão, e a maioria aplica rate limit por usuário via `src/lib/rate-limit.ts`.
