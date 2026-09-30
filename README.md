@@ -91,7 +91,7 @@ stateDiagram-v2
 
 ### Grupos, convites e convidados
 
-- **Confirmação mútua.** Convide por `@handle`. A pessoa já pode entrar nas contas, mas só vê saldos e conversa do grupo depois de aceitar.
+- **Confirmação mútua.** Convide por `@handle`. A pessoa já pode entrar nas contas, mas só vê saldos e conversa do grupo depois de aceitar. Um grupo novo sai com no máximo 50 convites de uma vez.
 - **Recusar não apaga conta.** Recusar um convite não apaga as contas dos outros: a sua parte vira um convidado com o seu nome e quem pagou pode editar ou mandar o link de claim. Se você aparece como quem pagou, a conta é anulada.
 - **Link e QR de convite.** Um link ativo por grupo, com validade e limite de usos opcionais. No Android, o link abre direto no app. Dá pra disparar o convite no WhatsApp pra vários contatos de uma vez.
 - **Convidados sem conta.** Coloque alguém na conta só pelo nome. Um link ou QR de claim guarda a parte até a pessoa criar conta, e aí o saldo passa pra ela.
@@ -127,7 +127,7 @@ stateDiagram-v2
 
 ### Segurança
 
-- **Chave Pix cifrada.** AES-256-GCM em repouso, decifrada só no servidor. O cliente só vê a chave mascarada. As inscrições de push também ficam cifradas.
+- **Chave Pix cifrada.** AES-256-GCM em repouso, decifrada só no servidor. O cliente só vê a chave mascarada. É o `complete_onboarding` que garante o formato `iv:tag:ciphertext` em base64 (até 256 caracteres) e a dica mascarada em até 80. As inscrições de push também ficam cifradas.
 - **Pix só pra quem tem a receber.** `/api/pix/generate` só usa a chave de outra pessoa se ela for credora de quem pede numa transferência do grupo, e até o valor devido. As recusas de autorização voltam todas com o mesmo 403, pra ninguém descobrir quem tem chave ou quem deve a quem.
 - **Acesso só via RPC.** RLS habilitado em todas as tabelas, sem políticas e sem grants para `anon`/`authenticated`. O navegador só chama funções `SECURITY DEFINER`, que checam membership (ou o token da sala, pra quem entrou sem conta). Só as rotas do servidor usam a service role.
 - **Sem enumeração.** Usuários são encontrados só por `@handle` exato, por uma rota do servidor com rate limit.
