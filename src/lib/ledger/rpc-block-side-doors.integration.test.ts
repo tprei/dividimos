@@ -168,7 +168,7 @@ describe.skipIf(!isIntegrationTestReady)("blocked side doors — join paths, set
     expect(await membershipRows(groupId, claimer.id)).toEqual([]);
   });
 
-  it("refuses a settlement between a blocked pair in both directions without writing a row", async () => {
+  it("refuses an uncapped overpay settlement between a blocked pair in both directions without writing a row", async () => {
     const [creditor, debtor] = await createTestUsers(2);
     const creditorClient = authenticateAs(creditor);
     const debtorClient = authenticateAs(debtor);
@@ -207,6 +207,44 @@ describe.skipIf(!isIntegrationTestReady)("blocked side doors — join paths, set
         [operationId],
       ),
     ).toBe(0);
+  });
+
+  it.each([
+    ["the creditor blocks the debtor", true],
+    ["the debtor blocks the creditor", false],
+  ] as const)("lets the debtor pay down a real debt and leave after %s", async (_label, creditorBlocks) => {
+    const [creditor, debtor] = await createTestUsers(2);
+    const creditorClient = authenticateAs(creditor);
+    const debtorClient = authenticateAs(debtor);
+
+    const groupId = await createGroupWithMembers(creditor, [debtor], "Grupo acerto");
+    await createExpense(creditor, {
+      groupId,
+      totalCents: 10000,
+      payload: equalSplitPayload([creditor.id, debtor.id], 10000),
+    });
+
+    if (creditorBlocks) {
+      await rpcOk(creditorClient, "block_user", { p_user_id: debtor.id });
+    } else {
+      await rpcOk(debtorClient, "block_user", { p_user_id: creditor.id });
+    }
+
+    const settlementArgs = {
+      p_operation_id: crypto.randomUUID(),
+      p_group_id: groupId,
+      p_from_user_id: debtor.id,
+      p_to_user_id: creditor.id,
+      p_amount_cents: 5000,
+      p_allow_overpay: false,
+    };
+    expect(
+      await rpcErrorCode(debtorClient, "record_settlement", { ...settlementArgs, p_amount_cents: 5001 }),
+    ).toBe("amount_exceeds_debt");
+    await rpcOk<SettlementAck>(debtorClient, "record_settlement", settlementArgs);
+
+    await rpcOk(debtorClient, "leave_group", { p_group_id: groupId });
+    expect(await membershipRows(groupId, debtor.id)).toEqual([]);
   });
 
   it("keeps the idempotent replay of an existing settlement working across a later block", async () => {

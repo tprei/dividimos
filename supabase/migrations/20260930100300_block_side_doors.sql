@@ -2,8 +2,11 @@
 -- another member's invite link, or a guest slot on another member's expense
 -- previously only checked the inviter/link creator/expense creator, so a user
 -- blocked by the creator could still join and read the creator's messages.
--- record_settlement gains the same contact guard on its fresh-insert path
--- (idempotent replays of pre-existing settlements stay reachable), and
+-- record_settlement refuses the uncapped overpay path between a blocked pair
+-- on fresh inserts, since that path manufactures a debt the other side never
+-- had; capped settlements that only pay down an existing debt stay allowed
+-- so a block never traps either side with a balance it cannot clear, and
+-- idempotent replays of pre-existing settlements stay reachable. Finally,
 -- create_expense_with_group validates the expense payload before create_group's
 -- per-member contact checks, so an invalid payload fails for every member id
 -- instead of answering which ids blocked the caller.
@@ -380,11 +383,13 @@ BEGIN
     );
   END IF;
 
-  -- Checked only on the fresh-insert path: a replay of an operation settled
-  -- before the block must still return its original ack, while a new
-  -- settlement is refused in both directions of a blocked pair.
-  PERFORM public.assert_user_contact_allowed(v_actor, p_from_user_id);
-  PERFORM public.assert_user_contact_allowed(v_actor, p_to_user_id);
+  -- Checked only on the fresh-insert path, and only for the uncapped overpay
+  -- path: paying down a real debt must stay possible across a block, or
+  -- leave_group and delete_account would refuse the debtor forever.
+  IF COALESCE(p_allow_overpay, false) THEN
+    PERFORM public.assert_user_contact_allowed(v_actor, p_from_user_id);
+    PERFORM public.assert_user_contact_allowed(v_actor, p_to_user_id);
+  END IF;
 
   IF NOT is_member(p_group_id, CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
