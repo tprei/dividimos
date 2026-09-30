@@ -23,6 +23,9 @@ import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { isScanDraftChoice } from "@/lib/confirmation-preferences";
+import { useAiConsent } from "@/hooks/use-ai-consent";
+import { AiConsentSection } from "@/components/settings/ai-consent-section";
+import { RevokeAiConsentPopover } from "@/components/ai/revoke-ai-consent-popover";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
@@ -158,6 +161,9 @@ function SettingsPageContent() {
     }
   }, [deletionState.status, router]);
 
+  const { granted: aiConsentGranted, revoke: revokeAiConsent } = useAiConsent();
+  const [revokeAnchor, setRevokeAnchor] = useState<HTMLElement | null>(null);
+
   const handleSignOut = async () => {
     if (!signOutError && !window.confirm("Sair da conta?")) return;
     const result = await signOut();
@@ -239,6 +245,22 @@ function SettingsPageContent() {
           <NotificationPreferencesSection key={me.id} />
         </div>
       )}
+
+      <motion.div
+        variants={popIn} initial="hidden" animate="visible"
+        className="mt-6"
+      >
+        <AiConsentSection granted={aiConsentGranted} onRevoke={setRevokeAnchor} />
+        <RevokeAiConsentPopover
+          open={revokeAnchor !== null}
+          anchor={revokeAnchor}
+          onCancel={() => setRevokeAnchor(null)}
+          onConfirm={() => {
+            revokeAiConsent();
+            setRevokeAnchor(null);
+          }}
+        />
+      </motion.div>
 
       <motion.div
         variants={popIn} initial="hidden" animate="visible"
