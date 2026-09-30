@@ -1488,17 +1488,69 @@ describe("create_expense_with_group", () => {
 });
 
 describe("P7 decline metadata and restoration denial", () => {
-  it("single decline then restore fails with invitation_not_accepted and facts unchanged", async () => {
+  type DeclineParticipants = {
+    participants: Array<{ kind: string; userId?: string; guestId?: string | null; displayName?: string }>;
+  };
+
+  function paidSplitPayload(userIds: string[], totalCents: number, ...payers: Array<[number, number]>) {
+    const share = Math.floor(totalCents / userIds.length);
+    return {
+      items: [],
+      participants: userIds.map((userId) => ({ kind: "user", userId })),
+      shares: userIds.map(() => share),
+      payers: payers.map(([participantIndex, amountCents]) => ({ participantIndex, amountCents })),
+      itemAssignments: null,
+    };
+  }
+
+  async function declineState(expenseId: string) {
+    return withPg(async (pg) => {
+      const expense = await pg.query<{
+        status: string; deleted_by: string | null; declined_user_ids: string[]; current_version_no: number;
+      }>(
+        "SELECT status, deleted_by, declined_user_ids, current_version_no FROM public.expenses WHERE id = $1",
+        [expenseId],
+      );
+      const versions = await pg.query<{ payload: DeclineParticipants }>(
+        "SELECT payload FROM public.expense_versions WHERE expense_id = $1 ORDER BY version_no",
+        [expenseId],
+      );
+      return { expense: expense.rows[0], versions: versions.rows };
+    });
+  }
+
+  function membershipCount(groupId: string, userIds: string[]) {
+    return withPg(async (pg) => {
+      const { rows } = await pg.query<{ count: number }>(
+        "SELECT count(*)::int as count FROM public.group_members WHERE group_id = $1 AND user_id = ANY($2::uuid[])",
+        [groupId, userIds],
+      );
+      return rows[0].count;
+    });
+  }
+
+  async function expenseDetail(client: SupabaseClient, expenseId: string) {
+    const detailRpc = await callRpc(client, "get_expense", { p_expense_id: expenseId });
+    expect(detailRpc.error).toBeNull();
+    return decodeRpcData("get_expense", detailRpc.data, decodeExpenseDetail);
+  }
+
+  const userNet = (
+    balances: Array<{ kind: string; participant_id: string; net_cents: number }>, userId: string,
+  ) => balances.find((row) => row.kind === "user" && row.participant_id === userId)?.net_cents;
+
+  it("converts the invited decliner's share into a guest and keeps the bill", async () => {
     if (!isIntegrationTestReady) return;
-    const [owner, invitee] = await createTestUsers(2);
+    const [owner, accepted, invitee] = await createTestUsers(3);
     const ownerClient = authenticateAs(owner);
     const inviteeClient = authenticateAs(invitee);
 
-    const { groupId } = await createGroup(owner, "P7 Single", [invitee.id]);
+    const { groupId } = await createGroup(owner, "P7 Single", [accepted.id, invitee.id]);
+    await acceptInvitation(accepted, groupId);
     const { expenseId } = await createExpense(owner, {
       groupId,
-      totalCents: 2000,
-      payload: equalSplitPayload([owner.id, invitee.id], 2000),
+      totalCents: 30000,
+      payload: equalSplitPayload([owner.id, accepted.id, invitee.id], 30000),
     });
 
     const { error: declineError } = await inviteeClient.rpc("decline_invitation", {
@@ -1506,66 +1558,90 @@ describe("P7 decline metadata and restoration denial", () => {
     });
     expect(declineError).toBeNull();
 
-    // Verify soft-deleted with decliner recorded
-    const beforeRestore = await withPg(async (pg) => {
-      const { rows } = await pg.query<{
-        status: string;
-        deleted_by: string;
-        declined_user_ids: string[];
-      }>("SELECT status, deleted_by, declined_user_ids FROM public.expenses WHERE id = $1", [
-        expenseId,
-      ]);
-      return rows[0];
-    });
-    expect(beforeRestore.status).toBe("deleted");
-    expect(beforeRestore.deleted_by).toBe(invitee.id);
-    expect(beforeRestore.declined_user_ids).toEqual([invitee.id]);
+    const afterDecline = await declineState(expenseId);
+    expect(afterDecline.expense.status).toBe("active");
+    expect(afterDecline.expense.current_version_no).toBe(2);
+    expect(afterDecline.expense.declined_user_ids).toEqual([]);
+    expect(await membershipCount(groupId, [invitee.id])).toBe(0);
+    const guestNames = (
+      await withPg(async (pg) =>
+        pg.query<{ display_name: string }>(
+          "SELECT display_name FROM public.guests WHERE expense_id = $1",
+          [expenseId],
+        )
+      )
+    ).rows.map((row) => row.display_name);
+    expect(guestNames).toEqual([invitee.name]);
+    expect(afterDecline.versions[1]?.payload?.participants?.[0]).toEqual({ kind: "user", userId: owner.id });
+    expect(afterDecline.versions[1]?.payload?.participants?.[1]).toEqual({ kind: "user", userId: accepted.id });
+    expect(afterDecline.versions[1]?.payload?.participants?.[2]?.kind).toBe("guest");
+    expect(afterDecline.versions[1]?.payload?.participants?.[2]?.displayName).toBe(invitee.name);
 
-    const eventsBefore = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ count: number }>(
-        "SELECT count(*)::int as count FROM public.group_events WHERE expense_id = $1",
-        [expenseId],
-      );
-      return rows[0].count;
+    const balances = await getBalances(groupId);
+    expect(userNet(balances, owner.id)).toBe(20000);
+    expect(userNet(balances, accepted.id)).toBe(-10000);
+    expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-10000);
+
+    const detail = await expenseDetail(ownerClient, expenseId);
+    expect(detail.expense.status).toBe("active");
+    expect(detail.expense.currentVersionNo).toBe(2);
+    expect(detail.current.versionNo).toBe(2);
+    expect(detail.current.payload.participants[2]).toMatchObject({
+      kind: "guest", displayName: invitee.name,
     });
 
-    // Owner attempts to restore
+    const { error: inviteErr } = await ownerClient.rpc("invite_member", {
+      p_group_id: groupId,
+      p_user_id: invitee.id,
+    });
+    expect(inviteErr).toBeNull();
+    const { error: secondDeclineError } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
+    });
+    expect(secondDeclineError).toBeNull();
+
+    const afterSecondDecline = await declineState(expenseId);
+    expect(afterSecondDecline.expense.status).toBe("active");
+    expect(afterSecondDecline.expense.current_version_no).toBe(2);
+    expect(afterSecondDecline.versions).toHaveLength(2);
+  });
+
+  it("voids the bill when the decliner is a payer and keeps the restoration denial", async () => {
+    if (!isIntegrationTestReady) return;
+    const [owner, invitee] = await createTestUsers(2);
+    const ownerClient = authenticateAs(owner);
+    const inviteeClient = authenticateAs(invitee);
+
+    const { groupId } = await createGroup(owner, "P7 Payer Decline", [invitee.id]);
+    const { expenseId } = await createExpense(owner, {
+      groupId,
+      totalCents: 2000,
+      payload: paidSplitPayload([owner.id, invitee.id], 2000, [0, 1200], [1, 800]),
+    });
+
+    const { error: declineError } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
+    });
+    expect(declineError).toBeNull();
+
+    const row = await declineState(expenseId);
+    expect(row.expense.status).toBe("deleted");
+    expect(row.expense.deleted_by).toBe(invitee.id);
+    expect(row.expense.declined_user_ids).toEqual([invitee.id]);
+    expect(row.expense.current_version_no).toBe(1);
+
     const err = await expectRpcError(
       callRpc(ownerClient, "restore_expense", { p_expense_id: expenseId }),
     );
     expect(err).toBe("invitation_not_accepted");
 
-    // Facts unchanged: status still deleted, declined_user_ids still [invitee.id], no new event, balances empty
-    const afterRestore = await withPg(async (pg) => {
-      const { rows } = await pg.query<{
-        status: string;
-        deleted_by: string;
-        declined_user_ids: string[];
-      }>("SELECT status, deleted_by, declined_user_ids FROM public.expenses WHERE id = $1", [
-        expenseId,
-      ]);
-      return rows[0];
-    });
-    expect(afterRestore.status).toBe("deleted");
-    expect(afterRestore.declined_user_ids).toEqual([invitee.id]);
-
-    const eventsAfter = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ count: number }>(
-        "SELECT count(*)::int as count FROM public.group_events WHERE expense_id = $1",
-        [expenseId],
-      );
-      return rows[0].count;
-    });
-    expect(eventsAfter).toBe(eventsBefore);
-
     const balances = await getBalances(groupId);
     expect(balances).toHaveLength(0);
   });
 
-  it("two decliners: partial reacceptance still denied; full reacceptance restores and clears the list", async () => {
+  it("converts every invited decliner's share on its own version", async () => {
     if (!isIntegrationTestReady) return;
     const [owner, invitee1, invitee2] = await createTestUsers(3);
-    const ownerClient = authenticateAs(owner);
     const c1 = authenticateAs(invitee1);
     const c2 = authenticateAs(invitee2);
 
@@ -1576,78 +1652,27 @@ describe("P7 decline metadata and restoration denial", () => {
       payload: equalSplitPayload([owner.id, invitee1.id, invitee2.id], 3000),
     });
 
-    // First user declines
     const { error: d1Err } = await c1.rpc("decline_invitation", { p_group_id: groupId });
     expect(d1Err).toBeNull();
-
-    // Second user declines an already-deleted expense
     const { error: d2Err } = await c2.rpc("decline_invitation", { p_group_id: groupId });
     expect(d2Err).toBeNull();
 
-    // Verify both decliners are recorded in order
-    const rowAfterDeclines = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ declined_user_ids: string[] }>(
-        "SELECT declined_user_ids FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
-    });
-    expect(rowAfterDeclines.declined_user_ids).toEqual([invitee1.id, invitee2.id]);
-
-    // Re-invite first user and have them accept
-    const { error: inv1Err } = await ownerClient.rpc("invite_member", {
-      p_group_id: groupId,
-      p_user_id: invitee1.id,
-    });
-    expect(inv1Err).toBeNull();
-    await acceptInvitation(invitee1, groupId);
-
-    // Restore still denied with partial reacceptance
-    const partialErr = await expectRpcError(
-      callRpc(ownerClient, "restore_expense", { p_expense_id: expenseId }),
-    );
-    expect(partialErr).toBe("invitation_not_accepted");
-
-    // Re-invite second user, leaving status as 'invited' (not accepted)
-    const { error: inv2Err } = await ownerClient.rpc("invite_member", {
-      p_group_id: groupId,
-      p_user_id: invitee2.id,
-    });
-    expect(inv2Err).toBeNull();
-
-    // Still denied because second user has not accepted
-    const stillInvitedErr = await expectRpcError(
-      callRpc(ownerClient, "restore_expense", { p_expense_id: expenseId }),
-    );
-    expect(stillInvitedErr).toBe("invitation_not_accepted");
-
-    // Second user accepts
-    await acceptInvitation(invitee2, groupId);
-
-    // Full reacceptance: restore succeeds!
-    const { error: restoreErr } = await callRpc(ownerClient, "restore_expense", {
-      p_expense_id: expenseId,
-    });
-    expect(restoreErr).toBeNull();
-
-    // Verify expense is active and declined_user_ids is cleared
-    const rowAfterRestore = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ status: string; declined_user_ids: string[] }>(
-        "SELECT status, declined_user_ids FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
-    });
-    expect(rowAfterRestore.status).toBe("active");
-    expect(rowAfterRestore.declined_user_ids).toEqual([]);
+    const result = await declineState(expenseId);
+    expect(result.expense.status).toBe("active");
+    expect(result.expense.current_version_no).toBe(3);
+    expect(result.expense.declined_user_ids).toEqual([]);
+    expect(result.versions[1]?.payload?.participants?.[1]?.kind).toBe("guest");
+    expect(result.versions[1]?.payload?.participants?.[1]?.displayName).toBe(invitee1.name);
+    expect(result.versions[1]?.payload?.participants?.[2]).toEqual({ kind: "user", userId: invitee2.id });
+    expect(result.versions[2]?.payload?.participants?.[1]?.kind).toBe("guest");
+    expect(result.versions[2]?.payload?.participants?.[2]?.kind).toBe("guest");
 
     const balances = await getBalances(groupId);
-    expect(balances.find((b) => b.participant_id === owner.id)?.net_cents).toBe(2000);
-    expect(balances.find((b) => b.participant_id === invitee1.id)?.net_cents).toBe(-1000);
-    expect(balances.find((b) => b.participant_id === invitee2.id)?.net_cents).toBe(-1000);
+    expect(userNet(balances, owner.id)).toBe(2000);
+    expect(balances.filter((row) => row.kind === "guest")).toHaveLength(2);
   });
 
-  it("manual delete then decline respects the refusal on restore", async () => {
+  it("keeps a manually deleted bill deleted and restores it with the guest share", async () => {
     if (!isIntegrationTestReady) return;
     const [owner, invitee] = await createTestUsers(2);
     const ownerClient = authenticateAs(owner);
@@ -1660,52 +1685,152 @@ describe("P7 decline metadata and restoration denial", () => {
       payload: equalSplitPayload([owner.id, invitee.id], 2000),
     });
 
-    // Owner manually deletes the expense
     const { error: delErr } = await callRpc(ownerClient, "delete_expense", {
       p_expense_id: expenseId,
     });
     expect(delErr).toBeNull();
 
-    const manualDeletedRow = await withPg(async (pg) => {
-      const { rows } = await pg.query<{
-        status: string;
-        deleted_by: string;
-        declined_user_ids: string[];
-      }>("SELECT status, deleted_by, declined_user_ids FROM public.expenses WHERE id = $1", [
-        expenseId,
-      ]);
-      return rows[0];
-    });
-    expect(manualDeletedRow.status).toBe("deleted");
-    expect(manualDeletedRow.deleted_by).toBe(owner.id);
-    expect(manualDeletedRow.declined_user_ids).toEqual([]);
+    const ledgerVersionBefore = (
+      await withPg(async (pg) =>
+        pg.query<{ ledger_version: number }>(
+          "SELECT ledger_version::int FROM public.groups WHERE id = $1",
+          [groupId],
+        )
+      )
+    ).rows[0].ledger_version;
 
-    // Invitee declines the invitation
     const { error: decErr } = await inviteeClient.rpc("decline_invitation", {
       p_group_id: groupId,
     });
     expect(decErr).toBeNull();
 
-    // Verify decliner was appended, but original deleted_by was preserved
-    const afterDeclineRow = await withPg(async (pg) => {
-      const { rows } = await pg.query<{
-        status: string;
-        deleted_by: string;
-        declined_user_ids: string[];
-      }>("SELECT status, deleted_by, declined_user_ids FROM public.expenses WHERE id = $1", [
-        expenseId,
-      ]);
-      return rows[0];
-    });
-    expect(afterDeclineRow.status).toBe("deleted");
-    expect(afterDeclineRow.deleted_by).toBe(owner.id);
-    expect(afterDeclineRow.declined_user_ids).toEqual([invitee.id]);
+    const ledgerVersionAfter = (
+      await withPg(async (pg) =>
+        pg.query<{ ledger_version: number }>(
+          "SELECT ledger_version::int FROM public.groups WHERE id = $1",
+          [groupId],
+        )
+      )
+    ).rows[0].ledger_version;
+    expect(ledgerVersionAfter).toBe(ledgerVersionBefore + 1);
 
-    // Restore is rejected
-    const err = await expectRpcError(
-      callRpc(ownerClient, "restore_expense", { p_expense_id: expenseId }),
+    const afterDecline = await declineState(expenseId);
+    expect(afterDecline.expense.status).toBe("deleted");
+    expect(afterDecline.expense.deleted_by).toBe(owner.id);
+    expect(afterDecline.expense.declined_user_ids).toEqual([]);
+    expect(afterDecline.expense.current_version_no).toBe(2);
+    expect(afterDecline.versions[1]?.payload?.participants?.[1]?.kind).toBe("guest");
+    expect(afterDecline.versions[1]?.payload?.participants?.[1]?.displayName).toBe(invitee.name);
+
+    const { error: restoreErr } = await callRpc(ownerClient, "restore_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(restoreErr).toBeNull();
+
+    const balances = await getBalances(groupId);
+    expect(userNet(balances, owner.id)).toBe(1000);
+    expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-1000);
+  });
+
+  it("heals a bill voided by the old decline once the decliner converts", async () => {
+    if (!isIntegrationTestReady) return;
+    const [owner, invitee] = await createTestUsers(2);
+    const ownerClient = authenticateAs(owner);
+    const inviteeClient = authenticateAs(invitee);
+
+    const { groupId } = await createGroup(owner, "P7 Legacy Void", [invitee.id]);
+    const { expenseId } = await createExpense(owner, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([owner.id, invitee.id], 2000),
+    });
+
+    await withPg(async (pg) => {
+      await pg.query(
+        "UPDATE public.expenses SET status = 'deleted', deleted_at = now(), deleted_by = $2, declined_user_ids = ARRAY[$2]::uuid[] WHERE id = $1",
+        [expenseId, invitee.id],
+      );
+      await pg.query(
+        "DELETE FROM public.group_members WHERE group_id = $1 AND user_id = $2",
+        [groupId, invitee.id],
+      );
+    });
+
+    const { error: inviteErr } = await ownerClient.rpc("invite_member", {
+      p_group_id: groupId,
+      p_user_id: invitee.id,
+    });
+    expect(inviteErr).toBeNull();
+
+    const { error: declineError } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
+    });
+    expect(declineError).toBeNull();
+
+    const afterDecline = await declineState(expenseId);
+    expect(afterDecline.expense.status).toBe("deleted");
+    expect(afterDecline.expense.deleted_by).toBe(invitee.id);
+    expect(afterDecline.expense.declined_user_ids).toEqual([]);
+    expect(afterDecline.expense.current_version_no).toBe(2);
+    expect(afterDecline.versions[1]?.payload?.participants?.[0]).toEqual({ kind: "user", userId: owner.id });
+    expect(afterDecline.versions[1]?.payload?.participants?.[1]?.kind).toBe("guest");
+    expect(afterDecline.versions[1]?.payload?.participants?.[1]?.displayName).toBe(invitee.name);
+
+    const { error: restoreErr } = await callRpc(ownerClient, "restore_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(restoreErr).toBeNull();
+
+    const balances = await getBalances(groupId);
+    expect(userNet(balances, owner.id)).toBe(1000);
+    expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-1000);
+  });
+
+  it("voids for the payer invitee and converts the other invitee on the same bill", async () => {
+    if (!isIntegrationTestReady) return;
+    const [owner, payerInvitee, otherInvitee] = await createTestUsers(3);
+
+    const { groupId } = await createGroup(owner, "P7 Mixed Invitees", [
+      payerInvitee.id,
+      otherInvitee.id,
+    ]);
+    const { expenseId } = await createExpense(owner, {
+      groupId,
+      totalCents: 3000,
+      payload: paidSplitPayload(
+        [owner.id, payerInvitee.id, otherInvitee.id],
+        3000,
+        [0, 1500],
+        [1, 1500],
+      ),
+    });
+
+    const { error: payerDeclineError } = await authenticateAs(payerInvitee).rpc(
+      "decline_invitation",
+      { p_group_id: groupId },
     );
-    expect(err).toBe("invitation_not_accepted");
+    expect(payerDeclineError).toBeNull();
+
+    const { error: otherDeclineError } = await authenticateAs(otherInvitee).rpc(
+      "decline_invitation",
+      { p_group_id: groupId },
+    );
+    expect(otherDeclineError).toBeNull();
+
+    const finalState = await declineState(expenseId);
+    expect(finalState.expense.status).toBe("deleted");
+    expect(finalState.expense.deleted_by).toBe(payerInvitee.id);
+    expect(finalState.expense.declined_user_ids).toEqual([payerInvitee.id]);
+    expect(finalState.expense.current_version_no).toBe(2);
+    expect(await membershipCount(groupId, [payerInvitee.id, otherInvitee.id])).toBe(0);
+    expect(finalState.versions[1]?.payload?.participants?.[0]).toEqual({ kind: "user", userId: owner.id });
+    expect(finalState.versions[1]?.payload?.participants?.[1]).toEqual({ kind: "user", userId: payerInvitee.id });
+    expect(finalState.versions[1]?.payload?.participants?.[2]).toMatchObject({
+      kind: "guest", displayName: otherInvitee.name,
+    });
+
+    const balances = await getBalances(groupId);
+    expect(balances).toHaveLength(0);
   });
 
   it("settled-departure delete needs the reinvite escape but restoration preserves historical participants", async () => {
@@ -1786,47 +1911,8 @@ describe("P7 decline metadata and restoration denial", () => {
     expect(releaveErr).toBeNull();
   });
 
-  it("decline of an already-deleted expense records the decliner in the column", async () => {
-    if (!isIntegrationTestReady) return;
-    const [owner, invitee] = await createTestUsers(2);
-    const ownerClient = authenticateAs(owner);
-    const inviteeClient = authenticateAs(invitee);
 
-    const { groupId } = await createGroup(owner, "P7 Already Deleted", [invitee.id]);
-    const { expenseId } = await createExpense(owner, {
-      groupId,
-      totalCents: 2000,
-      payload: equalSplitPayload([owner.id, invitee.id], 2000),
-    });
-
-    // Delete first
-    await callRpc(ownerClient, "delete_expense", { p_expense_id: expenseId });
-
-    // Assert empty initially
-    const before = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ declined_user_ids: string[] }>(
-        "SELECT declined_user_ids FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
-    });
-    expect(before.declined_user_ids).toEqual([]);
-
-    // Decline
-    await inviteeClient.rpc("decline_invitation", { p_group_id: groupId });
-
-    // Assert decliner recorded in column
-    const after = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ declined_user_ids: string[] }>(
-        "SELECT declined_user_ids FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
-    });
-    expect(after.declined_user_ids).toEqual([invitee.id]);
-  });
-
-  it("only authenticated actor recorded and deduped on repeated decline", async () => {
+  it("records and dedupes a payer decliner across repeated declines", async () => {
     if (!isIntegrationTestReady) return;
     const [owner, invitee] = await createTestUsers(2);
     const ownerClient = authenticateAs(owner);
@@ -1836,46 +1922,37 @@ describe("P7 decline metadata and restoration denial", () => {
     const { expenseId } = await createExpense(owner, {
       groupId,
       totalCents: 2000,
-      payload: equalSplitPayload([owner.id, invitee.id], 2000),
+      payload: paidSplitPayload([owner.id, invitee.id], 2000, [0, 1000], [1, 1000]),
     });
 
-    // First decline
-    await inviteeClient.rpc("decline_invitation", { p_group_id: groupId });
-
-    const firstDeclineRow = await withPg(async (pg) => {
-      const { rows } = await pg.query<{ declined_user_ids: string[] }>(
-        "SELECT declined_user_ids FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
+    const { error: firstErr } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
     });
-    expect(firstDeclineRow.declined_user_ids).toEqual([invitee.id]);
+    expect(firstErr).toBeNull();
 
-    // Re-invite
-    await ownerClient.rpc("invite_member", {
+    const firstDeclineRow = await declineState(expenseId);
+    expect(firstDeclineRow.expense.status).toBe("deleted");
+    expect(firstDeclineRow.expense.declined_user_ids).toEqual([invitee.id]);
+
+    const { error: inviteErr } = await ownerClient.rpc("invite_member", {
       p_group_id: groupId,
       p_user_id: invitee.id,
     });
+    expect(inviteErr).toBeNull();
 
-    // Second decline by same actor
-    await inviteeClient.rpc("decline_invitation", { p_group_id: groupId });
-
-    // Deduped: array length is still 1, contains invitee.id once
-    const secondDeclineRow = await withPg(async (pg) => {
-      const { rows } = await pg.query<{
-        declined_user_ids: string[];
-        cardinality: number;
-      }>(
-        "SELECT declined_user_ids, cardinality(declined_user_ids)::int as cardinality FROM public.expenses WHERE id = $1",
-        [expenseId],
-      );
-      return rows[0];
+    const { error: secondErr } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
     });
-    expect(secondDeclineRow.declined_user_ids).toEqual([invitee.id]);
-    expect(secondDeclineRow.cardinality).toBe(1);
+    expect(secondErr).toBeNull();
+
+    const secondDeclineRow = await declineState(expenseId);
+    expect(secondDeclineRow.expense.status).toBe("deleted");
+    expect(secondDeclineRow.expense.current_version_no).toBe(1);
+    expect(secondDeclineRow.expense.declined_user_ids).toEqual([invitee.id]);
+    expect(secondDeclineRow.expense.declined_user_ids).toHaveLength(1);
   });
 
-  it("delete/edit/recompute paths never resurrect refused debt", async () => {
+  it("keeps the converted bill editable without resurrecting the decliner's user share", async () => {
     if (!isIntegrationTestReady) return;
     const [owner, invitee] = await createTestUsers(2);
     const ownerClient = authenticateAs(owner);
@@ -1888,33 +1965,40 @@ describe("P7 decline metadata and restoration denial", () => {
       payload: equalSplitPayload([owner.id, invitee.id], 2000),
     });
 
-    await inviteeClient.rpc("decline_invitation", { p_group_id: groupId });
+    const { error: declineErr } = await inviteeClient.rpc("decline_invitation", {
+      p_group_id: groupId,
+    });
+    expect(declineErr).toBeNull();
 
-    // Edit rejected
-    const editErr = await expectRpcError(
+    const detail = await expenseDetail(ownerClient, expenseId);
+    expect(detail.expense.status).toBe("active");
+    const currentPayload = detail.current.payload;
+
+    const reAddErr = await expectRpcError(
       callRpc(
         ownerClient,
         "edit_expense",
-        editArgs(expenseId, 1, 2000, equalSplitPayload([owner.id, invitee.id], 2000)),
+        editArgs(expenseId, 2, 2000, equalSplitPayload([owner.id, invitee.id], 2000)),
       ),
     );
-    expect(editErr).toBe("expense_deleted");
+    expect(reAddErr).toBe("not_a_member");
 
-    // Delete rejected
-    const delErr = await expectRpcError(
-      callRpc(ownerClient, "delete_expense", { p_expense_id: expenseId }),
+    const { error: editErr } = await callRpc(
+      ownerClient,
+      "edit_expense",
+      editArgs(expenseId, 2, 2000, currentPayload),
     );
-    expect(delErr).toBe("expense_deleted");
+    expect(editErr).toBeNull();
 
-    // Restore rejected
-    const restErr = await expectRpcError(
-      callRpc(ownerClient, "restore_expense", { p_expense_id: expenseId }),
-    );
-    expect(restErr).toBe("invitation_not_accepted");
+    const afterEdit = await declineState(expenseId);
+    expect(afterEdit.expense.status).toBe("active");
+    expect(afterEdit.expense.current_version_no).toBe(3);
+    expect(afterEdit.expense.declined_user_ids).toEqual([]);
 
-    // Balances remain empty
     const balances = await getBalances(groupId);
-    expect(balances).toHaveLength(0);
+    expect(userNet(balances, owner.id)).toBe(1000);
+    expect(balances.find((row) => row.kind === "guest")?.net_cents).toBe(-1000);
+    expect(balances.some((row) => row.participant_id === invitee.id)).toBe(false);
   });
 });
 
