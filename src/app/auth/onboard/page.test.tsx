@@ -8,7 +8,22 @@ import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 
 vi.mock("@/lib/sync/mutations-group", () => ({ lookupUserByHandle: vi.fn() }));
 const lookup = vi.mocked(lookupUserByHandle);
-beforeEach(() => { lookup.mockReset().mockResolvedValue(null); });
+
+const nav = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace }) }));
+const authMocks = vi.hoisted(() => ({
+  signOut: vi.fn(),
+  attachAuthListener: vi.fn<(onSignedOut: () => void, onError: (error: unknown) => void) => () => void>(
+    () => () => {},
+  ),
+}));
+vi.mock("@/lib/sync/auth", () => authMocks);
+
+beforeEach(() => {
+  lookup.mockReset().mockResolvedValue(null);
+  nav.replace.mockReset();
+  authMocks.signOut.mockReset().mockResolvedValue({ ok: true });
+});
 afterEach(() => { vi.useRealTimers(); });
 
 const me: Me = {
@@ -38,7 +53,7 @@ describe("handle availability", () => {
     const first = Promise.withResolvers<null>();
     lookup.mockReturnValueOnce(first.promise);
     lookup.mockResolvedValueOnce({ ...me, id: "other", handle: "ocupado" });
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
     const field = screen.getByLabelText("Handle");
     fireEvent.change(field, { target: { value: "novo_nome" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(499); });
@@ -61,7 +76,7 @@ describe("handle availability", () => {
   it("does not call a failed lookup available or leave pending work on unmount", async () => {
     vi.useFakeTimers();
     lookup.mockRejectedValueOnce(new Error("offline"));
-    const { unmount } = render(<OnboardForm me={me} action={action} />);
+    const { unmount } = render(<OnboardForm me={me} action={action} next="/app" />);
     fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "novo_nome" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(screen.getByRole("status")).toHaveTextContent("Não conseguimos verificar agora.");
@@ -74,14 +89,14 @@ describe("handle availability", () => {
 
 describe("OnboardForm Pix skip", () => {
   it("renders Nome and Handle together on the profile step", () => {
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
     expect(screen.getByLabelText("Nome")).toHaveValue("Ana Costa");
     expect(screen.getByLabelText("Handle")).toHaveValue("ana_costa");
   });
 
   it("renders contract copy and Pular por agora on the Pix step", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
 
@@ -98,7 +113,7 @@ describe("OnboardForm Pix skip", () => {
 
   it("offers the e-mail only as an explicit chip and never pre-fills the key", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
 
@@ -118,7 +133,7 @@ describe("OnboardForm Pix skip", () => {
 
   it("submits skip intent without a Pix key", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
     await user.click(screen.getByRole("button", { name: "Pular por agora" }));
@@ -137,7 +152,7 @@ describe("OnboardForm phone Pix key", () => {
 
   it("renders the Telefone Pix key option on the Pix step", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
 
@@ -146,7 +161,7 @@ describe("OnboardForm phone Pix key", () => {
 
   it("selecting Telefone switches placeholder and inputMode to numeric", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
     await user.click(screen.getByRole("button", { name: "Telefone" }));
@@ -157,7 +172,7 @@ describe("OnboardForm phone Pix key", () => {
 
   it("formats a typed phone number and submits without client identity fields", async () => {
     const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} />);
+    render(<OnboardForm me={me} action={action} next="/app" />);
 
     await advanceToPixStep(user);
     await user.click(screen.getByRole("button", { name: "Telefone" }));
@@ -181,5 +196,42 @@ describe("OnboardForm phone Pix key", () => {
     expect(formData.get("pixKey")).toBe("+5511999998888");
     expect(formData.get("userId")).toBeNull();
     expect(formData.get("next")).toBeNull();
+  });
+});
+
+describe("switching accounts", () => {
+  it("signs out and returns to auth with the original destination", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/invite?token=abc" />);
+
+    expect(screen.getByText("ana@example.com")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Usar outra conta do Google/i }));
+
+    await waitFor(() =>
+      expect(nav.replace).toHaveBeenCalledWith("/auth?next=%2Finvite%3Ftoken%3Dabc"),
+    );
+    expect(authMocks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays put and explains when sign-out fails", async () => {
+    authMocks.signOut.mockResolvedValueOnce({ ok: false, error: new Error("offline") });
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await user.click(screen.getByRole("button", { name: /Usar outra conta do Google/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Não deu pra sair agora");
+    expect(nav.replace).not.toHaveBeenCalled();
+  });
+
+  it("resets local state when the session ends while onboarding", async () => {
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    const [onSignedOut] = authMocks.attachAuthListener.mock.calls[0];
+    act(() => {
+      onSignedOut();
+    });
+
+    expect(nav.replace).toHaveBeenCalledWith("/auth?next=%2Fapp");
   });
 });

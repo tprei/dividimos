@@ -2,10 +2,14 @@
 
 import { ArrowRight, Clipboard, Mail, Shield } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { readClipboardText } from "@/lib/platform/clipboard";
+import { useSignOut } from "@/hooks/use-sign-out";
+import { attachAuthListener } from "@/lib/sync/auth";
+import { useAppStore } from "@/stores/app-store";
 import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
@@ -17,6 +21,7 @@ import { nameToHandle } from "@/lib/handle";
 type OnboardingFormProps = {
   me: Me;
   action: (formData: FormData) => Promise<OnboardingActionResult>;
+  next: string;
 };
 
 type OnboardStep = "profile" | "pix";
@@ -60,7 +65,27 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "random", label: "Chave aleatória" },
 ];
 
-function OnboardPageContent({ me, action }: OnboardingFormProps) {
+function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
+  const router = useRouter();
+  const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
+  const authUrl = `/auth?next=${encodeURIComponent(next)}`;
+  const leaveToAuth = useCallback(() => router.replace(authUrl), [router, authUrl]);
+
+  useEffect(() => {
+    // This route has no AppShell, so it owns the listener that resets the
+    // local stores when the session ends (here or in another tab).
+    void useAppStore.persist.rehydrate();
+    return attachAuthListener(leaveToAuth, () => {
+      // The form reads `me` from the server render, not the store, so a
+      // failed background bootstrap has nothing to show on this screen.
+    });
+  }, [leaveToAuth]);
+
+  const handleSwitchAccount = async () => {
+    const result = await signOut();
+    if (result.ok) leaveToAuth();
+  };
+
   const [step, setStep] = useState<OnboardStep>("profile");
   const [name, setName] = useState(me.name);
   const [handle, setHandle] = useState(me.handle);
@@ -453,11 +478,32 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
             />
           ))}
         </div>
+
+        <div className="mt-6 flex flex-col items-center gap-1 text-center">
+          {userEmail && (
+            <p className="text-sm text-muted-foreground">
+              Entrou como <span className="font-medium text-foreground">{userEmail}</span>
+            </p>
+          )}
+          <Button
+            variant="link"
+            onClick={handleSwitchAccount}
+            disabled={signOutPending || isPending}
+            className="min-h-11"
+          >
+            {signOutPending ? "Saindo..." : "Usar outra conta do Google"}
+          </Button>
+          {signOutError && (
+            <p role="alert" className="text-sm text-destructive-text">
+              Não deu pra sair agora. Tenta de novo.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export default function OnboardForm({ me, action }: OnboardingFormProps) {
-  return <OnboardPageContent me={me} action={action} />;
+export default function OnboardForm({ me, action, next }: OnboardingFormProps) {
+  return <OnboardPageContent me={me} action={action} next={next} />;
 }

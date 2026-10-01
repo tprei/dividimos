@@ -104,3 +104,16 @@ export async function googleSignIn(supabase: SupabaseClient): Promise<boolean> {
   if (!freshToken) return false;
   return exchangeIdToken(supabase, freshToken);
 }
+
+// Credential Manager (Android) and the Google SDK (iOS) remember the last
+// account; clearing it lets the next sign-in offer the account picker.
+export async function forgetGoogleAccount(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await prepareGoogleSignIn();
+    await SocialLogin.logout({ provider: "google" });
+  } catch {
+    // A remembered native account only costs one extra tap at the next
+    // sign-in; it must never keep the user signed in to Dividimos.
+  }
+}
