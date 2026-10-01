@@ -1,0 +1,264 @@
+.day {
+  --sky-top: oklch(0.9 0.055 228);
+  --sky-mid: oklch(0.935 0.04 220);
+  --sky-low: oklch(0.96 0.028 205);
+  --sun-glow: oklch(0.99 0.07 95 / 0.6);
+  --sun-core: oklch(0.985 0.06 98);
+  --sun-edge: oklch(0.9 0.16 88);
+  --sun-shine: oklch(1 0 0 / 0.85);
+  --sun-ray: oklch(0.86 0.15 82 / 0.8);
+  --cloud: oklch(0.995 0.004 230);
+  --cloud-shade: oklch(0.92 0.022 235);
+  --gull: oklch(0.38 0.03 250);
+  --sea-top: oklch(0.58 0.11 230);
+  --sea-mid: oklch(0.69 0.12 210);
+  --sea-low: oklch(0.79 0.11 193);
+  --sea-line: oklch(0.52 0.1 234);
+  --wave-alpha: 0.55;
+  --glint: oklch(0.99 0.04 95 / 0.95);
+  --sparkle: oklch(1 0 0);
+  --sand-wet: oklch(0.87 0.045 80);
+  --sand: var(--canvas);
+  --foam: oklch(1 0 0 / 0.95);
+  --wire: oklch(0.42 0.03 60);
+  --bulb-socket: oklch(0.52 0.02 250);
+  --bulb-glass: oklch(0.985 0.012 95 / 0.85);
+  --bulb-shine: oklch(1 0 0);
+  --bulb-filament: oklch(0.6 0.06 60);
+  --palm: oklch(0.6 0.15 145);
+  --palm-dark: oklch(0.48 0.12 152);
+  --palm-spine: oklch(0.42 0.08 115);
+  --coconut: oklch(0.46 0.08 60);
+  --kite-a: oklch(0.82 0.16 82);
+  --kite-b: oklch(0.65 0.2 22);
+  --kite-c: oklch(0.68 0.12 200);
+  --kite-line: oklch(0.35 0.02 250 / 0.55);
+  --umbrella-a: oklch(0.67 0.18 35);
+  --umbrella-b: oklch(0.985 0.01 90);
+  --umbrella-pole: oklch(0.55 0.04 60);
+  --umbrella-shade: oklch(0.5 0.05 70 / 0.18);
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--sky-x) var(--sky-y), var(--sun-glow), transparent calc(var(--sky-size) * 2.2)),
+    linear-gradient(180deg, var(--sky-top), var(--sky-mid) 45%, var(--sky-low) var(--horizon));
+}
+
+:global(.dark) .day {
+  display: none;
+}
+
+.sun > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.rays {
+  fill: none;
+  stroke: var(--sun-ray);
+  stroke-linecap: round;
+}
+
+.cloud {
+  --cw: min(var(--w), var(--lane-h) * 2.4 * var(--k));
+  --ch: calc(var(--cw) * 5 / 12);
+  position: absolute;
+  left: var(--x);
+  top: calc(var(--lane-o, var(--o)) * (100% - var(--ch)) + var(--lane-sink) * var(--ch));
+  width: var(--cw);
+  height: var(--ch);
+  fill: var(--cloud);
+}
+
+.cloudShade {
+  fill: var(--cloud-shade);
+}
+
+.palm {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: clamp(230px, 21vw, 310px);
+  aspect-ratio: 300 / 240;
+  transform-origin: 0 0;
+}
+
+.palm svg,
+.kite svg,
+.umbrella svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.gull {
+  position: absolute;
+  left: calc(var(--sky-x) + var(--sky-size) * var(--gx));
+  top: max(14px, calc(var(--sky-y) + var(--sky-size) * var(--gy)));
+  width: clamp(22px, 2.2vw, 32px);
+  aspect-ratio: 40 / 16;
+}
+
+.gull svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--gull);
+}
+
+.sparkle {
+  position: absolute;
+  left: var(--x);
+  top: var(--dy);
+  width: 14px;
+  height: 14px;
+  background: var(--sparkle);
+  clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%);
+}
+
+.kite {
+  width: clamp(54px, 5vw, 72px);
+  aspect-ratio: 80 / 160;
+  transform-origin: 50% 24%;
+}
+
+.umbrella {
+  position: absolute;
+  left: var(--umbrella-x);
+  bottom: var(--umbrella-y);
+  width: clamp(150px, 13vw, 190px);
+  aspect-ratio: 170 / 172;
+  rotate: -8deg;
+  transform-origin: 56% 96%;
+}
+
+@media (min-width: 900px) {
+  .hero {
+    --sky-top: oklch(0.85 0.075 230);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sun {
+    animation: sun-rise 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s backwards;
+  }
+
+  .rays {
+    animation: spin 90s linear infinite;
+  }
+
+  .cloud {
+    animation:
+      cloud-in 1.2s ease-out backwards,
+      cloud-drift var(--t) linear var(--d) infinite;
+  }
+
+  .palm {
+    animation: palm-sway 6.5s ease-in-out infinite alternate;
+  }
+
+  .gull {
+    animation: gull-glide var(--t) ease-in-out var(--d) infinite alternate;
+  }
+
+  .gull svg {
+    animation: gull-flap var(--flap) ease-in-out infinite alternate;
+  }
+
+  .sparkle {
+    animation: sparkle 2.8s ease-in-out var(--d) infinite;
+  }
+
+  .kite {
+    animation: kite-bob 4.8s ease-in-out infinite alternate;
+  }
+
+  .umbrella {
+    animation: umbrella-sway 5.5s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes sun-rise {
+  from {
+    opacity: 0;
+    transform: translateY(45%) scale(0.85);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes cloud-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cloud-drift {
+  from {
+    transform: translateX(calc(-100% - var(--x)));
+  }
+  to {
+    transform: translateX(calc(100vw - var(--x)));
+  }
+}
+
+@keyframes palm-sway {
+  from {
+    transform: rotate(-1.5deg);
+  }
+  to {
+    transform: rotate(2.5deg);
+  }
+}
+
+@keyframes gull-glide {
+  to {
+    transform: translate(56px, -8px);
+  }
+}
+
+@keyframes gull-flap {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(0.55);
+  }
+}
+
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes kite-bob {
+  from {
+    transform: translate(0, 0) rotate(-6deg);
+  }
+  to {
+    transform: translate(8px, -10px) rotate(7deg);
+  }
+}
+
+@keyframes umbrella-sway {
+  from {
+    transform: rotate(-1deg);
+  }
+  to {
+    transform: rotate(1.5deg);
+  }
+}

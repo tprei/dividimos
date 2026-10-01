@@ -34,6 +34,12 @@
   --sea-low-at: 130px;
   --sea-end: calc(var(--horizon) + 200px);
   --floor: var(--canvas);
+  --lane-top: calc(var(--horizon) - 60px);
+  --lane-h: 60px;
+  --lane-o: 1;
+  --lane-sink: 0.4;
+  --umbrella-x: max(16px, calc(50% - 640px));
+  --umbrella-y: 34px;
 }
 
 .defs {
@@ -78,6 +84,15 @@
   left: var(--spot-x);
   top: var(--spot-y);
   translate: -50% -50%;
+}
+
+.lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--lane-top);
+  height: var(--lane-h);
+  overflow: clip;
 }
 
 .sea {
@@ -244,6 +259,10 @@
     --sea-band: calc(100% - var(--horizon) - var(--shore));
     --sea-low-at: 300px;
     --sea-end: 100%;
+    --lane-top: 84px;
+    --lane-h: 170px;
+    --lane-o: initial;
+    --lane-sink: 0;
   }
 
   .hero .foam {
