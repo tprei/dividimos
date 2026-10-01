@@ -63,10 +63,11 @@ describe("RoomJoin", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("O nome precisa ter de 1 a 80 caracteres.");
+    expect(screen.getByRole("alert")).toBeVisible();
+    expect(onJoin).not.toHaveBeenCalled();
 
     await user.type(screen.getByLabelText("Seu nome"), "  Bia  ");
-    await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
+    await user.keyboard("{Enter}");
     expect(onJoin).toHaveBeenCalledWith("Bia");
   });
 
@@ -75,7 +76,7 @@ describe("RoomJoin", () => {
     const onJoin = vi.fn();
     const { rerender } = render(
       <RoomJoin
-        identity={{ status: "account", name: "Bia" }}
+        identity={{ status: "account", name: "Berg, Silva" }}
         onRetryIdentity={vi.fn()}
         pending={false}
         onJoin={onJoin}
@@ -98,6 +99,24 @@ describe("RoomJoin", () => {
     expect(screen.queryByLabelText("Seu nome")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Entrar na sala" }));
     expect(onJoin).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["guest", "account"] as const)("blocks duplicate joins while %s submission is pending", async (status) => {
+    const user = userEvent.setup();
+    const onJoin = vi.fn();
+    render(
+      <RoomJoin
+        identity={{ status, name: "Bia" }}
+        onRetryIdentity={vi.fn()}
+        pending
+        onJoin={onJoin}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Entrar na sala" });
+    expect(button).toBeDisabled();
+    if (status === "guest") expect(screen.getByLabelText("Seu nome")).toBeDisabled();
+    await user.click(button);
+    expect(onJoin).not.toHaveBeenCalled();
   });
 
   it("shows the identity check and a retry on failure without a join action", async () => {
