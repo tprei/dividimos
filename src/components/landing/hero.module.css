@@ -1,7 +1,12 @@
 .hero {
   position: relative;
+  isolation: isolate;
   overflow: clip;
   padding-top: clamp(32px, 6vw, 56px);
+}
+
+.scenery {
+  z-index: -1;
 }
 
 .grid {
