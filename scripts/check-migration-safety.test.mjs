@@ -35,6 +35,7 @@ function initRepo() {
   run(["init", "--quiet", "--initial-branch=main"]);
   run(["config", "user.email", "test@test.dividimos.local"]);
   run(["config", "user.name", "Test"]);
+  run(["config", "maintenance.auto", "false"]);
   return {
     dir,
     commit(files, message) {
