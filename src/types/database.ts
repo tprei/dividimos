@@ -641,6 +641,39 @@ export type Database = {
           },
         ]
       }
+      group_member_departures: {
+        Row: {
+          departed_at: string
+          group_id: string
+          user_id: string
+        }
+        Insert: {
+          departed_at?: string
+          group_id: string
+          user_id: string
+        }
+        Update: {
+          departed_at?: string
+          group_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_member_departures_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_member_departures_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_member_exclusions: {
         Row: {
           excluded_at: string
@@ -1737,6 +1770,13 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      is_former_member: {
+        Args: {
+          p_group_id: string
+          p_user_id: string
+        }
+        Returns: boolean
       }
       is_member: {
         Args: {
