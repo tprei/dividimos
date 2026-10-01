@@ -35,10 +35,13 @@ test.describe("Group profile behind the header", () => {
     await loginAs(alice);
     await page.goto(`/app/groups/${group.id}`);
 
+    const saldosTab = page.getByRole("radio", { name: "Saldos" });
+    await expect(saldosTab).toBeVisible();
+
     await page.getByRole("button", { name: "Ver perfil do grupo" }).first().click();
 
     await expect(page).toHaveURL(new RegExp(`/app/groups/${group.id}\\?view=info$`));
-    await expect(page.getByRole("radio", { name: "Saldos" })).toHaveCount(0);
+    await expect(saldosTab).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Grupo Perfil", level: 1 })).toBeVisible();
     await expect(page.getByTestId("group-spending")).toContainText("120,00");
     await expect(page.getByRole("button", { name: "Convidar" })).toBeVisible();

@@ -15,9 +15,9 @@ test.describe("Search", () => {
     });
 
     // Load the group (and its expenses) into the local store first.
-    await loginAs(alice);
+    await loginAs(alice, { navigate: false });
     await page.goto(`/app/groups/${group.id}`);
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("heading", { name: "Viagem Pipa" })).toBeVisible();
 
     const searchInput = page.getByPlaceholder("Buscar grupos, contas, pessoas...");
 
@@ -41,5 +41,6 @@ test.describe("Search", () => {
     await expect(personResult).toBeVisible({ timeout: 10000 });
     await personResult.click();
     await expect(page).toHaveURL(new RegExp(`/app/conversations/${bob.id}$`));
+    await expect(page.getByRole("heading", { name: "Bob Findable" })).toBeVisible();
   });
 });

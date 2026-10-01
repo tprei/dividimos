@@ -400,16 +400,6 @@ test.describe("Assignment room multi-client acceptance", () => {
 
       // Caio lines up the last unit while Bia takes it first. Only one claim
       // may land, and Caio must be told rather than silently overwriting it.
-      const finalDialogB = guestBPage.getByRole("dialog", { name: "Última cerveja" });
-      await rowButton(guestBPage, "Ainda sem dono", "Última cerveja").click();
-      await finalDialogB.getByRole("button", { name: "Inteira", exact: true }).click();
-
-      await claimQuantity(guestAPage, "Ainda sem dono", "Última cerveja", "1");
-
-      await expect(finalDialogB.getByRole("alert")).toBeVisible({ timeout: ROOM_TIMEOUT });
-      await expect(
-        finalDialogB.getByRole("button", { name: "Escolha uma quantidade" }),
-      ).toBeDisabled();
       const lastBeerId = (
         await adminClient
           .from("assignment_room_items")
@@ -418,12 +408,33 @@ test.describe("Assignment room multi-client acceptance", () => {
           .eq("description", "Última cerveja")
           .single()
       ).data?.id as string;
-      const lastBeerClaims = await adminClient
-        .from("assignment_room_claims")
-        .select("participant_id")
-        .eq("room_id", roomId as string)
-        .eq("item_id", lastBeerId);
-      expect(lastBeerClaims.data ?? []).toHaveLength(1);
+
+      const finalDialogB = guestBPage.getByRole("dialog", { name: "Última cerveja" });
+      await rowButton(guestBPage, "Ainda sem dono", "Última cerveja").click();
+      await finalDialogB.getByRole("button", { name: "Inteira", exact: true }).click();
+
+      await rowButton(guestAPage, "Ainda sem dono", "Última cerveja").click();
+      const finalDialogA = guestAPage.getByRole("dialog", { name: "Última cerveja" });
+      await finalDialogA.getByRole("button", { name: "Inteira", exact: true }).click();
+      await finalDialogA.getByRole("button", { name: /^Peguei / }).click();
+      await expect
+        .poll(
+          async () => {
+            const { data } = await adminClient
+              .from("assignment_room_claims")
+              .select("participant_id")
+              .eq("room_id", roomId as string)
+              .eq("item_id", lastBeerId);
+            return data?.length ?? 0;
+          },
+          { timeout: ROOM_TIMEOUT },
+        )
+        .toBe(1);
+
+      await expect(finalDialogB.getByRole("alert")).toBeVisible({ timeout: ROOM_TIMEOUT });
+      await expect(
+        finalDialogB.getByRole("button", { name: "Escolha uma quantidade" }),
+      ).toBeDisabled();
       await guestBPage.keyboard.press("Escape");
       await expect(finalDialogB).toBeHidden({ timeout: ROOM_TIMEOUT });
 
@@ -437,9 +448,6 @@ test.describe("Assignment room multi-client acceptance", () => {
       const removedState = guestAPage.getByRole("heading", {
         name: "Convite inválido ou acesso expirado",
       });
-      if (!(await removedState.isVisible({ timeout: ROOM_TIMEOUT }))) {
-        await claimQuantity(guestAPage, "Minha parte", "Cervejas", "1");
-      }
       await expect(removedState).toBeVisible({ timeout: ROOM_TIMEOUT });
       await expect(page.getByRole("button", { name: /^Encerrar sala/ })).toBeDisabled();
 
