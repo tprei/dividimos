@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Clipboard, Mail, Shield } from "lucide-react";
+import { ArrowRight, Clipboard, IdCard, KeyRound, LogOut, Mail, Shield, Smartphone, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
@@ -15,6 +15,7 @@ import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
 import { haptics } from "@/hooks/use-haptics";
+import { springs } from "@/lib/animations";
 import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { nameToHandle } from "@/lib/handle";
 
@@ -58,11 +59,11 @@ function toPixKeyValue(type: PixKeyType, displayValue: string): string {
   return displayValue;
 }
 
-const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
-  { type: "email", label: "E-mail" },
-  { type: "phone", label: "Telefone" },
-  { type: "cpf", label: "CPF" },
-  { type: "random", label: "Chave aleatória" },
+const PIX_KEY_OPTIONS: { type: PixKeyType; label: string; short?: string; icon: LucideIcon }[] = [
+  { type: "email", label: "E-mail", icon: Mail },
+  { type: "phone", label: "Telefone", icon: Smartphone },
+  { type: "cpf", label: "CPF", icon: IdCard },
+  { type: "random", label: "Chave aleatória", short: "Aleatória", icon: KeyRound },
 ];
 
 function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
@@ -367,21 +368,32 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
                   </div>
                 )}
 
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {PIX_KEY_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.type}
-                      onClick={() => selectPixKeyType(opt.type)}
-                      aria-pressed={pixKeyType === opt.type}
-                      className={`min-h-11 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                        pixKeyType === opt.type
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                <div className="mt-6 grid grid-cols-4 gap-1 rounded-2xl border border-border/70 bg-card/60 p-1 backdrop-blur-sm">
+                  {PIX_KEY_OPTIONS.map((opt) => {
+                    const selected = pixKeyType === opt.type;
+                    return (
+                      <button
+                        key={opt.type}
+                        type="button"
+                        onClick={() => selectPixKeyType(opt.type)}
+                        aria-pressed={selected}
+                        aria-label={opt.short ? opt.label : undefined}
+                        className={`relative flex min-h-13 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                          selected ? "text-primary-text" : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {selected && (
+                          <motion.span
+                            layoutId="pix-key-type-indicator"
+                            transition={springs.snappy}
+                            className="absolute inset-0 rounded-xl bg-card shadow-sm ring-1 ring-primary/30"
+                          />
+                        )}
+                        <opt.icon aria-hidden="true" className="relative size-4" strokeWidth={selected ? 2.25 : 1.75} />
+                        <span className="relative">{opt.short ?? opt.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="mt-4">
@@ -479,18 +491,21 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
           ))}
         </div>
 
-        <div className="mt-6 flex flex-col items-center gap-1 text-center">
+        <div className="mt-6 flex flex-col gap-3 rounded-2xl border bg-card p-4 text-center shadow-sm">
           {userEmail && (
             <p className="text-sm text-muted-foreground">
-              Entrou como <span className="font-medium text-foreground">{userEmail}</span>
+              Entrou como
+              <span className="block truncate font-medium text-foreground">{userEmail}</span>
             </p>
           )}
           <Button
-            variant="link"
+            variant="outline"
+            size="lg"
             onClick={handleSwitchAccount}
             disabled={signOutPending || isPending}
-            className="min-h-11"
+            className="w-full gap-2"
           >
+            <LogOut className="h-4 w-4" />
             {signOutPending ? "Saindo..." : "Usar outra conta do Google"}
           </Button>
           {signOutError && (
