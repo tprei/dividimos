@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { NeonSign } from "./neon-sign";
+import type { SceneryVariant } from "./scenery";
 import { Glint, SeaMotion, VARAL_BOXES, VaralBulbs, VaralLine } from "./scenery-parts";
 import parts from "./scenery.module.css";
 import styles from "./night-bar.module.css";
@@ -13,6 +14,13 @@ interface Star {
   size: number;
   big: boolean;
   bands: ReadonlyArray<Band>;
+}
+
+interface MoonStar {
+  gx: number;
+  gy: number;
+  size: number;
+  big: boolean;
 }
 
 interface Firefly {
@@ -42,12 +50,26 @@ const HERO_STARS: ReadonlyArray<Star> = [
   { x: "93%", y: 0.62, size: 2, big: false, bands: ["tablet", "desk"] },
 ];
 
+const MOON_STARS: ReadonlyArray<MoonStar> = [
+  { gx: -0.9, gy: -0.35, size: 2, big: false },
+  { gx: -0.85, gy: -0.42, size: 9, big: true },
+  { gx: -0.55, gy: 0.62, size: 1.5, big: false },
+  { gx: 0.45, gy: 0.5, size: 1.5, big: false },
+  { gx: -0.25, gy: -0.48, size: 1.5, big: false },
+];
+
 const HERO_FIREFLIES: ReadonlyArray<Firefly> = [
   { x: "6%", dy: 40, wide: false },
   { x: "17%", dy: 150, wide: true },
   { x: "28%", dy: 80, wide: false },
   { x: "37%", dy: 205, wide: true },
   { x: "9%", dy: 230, wide: true },
+];
+
+const SHORE_FIREFLIES: ReadonlyArray<Firefly> = [
+  { x: "5%", dy: 40, wide: false },
+  { x: "62%", dy: 80, wide: false },
+  { x: "78%", dy: 150, wide: true },
 ];
 
 function twinkleTiming(index: number) {
@@ -87,39 +109,49 @@ function Moon() {
   );
 }
 
-function Stars() {
+function Stars({ hero }: { hero: boolean }) {
   return (
     <div className={styles.stars}>
-      {HERO_STARS.map((star, index) => (
-        <i
-          key={star.x}
-          className={cn(styles.star, star.big && styles.big, ...star.bands.map((band) => styles[band]))}
-          style={{ "--x": star.x, "--y": star.y, "--s": `${star.size}px`, ...twinkleTiming(index) } as CSSProperties}
-        />
-      ))}
+      {hero
+        ? HERO_STARS.map((star, index) => (
+            <i
+              key={star.x}
+              className={cn(styles.star, star.big && styles.big, ...star.bands.map((band) => styles[band]))}
+              style={{ "--x": star.x, "--y": star.y, "--s": `${star.size}px`, ...twinkleTiming(index) } as CSSProperties}
+            />
+          ))
+        : MOON_STARS.map((star, index) => (
+            <i
+              key={`${star.gx}:${star.gy}`}
+              className={cn(styles.star, styles.nearMoon, star.big && styles.big)}
+              style={{ "--gx": star.gx, "--gy": star.gy, "--s": `${star.size}px`, ...twinkleTiming(index) } as CSSProperties}
+            />
+          ))}
     </div>
   );
 }
 
-export function NightBar() {
-  const boxes = VARAL_BOXES.hero;
+export function NightBar({ variant }: { variant: SceneryVariant }) {
+  const hero = variant === "hero";
+  const boxes = VARAL_BOXES[variant];
+  const fireflies = hero ? HERO_FIREFLIES : SHORE_FIREFLIES;
   return (
     <div className={styles.night}>
       <div className={parts.ground} />
-      <div className={styles.pool} />
+      {hero && <div className={styles.pool} />}
       <Moon />
       {boxes.map((box) => (
         <VaralLine key={box} lit className={box} />
       ))}
-      <NeonSign className={parts.desk} />
+      {variant !== "auth" && <NeonSign className={hero ? parts.desk : parts.gutter} />}
       {boxes.map((box) => (
         <VaralBulbs key={box} lit className={box} />
       ))}
-      <Stars />
+      <Stars hero={hero} />
       <SeaMotion>
         <Glint />
       </SeaMotion>
-      {HERO_FIREFLIES.map((fly, index) => (
+      {fireflies.map((fly, index) => (
         <i
           key={fly.x}
           className={cn(styles.firefly, fly.wide && parts.wide)}

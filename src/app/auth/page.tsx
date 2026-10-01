@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { IntroCarousel } from "@/components/auth-intro/intro-carousel";
+import { Scenery } from "@/components/scenery/scenery";
 import { INTRO_SEEN_COOKIE, shouldPlayIntro } from "@/lib/auth-intro";
 
 type AuthSearchParams = Promise<{ next?: string | string[]; error?: string | string[] }>;
@@ -21,6 +22,7 @@ export default async function AuthPage({ searchParams }: { searchParams: AuthSea
 
   return (
     <Suspense>
+      <Scenery variant="auth" className="-z-10" />
       <div className="intro-vp flex min-h-0 flex-1 flex-col">
         <IntroCarousel playStory={playStory} />
       </div>

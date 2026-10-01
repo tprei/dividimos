@@ -64,6 +64,13 @@
   box-shadow: 0 0 calc(var(--s) * 2.5) var(--star-glow);
 }
 
+.nearMoon {
+  display: block;
+  left: calc(var(--sky-x) + var(--sky-size) * var(--gx));
+  top: calc(var(--sky-y) + var(--sky-size) * var(--gy));
+  translate: -50% -50%;
+}
+
 .big {
   border-radius: 0;
   box-shadow: none;

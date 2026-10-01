@@ -48,6 +48,19 @@
   display: none;
 }
 
+.onboarding {
+  --sea-top: oklch(0.8 0.075 222);
+  --sea-mid: oklch(0.87 0.065 205);
+  --sea-low: oklch(0.92 0.045 195);
+  --sea-line: oklch(0.7 0.085 226);
+  --wave-alpha: 0.75;
+  --sand-wet: oklch(0.94 0.025 80);
+}
+
+.onboarding .kite {
+  scale: -1 1;
+}
+
 .sun > svg {
   position: absolute;
   inset: 0;
