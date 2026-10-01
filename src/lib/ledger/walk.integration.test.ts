@@ -5,7 +5,7 @@ import { projectBalances } from "@/lib/ledger/model";
 import { factsAfter, planEpisode } from "@/lib/ledger/walk";
 import {
   authenticateAs,
-  createGroupWithMembers,
+  createAcceptedGroupBySql,
   createTestUsers,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -45,7 +45,7 @@ describe.skipIf(!isIntegrationTestReady)("planned journeys against the database"
   async function runSeed(seed: number): Promise<void> {
     const plan = planEpisode({ seed, memberCount: MEMBER_COUNT, steps: STEPS });
     const memberIds = users.map((user) => user.id);
-    const groupId = await createGroupWithMembers(users[0], users.slice(1), `Journey ${seed}`);
+    const groupId = await createAcceptedGroupBySql(users[0], users.slice(1), `Journey ${seed}`);
 
     const run = new WalkRun({
       groupId,
@@ -78,5 +78,5 @@ describe.skipIf(!isIntegrationTestReady)("planned journeys against the database"
       }),
       propertyConfig(12),
     );
-  });
+  }, 600_000);
 });

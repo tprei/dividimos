@@ -229,6 +229,37 @@ export async function createGroupWithMembers(
   return groupId;
 }
 
+/**
+ * Creates a group with everyone already accepted, bypassing the RPC path.
+ * Property soaks create far more groups per actor than the abuse limits a
+ * human is allowed, and the ledger suites assert expense and settlement math,
+ * not group creation.
+ */
+export async function createAcceptedGroupBySql(
+  creator: TestUser,
+  members: TestUser[],
+  name = "Grupo teste",
+): Promise<string> {
+  const userIds = [creator.id, ...members.map((member) => member.id)];
+  const result = await withPg((client) =>
+    client.query<{ id: string }>(
+      `with new_group as (
+         insert into public.groups (kind, name, creator_id)
+         values ('group', $1, $2)
+         returning id
+       ), inserted as (
+         insert into public.group_members (group_id, user_id, status, accepted_at)
+         select id, u, 'accepted', now()
+         from new_group cross join unnest($3::uuid[]) as u
+         returning group_id
+       )
+       select group_id as id from inserted limit 1`,
+      [name, creator.id, userIds],
+    ),
+  );
+  return result.rows[0].id;
+}
+
 export interface CreateExpenseInput {
   groupId: string;
   title?: string;
