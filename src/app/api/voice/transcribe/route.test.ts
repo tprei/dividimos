@@ -21,12 +21,19 @@ vi.mock("@/lib/voice-transcription", () => ({
 }));
 
 const mockEnforceRateLimit = vi.fn();
+const mockEnforceAiBudget = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+  enforceAiBudget: (...args: unknown[]) => mockEnforceAiBudget(...args),
 }));
 
 const { POST, runtime, maxDuration } = await import("./route");
 const { AppError } = await import("@/lib/errors");
+
+const DAILY_BUDGET_MESSAGE =
+  "Você usou o limite diário de leituras com IA. Tente de novo amanhã.";
+const ACCOUNT_DELETED_MESSAGE =
+  "Sua conta foi excluída e não pode mais usar o Dividimos.";
 
 function audioRequest(options?: {
   type?: string;
@@ -83,6 +90,8 @@ describe("POST /api/voice/transcribe", () => {
     // implementation from a prior test — reset the default to success here.
     mockEnforceRateLimit.mockReset();
     mockEnforceRateLimit.mockResolvedValue(undefined);
+    mockEnforceAiBudget.mockReset();
+    mockEnforceAiBudget.mockResolvedValue(undefined);
     mockTranscribeVoiceAudio.mockReset();
     mockTranscribeVoiceAudio.mockResolvedValue("Uber com João 25 reais");
   });
@@ -192,6 +201,57 @@ describe("POST /api/voice/transcribe", () => {
     const res = await POST(audioRequest());
 
     expect(res.status).toBe(503);
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  // --- Daily AI budget ---
+
+  it("spends the daily AI budget with the authenticated user id alongside the per-minute limit", async () => {
+    await POST(audioRequest());
+
+    expect(mockEnforceAiBudget).toHaveBeenCalledExactlyOnceWith("user-123");
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith(
+      "voice.transcribe",
+      "user-123",
+    );
+  });
+
+  it("returns 429 with the daily-budget copy when the daily AI budget is exhausted", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", DAILY_BUDGET_MESSAGE, { statusCode: 429 }),
+    );
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body).toEqual({ error: DAILY_BUDGET_MESSAGE });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when the daily AI budget cannot be verified", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Não foi possível verificar o limite de requisições."),
+    );
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
+    expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 and invokes the transcriber zero times when the account is deleted", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("ACCOUNT_DELETED", ACCOUNT_DELETED_MESSAGE),
+    );
+
+    const res = await POST(audioRequest());
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body).toEqual({ error: ACCOUNT_DELETED_MESSAGE });
     expect(mockTranscribeVoiceAudio).not.toHaveBeenCalled();
   });
 

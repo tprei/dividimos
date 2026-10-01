@@ -21,12 +21,19 @@ vi.mock("@/lib/voice-expense-parser", () => ({
 }));
 
 const mockEnforceRateLimit = vi.fn();
+const mockEnforceAiBudget = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+  enforceAiBudget: (...args: unknown[]) => mockEnforceAiBudget(...args),
 }));
 
 const { POST } = await import("./route");
 const { AppError } = await import("@/lib/errors");
+
+const DAILY_BUDGET_MESSAGE =
+  "Você usou o limite diário de leituras com IA. Tente de novo amanhã.";
+const ACCOUNT_DELETED_MESSAGE =
+  "Sua conta foi excluída e não pode mais usar o Dividimos.";
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/voice/parse", {
@@ -54,6 +61,8 @@ describe("POST /api/voice/parse", () => {
     // implementation from a prior test — reset the default to success here.
     mockEnforceRateLimit.mockReset();
     mockEnforceRateLimit.mockResolvedValue(undefined);
+    mockEnforceAiBudget.mockReset();
+    mockEnforceAiBudget.mockResolvedValue(undefined);
   });
 
   // --- Auth ---
@@ -81,6 +90,7 @@ describe("POST /api/voice/parse", () => {
     const body = await res.json();
     expect(body.error).toBe("Reconhecimento de voz nao configurado");
     expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("returns 503 when GEMINI_API_KEY is whitespace only", async () => {
@@ -90,6 +100,7 @@ describe("POST /api/voice/parse", () => {
 
     expect(res.status).toBe(503);
     expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("trims a padded GEMINI_API_KEY before passing it to the parser", async () => {
@@ -109,7 +120,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Corpo da requisicao invalido");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   // --- Text validation ---
@@ -120,7 +131,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Campo 'text' obrigatorio");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("returns 400 when text is empty string", async () => {
@@ -153,7 +164,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(413);
     const body = await res.json();
     expect(body.error).toContain("2000");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("accepts text at exactly 2000 characters", async () => {
@@ -174,7 +185,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Campo 'members' deve ser um array");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("returns 400 when members exceeds 100 items", async () => {
@@ -188,7 +199,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("limite");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("accepts members at exactly 100 items", async () => {
@@ -214,7 +225,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Cada membro deve ter 'handle' e 'name'");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("returns 400 when member name is not a string", async () => {
@@ -238,7 +249,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Cada membro deve ter 'handle' e 'name'");
-    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   it("returns 400 when a members entry is a primitive", async () => {
@@ -491,5 +502,71 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
+  });
+
+  // --- Daily AI budget ---
+
+  it("spends the daily AI budget with the authenticated user id alongside the per-minute limit", async () => {
+    mockParseVoiceExpense.mockResolvedValue({ title: "Test" });
+
+    await POST(jsonRequest({ text: "pizza" }));
+
+    expect(mockEnforceAiBudget).toHaveBeenCalledExactlyOnceWith("user-123");
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("voice.parse", "user-123");
+  });
+
+  it("spends both limiters before reading the request body", async () => {
+    const order: string[] = [];
+    mockEnforceRateLimit.mockImplementation(async () => {
+      order.push("per-minute");
+    });
+    mockEnforceAiBudget.mockImplementation(async () => {
+      order.push("daily");
+    });
+
+    // The body never parses: a 400 here proves the limits ran first.
+    const res = await POST(textRequest("not json"));
+
+    expect(res.status).toBe(400);
+    expect(order).toEqual(["per-minute", "daily"]);
+  });
+
+  it("returns 429 with the daily-budget copy when the daily AI budget is exhausted", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", DAILY_BUDGET_MESSAGE, { statusCode: 429 }),
+    );
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body).toEqual({ error: DAILY_BUDGET_MESSAGE });
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when the daily AI budget cannot be verified", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Não foi possível verificar o limite de requisições."),
+    );
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 and invokes the parser zero times when the account is deleted", async () => {
+    mockEnforceAiBudget.mockRejectedValue(
+      new AppError("ACCOUNT_DELETED", ACCOUNT_DELETED_MESSAGE),
+    );
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body).toEqual({ error: ACCOUNT_DELETED_MESSAGE });
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 });

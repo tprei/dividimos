@@ -146,3 +146,73 @@ export async function enforceRateLimit(
     "Não foi possível verificar o limite de requisições.",
   );
 }
+
+const AI_DAILY_BUDGET_MESSAGE =
+  "Você usou o limite diário de leituras com IA. Tente de novo amanhã.";
+
+const ACCOUNT_DELETED_MESSAGE =
+  "Sua conta foi excluída e não pode mais usar o Dividimos.";
+
+/**
+ * Spend one daily paid-AI token for the authenticated user before the route
+ * touches the request body or the provider.
+ *
+ * Same contract as `enforceRateLimit`: resolves on success, throws
+ * `AppError("RATE_LIMIT_EXCEEDED")` when the daily budget is spent,
+ * `AppError("RATE_LIMIT_UNAVAILABLE")` when no trustworthy decision is
+ * possible, and `AppError("ACCOUNT_DELETED")` when the RPC reports the
+ * account missing or soft-deleted (a still-valid pre-deletion access token
+ * must stop reaching paid routes immediately).
+ */
+export async function enforceAiBudget(userId: string): Promise<void> {
+  if (
+    typeof userId !== "string" ||
+    userId.trim().length === 0 ||
+    byteLength(userId) > MAX_SUBJECT_BYTES
+  ) {
+    throw new AppError(
+      "RATE_LIMIT_UNAVAILABLE",
+      "Não foi possível verificar o limite de requisições.",
+    );
+  }
+
+  if (isBypassActive()) return;
+
+  let data: unknown;
+  try {
+    const admin = createAdminClient();
+    const result = await admin.rpc("consume_ai_request", { p_user_id: userId });
+
+    if (result.error) {
+      if (result.error.message === "account_deleted") {
+        throw new AppError("ACCOUNT_DELETED", ACCOUNT_DELETED_MESSAGE);
+      }
+      console.error("[rate-limit] consume_ai_request RPC error:", result.error.message);
+      throw new AppError(
+        "RATE_LIMIT_UNAVAILABLE",
+        "Não foi possível verificar o limite de requisições.",
+      );
+    }
+
+    data = result.data;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    console.error("[rate-limit] consume_ai_request call failed:", error);
+    throw new AppError(
+      "RATE_LIMIT_UNAVAILABLE",
+      "Não foi possível verificar o limite de requisições.",
+    );
+  }
+
+  if (data === true) return;
+
+  if (data === false) {
+    throw new AppError("RATE_LIMIT_EXCEEDED", AI_DAILY_BUDGET_MESSAGE);
+  }
+
+  console.error("[rate-limit] consume_ai_request returned a non-boolean result");
+  throw new AppError(
+    "RATE_LIMIT_UNAVAILABLE",
+    "Não foi possível verificar o limite de requisições.",
+  );
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { enforceRateLimit } from "@/lib/rate-limit";
+import { enforceRateLimit, enforceAiBudget } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
 import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import {
@@ -27,6 +27,27 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json(
       { error: "Chat parser nao configurado" },
+      { status: 503 },
+    );
+  }
+
+  // Paid AI call: the per-minute token and the daily budget are spent before
+  // any body byte is read.
+  try {
+    await enforceRateLimit("chat.parse", userId);
+    await enforceAiBudget(userId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "ACCOUNT_DELETED") {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[chat/parse] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
       { status: 503 },
     );
   }
@@ -92,24 +113,6 @@ export async function POST(request: Request) {
         );
       }
     }
-  }
-
-  try {
-    await enforceRateLimit("chat.parse", userId);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
-      return NextResponse.json(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        { status: 429 },
-      );
-    }
-    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
-      console.error("[chat/parse] unexpected rate-limit failure:", error);
-    }
-    return NextResponse.json(
-      { error: "Serviço temporariamente indisponível" },
-      { status: 503 },
-    );
   }
 
   try {

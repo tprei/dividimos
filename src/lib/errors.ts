@@ -15,6 +15,7 @@ export type ErrorCode =
   | "AUTH_USER_NOT_FOUND"
   // User operations
   | "USER_NOT_FOUND"
+  | "ACCOUNT_DELETED"
   | "USER_ALREADY_EXISTS"
   | "USER_INVALID_HANDLE"
   | "USER_PIX_KEY_REQUIRED"
@@ -110,6 +111,8 @@ export class AppError extends Error {
       case "PIX_KEY_INVALID":
       case "BILL_INVALID_STATE":
         return 400;
+      case "ACCOUNT_DELETED":
+        return 403;
       case "RATE_LIMIT_EXCEEDED":
         return 429;
       case "RATE_LIMIT_UNAVAILABLE":

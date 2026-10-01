@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import { createClient } from "@/lib/supabase/server";
-import { enforceRateLimit } from "@/lib/rate-limit";
+import { enforceRateLimit, enforceAiBudget } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
 import { transcribeVoiceAudio } from "@/lib/voice-transcription";
 
@@ -42,14 +42,17 @@ export async function POST(request: Request) {
     );
   }
 
+  // Paid AI call: the per-minute token and the daily budget are spent before
+  // any body byte is read.
   try {
     await enforceRateLimit("voice.transcribe", userId);
+    await enforceAiBudget(userId);
   } catch (error) {
+    if (error instanceof AppError && error.code === "ACCOUNT_DELETED") {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
-      return NextResponse.json(
-        { error: "Muitas requisições. Tente novamente em alguns segundos." },
-        { status: 429 },
-      );
+      return NextResponse.json({ error: error.message }, { status: 429 });
     }
     if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
       console.error("[voice/transcribe] unexpected rate-limit failure:", error);

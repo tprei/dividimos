@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
+import { createTestUser } from "@/test/integration-helpers";
 
 // server-only unconditionally throws outside a Next.js server bundle. This
 // mocks the guard package itself (not business logic), matching the same
@@ -62,8 +63,8 @@ function voiceRequest(text = "pizza") {
   });
 }
 
-function freshUserId(): string {
-  return crypto.randomUUID();
+async function freshUserId(): Promise<string> {
+  return (await createTestUser()).id;
 }
 
 describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-limit RPC enforcement", () => {
@@ -80,7 +81,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("30 valid chat POSTs for user A succeed and invoke the chat parser 30 times; request 31 returns 429 with parser count pinned at 30", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 
@@ -95,6 +96,14 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
     const body31 = await res31.json();
     expect(body31).toEqual({ error: "Muitas requisições. Tente novamente em alguns segundos." });
     expect(mockParseChatExpense).toHaveBeenCalledTimes(30);
+
+    const { data: daily } = await adminClient!
+      .from("rate_limit_counters")
+      .select("count")
+      .eq("bucket", "ai.daily")
+      .eq("subject", currentUserId)
+      .single();
+    expect(daily?.count).toBe(30);
   }, 30_000);
 
   it("a valid voice POST for the same exhausted chat user still succeeds, proving route-bucket isolation", async () => {
@@ -108,7 +117,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("a valid chat POST for a different user B succeeds, proving subject isolation", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 
@@ -118,7 +127,7 @@ describe.skipIf(!isIntegrationTestReady)("chat/voice parse routes — real rate-
   });
 
   it("31 concurrent valid chat POSTs on a fresh user/bucket produce exactly 30 successes, one 429, and 30 parser invocations", async () => {
-    currentUserId = freshUserId();
+    currentUserId = await freshUserId();
     seededSubjects.push(currentUserId);
     mockParseChatExpense.mockClear();
 
