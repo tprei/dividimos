@@ -79,6 +79,111 @@ jobs:
             fi
           done
 
+  # PR gate: boots an emulator and asserts the keyboard/viewport geometry
+  # through the real Capacitor shell (scripts/native-shell-keyboard-guard.mjs),
+  # the layer pure-browser synthetics never exercise. API 34 because it
+  # catches both native-shell regressions this repo has shipped: the keyboard
+  # subtracted twice (any API level) and the navigation-bar inset applied
+  # twice, which only shows up below API 35 where SystemBars padding and the
+  # framework's own inset handling can both run.
+  keyboard-inset:
+    name: Android keyboard inset
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
+
+      - run: npm ci --ignore-scripts
+
+      # Hosted Linux runners expose /dev/kvm only to root; the x86_64 emulator
+      # refuses to boot without hardware acceleration.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install emulator system image
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64" > /dev/null
+
+      # avdmanager and the emulator disagree on the default AVD directory on
+      # hosted runners, so both read it from ANDROID_AVD_HOME.
+      - name: Create AVD
+        run: |
+          echo "ANDROID_AVD_HOME=$HOME/.android/avd" >> "$GITHUB_ENV"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            -n keyboard-guard -k "system-images;android-34;google_apis;x86_64" -d pixel_5
+          # A hardware keyboard keeps the soft IME closed, which is the thing
+          # under test.
+          sed -i '/^hw.keyboard=/d' "$ANDROID_AVD_HOME/keyboard-guard.avd/config.ini"
+          echo 'hw.keyboard=no' >> "$ANDROID_AVD_HOME/keyboard-guard.avd/config.ini"
+
+      - name: Boot headless emulator
+        run: |
+          nohup "$ANDROID_HOME/emulator/emulator" -avd keyboard-guard \
+            -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot \
+            > /tmp/emulator.log 2>&1 &
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          deadline=$((SECONDS + 420))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '[:space:]')" = "1" ]; then
+              echo "emulator booted"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::emulator did not report sys.boot_completed=1 within 420 s"
+          cat /tmp/emulator.log
+          exit 1
+
+      # The dev server URL is baked into the APK at sync time, so the env vars
+      # ride along here rather than at guard-run time.
+      - name: Sync Capacitor Android with dev server URL
+        run: CAPACITOR_DEV=true LAN_IP=127.0.0.1 npx cap sync android
+
+      - name: Assemble debug APK
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Install debug APK
+        run: '"$ANDROID_HOME/platform-tools/adb" install -r android/app/build/outputs/apk/debug/app-debug.apk'
+
+      - name: Serve the fixture page
+        run: |
+          cd e2e/native-shell
+          nohup python3 -m http.server 3000 > /tmp/fixture-server.log 2>&1 &
+          sleep 1
+          curl --fail --silent http://127.0.0.1:3000/index.html > /dev/null
+
+      - name: Run native-shell keyboard guard
+        run: ADB="$ANDROID_HOME/platform-tools/adb" node scripts/native-shell-keyboard-guard.mjs
+
+      - name: Upload guard artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-shell-guard-artifacts
+          path: native-shell-guard-artifacts/
+
   build:
     name: Signed release bundle
     if: github.event_name == 'push'

@@ -18,6 +18,7 @@
 /playwright-report/
 /test-results/
 /blob-report/
+/native-shell-guard-artifacts/
 
 # next.js
 /.next/

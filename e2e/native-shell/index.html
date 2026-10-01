@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
+    />
+    <title>Native shell keyboard guard</title>
+    <style>
+      /*
+       * Fixture for scripts/native-shell-keyboard-guard.mjs: served over adb
+       * reverse to a debug build (CAPACITOR_DEV=true LAN_IP=127.0.0.1) and
+       * loaded inside the Capacitor WebView. It must render fully offline
+       * from this file, because the emulator has no other route to the host.
+       */
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #09243f;
+        color: #f2f7fb;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      #viewport-box {
+        position: fixed;
+        inset: 0;
+        border: 4px solid #ff8c00;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      #safe-area-probe {
+        visibility: hidden;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        padding: 16px;
+        box-sizing: border-box;
+      }
+      #field {
+        /* 16px keeps the IME from zooming on focus. */
+        font-size: 16px;
+        padding: 12px;
+        margin-top: auto;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #blur {
+        margin-top: 16px;
+        font-size: 16px;
+        padding: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="viewport-box"></div>
+    <main>
+      <h1>Native shell keyboard guard</h1>
+      <p>
+        Any tap focuses the field and opens the keyboard. The orange frame
+        traces the WebView bounds.
+      </p>
+      <div id="safe-area-probe" aria-hidden="true"></div>
+      <input
+        id="field"
+        type="text"
+        autocomplete="off"
+        inputmode="decimal"
+        placeholder="tap anywhere to focus"
+      />
+      <button id="blur" type="button">Blur</button>
+    </main>
+    <script>
+      let kb = 0;
+      const field = document.getElementById("field");
+
+      // The guard greps logcat for this exact format, so every event logs one
+      // single-line measurement.
+      function report(tag) {
+        console.log(
+          "VPTEST " +
+            tag +
+            " inner=" +
+            window.innerHeight +
+            " vv=" +
+            Math.round(visualViewport.height) +
+            " dpr=" +
+            window.devicePixelRatio +
+            " kb=" +
+            kb +
+            " vis=" +
+            document.visibilityState,
+        );
+      }
+
+      window.addEventListener("load", () => report("load"));
+      window.addEventListener("resize", () => report("resize"));
+      window.visualViewport?.addEventListener("resize", () =>
+        report("vvresize"),
+      );
+      document.addEventListener("visibilitychange", () =>
+        report("vischange"),
+      );
+
+      if (window.Capacitor) {
+        const Keyboard = window.Capacitor.Plugins.Keyboard;
+        Keyboard.addListener("keyboardDidShow", (event) => {
+          kb = event.keyboardHeight;
+          report("didShow");
+        });
+        Keyboard.addListener("keyboardDidHide", () => {
+          kb = 0;
+          report("didHide");
+        });
+      }
+
+      // Any tap focuses the field and only the blur button defocuses it, so
+      // the harness can open the IME with a blind tap at screen center.
+      document.addEventListener("click", (event) => {
+        if (event.target instanceof Element && event.target.closest("#blur")) {
+          return;
+        }
+        field.focus();
+      });
+      document.getElementById("blur").addEventListener("click", () =>
+        field.blur(),
+      );
+    </script>
+  </body>
+</html>
