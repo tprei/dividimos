@@ -1,6 +1,7 @@
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Scenery } from "@/components/scenery/scenery";
 import { cn } from "@/lib/utils";
+import { HeroLamp } from "./hero-lamp";
 import { HeroScene } from "./hero-scene";
 import { LandingLink } from "./landing-link";
 import { landingContainer } from "./landing-section";
@@ -10,6 +11,7 @@ export function Hero() {
   return (
     <section id="top" className={styles.hero}>
       <Scenery variant="hero" className={styles.scenery} />
+      <HeroLamp />
       <div className={cn(landingContainer, styles.grid)}>
         <div className={styles.copy}>
           <h1 className={styles.title}>

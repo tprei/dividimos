@@ -1,6 +1,7 @@
 import { Logo } from "@/components/shared/logo";
 import { cn } from "@/lib/utils";
 import { LandingLink } from "./landing-link";
+import { LightSwitch } from "./light-switch";
 import { landingContainer } from "./landing-section";
 
 const NAV = [
@@ -34,7 +35,10 @@ export function LandingHeader() {
             </a>
           ))}
         </nav>
-        <LandingLink href="/app">Abrir app</LandingLink>
+        <div className="flex items-center gap-1.5">
+          <LightSwitch />
+          <LandingLink href="/app">Abrir app</LandingLink>
+        </div>
       </div>
     </header>
   );

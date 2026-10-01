@@ -872,3 +872,80 @@
     transform: translateX(1px);
   }
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-lights]::view-transition-old(root),
+  html[data-lights]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  html[data-lights="on"]::view-transition-new(root) {
+    animation: lights-bloom 1.15s linear both;
+  }
+
+  html[data-lights="off"]::view-transition-old(root) {
+    z-index: 1;
+    animation: lights-collapse 1s linear both;
+  }
+}
+
+@keyframes lights-bloom {
+  0% {
+    clip-path: circle(0 at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  6% {
+    clip-path: circle(22px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  10% {
+    clip-path: circle(0 at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  15% {
+    clip-path: circle(28px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  18% {
+    clip-path: circle(6px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  22% {
+    clip-path: circle(32px at var(--lights-x) var(--lights-y));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.25, 1);
+  }
+  100% {
+    clip-path: circle(var(--lights-r) at var(--lights-x) var(--lights-y));
+  }
+}
+
+@keyframes lights-collapse {
+  0% {
+    clip-path: circle(var(--lights-r) at var(--lights-x) var(--lights-y));
+    animation-timing-function: cubic-bezier(0.7, 0, 0.85, 0.4);
+  }
+  68% {
+    clip-path: circle(30px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  76% {
+    clip-path: circle(10px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  81% {
+    clip-path: circle(26px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  88% {
+    clip-path: circle(4px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  92% {
+    clip-path: circle(18px at var(--lights-x) var(--lights-y));
+    animation-timing-function: steps(1, end);
+  }
+  100% {
+    clip-path: circle(0 at var(--lights-x) var(--lights-y));
+  }
+}
