@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptPixKey as encrypt, hashEndpoint } from "@/lib/crypto";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 import { validateWebSubscription } from "@/lib/push/validate-endpoint";
 
 type SubscribeBody = Record<string, unknown>;
+
+const FCM_TOKEN_PATTERN = /^[A-Za-z0-9_:\-]+$/;
+const FCM_TOKEN_MAX_LENGTH = 4096;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -30,15 +35,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
+  try {
+    await enforceRateLimit("push.subscribe", userId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[push/subscribe] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
+  }
+
   const channel = body.channel === "fcm" ? "fcm" : "web";
   const admin = createAdminClient();
 
   if (channel === "fcm") {
-    if (typeof body.token !== "string" || body.token.length === 0) {
-      return NextResponse.json(
-        { error: "Token FCM obrigatório" },
-        { status: 400 },
-      );
+    if (
+      typeof body.token !== "string" ||
+      body.token.length === 0 ||
+      body.token.length > FCM_TOKEN_MAX_LENGTH ||
+      !FCM_TOKEN_PATTERN.test(body.token)
+    ) {
+      return NextResponse.json({ error: "Token FCM inválido" }, { status: 400 });
     }
 
     const { error } = await admin.rpc("claim_push_subscription", {

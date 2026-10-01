@@ -40,17 +40,15 @@ export async function notifyUser(
   const { data: rows, error } = await admin
     .from("push_subscriptions")
     .select("id, subscription_encrypted, channel")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(10);
 
   if (error !== null) return { sent: 0, cleaned: 0, failed: 1 };
   if (!rows || rows.length === 0) return { sent: 0, cleaned: 0, failed: 0 };
 
-  // Defense-in-depth: cap concurrent sends even if the DB-level
-  // subscription cap is somehow bypassed.
-  const capped = rows.slice(0, 10);
-
   const settled = await Promise.allSettled(
-    capped.map(async (row): Promise<DeviceOutcome> => {
+    rows.map(async (row): Promise<DeviceOutcome> => {
       const channel = (row.channel ?? "web") as SubscriptionChannel;
 
       let decrypted: string;
@@ -84,7 +82,7 @@ export async function notifyUser(
     }
     if (result.value === "sent") sent++;
     else if (result.value === "failed") failed++;
-    else staleIds.push(capped[index]!.id);
+    else staleIds.push(rows[index]!.id);
   });
 
   let cleaned = 0;

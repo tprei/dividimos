@@ -28,16 +28,20 @@ describe("notifyUser", () => {
   const mockFrom = vi.fn();
   const mockSelect = vi.fn();
   const mockEq = vi.fn();
+  const mockOrder = vi.fn();
+  const mockLimit = vi.fn();
   const mockDelete = vi.fn();
   const mockIn = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Chain: admin.from("push_subscriptions").select(...).eq(...)
+    // Chain: admin.from("push_subscriptions").select(...).eq(...).order(...).limit(...)
     mockIn.mockResolvedValue({ error: null });
     mockDelete.mockReturnValue({ in: mockIn });
-    mockEq.mockResolvedValue({ data: [], error: null });
+    mockLimit.mockResolvedValue({ data: [], error: null });
+    mockOrder.mockReturnValue({ limit: mockLimit });
+    mockEq.mockReturnValue({ order: mockOrder });
     mockSelect.mockReturnValue({ eq: mockEq });
     mockFrom.mockReturnValue({
       select: mockSelect,
@@ -48,7 +52,7 @@ describe("notifyUser", () => {
   });
 
   it("returns zeros when user has no subscriptions", async () => {
-    mockEq.mockResolvedValue({ data: [], error: null });
+    mockLimit.mockResolvedValue({ data: [], error: null });
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
@@ -57,7 +61,7 @@ describe("notifyUser", () => {
 
   it("sends to all valid web subscriptions", async () => {
     const subJson = JSON.stringify({ endpoint: "https://fcm.example.com/abc" });
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" },
         { id: "sub-2", subscription_encrypted: "encrypted-2", channel: "web" },
@@ -76,7 +80,7 @@ describe("notifyUser", () => {
   });
 
   it("sends to FCM subscriptions via sendFcmNotification", async () => {
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "sub-1", subscription_encrypted: "encrypted-fcm-token", channel: "fcm" },
       ],
@@ -97,7 +101,7 @@ describe("notifyUser", () => {
   it("routes web and FCM subscriptions to correct senders", async () => {
     const webSubJson = JSON.stringify({ endpoint: "https://push.example.com/abc" });
 
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "web-1", subscription_encrypted: "encrypted-web", channel: "web" },
         { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
@@ -125,7 +129,7 @@ describe("notifyUser", () => {
   it("reports an unconfigured FCM provider as a failure, not a silent success", async () => {
     vi.mocked(isFcmConfigured).mockReturnValue(false);
 
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
       ],
@@ -142,7 +146,7 @@ describe("notifyUser", () => {
 
   it("cleans up stale subscriptions (410/404)", async () => {
     const subJson = JSON.stringify({ endpoint: "https://fcm.example.com/abc" });
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" },
         { id: "sub-2", subscription_encrypted: "encrypted-2", channel: "web" },
@@ -162,7 +166,7 @@ describe("notifyUser", () => {
     expect(mockIn).toHaveBeenCalledWith("id", ["sub-2"]);
   });
   it("retains web subscriptions after transient failures", async () => {
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [{ id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" }],
       error: null,
     });
@@ -176,7 +180,7 @@ describe("notifyUser", () => {
   });
 
   it("cleans up stale FCM subscriptions", async () => {
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
       ],
@@ -193,7 +197,7 @@ describe("notifyUser", () => {
   });
 
   it("cleans up subscriptions that fail to decrypt", async () => {
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [{ id: "sub-1", subscription_encrypted: "corrupted", channel: "web" }],
       error: null,
     });
@@ -209,7 +213,7 @@ describe("notifyUser", () => {
   });
 
   it("returns zeros on database error", async () => {
-    mockEq.mockResolvedValue({ data: null, error: { message: "db error" } });
+    mockLimit.mockResolvedValue({ data: null, error: { message: "db error" } });
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
@@ -218,7 +222,7 @@ describe("notifyUser", () => {
 
   it("defaults to web channel when channel is null", async () => {
     const subJson = JSON.stringify({ endpoint: "https://push.example.com/abc" });
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "sub-1", subscription_encrypted: "encrypted-1", channel: null },
       ],
@@ -236,7 +240,7 @@ describe("notifyUser", () => {
   });
 
   it("settles every device: valid ones send, stale ones are cleaned, failures are reported", async () => {
-    mockEq.mockResolvedValue({
+    mockLimit.mockResolvedValue({
       data: [
         { id: "ok", subscription_encrypted: "e1", channel: "web" },
         { id: "gone", subscription_encrypted: "e2", channel: "web" },
