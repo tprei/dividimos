@@ -4,7 +4,37 @@
   height: auto;
 }
 
+.glass {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 70 / 100;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.bubbles {
+  position: absolute;
+  left: 0;
+  top: 27%;
+  width: 100%;
+  height: 69%;
+  overflow: hidden;
+}
+
 .bubble {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: oklch(1 0 0 / 0.85);
   opacity: 0.7;
 }
 
@@ -43,7 +73,7 @@
   }
 
   .foam {
-    transform-origin: 35px 27px;
+    transform-origin: 50% 27%;
     animation: foam 3.6s ease-in-out infinite alternate;
   }
 
@@ -67,14 +97,14 @@
   }
 
   100% {
-    transform: translateY(-66px);
+    transform: translateY(-95.6522%);
     opacity: 0;
   }
 }
 
 @keyframes foam {
   to {
-    transform: scaleY(1.07) translateY(-0.4px);
+    transform: scaleY(1.07) translateY(-0.4%);
   }
 }
 

@@ -66,6 +66,9 @@ export function SceneryDefs() {
         <path d="M41 10h18M47 22h7M37 34h24M33 47h32M45 61h12" />
         <path d="M34 77h30M28 95h40M42 115h20M30 136h40M26 160h46M38 185h26" opacity=".55" />
       </symbol>
+      <symbol id="sc-sparkle" viewBox="0 0 100 100">
+        <path d="M50 0 58 42 100 50 58 58 50 100 42 58 0 50 42 42Z" />
+      </symbol>
     </svg>
   );
 }

@@ -146,7 +146,11 @@ export function SundayBeach({ variant }: { variant: SceneryVariant }) {
             key={sparkle.x}
             className={cn(styles.sparkle, sparkle.wide && parts.wide)}
             style={sparkleStyle(sparkle, index)}
-          />
+          >
+            <svg viewBox="0 0 100 100">
+              <use href="#sc-sparkle" />
+            </svg>
+          </i>
         ))}
       </SeaMotion>
       {variant !== "auth" && <Kite className={props} tether={hero ? "short" : "long"} />}

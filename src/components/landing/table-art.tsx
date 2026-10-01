@@ -172,50 +172,50 @@ const BUBBLES = [
   { cx: 35, r: 0.8, t: "1.9s", d: "1s" },
 ];
 
+function bubbleStyle(bubble: (typeof BUBBLES)[number]): CSSProperties {
+  return { "--t": bubble.t, "--d": bubble.d } as CSSProperties;
+}
+
 export function Copo() {
   return (
-    <svg viewBox="0 0 70 100" className={styles.fill}>
-      <defs>
-        <linearGradient id="landing-beer-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="oklch(0.82 0.15 82)" />
-          <stop offset="1" stopColor="oklch(0.68 0.16 66)" />
-        </linearGradient>
-        <clipPath id="landing-beer-clip">
-          <path d="M9.6 27 L60.4 27 L57 96 L13 96 Z" />
-        </clipPath>
-      </defs>
-      <path d="M6 4 L64 4 L57 96 L13 96 Z" fill="oklch(0.97 0.01 90 / .35)" />
-      <path d="M9.6 27 L60.4 27 L57 96 L13 96 Z" fill="url(#landing-beer-fill)" />
-      <g clipPath="url(#landing-beer-clip)" fill="oklch(1 0 0 / .85)">
+    <div className={styles.glass}>
+      <svg viewBox="0 0 70 100" className={styles.layer}>
+        <defs>
+          <linearGradient id="landing-beer-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="oklch(0.82 0.15 82)" />
+            <stop offset="1" stopColor="oklch(0.68 0.16 66)" />
+          </linearGradient>
+        </defs>
+        <path d="M6 4 L64 4 L57 96 L13 96 Z" fill="oklch(0.97 0.01 90 / .35)" />
+        <path d="M9.6 27 L60.4 27 L57 96 L13 96 Z" fill="url(#landing-beer-fill)" />
+      </svg>
+      <span className={styles.bubbles}>
         {BUBBLES.map((bubble) => (
-          <circle
-            key={bubble.cx}
-            className={styles.bubble}
-            cx={bubble.cx}
-            cy="94"
-            r={bubble.r}
-            style={{ "--t": bubble.t, "--d": bubble.d } as CSSProperties}
-          />
+          <svg key={bubble.cx} viewBox="0 27 70 69" className={styles.bubble} style={bubbleStyle(bubble)}>
+            <circle cx={bubble.cx} cy="94" r={bubble.r} />
+          </svg>
         ))}
-      </g>
-      <g className={styles.foam}>
+      </span>
+      <svg viewBox="0 0 70 100" className={cn(styles.layer, styles.foam)}>
         <path d="M8 13 Q14 7 20 12 Q27 6 34 11 Q41 5 48 11 Q55 6 62 12 L60.4 28 L9.6 28 Z" fill="oklch(0.98 0.02 95)" />
         <circle cx="22" cy="20" r="2" fill="oklch(0.9 0.03 90)" />
         <circle cx="44" cy="18" r="2.4" fill="oklch(0.9 0.03 90)" />
         <circle cx="33" cy="23" r="1.6" fill="oklch(0.9 0.03 90)" />
-      </g>
-      <g stroke="oklch(1 0 0 / .45)" strokeWidth="1.4">
-        <path d="M16 44 L18 94" />
-        <path d="M24 44 L25 94" />
-        <path d="M32 44 L32.5 94" />
-        <path d="M40 44 L39.5 94" />
-        <path d="M48 44 L46 94" />
-        <path d="M55 44 L52.5 94" />
-      </g>
-      <path d="M11 42 L59 42" stroke="oklch(1 0 0 / .5)" strokeWidth="1.2" />
-      <path d="M6 4 L64 4 L57 96 L13 96 Z" fill="none" stroke="oklch(1 0 0 / .8)" strokeWidth="2" />
-      <path d="M12 8 L17 90" stroke="oklch(1 0 0 / .55)" strokeWidth="3" strokeLinecap="round" />
-    </svg>
+      </svg>
+      <svg viewBox="0 0 70 100" className={styles.layer}>
+        <g stroke="oklch(1 0 0 / .45)" strokeWidth="1.4">
+          <path d="M16 44 L18 94" />
+          <path d="M24 44 L25 94" />
+          <path d="M32 44 L32.5 94" />
+          <path d="M40 44 L39.5 94" />
+          <path d="M48 44 L46 94" />
+          <path d="M55 44 L52.5 94" />
+        </g>
+        <path d="M11 42 L59 42" stroke="oklch(1 0 0 / .5)" strokeWidth="1.2" />
+        <path d="M6 4 L64 4 L57 96 L13 96 Z" fill="none" stroke="oklch(1 0 0 / .8)" strokeWidth="2" />
+        <path d="M12 8 L17 90" stroke="oklch(1 0 0 / .55)" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    </div>
   );
 }
 

@@ -762,7 +762,7 @@
   }
 
   .intro-enter-up {
-    animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: intro-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
 
   .intro-fade-up {
@@ -795,10 +795,6 @@
   }
 
   /* Always-on gentle split: halves drift ~0.05em apart and back (~1.2s every ~4.2s). */
-  .intro-mark-dot-left,
-  .intro-mark-dot-right {
-    transform-box: fill-box;
-  }
   [data-loop] .intro-wordmark-left > i {
     animation: intro-drift-left 4.2s ease-in-out infinite;
   }
@@ -861,7 +857,7 @@
     transform: none;
   }
   15% {
-    transform: translateX(-1px);
+    transform: translateX(-2.0833%);
   }
 }
 @keyframes intro-dot-drift-right {
@@ -869,7 +865,7 @@
     transform: none;
   }
   15% {
-    transform: translateX(1px);
+    transform: translateX(2.0833%);
   }
 }
 

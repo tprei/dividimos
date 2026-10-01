@@ -1,15 +1,7 @@
 "use client";
 
-import {
-  animate,
-  cancelFrame,
-  frame,
-  useAnimate,
-  useMotionValue,
-  type AnimationPlaybackControls,
-  type FrameData,
-} from "framer-motion";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useAnimate, type AnimationPlaybackControls } from "framer-motion";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { haptics } from "@/hooks/use-haptics";
 import { REDUCED_MOTION_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { BRAND } from "@/lib/brand";
@@ -22,7 +14,7 @@ const CENTER_Y = 75;
 const RADIUS_X = 96;
 const RADIUS_Y = 44;
 const BASE_ANGLES = [-150, -30, 90].map((degrees) => (degrees * Math.PI) / 180);
-const RADIANS_PER_MS = (Math.PI * 2) / 22000;
+const ORBIT_MS = 22000;
 const MAX_FRAME_MS = 64;
 const BOOST_DECAY_PER_MS = 0.9975;
 const GROW_BOOST = 6;
@@ -31,26 +23,50 @@ const GROW_SECONDS = 0.9;
 const SPLIT_MS = 400;
 
 type OrbitLayerName = "back" | "front";
-type OrbitNodes = Record<OrbitLayerName, (SVGGElement | null)[]>;
+type OrbitNodes = Record<OrbitLayerName, (HTMLDivElement | null)[]>;
 
 interface OrbitPose {
   transform: string;
   front: boolean;
 }
 
-function orbitPose(baseAngle: number, angle: number, radius: number): OrbitPose {
+function orbitPose(baseAngle: number, angle: number): OrbitPose {
   const a = baseAngle + angle;
   const depth = Math.sin(a);
-  const x = CENTER_X + Math.cos(a) * RADIUS_X * radius;
-  const y = CENTER_Y + depth * RADIUS_Y * radius;
-  const scale = (0.95 + (0.35 * (depth + 1)) / 2) * Math.min(1.2, Math.max(0, radius));
+  const x = CENTER_X + Math.cos(a) * RADIUS_X;
+  const y = CENTER_Y + depth * RADIUS_Y;
+  const scale = 0.95 + (0.35 * (depth + 1)) / 2;
   return {
-    transform: `translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(3)})`,
+    transform: `translate(${(((x - 15) / 30) * 100).toFixed(3)}%, ${(((y - 15) / 30) * 100).toFixed(3)}%) scale(${scale.toFixed(3)})`,
     front: depth > 0,
   };
 }
 
-const COLLAPSED_POSES = BASE_ANGLES.map((baseAngle) => orbitPose(baseAngle, 0, 0));
+const BASE_POSES = BASE_ANGLES.map((baseAngle) => orbitPose(baseAngle, 0));
+
+const COLLAPSED_LAYER: CSSProperties = { transform: "scale(0)" };
+
+const ORBIT_KEYFRAMES = Array.from({ length: 73 }, (_, k) => ({
+  transform: orbitPose(0, (Math.PI * 2 * k) / 72).transform,
+}));
+
+const ORBIT_OPACITY: Record<OrbitLayerName, Keyframe[]> = {
+  back: [
+    { opacity: 0, easing: "step-end" },
+    { opacity: 1, easing: "step-end", offset: 0.5 },
+    { opacity: 0 },
+  ],
+  front: [
+    { opacity: 1, easing: "step-end" },
+    { opacity: 0, easing: "step-end", offset: 0.5 },
+    { opacity: 1 },
+  ],
+};
+
+const GROW_KEYFRAMES = Array.from({ length: 25 }, (_, k) => ({
+  transform: `scale(${easeBack(k / 24).toFixed(4)})`,
+  offset: k / 24,
+}));
 
 function subscribeVisibility(onChange: () => void) {
   document.addEventListener("visibilitychange", onChange);
@@ -113,25 +129,55 @@ const ORBIT_ART = [
 
 interface OrbitLayerProps {
   layer: OrbitLayerName;
-  register: (layer: OrbitLayerName, index: number, node: SVGGElement | null) => void;
+  register: (layer: OrbitLayerName, index: number, node: HTMLDivElement | null) => void;
+  registerWrapper: (layer: OrbitLayerName, node: HTMLDivElement | null) => void;
 }
 
 /** Each object is drawn in both layers so it can pass behind and in front of the mark without moving React-owned nodes. */
-function OrbitLayer({ layer, register }: OrbitLayerProps) {
+function OrbitLayer({ layer, register, registerWrapper }: OrbitLayerProps) {
   return (
-    <g>
+    <div
+      ref={(node) => registerWrapper(layer, node)}
+      className="pointer-events-none absolute inset-0"
+      style={COLLAPSED_LAYER}
+    >
       {ORBIT_ART.map(({ id, Art }, index) => (
-        <g
+        <div
           key={id}
           ref={(node) => register(layer, index, node)}
-          transform={COLLAPSED_POSES[index].transform}
-          style={{ visibility: COLLAPSED_POSES[index].front === (layer === "front") ? "visible" : "hidden" }}
+          className="absolute top-0 left-0 aspect-square w-[12.5%]"
+          style={{
+            transform: BASE_POSES[index].transform,
+            opacity: BASE_POSES[index].front === (layer === "front") ? 1 : 0,
+          }}
         >
-          <Art />
-        </g>
+          <svg viewBox="-15 -15 30 30" className="block size-full overflow-visible">
+            <Art />
+          </svg>
+        </div>
       ))}
-    </g>
+    </div>
   );
+}
+
+function createOrbitAnimations(nodes: OrbitNodes): Animation[] {
+  const animations: Animation[] = [];
+  for (const layer of ["back", "front"] as const) {
+    BASE_ANGLES.forEach((baseAngle, index) => {
+      const node = nodes[layer][index];
+      if (!node) return;
+      const phase = ((((baseAngle / (Math.PI * 2)) % 1) + 1) % 1) * ORBIT_MS;
+      const options: KeyframeAnimationOptions = {
+        duration: ORBIT_MS,
+        iterations: Infinity,
+        easing: "linear",
+        delay: -phase,
+      };
+      animations.push(node.animate(ORBIT_KEYFRAMES, options));
+      animations.push(node.animate(ORBIT_OPACITY[layer], options));
+    });
+  }
+  return animations;
 }
 
 interface LoginBrandProps {
@@ -143,34 +189,44 @@ export function LoginBrand({ stage }: LoginBrandProps) {
   const visible = useSyncExternalStore(subscribeVisibility, isDocumentVisible, isServerVisible);
   const [intro] = useState(() => stage === "play");
   const [splitTaps, setSplitTaps] = useState(0);
-  const [scope, animateInScope] = useAnimate<SVGSVGElement>();
+  const [scope, animateInScope] = useAnimate<HTMLDivElement>();
   const rootRef = useRef<HTMLDivElement>(null);
-  const markRef = useRef<SVGGElement>(null);
+  const markRef = useRef<HTMLSpanElement>(null);
   const nodes = useRef<OrbitNodes>({ back: [], front: [] });
-  const angle = useRef(0);
+  const wrappers = useRef<Record<OrbitLayerName, HTMLDivElement | null>>({ back: null, front: null });
+  const orbit = useRef<Animation[] | null>(null);
   const boost = useRef(0);
+  const boostFrame = useRef<number | null>(null);
   const bump = useRef<AnimationPlaybackControls | null>(null);
   const previousStage = useRef<IntroSceneStage | null>(null);
-  const radius = useMotionValue(0);
 
-  const register = useCallback((layer: OrbitLayerName, index: number, node: SVGGElement | null) => {
+  const register = useCallback((layer: OrbitLayerName, index: number, node: HTMLDivElement | null) => {
     nodes.current[layer][index] = node;
   }, []);
 
-  const place = useCallback(() => {
-    const currentRadius = radius.get();
-    BASE_ANGLES.forEach((baseAngle, index) => {
-      const pose = orbitPose(baseAngle, angle.current, currentRadius);
-      for (const layer of ["back", "front"] as const) {
-        const node = nodes.current[layer][index];
-        if (!node) continue;
-        node.setAttribute("transform", pose.transform);
-        node.style.visibility = pose.front === (layer === "front") ? "visible" : "hidden";
-      }
-    });
-  }, [radius]);
+  const registerWrapper = useCallback((layer: OrbitLayerName, node: HTMLDivElement | null) => {
+    wrappers.current[layer] = node;
+  }, []);
 
-  useEffect(() => radius.on("change", place), [radius, place]);
+  const setWrapperScale = useCallback((transform: string) => {
+    if (wrappers.current.back) wrappers.current.back.style.transform = transform;
+    if (wrappers.current.front) wrappers.current.front.style.transform = transform;
+  }, []);
+
+  const startBoostDecay = useCallback(() => {
+    if (boostFrame.current !== null) return;
+    let last = performance.now();
+    const tick = (timestamp: number) => {
+      const elapsed = Math.min(MAX_FRAME_MS, Math.max(0, timestamp - last));
+      last = timestamp;
+      boost.current *= Math.pow(BOOST_DECAY_PER_MS, elapsed);
+      const settled = boost.current < 0.01;
+      if (settled) boost.current = 0;
+      for (const animation of orbit.current ?? []) animation.playbackRate = 1 + boost.current;
+      boostFrame.current = settled ? null : requestAnimationFrame(tick);
+    };
+    boostFrame.current = requestAnimationFrame(tick);
+  }, []);
 
   useEffect(() => {
     const from = previousStage.current;
@@ -178,25 +234,35 @@ export function LoginBrand({ stage }: LoginBrandProps) {
     bump.current?.complete();
 
     if (still) {
-      angle.current = 0;
       boost.current = 0;
-      radius.set(1);
-      place();
+      for (const animation of orbit.current ?? []) animation.cancel();
+      orbit.current = null;
+      setWrapperScale("scale(1)");
       return;
     }
     if (stage !== "play") {
-      radius.set(stage === "ready" ? 0 : 1);
-      place();
+      for (const animation of orbit.current ?? []) animation.pause();
+      setWrapperScale(stage === "ready" ? "scale(0)" : "scale(1)");
       return;
     }
     if (from === "rest") return;
 
-    radius.set(0);
-    place();
+    setWrapperScale("scale(1)");
+    const growBack = wrappers.current.back?.animate(GROW_KEYFRAMES, {
+      duration: GROW_SECONDS * 1000,
+      easing: "linear",
+    });
+    const growFront = wrappers.current.front?.animate(GROW_KEYFRAMES, {
+      duration: GROW_SECONDS * 1000,
+      easing: "linear",
+    });
     boost.current = GROW_BOOST;
-    const grow = animate(radius, 1, { duration: GROW_SECONDS, ease: easeBack });
-    return () => grow.stop();
-  }, [stage, still, radius, place]);
+    startBoostDecay();
+    return () => {
+      growBack?.cancel();
+      growFront?.cancel();
+    };
+  }, [stage, still, setWrapperScale, startBoostDecay]);
 
   const live = stage === "play" && !still && visible;
 
@@ -204,21 +270,22 @@ export function LoginBrand({ stage }: LoginBrandProps) {
     const root = rootRef.current;
     if (!live || !root) return;
 
+    if (orbit.current === null) orbit.current = createOrbitAnimations(nodes.current);
+    for (const animation of orbit.current) animation.play();
     root.dataset.loop = "";
-    let last = performance.now();
-    const spin = ({ timestamp }: FrameData) => {
-      const elapsed = Math.min(MAX_FRAME_MS, Math.max(0, timestamp - last));
-      last = timestamp;
-      boost.current *= Math.pow(BOOST_DECAY_PER_MS, elapsed);
-      angle.current += elapsed * RADIANS_PER_MS * (1 + boost.current);
-      place();
-    };
-    frame.update(spin, true);
     return () => {
-      cancelFrame(spin);
+      for (const animation of orbit.current ?? []) animation.pause();
       delete root.dataset.loop;
     };
-  }, [live, place]);
+  }, [live]);
+
+  useEffect(
+    () => () => {
+      if (boostFrame.current !== null) cancelAnimationFrame(boostFrame.current);
+      boostFrame.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (splitTaps === 0) return;
@@ -237,6 +304,7 @@ export function LoginBrand({ stage }: LoginBrandProps) {
     if (still) return;
     setSplitTaps((taps) => taps + 1);
     boost.current = TAP_BOOST;
+    startBoostDecay();
     const mark = markRef.current;
     if (!mark) return;
     bump.current?.stop();
@@ -249,37 +317,46 @@ export function LoginBrand({ stage }: LoginBrandProps) {
 
   return (
     <div ref={rootRef} className={cn("flex flex-col items-center", intro && "intro-enter-up")}>
-      <svg
-        ref={scope}
-        viewBox="0 0 240 150"
+      <div
         aria-hidden="true"
-        className="h-42.5 w-68 flex-none overflow-visible intro-short:h-32 intro-tiny:h-23"
+        className="flex h-42.5 w-68 flex-none justify-center intro-short:h-32 intro-tiny:h-23"
       >
-        <ellipse
-          cx={CENTER_X}
-          cy={CENTER_Y}
-          rx={RADIUS_X}
-          ry={RADIUS_Y}
-          fill="none"
-          stroke="var(--border)"
-          strokeWidth="1.4"
-          strokeDasharray="2 6"
-          strokeLinecap="round"
-        />
-        <OrbitLayer layer="back" register={register} />
-        <g className="cursor-pointer" onClick={handleMarkTap}>
-          <circle cx={CENTER_X} cy={CENTER_Y} r="36" fill="var(--primary)" opacity=".14" />
-          <g transform={`translate(${CENTER_X} ${CENTER_Y})`}>
-            <g ref={markRef} className="intro-fx">
-              <rect x="-24" y="-24" width="48" height="48" rx="13.5" fill="var(--primary)" />
-              <circle className="intro-mark-dot-left" cx="-12" cy="0" r="4.2" fill="#fff" />
-              <rect x="-3.5" y="-11.4" width="7" height="22.8" rx="3.5" fill="#fff" />
-              <circle className="intro-mark-dot-right" cx="12" cy="0" r="4.2" fill="#fff" />
-            </g>
-          </g>
-        </g>
-        <OrbitLayer layer="front" register={register} />
-      </svg>
+        <div ref={scope} className="relative aspect-[240/150] h-full">
+          <svg viewBox="0 0 240 150" className="absolute inset-0 size-full overflow-visible">
+            <ellipse
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              rx={RADIUS_X}
+              ry={RADIUS_Y}
+              fill="none"
+              stroke="var(--border)"
+              strokeWidth="1.4"
+              strokeDasharray="2 6"
+              strokeLinecap="round"
+            />
+          </svg>
+          <OrbitLayer layer="back" register={register} registerWrapper={registerWrapper} />
+          <div
+            className="absolute top-[26%] left-[35%] aspect-square w-[30%] cursor-pointer rounded-full"
+            onClick={handleMarkTap}
+          >
+            <span className="absolute inset-0 rounded-full bg-primary opacity-14" />
+            <span ref={markRef} className="absolute top-[16.6667%] left-[16.6667%] size-[66.6667%]">
+              <svg viewBox="-24 -24 48 48" className="absolute inset-0 size-full">
+                <rect x="-24" y="-24" width="48" height="48" rx="13.5" fill="var(--primary)" />
+                <rect x="-3.5" y="-11.4" width="7" height="22.8" rx="3.5" fill="#fff" />
+              </svg>
+              <svg viewBox="-24 -24 48 48" className="intro-mark-dot-left absolute inset-0 size-full">
+                <circle cx="-12" cy="0" r="4.2" fill="#fff" />
+              </svg>
+              <svg viewBox="-24 -24 48 48" className="intro-mark-dot-right absolute inset-0 size-full">
+                <circle cx="12" cy="0" r="4.2" fill="#fff" />
+              </svg>
+            </span>
+          </div>
+          <OrbitLayer layer="front" register={register} registerWrapper={registerWrapper} />
+        </div>
+      </div>
       <button
         type="button"
         aria-label={BRAND.domain}
