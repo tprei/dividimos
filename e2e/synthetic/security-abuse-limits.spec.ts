@@ -16,7 +16,7 @@ test.describe("Security: abuse limits surface in the UI", () => {
 
     await loginAs(alice, { navigate: false });
     await page.goto(`/app/groups/${group.id}/chat`);
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByText("Spam 29", { exact: true })).toBeVisible();
 
     const composer = page.getByRole("textbox", { name: "Mensagem", exact: true });
     await composer.fill("Mensagem trigésima primeira");
@@ -47,9 +47,8 @@ test.describe("Security: abuse limits surface in the UI", () => {
     }
     const target = await seed.createGroup(attacker.id, [], "Pix devolvido 11");
 
-    await loginAs(attacker);
+    await loginAs(attacker, { navigate: false });
     await page.goto(`/app/groups/${target.id}`);
-    await page.waitForLoadState("networkidle");
     await page.getByRole("radio", { name: "Membros" }).click();
     await page.getByRole("button", { name: /Convidar/i }).click();
     await page.getByPlaceholder("handle do usuario").fill(victim.handle);

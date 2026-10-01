@@ -52,7 +52,6 @@ test.describe("Security: an invitation can always be declined", () => {
 
     const { context, page } = await newSession(victim);
     await page.goto("/app/groups");
-    await page.waitForLoadState("networkidle");
     await expect(page.getByText("Convite · Armadilha de convite")).toBeVisible({ timeout: 10000 });
 
     await page.getByRole("button", { name: "Recusar convite para Armadilha de convite" }).click();
