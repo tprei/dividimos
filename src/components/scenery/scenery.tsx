@@ -5,7 +5,7 @@ import { SceneryFrame } from "./scenery-frame";
 import { SundayBeach } from "./sunday-beach";
 import styles from "./scenery.module.css";
 
-export type SceneryVariant = "hero";
+export type SceneryVariant = "hero" | "auth" | "onboard";
 
 interface SceneryProps {
   variant: SceneryVariant;
@@ -16,8 +16,8 @@ export function Scenery({ variant, className }: SceneryProps) {
   return (
     <SceneryFrame className={cn(styles.frame, styles[variant], className)}>
       <SceneryDefs />
-      <NightBar />
-      <SundayBeach />
+      <NightBar variant={variant} />
+      <SundayBeach variant={variant} />
     </SceneryFrame>
   );
 }

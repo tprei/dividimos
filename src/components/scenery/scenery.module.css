@@ -42,6 +42,31 @@
   --umbrella-y: 34px;
 }
 
+.auth,
+.onboard {
+  --inset: 0px;
+  --horizon: 87%;
+  --sky-x: calc(100% - 52px);
+  --sky-y: calc(var(--inset) + 52px);
+  --sky-size: 88px;
+  --fly-base: 18px;
+  --fly-scale: 0.3;
+  --shore: 5%;
+  --floor: var(--background);
+  --gutter: calc(50% - 256px);
+}
+
+.auth {
+  --lane-top: 6px;
+  --lane-h: 74px;
+}
+
+.onboard {
+  --inset: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --lane-top: calc(var(--inset) + 4px);
+  --lane-h: 40px;
+}
+
 .defs {
   position: absolute;
   width: 0;
@@ -50,7 +75,10 @@
 }
 
 .wide,
-.desk {
+.desk,
+.gutter,
+.gutterLeft,
+.gutterRight {
   display: none;
 }
 
@@ -178,6 +206,16 @@
   height: var(--sag);
 }
 
+.gutterLeft {
+  width: var(--gutter);
+}
+
+.gutterRight {
+  left: auto;
+  right: 0;
+  width: var(--gutter);
+}
+
 .wire {
   position: absolute;
   inset: 0;
@@ -267,6 +305,49 @@
 
   .hero .foam {
     display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .gutter,
+  .gutterLeft,
+  .gutterRight {
+    display: block;
+  }
+
+  .gutterLeft .wide,
+  .gutterRight .wide {
+    display: none;
+  }
+
+  .auth,
+  .onboard {
+    --horizon: 91%;
+    --sky-x: 90%;
+    --sky-y: calc(var(--inset) + 118px);
+    --sky-size: 128px;
+    --fly-base: 6px;
+    --fly-scale: 0.25;
+    --shore: 4%;
+  }
+
+  .auth {
+    --lane-top: 10px;
+    --lane-h: 86px;
+  }
+
+  .onboard {
+    --sag: 22px;
+    --bulb-w: 12px;
+    --spot-x: calc(100% - var(--gutter) / 2);
+    --spot-y: 46%;
+    --umbrella-x: calc(var(--gutter) / 2 - clamp(75px, 6.5vw, 95px));
+    --umbrella-y: calc(var(--shore) * 0.3);
+  }
+
+  :global(.dark) .onboard {
+    --spot-x: calc(var(--gutter) / 2);
+    --spot-y: 200px;
   }
 }
 

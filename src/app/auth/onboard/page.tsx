@@ -1,5 +1,6 @@
 import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
+import { Scenery } from "@/components/scenery/scenery";
 import { resolveAuthProfile } from "@/lib/auth";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
@@ -71,5 +72,10 @@ export default async function OnboardPage({
     return completeOnboarding(me.id, destination, formData);
   }
 
-  return <OnboardForm me={me} action={submitOnboarding} />;
+  return (
+    <>
+      <Scenery variant="onboard" className="-z-10" />
+      <OnboardForm me={me} action={submitOnboarding} />
+    </>
+  );
 }

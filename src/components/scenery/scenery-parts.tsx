@@ -26,6 +26,8 @@ const BULBS: ReadonlyArray<Bulb> = [
 
 export const VARAL_BOXES: Record<SceneryVariant, ReadonlyArray<string>> = {
   hero: [styles.varal],
+  auth: [],
+  onboard: [cn(styles.varal, styles.gutterLeft), cn(styles.varal, styles.gutterRight)],
 };
 
 function bulbStyle(bulb: Bulb, index: number): CSSProperties {

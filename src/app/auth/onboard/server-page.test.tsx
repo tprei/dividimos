@@ -1,3 +1,4 @@
+import { Children, isValidElement, type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "@/types/ledger";
 
@@ -45,9 +46,14 @@ beforeEach(() => {
 describe("server onboarding boundary", () => {
   it("passes verified identity and destination through the server action closure", async () => {
     const result = await OnboardPage({ searchParams: Promise.resolve({ next: "/groups" }) });
+    const form = Children.toArray(result.props.children).find(
+      (child): child is ReactElement<{ action: (formData: FormData) => Promise<unknown> }> =>
+        isValidElement<{ action?: unknown }>(child) && typeof child.props.action === "function",
+    );
+    if (!form) throw new Error("onboarding form missing from the page");
     const formData = new FormData();
 
-    await result.props.action(formData);
+    await form.props.action(formData);
 
     expect(mocks.completeOnboarding).toHaveBeenCalledWith("user-a", "/groups", formData);
   });

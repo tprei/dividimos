@@ -277,7 +277,7 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
         aria-label={split ? LOGIN_SLIDE_TITLE : `${LOGIN_INDEX + 1} de ${SLIDE_TITLES.length}`}
         inert={!split && index !== LOGIN_INDEX}
         style={{ x: loginX }}
-        className="min-h-0 min-w-0 [grid-area:1/1] lg:border-l lg:border-border lg:bg-surface lg:transform-none! lg:[grid-area:1/2/3/3]"
+        className="min-h-0 min-w-0 [grid-area:1/1] lg:border-l lg:border-border lg:bg-surface/50 lg:transform-none! lg:[grid-area:1/2/3/3]"
       >
         <LoginSlide key={loginVisit} stage={loginStage} />
       </motion.section>

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { Kite, Palm, Umbrella } from "./beach-props";
+import type { SceneryVariant } from "./scenery";
 import { Glint, SeaMotion, VARAL_BOXES, VaralBulbs, VaralLine } from "./scenery-parts";
 import parts from "./scenery.module.css";
 import styles from "./sunday-beach.module.css";
@@ -36,6 +37,11 @@ const HERO_GULLS: ReadonlyArray<Gull> = [
   { gx: -1.05, gy: 0.35, wide: false },
   { gx: -0.78, gy: -0.25, wide: true },
   { gx: 1.25, gy: -0.62, wide: true },
+];
+
+const SKY_GULLS: ReadonlyArray<Gull> = [
+  { gx: -1.05, gy: -0.5, wide: false },
+  { gx: -0.78, gy: -0.25, wide: true },
 ];
 
 const SPARKLES: ReadonlyArray<Sparkle> = [
@@ -98,10 +104,12 @@ function Sun() {
   );
 }
 
-export function SundayBeach() {
-  const boxes = VARAL_BOXES.hero;
+export function SundayBeach({ variant }: { variant: SceneryVariant }) {
+  const hero = variant === "hero";
+  const props = hero ? parts.desk : parts.gutter;
+  const boxes = hero ? VARAL_BOXES.hero : [];
   return (
-    <div className={styles.day}>
+    <div className={cn(styles.day, hero ? styles.hero : styles.onboarding)}>
       <div className={parts.ground} />
       {boxes.map((box) => (
         <VaralLine key={box} lit={false} className={box} />
@@ -123,8 +131,8 @@ export function SundayBeach() {
           </svg>
         ))}
       </div>
-      <Palm className={parts.desk} />
-      {HERO_GULLS.map((gull, index) => (
+      {variant !== "auth" && <Palm className={props} />}
+      {(hero ? HERO_GULLS : SKY_GULLS).map((gull, index) => (
         <i key={gull.gx} className={cn(styles.gull, gull.wide && parts.wide)} style={gullStyle(gull, index)}>
           <svg viewBox="0 0 40 16">
             <path d="M1 8C7 2 14 2 20 9 26 2 33 2 39 8 33 5 26 6 20 13 14 6 7 5 1 8Z" />
@@ -141,8 +149,8 @@ export function SundayBeach() {
           />
         ))}
       </SeaMotion>
-      <Kite className={parts.desk} tether="short" />
-      <Umbrella className={parts.desk} />
+      {variant !== "auth" && <Kite className={props} tether={hero ? "short" : "long"} />}
+      {variant !== "auth" && <Umbrella className={props} />}
     </div>
   );
 }
