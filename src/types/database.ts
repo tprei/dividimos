@@ -1585,6 +1585,12 @@ export type Database = {
         }
         Returns: Json
       }
+      erase_chat_message_content: {
+        Args: {
+          p_message_id: string
+        }
+        Returns: Json
+      }
       expense_change_summary: {
         Args: {
           p_expense_id: string
@@ -1948,6 +1954,12 @@ export type Database = {
           p_token: string
         }
         Returns: Json
+      }
+      purge_realtime_message: {
+        Args: {
+          p_message_id: string
+        }
+        Returns: undefined
       }
       recompute_group_balances: {
         Args: {
