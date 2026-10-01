@@ -75,7 +75,7 @@ export default async function OnboardPage({
   return (
     <>
       <Scenery variant="onboard" className="-z-10" />
-      <OnboardForm me={me} action={submitOnboarding} />
+      <OnboardForm me={me} action={submitOnboarding} next={destination} />
     </>
   );
 }

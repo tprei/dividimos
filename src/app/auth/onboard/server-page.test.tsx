@@ -47,10 +47,17 @@ describe("server onboarding boundary", () => {
   it("passes verified identity and destination through the server action closure", async () => {
     const result = await OnboardPage({ searchParams: Promise.resolve({ next: "/groups" }) });
     const form = Children.toArray(result.props.children).find(
-      (child): child is ReactElement<{ action: (formData: FormData) => Promise<unknown> }> =>
-        isValidElement<{ action?: unknown }>(child) && typeof child.props.action === "function",
+      (
+        child,
+      ): child is ReactElement<{
+        action: (formData: FormData) => Promise<unknown>;
+        next?: string;
+      }> =>
+        isValidElement<{ action?: unknown; next?: unknown }>(child) &&
+        typeof child.props.action === "function",
     );
     if (!form) throw new Error("onboarding form missing from the page");
+    expect(form.props).toMatchObject({ next: "/groups" });
     const formData = new FormData();
 
     await form.props.action(formData);

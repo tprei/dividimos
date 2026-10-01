@@ -33,6 +33,11 @@ vi.mock("@/lib/push/detach", () => ({
   detachLocalPushForSignOut: (accountId: string | null) => mockLocalDetach(accountId),
 }));
 
+const mockForgetGoogle = vi.fn<() => Promise<void>>();
+vi.mock("@/lib/capacitor/auth", () => ({
+  forgetGoogleAccount: () => mockForgetGoogle(),
+}));
+
 const mockSignOut = vi.fn();
 vi.mock("./mutations-group", () => ({
   clearPendingVendorChargeCancellations: vi.fn(),
@@ -460,10 +465,13 @@ describe("bill draft account isolation", () => {
 });
 
 describe("sign-out push detach", () => {
-  it("detaches this device's push before dropping the session", async () => {
+  it("detaches push and forgets the native Google account before dropping the session", async () => {
     const order: string[] = [];
     mockDetachPush.mockImplementation(async () => {
       order.push("detach");
+    });
+    mockForgetGoogle.mockImplementation(async () => {
+      order.push("forget");
     });
     mockSignOut.mockImplementation(async () => {
       order.push("signOut");
@@ -473,8 +481,9 @@ describe("sign-out push detach", () => {
     const result = await signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(order).toEqual(["detach", "signOut"]);
+    expect(order).toEqual(["detach", "forget", "signOut"]);
     expect(mockDetachPush).toHaveBeenCalledTimes(1);
+    expect(mockForgetGoogle).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 

@@ -1,6 +1,7 @@
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import { archiveCurrentDraft, restoreAccountDraft } from "@/lib/bill-draft-isolation";
+import { forgetGoogleAccount } from "@/lib/capacitor/auth";
 import { runBootstrap } from "./bootstrap";
 import {
   advanceAuthGeneration,
@@ -200,6 +201,7 @@ export function clearAccountDeletionMarker(): void {
 export async function signOut(): Promise<SignOutResult> {
   try {
     await detachPushForSignOut();
+    await forgetGoogleAccount();
     const { error } = await getSupabase().auth.signOut();
     return error ? { ok: false, error } : { ok: true };
   } catch (error) {
