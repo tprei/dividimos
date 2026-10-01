@@ -15,14 +15,12 @@ test.describe("Settlement void", () => {
       totalCents: 10000,
     });
 
-    await loginAs(alice);
+    await loginAs(alice, { navigate: false });
     await page.goto(`/app/groups/${group.id}`);
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByRole("status").filter({ hasText: "Tudo acertado" })).toBeVisible({ timeout: 10000 });
 
     await page.goto("/app/activity");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("Bob Void pagou R$ 50,00 pra você")).toBeVisible({
       timeout: 10000,
@@ -38,7 +36,6 @@ test.describe("Settlement void", () => {
     await expect(page.getByText("Pagamento desfeito")).toBeVisible({ timeout: 10000 });
 
     await page.goto(`/app/groups/${group.id}`);
-    await page.waitForLoadState("networkidle");
 
     const chargeRow = page.getByRole("region", { name: "Quem paga quem" }).getByRole("button", { name: /Cobrar R\$\s*50,00/ });
     await expect(chargeRow).toBeVisible({ timeout: 10000 });

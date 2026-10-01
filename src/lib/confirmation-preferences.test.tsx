@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import {
   readConfirmationPreferences,
   updateConfirmationPreferences,
 } from "./confirmation-preferences";
+
+const prefsKey = (userId: string): string =>
+  `dividimos-prefs:${getSupabaseStorageNamespace()}:${userId}`;
 
 describe("confirmation-preferences", () => {
   beforeEach(() => {
@@ -36,10 +40,7 @@ describe("confirmation-preferences", () => {
   });
 
   it("falls back to defaults on corrupt JSON in storage", () => {
-    window.localStorage.setItem(
-      "dividimos-prefs:http://localhost:54321:user-1",
-      "not-valid-json{",
-    );
+    window.localStorage.setItem(prefsKey("user-1"), "not-valid-json{");
 
     const prefs = readConfirmationPreferences("user-1");
     expect(prefs).toEqual({
@@ -50,7 +51,7 @@ describe("confirmation-preferences", () => {
 
   it("falls back to ask when scanDraftChoice has an unknown value", () => {
     window.localStorage.setItem(
-      "dividimos-prefs:http://localhost:54321:user-1",
+      prefsKey("user-1"),
       JSON.stringify({
         confirmVoidSettlement: false,
         scanDraftChoice: "invalid-choice",

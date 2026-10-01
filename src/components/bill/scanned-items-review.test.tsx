@@ -221,32 +221,38 @@ describe("ScannedItemsReview", () => {
   });
 
   it("continues with details edited inside the row panel", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderReview();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 8, 15, 12));
+    try {
+      const user = userEvent.setup();
+      const { onConfirm } = renderReview();
 
-    fireEvent.change(screen.getByLabelText("Nome do estabelecimento"), {
-      target: { value: "Mercado" },
-    });
-    await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
-    fireEvent.change(screen.getByLabelText("Nome de Cerveja Brahma 600ml"), {
-      target: { value: "Cerveja" },
-    });
-    fireEvent.change(screen.getByLabelText("Valor de Cerveja"), { target: { value: "30,00" } });
-    await user.click(screen.getByRole("button", { name: "Pronto" }));
-    await user.click(screen.getByRole("button", { name: "Data do recibo" }));
-    await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
-    await user.click(screen.getByRole("button", { name: "Dividir manualmente" }));
+      fireEvent.change(screen.getByLabelText("Nome do estabelecimento"), {
+        target: { value: "Mercado" },
+      });
+      await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
+      fireEvent.change(screen.getByLabelText("Nome de Cerveja Brahma 600ml"), {
+        target: { value: "Cerveja" },
+      });
+      fireEvent.change(screen.getByLabelText("Valor de Cerveja"), { target: { value: "30,00" } });
+      await user.click(screen.getByRole("button", { name: "Pronto" }));
+      await user.click(screen.getByRole("button", { name: "Data do recibo" }));
+      await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
+      await user.click(screen.getByRole("button", { name: "Dividir manualmente" }));
 
-    expect(onConfirm).toHaveBeenCalledOnce();
-    const [draft, occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, string];
-    expect(draft.merchant).toBe("Mercado");
-    expect(draft.items[0]).toMatchObject({
-      description: "Cerveja",
-      totalCents: 3000,
-      quantity: 2000,
-    });
-    expect(draft.totalCents).toBe(8250);
-    expect(occurredOn).toBe("2026-09-09");
+      expect(onConfirm).toHaveBeenCalledOnce();
+      const [draft, occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, string];
+      expect(draft.merchant).toBe("Mercado");
+      expect(draft.items[0]).toMatchObject({
+        description: "Cerveja",
+        totalCents: 3000,
+        quantity: 2000,
+      });
+      expect(draft.totalCents).toBe(8250);
+      expect(occurredOn).toBe("2026-09-09");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("blocks continue and names the broken row when a name is cleared", async () => {

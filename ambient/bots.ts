@@ -246,8 +246,10 @@ async function ensureBot(
     throw new Error(`ambient: lookup bot user (${email}) failed: ${lookupError.message}`);
   }
 
+  let created = false;
   let row = existingUser;
   if (!row) {
+    created = true;
     const { error: createAuthError } = await admin.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -273,18 +275,23 @@ async function ensureBot(
     row = reselectedUser;
   }
 
-  // The handle_new_user trigger suffixes digits on collision; a bot must never squat a real user's handle.
-  if (row.handle !== spec.handle) {
+  // The handle_new_user trigger derives the handle from the display name and
+  // suffixes digits on collision, so a bot we just created can come out with
+  // ana_bot instead of bot_ana; the write below gives it the spec handle. A
+  // pre-existing account with a different handle is not this bot, and must
+  // fail loudly instead of being taken over.
+  if (!created && row.handle !== spec.handle) {
     throw new Error(`ambient: ${email} has handle ${row.handle}, expected ${spec.handle}`);
   }
 
   const handleWithoutPrefix = spec.handle.replace(/^bot_/, "");
   const pixKeyHint = `${handleWithoutPrefix.slice(0, 3)}***@${BOT_EMAIL_DOMAIN}`;
 
-  if (!row.is_bot || row.name !== spec.name) {
+  if (created || !row.is_bot || row.name !== spec.name) {
     const { error: updateError } = await admin
       .from("users")
       .update({
+        handle: spec.handle,
         is_bot: true,
         onboarded: true,
         name: spec.name,

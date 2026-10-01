@@ -1,4 +1,23 @@
+import type { Locator } from "@playwright/test";
 import { test, expect } from "../fixtures";
+
+// toBeInViewport({ ratio: 1 }) is unreliable on WebKit: its IntersectionObserver
+// trims 1/64 CSS px off an edge that rests on an integer pixel. Compare the
+// rect with the visible viewport instead, allowing one device pixel.
+async function sitsInsideViewport(locator: Locator) {
+  return locator.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    if (!viewport) throw new Error("visualViewport is unavailable");
+    const slack = 1 / window.devicePixelRatio;
+    return (
+      rect.top >= viewport.offsetTop - slack &&
+      rect.left >= viewport.offsetLeft - slack &&
+      rect.bottom <= viewport.offsetTop + viewport.height + slack &&
+      rect.right <= viewport.offsetLeft + viewport.width + slack
+    );
+  });
+}
 
 test.describe("Home quick charge and Pix amount editing", () => {
   test("quick charge is a top-level home action gated on a Pix key", async ({
@@ -47,8 +66,10 @@ test.describe("Home quick charge and Pix amount editing", () => {
 
     await expect.poll(sitsAboveButton).toBe(true);
     expect(await surface.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
-    await expect(page.getByRole("button", { name: "Já recebi" })).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole("button", { name: "Copiar código" })).toBeInViewport({ ratio: 1 });
+    const jaRecebi = page.getByRole("button", { name: "Já recebi" });
+    const copiarCodigo = page.getByRole("button", { name: "Copiar código" });
+    await expect.poll(() => sitsInsideViewport(jaRecebi)).toBe(true);
+    await expect.poll(() => sitsInsideViewport(copiarCodigo)).toBe(true);
   });
 
   test("the Pix amount can be typed after tapping the pen", async ({
