@@ -322,7 +322,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .figure {
-    animation: land 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
+    animation: land 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s backwards;
   }
 
   .stubButton:hover {
