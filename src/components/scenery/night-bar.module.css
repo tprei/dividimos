@@ -1,0 +1,280 @@
+.night {
+  --sky-top: oklch(0.15 0.045 262);
+  --sky-mid: oklch(0.2 0.055 258);
+  --sky-low: oklch(0.29 0.06 250);
+  --haze: oklch(0.6 0.11 60 / 0.22);
+  --star: oklch(0.97 0.03 90);
+  --star-glow: oklch(0.9 0.06 90 / 0.45);
+  --moon-light: oklch(0.99 0.02 95);
+  --moon-edge: oklch(0.88 0.05 85);
+  --moon-mare: oklch(0.78 0.04 80 / 0.4);
+  --moon-halo: oklch(0.92 0.06 90 / 0.24);
+  --sea-top: oklch(0.255 0.055 246);
+  --sea-mid: oklch(0.22 0.05 250);
+  --sea-low: oklch(0.22 0.05 250);
+  --sea-line: oklch(0.52 0.07 235 / 0.65);
+  --wave-alpha: 0.13;
+  --glint: oklch(0.95 0.06 90 / 0.85);
+  --sand-wet: oklch(0.25 0.045 246);
+  --sand: oklch(0.235 0.05 250);
+  --foam: oklch(0.86 0.04 220 / 0.3);
+  --wire: oklch(0.4 0.03 250);
+  --bulb-socket: oklch(0.32 0.02 250);
+  --bulb-glass: oklch(0.93 0.12 88);
+  --bulb-shine: oklch(1 0 0 / 0.85);
+  --bulb-filament: oklch(0.99 0.06 95);
+  --bulb-halo: oklch(0.82 0.16 75 / 0.5);
+  --pool: oklch(0.76 0.15 70 / 0.5);
+  --neon: oklch(0.86 0.13 205);
+  --neon-core: oklch(0.98 0.04 205);
+  --neon-pink: oklch(0.72 0.22 355);
+  --neon-pink-core: oklch(0.95 0.06 355);
+  --neon-glow: oklch(0.8 0.12 205 / 0.16);
+  --neon-wire: oklch(0.42 0.02 250);
+  --fly: oklch(0.96 0.17 110);
+  --fly-glow: oklch(0.88 0.18 115 / 0.4);
+  display: none;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--sky-x) var(--sky-y), var(--moon-halo), transparent calc(var(--sky-size) * 0.9)),
+    radial-gradient(75% 24% at 50% var(--horizon), var(--haze), transparent),
+    linear-gradient(180deg, var(--sky-top), var(--sky-mid) 45%, var(--sky-low) var(--horizon));
+}
+
+:global(.dark) .night {
+  display: block;
+}
+
+.stars {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--horizon);
+}
+
+.star {
+  display: none;
+  position: absolute;
+  left: var(--x);
+  top: calc(100% * var(--y));
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--star);
+  box-shadow: 0 0 calc(var(--s) * 2.5) var(--star-glow);
+}
+
+.big {
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    radial-gradient(circle, var(--star) 0 1.3px, var(--star-glow) 2px, transparent 3.5px),
+    linear-gradient(var(--star-glow), var(--star-glow)) 50% 50% / 1px 100% no-repeat,
+    linear-gradient(var(--star-glow), var(--star-glow)) 50% 50% / 100% 1px no-repeat;
+}
+
+@media (max-width: 759px) {
+  .phone {
+    display: block;
+  }
+}
+
+@media (min-width: 760px) and (max-width: 899px) {
+  .tablet {
+    display: block;
+  }
+}
+
+@media (min-width: 900px) {
+  .desk {
+    display: block;
+  }
+}
+
+.moon > svg {
+  position: absolute;
+  inset: 22%;
+  width: 56%;
+  height: 56%;
+}
+
+.pool {
+  position: absolute;
+  left: var(--pool-x);
+  top: var(--pool-y);
+  width: var(--pool-w);
+  height: var(--pool-h);
+  translate: -50% -50%;
+  background: radial-gradient(closest-side, var(--pool), transparent);
+}
+
+.neon {
+  width: clamp(150px, 15vw, 214px);
+  aspect-ratio: 182 / 92;
+}
+
+.neon::before {
+  content: "";
+  position: absolute;
+  bottom: 74%;
+  left: 16%;
+  right: 12%;
+  height: 200px;
+  background:
+    linear-gradient(var(--neon-wire), var(--neon-wire)) 0 0 / 1px 100% no-repeat,
+    linear-gradient(var(--neon-wire), var(--neon-wire)) 100% 0 / 1px 100% no-repeat;
+}
+
+.neonTube {
+  position: absolute;
+  inset: 0;
+}
+
+.neonTube::before {
+  content: "";
+  position: absolute;
+  inset: -45% -25%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--neon-glow), transparent);
+}
+
+.neonTube svg {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.neonWide {
+  stroke: var(--neon);
+  stroke-width: 11;
+  opacity: 0.16;
+}
+
+.neonMid {
+  stroke: var(--neon);
+  stroke-width: 5.5;
+  opacity: 0.45;
+}
+
+.neonCore {
+  stroke: var(--neon-core);
+  stroke-width: 2.2;
+}
+
+.neonPink {
+  stroke: var(--neon-pink);
+}
+
+.neonPinkCore {
+  stroke: var(--neon-pink-core);
+}
+
+.firefly {
+  position: absolute;
+  left: var(--x);
+  top: calc(var(--horizon) + var(--fly-base) + var(--dy) * var(--fly-scale));
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--fly) 0 22%, var(--fly-glow) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stars {
+    animation: stars-in 1.6s ease-out backwards;
+  }
+
+  .star {
+    animation: twinkle var(--t) ease-in-out var(--d) infinite;
+  }
+
+  .moon {
+    animation: moon-rise 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s backwards;
+  }
+
+  .neon {
+    animation: neon-on 1.2s linear 0.5s backwards;
+  }
+
+  .neonTube {
+    animation: neon-buzz 9s linear 2s infinite;
+  }
+
+  .firefly {
+    animation:
+      firefly-drift var(--t) ease-in-out var(--d) infinite alternate,
+      twinkle 2.6s ease-in-out var(--d) infinite;
+  }
+}
+
+@keyframes stars-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes moon-rise {
+  from {
+    opacity: 0;
+    transform: translateY(40%);
+  }
+}
+
+@keyframes neon-on {
+  0%,
+  12% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.8;
+  }
+  26% {
+    opacity: 0.15;
+  }
+  38%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes neon-buzz {
+  0%,
+  60%,
+  64%,
+  100% {
+    opacity: 1;
+  }
+  61% {
+    opacity: 0.35;
+  }
+  62.5% {
+    opacity: 0.9;
+  }
+  63% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes firefly-drift {
+  from {
+    transform: translate(-10px, 8px);
+  }
+  to {
+    transform: translate(14px, -22px);
+  }
+}

@@ -1,0 +1,354 @@
+.frame {
+  --sea-band: calc(100% - var(--horizon) - var(--shore));
+  --sea-low-at: 300px;
+  --sea-end: 100%;
+  --lane-sink: 0;
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+  contain: strict;
+}
+
+.frame[data-paused] *,
+.frame[data-paused] *::before,
+.frame[data-paused] *::after {
+  animation-play-state: paused;
+}
+
+.hero {
+  --horizon: calc(300px + 10vw);
+  --sky-x: calc(100% - 62px);
+  --sky-y: calc(var(--horizon) - 58px);
+  --sky-size: 96px;
+  --pool-x: 50%;
+  --pool-y: calc(var(--horizon) + 150px);
+  --pool-w: 150%;
+  --pool-h: 560px;
+  --fly-base: -44px;
+  --fly-scale: 0.18;
+  --sag: 12px;
+  --bulb-w: 10px;
+  --shore: 0px;
+  --sea-band: 170px;
+  --sea-low-at: 130px;
+  --sea-end: calc(var(--horizon) + 200px);
+  --floor: var(--canvas);
+}
+
+.defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.wide,
+.desk {
+  display: none;
+}
+
+.ground {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(var(--sea-line), var(--sea-line)) 0 var(--horizon) / 100% 2px no-repeat,
+    linear-gradient(180deg, var(--sand-wet), var(--sand) 30%, var(--floor)) 0 100% / 100% var(--shore) no-repeat,
+    linear-gradient(
+      180deg,
+      transparent var(--horizon),
+      var(--sea-top) var(--horizon),
+      var(--sea-mid) calc(var(--horizon) + 120px),
+      var(--sea-low) calc(var(--horizon) + var(--sea-low-at)),
+      var(--floor) var(--sea-end)
+    );
+}
+
+.skyBody {
+  position: absolute;
+  left: var(--sky-x);
+  top: var(--sky-y);
+  width: var(--sky-size);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+}
+
+.spot {
+  position: absolute;
+  left: var(--spot-x);
+  top: var(--spot-y);
+  translate: -50% -50%;
+}
+
+.sea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--horizon);
+  height: var(--sea-band);
+  overflow: clip;
+}
+
+.waves {
+  position: absolute;
+  left: calc(-1 * var(--tile));
+  right: 0;
+  opacity: var(--wave-alpha);
+  background-size: var(--tile) var(--tile-h);
+}
+
+.wavesFar {
+  --tile: 230px;
+  --tile-h: 30px;
+  top: 5px;
+  height: 62px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='230' height='30' fill='none' stroke='white' stroke-width='1.3' stroke-linecap='round'%3E%3Cpath d='M10 7q4-3 8 0t8 0M100 21q3-2.2 6 0t6 0M152 10q5-3.5 10 0M196 25q4-3 8 0t8 0'/%3E%3C/svg%3E");
+}
+
+.wavesNear {
+  --tile: 320px;
+  --tile-h: 70px;
+  top: 64px;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='70' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M14 14q7-6 14 0t14 0M136 48q9-7 18 0t18 0t18 0M236 22q6-5 12 0M66 58q5-4 10 0t10 0M282 52q6-4.5 12 0'/%3E%3C/svg%3E");
+}
+
+.glint {
+  position: absolute;
+  left: var(--sky-x);
+  top: 4px;
+  width: calc(var(--sky-size) * 0.7);
+  aspect-ratio: 100 / 220;
+  translate: -50% 0;
+}
+
+.glint svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--glint);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.foam {
+  position: absolute;
+  left: -3%;
+  top: calc(100% - var(--shore) - 8px);
+  width: 106%;
+  height: 14px;
+  overflow: visible;
+  fill: none;
+  stroke: var(--foam);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.hero .foam {
+  display: none;
+}
+
+.foam path,
+.wire path {
+  vector-effect: non-scaling-stroke;
+}
+
+.varal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--sag);
+}
+
+.wire {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: var(--wire);
+  stroke-width: 1.6;
+}
+
+.halo {
+  position: absolute;
+  left: var(--x);
+  top: calc(var(--sag) * var(--k) - 2px + var(--bulb-w) * 1.05);
+  width: calc(var(--bulb-w) * 5.5);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--bulb-halo), transparent);
+}
+
+.bulb {
+  position: absolute;
+  left: var(--x);
+  top: calc(var(--sag) * var(--k) - 2px);
+  width: var(--bulb-w);
+  aspect-ratio: 20 / 34;
+  translate: -50% 0;
+  transform-origin: 50% 0;
+}
+
+.bulb > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (min-width: 760px) {
+  .wide {
+    display: block;
+  }
+
+  .hero {
+    --horizon: 404px;
+    --sky-x: 76%;
+    --sky-y: 296px;
+    --sky-size: 120px;
+    --pool-y: 660px;
+    --pool-w: 120%;
+    --pool-h: 760px;
+    --fly-base: 0px;
+    --fly-scale: 0.6;
+    --sag: 26px;
+    --bulb-w: 13px;
+  }
+}
+
+@media (min-width: 900px) {
+  .desk {
+    display: block;
+  }
+
+  .hero {
+    --horizon: calc(465px + 7vw);
+    --sky-x: 34%;
+    --sky-y: 150px;
+    --sky-size: 136px;
+    --spot-x: calc(48% + 128px);
+    --spot-y: 92px;
+    --pool-x: 74%;
+    --pool-y: 440px;
+    --pool-w: 76%;
+    --pool-h: 820px;
+    --fly-scale: 1;
+    --sag: 38px;
+    --bulb-w: 15px;
+    --shore: 230px;
+    --sea-band: calc(100% - var(--horizon) - var(--shore));
+    --sea-low-at: 300px;
+    --sea-end: 100%;
+  }
+
+  .hero .foam {
+    display: block;
+  }
+}
+
+@media (min-width: 1200px) {
+  .hero {
+    --horizon: 521px;
+    --sky-x: calc(50% - 264px);
+    --sky-size: 150px;
+    --spot-x: calc(50% + 100px);
+    --pool-x: calc(50% + 292px);
+    --pool-w: 1100px;
+    --sag: 46px;
+    --bulb-w: 16px;
+    --shore: 160px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wavesFar {
+    animation: wave-drift 16s linear infinite;
+  }
+
+  .wavesNear {
+    animation: wave-drift 11s linear infinite;
+  }
+
+  .glintA {
+    animation: glint 2.8s ease-in-out infinite alternate;
+  }
+
+  .glintB {
+    animation: glint 2.8s ease-in-out infinite alternate-reverse;
+  }
+
+  .foam {
+    animation: foam-lap 5.5s ease-in-out infinite alternate;
+  }
+
+  .halo {
+    animation: bulb-on 0.6s ease-out var(--on) backwards;
+  }
+
+  .bulb {
+    animation: bulb-sway var(--sway) ease-in-out var(--p) infinite alternate;
+  }
+
+  .lit {
+    animation:
+      bulb-sway var(--sway) ease-in-out var(--p) infinite alternate,
+      bulb-on 0.6s ease-out var(--on) backwards;
+  }
+}
+
+@keyframes wave-drift {
+  to {
+    transform: translateX(var(--tile));
+  }
+}
+
+@keyframes glint {
+  from {
+    opacity: 1;
+    transform: scaleX(1.06);
+  }
+  to {
+    opacity: 0.15;
+    transform: scaleX(0.93);
+  }
+}
+
+@keyframes foam-lap {
+  from {
+    opacity: 0.65;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes bulb-sway {
+  from {
+    transform: rotate(-6deg);
+  }
+  to {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes bulb-on {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
