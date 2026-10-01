@@ -7,6 +7,7 @@ import {
   createExpense,
   createGroupWithMembers,
   createTestUsers,
+  resetRateLimit,
   type TestUser,
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
@@ -254,6 +255,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger model parity", () => {
     await fc.assert(
       fc.asyncProperty(scriptSpec, async (script) => {
         caseIndex += 1;
+        await resetRateLimit("group_creates", users[0].id);
         const groupId = await createGroupWithMembers(
           users[0],
           users.slice(1),

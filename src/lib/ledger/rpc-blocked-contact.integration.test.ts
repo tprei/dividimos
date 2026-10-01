@@ -449,17 +449,10 @@ describe.skipIf(!isIntegrationTestReady)("blocked contact — authorization firs
 });
 
 describe.skipIf(!isIntegrationTestReady)("blocked contact — joining paths", () => {
-  it.each([
-    ["inviter blocks", true],
-    ["invitee blocks", false],
-  ] as const)("refuses a stale invitation once the pair is blocked (%s)", async (_label, inviterBlocks) => {
+  it("refuses a stale invitation once the inviter blocks the invitee", async () => {
     const [ana, bruno] = await createTestUsers(2);
     const { groupId } = await createGroup(ana, "Grupo do convite", [bruno.id]);
-    if (inviterBlocks) {
-      await rpcOk(authenticateAs(ana), "block_user", { p_user_id: bruno.id });
-    } else {
-      await rpcOk(authenticateAs(bruno), "block_user", { p_user_id: ana.id });
-    }
+    await rpcOk(authenticateAs(ana), "block_user", { p_user_id: bruno.id });
 
     expect(
       await rpcErrorCode(authenticateAs(bruno), "accept_invitation", { p_group_id: groupId }),
@@ -470,6 +463,22 @@ describe.skipIf(!isIntegrationTestReady)("blocked contact — joining paths", ()
         [groupId, bruno.id],
       ),
     ).toBe(1);
+  });
+
+  it("clears the invitee's pending invitation when the invitee blocks the inviter", async () => {
+    const [ana, bruno] = await createTestUsers(2);
+    const { groupId } = await createGroup(ana, "Grupo do convite", [bruno.id]);
+    await rpcOk(authenticateAs(bruno), "block_user", { p_user_id: ana.id });
+
+    expect(
+      await rpcErrorCode(authenticateAs(bruno), "accept_invitation", { p_group_id: groupId }),
+    ).toBe("not_invited");
+    expect(
+      await countRows(
+        "select count(*) from group_members where group_id = $1 and user_id = $2",
+        [groupId, bruno.id],
+      ),
+    ).toBe(0);
   });
 
   it("refuses every invite link into the blocker's own group", async () => {
