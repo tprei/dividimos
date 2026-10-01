@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { applyExpenseDelta, applySettlementDelta } from "@/lib/ledger/apply";
 import {
   authenticateAs,
-  createGroupWithMembers,
+  createAcceptedGroupBySql,
   createTestUsers,
   getBalances,
   withPg,
@@ -181,7 +181,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger simulation", () => {
       fc.asyncProperty(
         fc.array(command, { minLength: 10, maxLength: 40 }),
         async (commands) => {
-          const groupId = await createGroupWithMembers(users[0], users.slice(1));
+          const groupId = await createAcceptedGroupBySql(users[0], users.slice(1));
           createdGroupIds.push(groupId);
           const expenses: SimExpense[] = [];
           const settlements: SimSettlement[] = [];
