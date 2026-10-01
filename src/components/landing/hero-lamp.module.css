@@ -1,0 +1,196 @@
+.mount {
+  --shade-w: 52px;
+  --cable: 16px;
+  --lamp-enamel: oklch(0.52 0.1 168);
+  --lamp-cap: oklch(0.3 0.02 250);
+  --lamp-sheen: oklch(1 0 0 / 0.4);
+  --lamp-inner: oklch(0.97 0.06 95);
+  --lamp-bulb: oklch(0.985 0.07 98);
+  --lamp-filament: oklch(0.74 0.15 68);
+  --lamp-glow: oklch(0.96 0.12 92 / 0.65);
+  --lamp-cord: oklch(0.33 0.02 250);
+  --lamp-bead: oklch(0.64 0.11 62);
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 4px;
+  pointer-events: none;
+}
+
+:global(.dark) .mount {
+  --lamp-enamel: oklch(0.42 0.08 170);
+  --lamp-sheen: oklch(1 0 0 / 0.18);
+  --lamp-inner: oklch(0.3 0.03 250);
+  --lamp-bulb: oklch(0.52 0.03 80);
+  --lamp-filament: oklch(0.38 0.03 60);
+  --lamp-cord: oklch(0.62 0.02 250);
+}
+
+.mount[data-paused] *,
+.mount[data-paused] *::before,
+.mount[data-paused] *::after {
+  animation-play-state: paused;
+}
+
+.swing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: 50% 0;
+}
+
+.cable {
+  display: block;
+  width: 2px;
+  height: var(--cable);
+  background: var(--lamp-cord);
+}
+
+.lamp {
+  position: relative;
+  display: block;
+  margin-top: -1px;
+  padding: 0 10px 36px;
+  border: 0;
+  border-radius: 18px;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lamp:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--ring) 75%, transparent);
+  outline-offset: 2px;
+}
+
+.glow {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--shade-w) * 0.76);
+  width: calc(var(--shade-w) * 3.4);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--lamp-glow), transparent);
+}
+
+:global(.dark) .glow {
+  opacity: 0;
+}
+
+.body {
+  position: relative;
+  display: block;
+}
+
+.shade {
+  display: block;
+  width: var(--shade-w);
+  height: auto;
+  aspect-ratio: 72 / 66;
+  overflow: visible;
+}
+
+.cord {
+  position: absolute;
+  left: 84%;
+  top: calc(var(--shade-w) * 0.6);
+  width: 1.5px;
+  height: 30px;
+  background: var(--lamp-cord);
+  transform-origin: 50% 0;
+}
+
+.bead {
+  position: absolute;
+  left: 84%;
+  top: calc(var(--shade-w) * 0.6 + 28px);
+  width: 8px;
+  height: 12px;
+  translate: -45% 0;
+  border-radius: 4px;
+  background: var(--lamp-bead);
+  box-shadow: inset -1.5px -2px 0 oklch(0 0 0 / 0.22);
+}
+
+@media (min-width: 760px) {
+  .mount {
+    --shade-w: 60px;
+    --cable: 64px;
+    right: 40px;
+  }
+}
+
+@media (min-width: 900px) {
+  .mount {
+    --cable: 20px;
+    right: auto;
+    left: 48%;
+    translate: -50% 0;
+  }
+}
+
+@media (min-width: 1200px) {
+  .mount {
+    --shade-w: 68px;
+    --cable: 32px;
+    left: calc(50% - 66px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .swing {
+    animation: lamp-swing 5.2s ease-in-out infinite alternate;
+  }
+
+  .jolt {
+    animation: lamp-jolt 0.6s cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+
+  .cord.tug {
+    animation: cord-tug 0.5s cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+
+  .bead.tug {
+    animation: bead-tug 0.5s cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .bead {
+    transition: transform 0.2s ease;
+  }
+
+  .lamp:hover .bead {
+    transform: translateY(3px);
+  }
+}
+
+@keyframes lamp-swing {
+  from {
+    transform: rotate(-1.4deg);
+  }
+  to {
+    transform: rotate(1.4deg);
+  }
+}
+
+@keyframes lamp-jolt {
+  30% {
+    transform: translateY(3px) rotate(2.5deg);
+  }
+}
+
+@keyframes cord-tug {
+  30% {
+    transform: scaleY(1.4);
+  }
+}
+
+@keyframes bead-tug {
+  30% {
+    transform: translateY(12px);
+  }
+}
