@@ -50,11 +50,14 @@ const config: CapacitorConfig = {
       style: "LIGHT",
       backgroundColor: "#F9F9FB",
     },
+    SystemBars: {
+      initialViewportFitValueHint: "cover",
+    },
     Keyboard: {
-      // Native resize is the only keyboard subtraction: the WebView shrinks,
-      // the visual viewport follows, and no JavaScript adds a second offset.
+      // iOS resizes the WKWebView. Android ignores `resize`: SystemBars pads
+      // the window by the IME inset under adjustResize. `resizeOnFullScreen`
+      // stays unset; it subtracted the keyboard a second time.
       resize: KeyboardResize.Native,
-      resizeOnFullScreen: true,
     },
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],
