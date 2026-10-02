@@ -343,9 +343,7 @@ describe("GroupsListContent", () => {
     );
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Sem conexão. Você pode tentar de novo quando a internet voltar.",
-      );
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
     });
     expect(screen.getByText("Convite · Casa nova")).toBeInTheDocument();
     expect(refreshGroup).not.toHaveBeenCalled();

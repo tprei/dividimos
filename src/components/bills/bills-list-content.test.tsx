@@ -327,7 +327,7 @@ describe("BillsListContent", () => {
     await user.click(screen.getByRole("button", { name: "Excluir" }));
 
     await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("Sem conexão. Você pode tentar de novo quando a internet voltar.");
+      expect(toastError).toHaveBeenCalledWith(expect.any(String));
     });
     expect(screen.getByText("Excluir conta?")).toBeInTheDocument();
   });

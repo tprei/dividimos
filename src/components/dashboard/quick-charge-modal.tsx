@@ -24,7 +24,7 @@ import {
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 import { getAuthGeneration } from "@/lib/sync/client";
-import { LedgerError } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { generateSelfPixCode } from "@/lib/sync/pix";
 import { copyText } from "@/lib/platform/clipboard";
 import { QrCanvas } from "@/components/shared/qr-canvas";
@@ -51,6 +51,12 @@ const PINNED_SIDE: PopoverContentProps["collisionAvoidance"] = {
 // From md up the quick actions become a column at the top right of Home, with
 // no room above but plenty to their left.
 const WIDE_LAYOUT_QUERY = "(min-width: 48rem)";
+
+function chargeErrorMessage(err: unknown): string {
+  if (err instanceof LedgerError) return ledgerErrorMessage(err);
+  if (err instanceof Error && err.message) return err.message;
+  return "Não deu para gerar o Pix";
+}
 
 interface ChargeOperation {
   generation: number;
@@ -241,13 +247,7 @@ export function QuickChargeModal({
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       if (!isCurrentOperation(operation)) return;
-      setError(
-        err instanceof LedgerError && err.code === "network"
-          ? "Sem conexão. Tente de novo."
-          : err instanceof Error && err.message
-            ? err.message
-            : "Não deu para gerar o Pix",
-      );
+      setError(chargeErrorMessage(err));
       haptics.error();
       return;
     } finally {
