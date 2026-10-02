@@ -3,6 +3,7 @@ import { MessageSquare, Mic, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChargeDemo } from "./charge-demo";
 import { LandingSection, SectionHeading } from "./landing-section";
+import { PausedOffscreen } from "./paused-offscreen";
 import { TextDemo } from "./text-demo";
 import { VoiceDemo } from "./voice-demo";
 import styles from "./ways.module.css";
@@ -32,7 +33,7 @@ export function WaysSection() {
   return (
     <LandingSection id="outros">
       <SectionHeading eyebrow="Outros jeitos de lançar" title="Escreve, fala ou cobra na hora." />
-      <div className={styles.ways}>
+      <PausedOffscreen className={styles.ways}>
         <WayCard
           toneClass={styles.text}
           icon={<MessageSquare aria-hidden="true" strokeWidth={2.2} />}
@@ -57,7 +58,7 @@ export function WaysSection() {
         >
           <ChargeDemo />
         </WayCard>
-      </div>
+      </PausedOffscreen>
     </LandingSection>
   );
 }

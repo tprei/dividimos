@@ -3,6 +3,12 @@
   gap: 18px;
 }
 
+.ways[data-paused] *,
+.ways[data-paused] *::before,
+.ways[data-paused] *::after {
+  animation-play-state: paused;
+}
+
 .way {
   display: flex;
   flex-direction: column;
