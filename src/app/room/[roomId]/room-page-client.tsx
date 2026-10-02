@@ -84,6 +84,25 @@ function roomPayerPayload(
   });
 }
 
+function completionActionLabel(
+  completion: AssignmentRoomCompletion | null,
+  failed: boolean,
+): string | undefined {
+  if (completion === null) return failed ? "Tentar de novo" : undefined;
+  switch (completion.action.kind) {
+    case "view_expense":
+      return "Ver conta";
+    case "accept_invitation":
+      return "Aceitar convite e ver conta";
+    case "claim_guest":
+      return "Vincular minha parte e ver conta";
+    case "sign_in":
+      return "Entrar com Google para vincular minha parte";
+    case "unavailable":
+      return undefined;
+  }
+}
+
 export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const router = useRouter();
   const accountId = useAppStore((state) => state.me?.id ?? null);
@@ -115,6 +134,8 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   const [completion, setCompletion] = useState<AssignmentRoomCompletion | null>(null);
   const [completionPending, setCompletionPending] = useState(false);
   const [completionActionPending, setCompletionActionPending] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [completionAttempt, setCompletionAttempt] = useState(0);
   // Draft payers belong to one room and one account; when either changes the
   // next render must already see an empty list, so this resets during render
   // instead of one committed frame later.
@@ -271,16 +292,20 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     if (view?.room.status !== "finalized") {
       setCompletion(null);
       setCompletionPending(false);
+      setCompletionError(null);
       return;
     }
     let active = true;
     setCompletionPending(true);
     void refreshAssignmentRoomCompletion(roomId)
       .then((value) => {
-        if (active) setCompletion(value);
+        if (!active) return;
+        setCompletion(value);
+        setCompletionError(null);
       })
       .catch((error) => {
-        if (active) setPageError(ledgerErrorMessage(error));
+        if (!active) return;
+        setCompletionError(ledgerErrorMessage(error));
       })
       .finally(() => {
         if (active) setCompletionPending(false);
@@ -288,7 +313,21 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     return () => {
       active = false;
     };
-  }, [roomId, view?.room.status, view?.room.revision]);
+  }, [completionAttempt, roomId, view?.room.status, view?.room.revision]);
+
+  useEffect(() => {
+    if (completionError === null || completionPending) return;
+    const retryCompletion = () => setCompletionAttempt((attempt) => attempt + 1);
+    window.addEventListener("online", retryCompletion);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") retryCompletion();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("online", retryCompletion);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [completionError, completionPending]);
 
   let joinUrl: string | null = null;
   if (view?.role === "host") {
@@ -557,28 +596,27 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
   if (view.room.status === "finalized" && (completion?.bill ?? view.room.currentBill)) {
     const bill = completion?.bill ?? view.room.currentBill;
     if (!bill) return <RoomLoading />;
-    const actionLabel =
-      completion?.action.kind === "view_expense"
-        ? "Ver conta"
-        : completion?.action.kind === "accept_invitation"
-          ? "Aceitar convite e ver conta"
-          : completion?.action.kind === "claim_guest"
-            ? "Vincular minha parte e ver conta"
-            : completion?.action.kind === "sign_in"
-              ? "Entrar com Google para vincular minha parte"
-              : undefined;
+    const completionFailed = completionError !== null;
+    const actionLabel = completionActionLabel(completion, completionFailed);
+    let onAction: (() => void) | undefined;
+    if (completion) {
+      if (completion.action.kind !== "unavailable") onAction = handleCompletionAction;
+    } else if (completionFailed) {
+      onAction = () => setCompletionAttempt((attempt) => attempt + 1);
+    }
     const hostFirstName = view.room.participants.find((participant) => participant.ordinal === 0)?.displayName.trim().split(/\s+/)[0];
     return (
       <main className="mx-auto flex min-h-full w-full max-w-lg flex-col md:max-w-2xl">
         {pageError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive-text">{pageError}</p>}
+        {completionError && <p role="alert" className="rounded-xl border p-3 text-sm text-destructive-text">{completionError}</p>}
         {completionPending && <p role="status" className="text-sm text-muted-foreground">Atualizando sua parte...</p>}
         <RoomBreakdown
           bill={bill}
           selfParticipantIndex={completion?.selfParticipantIndex ?? null}
           heading={view.role === "host" ? "Conta registrada" : hostFirstName ? `${hostFirstName} encerrou a sala` : "Sala encerrada"}
           actionLabel={actionLabel}
-          actionDisabled={completionActionPending}
-          onAction={completion ? handleCompletionAction : undefined}
+          actionDisabled={completionActionPending || completionPending}
+          onAction={onAction}
         />
       </main>
     );
@@ -610,9 +648,10 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     );
   }
 
+  const boardError = pageError ?? completionError;
   return (
     <>
-      {pageError && <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive-text">{pageError}</p>}
+      {boardError && <p role="alert" className="mx-auto mt-3 max-w-2xl rounded-xl border px-4 py-3 text-sm text-destructive-text">{boardError}</p>}
       <RoomBoard
         view={view}
         connected={entry?.connected ?? false}

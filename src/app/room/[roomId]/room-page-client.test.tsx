@@ -165,7 +165,7 @@ vi.mock("@/components/assignment-room/room-breakdown", () => ({
   ),
 }));
 
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
 import { RoomPageClient } from "./room-page-client";
 
@@ -276,6 +276,18 @@ function completionBill(): AssignmentBillBreakdown {
     totalCents: 1_000,
     serviceFeeBasisPoints: 0,
     fixedFeeCents: 0,
+  };
+}
+function finalizedGuestView(): AssignmentRoomView {
+  const base = roomView("participant", "finalized");
+  return { ...base, room: { ...base.room, currentBill: completionBill() } };
+}
+function signInCompletion() {
+  return {
+    roomId: ROOM_ID,
+    bill: completionBill(),
+    selfParticipantIndex: 0,
+    action: { kind: "sign_in" as const },
   };
 }
 
@@ -517,6 +529,108 @@ describe("RoomPageClient", () => {
     await waitFor(() => {
       expect(mocks.push).toHaveBeenCalledWith(`/app/bill/${expenseId}`);
     });
+  });
+
+  it("offers a retry when the guest's completion read fails and shows the sign-in action after it succeeds", async () => {
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(finalizedGuestView());
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.refreshCompletion
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockResolvedValueOnce(signInCompletion());
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Tentar de novo" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+    ).toBeInTheDocument();
+    expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retries a failed completion read when the guest returns to the tab", async () => {
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(finalizedGuestView());
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.refreshCompletion
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockResolvedValueOnce(signInCompletion());
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+    ).toBeInTheDocument();
+    expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts one retry when the guest comes back online and to the tab", async () => {
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(finalizedGuestView());
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    const retry = Promise.withResolvers<ReturnType<typeof signInCompletion>>();
+    mocks.refreshCompletion
+      .mockRejectedValueOnce(new LedgerError("network"))
+      .mockReturnValueOnce(retry.promise);
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      retry.resolve(signInCompletion());
+    });
+    expect(
+      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the working action when a later completion refetch fails", async () => {
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(finalizedGuestView());
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.refreshCompletion
+      .mockResolvedValueOnce(signInCompletion())
+      .mockRejectedValueOnce(new LedgerError("network"));
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    const signIn = "Entrar com Google para vincular minha parte";
+    expect(await screen.findByRole("button", { name: signIn })).toBeInTheDocument();
+    act(() => {
+      const current = finalizedGuestView();
+      useAssignmentRoomStore.getState().install({
+        ...current,
+        room: { ...current.room, revision: current.room.revision + 1 },
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: signIn })).toBeInTheDocument();
   });
 
   it("opens the invitation from the one-time ?invite=1 flag and strips it from history", async () => {
