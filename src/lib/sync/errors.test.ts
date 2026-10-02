@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LEDGER_ERROR_CODES,
   LedgerError,
@@ -7,6 +7,18 @@ import {
 } from "./errors";
 
 describe("errors", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("network falls back to the offline copy only when the browser reports offline", () => {
+    vi.stubGlobal("navigator", { ...navigator, onLine: false });
+    expect(ledgerErrorMessage(new LedgerError("network"))).toMatch(/sem conexão/i);
+
+    vi.stubGlobal("navigator", { ...navigator, onLine: true });
+    expect(ledgerErrorMessage(new LedgerError("network"))).not.toMatch(/sem conexão/i);
+  });
+
   it("every LedgerErrorCode has non-empty copy", () => {
     for (const code of LEDGER_ERROR_CODES) {
       const err = new LedgerError(code);

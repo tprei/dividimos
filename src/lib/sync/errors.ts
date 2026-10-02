@@ -147,9 +147,16 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   message_rate_limited: "Calma! Muitas mensagens seguidas. Espere um instante e tente de novo.",
   charge_rate_limited: "Você gerou muitas cobranças em pouco tempo. Espere um pouco e tente de novo.",
   invalid_wire: "Não deu para ler a resposta do servidor.",
-  network: "Sem conexão. Você pode tentar de novo quando a internet voltar.",
+  network: "Não deu para falar com o servidor. Tente de novo.",
   unknown: "Algo deu errado. Você pode tentar de novo.",
 };
+
+const OFFLINE_MESSAGE = "Sem conexão. Você pode tentar de novo quando a internet voltar.";
+
+function messageForCode(code: LedgerErrorCode): string {
+  if (code === "network" && navigator.onLine === false) return OFFLINE_MESSAGE;
+  return MESSAGES[code];
+}
 
 export interface LedgerErrorOptions {
   message?: string;
@@ -161,7 +168,7 @@ export class LedgerError extends Error {
   override readonly cause?: unknown;
 
   constructor(code: LedgerErrorCode, options: LedgerErrorOptions = {}) {
-    super(options.message ?? MESSAGES[code]);
+    super(options.message ?? messageForCode(code));
     this.name = "LedgerError";
     this.code = code;
     this.cause = options.cause;
@@ -175,7 +182,7 @@ export function codeFromMessage(message: string): LedgerErrorCode {
 
 export function ledgerErrorMessage(error: unknown): string {
   if (error instanceof LedgerError) {
-    return MESSAGES[error.code];
+    return messageForCode(error.code);
   }
   return MESSAGES.unknown;
 }
