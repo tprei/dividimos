@@ -13,11 +13,18 @@ interface SceneryProps {
 }
 
 export function Scenery({ variant, className }: SceneryProps) {
-  return (
-    <SceneryFrame className={cn(styles.frame, styles[variant], className)}>
+  const frameClassName = cn(styles.frame, styles[variant], className);
+  const layers = (
+    <>
       <SceneryDefs />
       <NightBar variant={variant} />
       <SundayBeach variant={variant} />
-    </SceneryFrame>
+    </>
+  );
+  if (variant === "hero") return <SceneryFrame className={frameClassName}>{layers}</SceneryFrame>;
+  return (
+    <div className={frameClassName} aria-hidden="true">
+      {layers}
+    </div>
   );
 }

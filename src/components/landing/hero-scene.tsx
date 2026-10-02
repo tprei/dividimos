@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { HeroChat } from "./hero-chat";
 import { HeroReceipt } from "./hero-receipt";
-import { HeroSceneFit } from "./hero-scene-fit";
+import { PausedOffscreen } from "./paused-offscreen";
 import { Coaster, Copo, TableArtDefs } from "./table-art";
 import { ClinkBottles, FlipCap } from "./table-toys";
 import styles from "./hero-scene.module.css";
@@ -35,7 +35,7 @@ function Shadows() {
 
 export function HeroScene() {
   return (
-    <HeroSceneFit>
+    <PausedOffscreen className={styles.sceneFit}>
       <div className={styles.scene}>
         <TableArtDefs />
         <Mesa />
@@ -52,6 +52,6 @@ export function HeroScene() {
         <HeroReceipt />
         <HeroChat />
       </div>
-    </HeroSceneFit>
+    </PausedOffscreen>
   );
 }

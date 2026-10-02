@@ -231,11 +231,11 @@ export function AuthPanel({ className }: AuthPanelProps) {
 
             <p className="text-center text-[11px] leading-[1.55] text-obj-ink-soft select-text">
               Ao continuar, você aceita os{" "}
-              <Link href="/terms" className="font-medium underline underline-offset-3">
+              <Link href="/terms" prefetch={false} className="font-medium underline underline-offset-3">
                 Termos de Uso
               </Link>{" "}
               e a{" "}
-              <Link href="/privacy" className="font-medium underline underline-offset-3">
+              <Link href="/privacy" prefetch={false} className="font-medium underline underline-offset-3">
                 Política de Privacidade
               </Link>
               .
@@ -253,7 +253,7 @@ export function AuthPanel({ className }: AuthPanelProps) {
           <p className="mt-3.5 text-center text-[11px] leading-[1.55] text-obj-ink-soft select-text intro-tiny:mt-2.5">
             Você pode exercer seus direitos pela LGPD (Lei 13.709/2018). Para excluir sua conta do
             Dividimos, primeiro acerte seus saldos.{" "}
-            <Link href="/excluir-conta" className="font-medium underline underline-offset-3">
+            <Link href="/excluir-conta" prefetch={false} className="font-medium underline underline-offset-3">
               Veja como excluir e o que é mantido
             </Link>
             .
