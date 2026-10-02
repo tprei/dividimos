@@ -31,6 +31,7 @@ export interface TypeStepProps {
   scanSharePending?: boolean;
   scanShareError?: string | null;
   scanInGroup?: boolean;
+  scanInConversation?: boolean;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
   onManageParticipants: () => void;
@@ -55,6 +56,7 @@ export function TypeStep({
   scanSharePending = false,
   scanShareError,
   scanInGroup = false,
+  scanInConversation = false,
   onVoiceConfirm,
   onReviewingChange,
   onManageParticipants,
@@ -232,6 +234,7 @@ export function TypeStep({
           sharePending={scanSharePending}
           shareError={scanShareError}
           inGroup={scanInGroup}
+          inConversation={scanInConversation}
           onCancel={handleScanCancel}
           onManageParticipants={onManageParticipants}
         />

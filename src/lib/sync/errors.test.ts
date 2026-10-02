@@ -41,6 +41,8 @@ describe("errors", () => {
     expect(codeFromMessage("invitation_not_accepted")).toBe("invitation_not_accepted");
     expect(codeFromMessage("member_excluded")).toBe("member_excluded");
     expect(codeFromMessage("former_member_balance")).toBe("former_member_balance");
+    expect(codeFromMessage("invalid_operation")).toBe("invalid_operation");
+    expect(codeFromMessage("dm_room_pair_only")).toBe("dm_room_pair_only");
   });
 
   it("codeFromMessage falls back to unknown for arbitrary text", () => {

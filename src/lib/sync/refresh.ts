@@ -180,10 +180,9 @@ function startOpenAssignmentRoomsRead(groupId: string): Promise<void> | null {
   const viewerId = state.me?.id ?? null;
   const readsRooms =
     cached === undefined ||
-    (cached.group.kind !== "dm" &&
-      cached.members.some(
-        (member) => member.userId === viewerId && member.status === "accepted",
-      ));
+    cached.members.some(
+      (member) => member.userId === viewerId && member.status === "accepted",
+    );
   if (!readsRooms) return null;
   const roomsKey = openAssignmentRoomsReadKey(groupId);
   const roomsAttempt = beginRead(roomsKey);

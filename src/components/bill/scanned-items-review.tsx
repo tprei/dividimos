@@ -63,6 +63,12 @@ function isAmountValid(item: ReceiptItem, text: string): boolean {
   return amount !== null && unitPriceForTotal(item, amount) !== null;
 }
 
+function roomShareCaption(inGroup: boolean, inConversation: boolean): string {
+  if (inConversation) return "A conversa recebe um aviso e cada um escolhe o que consumiu.";
+  if (inGroup) return "O grupo recebe um aviso e cada pessoa escolhe o que consumiu.";
+  return "Cada pessoa entra pelo QR ou link e escolhe o que consumiu.";
+}
+
 export interface ScannedItemsReviewProps {
   result: ReceiptOcrResult;
   participants: ItemDivisionParticipant[];
@@ -72,6 +78,7 @@ export interface ScannedItemsReviewProps {
   sharePending?: boolean;
   shareError?: string | null;
   inGroup?: boolean;
+  inConversation?: boolean;
   onCancel: () => void;
   onManageParticipants: () => void;
 }
@@ -87,6 +94,7 @@ export function ScannedItemsReview({
   sharePending = false,
   shareError,
   inGroup = false,
+  inConversation = false,
 }: ScannedItemsReviewProps) {
   const [items, setItems] = useState<ReceiptItem[]>(() =>
     result.items.map((item) => ({
@@ -326,9 +334,7 @@ export function ScannedItemsReview({
           </p>
         )}
         <p className="text-center text-xs leading-4 text-muted-foreground">
-          {inGroup
-            ? "O grupo recebe um aviso e cada pessoa escolhe o que consumiu."
-            : "Cada pessoa entra pelo QR ou link e escolhe o que consumiu."}
+          {roomShareCaption(inGroup, inConversation)}
         </p>
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-border" />

@@ -30,6 +30,7 @@ import { isGroupArchived } from "@/lib/group-lifecycle";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { ArchivedGroupBanner } from "@/components/shared/archived-group-banner";
 import { haptics } from "@/hooks/use-haptics";
+import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
 import { useAppViewport } from "@/hooks/use-app-viewport";
 import { useInfoView } from "@/hooks/use-info-view";
 import { fade, springs } from "@/lib/animations";
@@ -125,6 +126,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const me = useAppStore((s) => s.me);
   const dm = useAppStore((s) => (me ? findDmGroup(s, me.id, counterpartyId) : null));
   const conversation = useAppStore((s) => (dm ? s.conversations[dm.group.id] : undefined));
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(dm?.group.id ?? "", me?.id ?? null);
   const [resolveError, setResolveError] = useState<{
     accountKey: string;
     message: string;
@@ -667,6 +669,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
                 acknowledgeThroughId={readableThroughId}
                 onRenderedThrough={handleRenderedThrough}
                 onLoadMore={handleLoadMore}
+                pendingRoomId={pendingRoomId}
+                onOpenRoom={openRoom}
                 onOpenPerson={(id) => { if (id === counterpartyId) showProfile(); }}
               />
             </div>

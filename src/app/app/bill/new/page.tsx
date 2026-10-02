@@ -249,6 +249,8 @@ function NewBillPageContent() {
     modes.entryGroupId ? groups[modes.entryGroupId] ?? null : null
   );
   const scanRoomGroupId = scanDraftContext?.groupId ?? scanGroup?.group.id ?? null;
+  const scanRoomInConversation =
+    scanRoomGroupId !== null && groups[scanRoomGroupId]?.group.kind === "dm";
   const assignmentRoomEntry = useAssignmentRoomEntry({
     host: me ? { id: me.id, name: me.name } : null,
     groupId: scanRoomGroupId,
@@ -772,6 +774,7 @@ function NewBillPageContent() {
           scanSharePending={assignmentRoomEntry.pending}
           scanShareError={assignmentRoomEntry.error}
           scanInGroup={scanRoomGroupId !== null}
+          scanInConversation={scanRoomInConversation}
           onVoiceConfirm={handleVoiceConfirm}
           onReviewingChange={handleReviewingChange}
           onManageParticipants={() => setScanParticipantsOpen(true)}

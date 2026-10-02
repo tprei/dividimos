@@ -18,7 +18,6 @@ import {
   type TestUser,
 } from "@/test/integration-helpers";
 import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
-import { decodeMutationAck } from "@/lib/ledger/decode";
 import { decodeAssignmentRoomView } from "@/lib/ledger/decode-assignment-room";
 import type { AssignmentRoomView } from "@/types/assignment-room";
 
@@ -345,7 +344,7 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
     ).toContain("invalid_argument");
   });
 
-  it("accepts an existing group only for an accepted member and rejects DMs", async () => {
+  it("accepts an existing group only for an accepted member", async () => {
     const groupId = await createGroupWithMembers(host, [selected]);
     const groupArgs = roomArgs(host, {
       p_group_target: { kind: "existing", groupId },
@@ -371,19 +370,6 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
         outsiderClient.rpc("create_assignment_room", foreign)
       )
     ).toContain("not_a_member");
-
-    const { data: dm, error: dmError } = await hostClient.rpc(
-      "get_or_create_dm",
-      { p_user_id: selected.id }
-    );
-    if (dmError) throw new Error(dmError.message);
-    const dmId = decodeRpcData("get_or_create_dm", dm, decodeMutationAck).groupId;
-    const dmArgs = roomArgs(host, {
-      p_group_target: { kind: "existing", groupId: dmId },
-    });
-    expect(
-      await expectRpcError(hostClient.rpc("create_assignment_room", dmArgs))
-    ).toContain("invalid_operation");
   });
 
   it("rotates join access only for the host of an open room", async () => {
