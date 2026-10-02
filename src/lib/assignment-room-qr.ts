@@ -44,6 +44,11 @@ export function readAssignmentRoomFragment(
   return ASSIGNMENT_ROOM_JOIN_TOKEN_RE.test(token) ? token : null;
 }
 
+export function assignmentRoomPath(pathname: string): string | null {
+  const roomId = ROOM_PATH_RE.exec(pathname)?.[1];
+  return roomId ? `/room/${roomId.toLowerCase()}` : null;
+}
+
 export function parseAssignmentRoomQrCode(
   value: string
 ): AssignmentRoomQrResult | null {
