@@ -57,6 +57,7 @@ function renderReview(
     sharePending?: boolean;
     shareError?: string | null;
     inGroup?: boolean;
+    inConversation?: boolean;
   } = {},
 ) {
   const onShare = vi.fn();
@@ -71,6 +72,7 @@ function renderReview(
       sharePending={overrides.sharePending}
       shareError={overrides.shareError}
       inGroup={overrides.inGroup}
+      inConversation={overrides.inConversation}
     />,
   );
   return { onConfirm, onCancel, onShare };
@@ -152,6 +154,20 @@ describe("ScannedItemsReview", () => {
     fireEvent.click(createRoom);
     expect(onShare).toHaveBeenCalledOnce();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("shows the conversation caption when the room targets a DM", () => {
+    renderReview(makeResult(), vi.fn(), vi.fn(), {
+      inGroup: true,
+      inConversation: true,
+    });
+
+    expect(
+      screen.getByText("A conversa recebe um aviso e cada um escolhe o que consumiu."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("O grupo recebe um aviso e cada pessoa escolhe o que consumiu."),
+    ).not.toBeInTheDocument();
   });
 
   it("re-enables room creation after the added people are removed", () => {

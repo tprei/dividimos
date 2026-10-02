@@ -287,11 +287,11 @@ describe("refreshGroup", () => {
     });
   });
 
-  it("skips the open-rooms read for DMs and pending invitations", async () => {
-    const base = snapshot("g1", 2);
-    const dm = { ...base, group: { ...base.group, kind: "dm" as const } };
+  it("issues the open-rooms read for an accepted DM member and skips pending invitations", async () => {
+    const member = memberSnapshot("g1", 2);
+    const dm = { ...member, group: { ...member.group, kind: "dm" as const } };
     const invited = {
-      ...base,
+      ...dm,
       members: [
         {
           groupId: "g1",
@@ -309,14 +309,18 @@ describe("refreshGroup", () => {
     );
 
     await refreshGroup("g1");
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
 
     useAppStore.setState({ groups: { g1: invited } });
+    vi.mocked(rpc).mockClear();
     vi.mocked(rpc).mockImplementation(async (name: unknown) =>
       name === "list_open_assignment_rooms" ? [] : invited,
     );
     await refreshGroup("g1");
-    expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).not.toHaveBeenCalledWith(
       "list_open_assignment_rooms",
       expect.anything(),
@@ -392,11 +396,11 @@ describe("refreshOpenAssignmentRooms", () => {
     });
   });
 
-  it("skips DMs and viewers whose membership is not accepted", async () => {
-    const base = snapshot("g1", 2);
-    const dm = { ...base, group: { ...base.group, kind: "dm" as const } };
+  it("reads rooms for an accepted DM member and skips viewers without accepted membership", async () => {
+    const member = memberSnapshot("g1", 2);
+    const dm = { ...member, group: { ...member.group, kind: "dm" as const } };
     const invited = {
-      ...base,
+      ...dm,
       members: [
         {
           groupId: "g1",
@@ -410,14 +414,23 @@ describe("refreshOpenAssignmentRooms", () => {
     };
 
     useAppStore.setState({ me: ME, groups: { g1: dm } });
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_open_assignment_rooms" ? [] : snapshot("g1", 2),
+    );
     await refreshOpenAssignmentRooms("g1");
-    expect(rpc).not.toHaveBeenCalled();
-    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith(
+      "list_open_assignment_rooms",
+      { p_group_id: "g1" },
+      expect.any(Function),
+    );
 
     useAppStore.setState({ groups: { g1: invited } });
+    vi.mocked(rpc).mockClear();
     await refreshOpenAssignmentRooms("g1");
     expect(rpc).not.toHaveBeenCalled();
-    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toBeUndefined();
+    expect(useAppStore.getState().reads[openAssignmentRoomsReadKey("g1")]).toEqual({
+      status: "ready",
+    });
   });
 
   it("shares one in-flight read among concurrent callers", async () => {
