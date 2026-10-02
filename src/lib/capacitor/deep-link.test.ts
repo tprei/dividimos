@@ -70,8 +70,16 @@ describe("resolveDeepLinkTarget", () => {
       ).toBe(`/room/${ROOM_ID}#${ROOM_TOKEN}`);
     });
 
+    it("opens a bare room link so a member reaches the room by account", () => {
+      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/room/${ROOM_ID}`)).toBe(
+        `/room/${ROOM_ID}`,
+      );
+    });
+
     it("rejects malformed room links instead of using the generic redirect", () => {
-      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/room/${ROOM_ID}`)).toBeNull();
+      expect(resolveDeepLinkTarget("https://www.dividimos.ai/room/not-a-room")).toBeNull();
+      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/room/${ROOM_ID}/extra`)).toBeNull();
+      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/room/${ROOM_ID}?invite=1`)).toBeNull();
       expect(
         resolveDeepLinkTarget(
           `https://www.dividimos.ai/room/${ROOM_ID}#not-a-token`,

@@ -1,5 +1,5 @@
 import { parseClaimQrCode } from "@/lib/claim-qr";
-import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
+import { assignmentRoomPath, parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -42,6 +42,9 @@ export function resolveDeepLinkTarget(url: string): string | null {
       return claim ? claim.url : null;
     }
     if (parsed.pathname === "/room" || parsed.pathname.startsWith("/room/")) {
+      // The room page drops the invite fragment from the address bar, so a
+      // shared /room/<id> link reaches the app bare; members open it by account.
+      if (parsed.hash === "" && parsed.search === "") return assignmentRoomPath(parsed.pathname);
       const room = parseAssignmentRoomQrCode(url);
       return room ? room.url : null;
     }
