@@ -699,7 +699,7 @@ O que é preciso configurar pra remontar a produção, sem valores. Os valores f
 - **Apple**: o App ID `ai.dividimos.app` com Sign in with Apple, Push Notifications e Associated Domains ligados, e uma key de Sign in with Apple. Dela saem `APPLE_TEAM_ID` (Team ID), `APPLE_SIGN_IN_KEY_ID` (Key ID) e `APPLE_SIGN_IN_PRIVATE_KEY` (o conteúdo da `.p8`). A key não expira: o client secret que fala com a Apple é um JWT ES256 gerado a cada requisição com validade de no máximo 5 minutos, então não existe tarefa de rotação semestral. É essa chave que permite revogar a autorização da Apple quando a conta é excluída; sem ela, a exclusão de quem entrou com a Apple para no meio e pode ser tentada de novo.
 - **Firebase**: um app Android e um app iOS (`ai.dividimos.app`) no mesmo projeto, pro FCM. O app iOS do Firebase guarda a key APNs da Apple (Authentication key `.p8`), que serve tanto o ambiente de desenvolvimento quanto o de produção.
 - **Variáveis de ambiente na Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `APPLE_TEAM_ID`, `APPLE_SIGN_IN_KEY_ID`, `APPLE_SIGN_IN_PRIVATE_KEY`, `APPLE_APP_ID_PREFIX`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`, `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`, `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID`. As três variáveis da key de Sign in with Apple são só de servidor (nunca `NEXT_PUBLIC_`). `DEV_LOGIN_SECRET` nunca é definido em produção.
-- **Secrets do GitHub Actions**: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (só pro sintético da CI).
+- **Secrets do GitHub Actions**: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (só pro sintético da CI). Os do iOS ficam no environment `ios-release`; veja [Release do iOS](#release-do-ios-githubworkflowsiosyml).
 
 ### Aplicando mudanças no banco
 
@@ -778,7 +778,7 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 | `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
 | `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
 | `android.yml` | PR que mexe em `android/`, `native-shell/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
-| `ios.yml` | PR que mexe em `ios/`, `native-shell/`, `capacitor.config.ts`, `package*.json`, `scripts/ios-verify-app.sh` ou no próprio workflow | Build Release pro simulador com Xcode 26.6 fixo, sem secrets, e checagem do `.app` gerado |
+| `ios.yml` | PR que mexe em `ios/`, `native-shell/`, `capacitor.config.ts`, `package*.json`, `scripts/ios-verify-*.sh` ou no próprio workflow; disparo manual na `main` | Build Release pro simulador com Xcode 26.6 fixo, sem secrets, e checagem do `.app` gerado nos PRs; archive assinado, IPA verificado e upload pro TestFlight no disparo manual, depois da aprovação do environment `ios-release` |
 | `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
 | `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
 | `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |
@@ -797,6 +797,44 @@ Pull requests que mexem no Android (mesmos caminhos da tabela acima) só compila
 **versionCode**: usa `github.run_number` (sempre crescente), com `versionName` `1.0.<run_number>`. Pra publicar na Play Store, vale trocar por versionamento por tag.
 
 **Saída do build**: AAB assinado enviado como artefato (`app-release-<run_number>`), guardado por 7 dias.
+
+### Release do iOS (`.github/workflows/ios.yml`)
+
+O job `release` só roda por **Run workflow** na `main` (`workflow_dispatch`) e espera a aprovação de quem revisa o environment `ios-release`. Os secrets de assinatura existem só nesse environment, então nenhum PR os vê, e o workflow não usa `pull_request_target`. O job falha antes de compilar se faltar qualquer item abaixo, se o perfil não for de App Store, se o perfil for de outro time ou se o projeto deixar de ler as variáveis que o job passa.
+
+**Pré-requisitos (uma pessoa, no Apple Developer e no App Store Connect)**: conta no Apple Developer Program; o App ID `ai.dividimos.app` com Sign in with Apple, Push Notifications e Associated Domains; o app criado no App Store Connect; um certificado Apple Distribution exportado como `.p12`; um perfil de distribuição App Store pro `ai.dividimos.app` com esse certificado; uma API key do App Store Connect com papel Developer, que basta pra enviar builds.
+
+**Configuração do environment `ios-release`** (Settings > Environments, com revisores obrigatórios e só a branch `main`):
+- Variáveis: `IOS_TEAM_ID` (Team ID), `APPLE_APP_ID_PREFIX` (prefixo do App ID, o mesmo da Vercel), `IOS_GOOGLE_URL_SCHEME` (client iOS do Google invertido, `com.googleusercontent.apps.<id>`).
+- Secrets: `IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` e `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64` (o `GoogleService-Info.plist` do app iOS do Firebase), `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID` e `APP_STORE_CONNECT_API_KEY_P8_BASE64`. Gere o Base64 com `base64 -i arquivo | pbcopy`.
+
+**Assinatura**: a configuração Release do alvo usa assinatura manual com `Apple Distribution`, `DEVELOPMENT_TEAM = $(DIVIDIMOS_TEAM_ID)` e `PROVISIONING_PROFILE_SPECIFIER = $(DIVIDIMOS_PROVISIONING_PROFILE)`; as duas variáveis ficam vazias no projeto e o job passa o Team ID e o UUID do perfil, tanto no archive quanto no `ExportOptions.plist`. O certificado entra num keychain temporário com senha aleatória e o perfil vai pra `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. O passo de upload apaga a `.p8` ao terminar, e o último passo apaga keychain, perfil, `.p12`, qualquer `.p8` que tenha sobrado e o plist do Firebase mesmo quando algo falha.
+
+**Versão**: `CFBundleShortVersionString` é o `marketing_version` informado no disparo (`MAJOR.MINOR.PATCH`); `CFBundleVersion` é `<run_number>.<run_attempt>` do workflow, então um novo disparo e um re-run do mesmo job geram builds diferentes e sempre maiores. O job sobrescreve `MARKETING_VERSION` e `CURRENT_PROJECT_VERSION` na linha de comando; os valores do projeto são só de desenvolvimento.
+
+**Verificação antes do upload**: `scripts/ios-verify-release.sh` abre o IPA exportado, roda primeiro as mesmas checagens do `.app` que o PR roda e depois recusa versão diferente da pedida, falta do esquema do Google, `GoogleService-Info.plist` ausente ou de outro bundle, falta do `PrivacyInfo.xcprivacy`, assinatura inválida, `application-identifier` diferente de `APPLE_APP_ID_PREFIX.ai.dividimos.app` (o mesmo App ID do AASA), `aps-environment` que não seja `production`, `get-task-allow`, falta de Sign in with Apple ou do `applinks:www.dividimos.ai`, e perfil vencido, de outro time, com lista de aparelhos (desenvolvimento ou ad hoc) ou que vale pra todos os aparelhos (enterprise).
+
+**Upload**: com `upload` marcado, `xcrun altool --validate-app` e depois `--upload-package --wait` mandam o IPA pro App Store Connect e esperam o processamento, então um erro de validação ou de processamento deixa o job vermelho. O IPA fica 7 dias como artefato. No App Store Connect, responda a declaração de exportação de criptografia do build (o app não declara `ITSAppUsesNonExemptEncryption`) e libere o build pros testadores no TestFlight.
+
+**Archive local**, com o certificado e o perfil instalados no Mac:
+
+```bash
+npx cap sync ios   # sem CAPACITOR_DEV, pra empacotar só a URL de produção
+xcodebuild -workspace ios/App/App.xcworkspace -scheme Dividimos -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath build/Dividimos.xcarchive \
+  DIVIDIMOS_TEAM_ID=<TEAM_ID> DIVIDIMOS_PROVISIONING_PROFILE="<nome ou UUID do perfil>" \
+  DIVIDIMOS_REQUIRE_FIREBASE=YES GOOGLE_IOS_URL_SCHEME=com.googleusercontent.apps.<id> \
+  MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=<build maior que o último enviado> archive
+xcodebuild -exportArchive -archivePath build/Dividimos.xcarchive \
+  -exportOptionsPlist <ExportOptions.plist com method app-store-connect> -exportPath build/ipa
+scripts/ios-verify-release.sh build/ipa/App.ipa 1.0.0 <build> <TEAM_ID> <APPLE_APP_ID_PREFIX>
+```
+
+Abra o archive no Organizer do Xcode e gere o relatório de privacidade (Generate Privacy Report) antes de cada versão que muda SDKs nativos.
+
+**Quando algo vence**: o certificado Apple Distribution vale um ano e o perfil acompanha o certificado. Quando um deles vencer ou for revogado, gere um novo no Apple Developer (o perfil precisa apontar pro certificado novo), exporte o `.p12`, troque `IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` e `IOS_PROVISIONING_PROFILE_BASE64` no environment e rode o job de novo. Uma API key do App Store Connect revogada se troca gerando outra e atualizando os três secrets `APP_STORE_CONNECT_API_*`. A key APNs do Firebase e a key de Sign in with Apple não vencem.
+
+**Xcode**: as duas jobs usam o Xcode 26.6 da imagem `macos-26`. A partir de abril de 2027, a App Store só aceita builds com o SDK do iOS 27; troque o `xcode-select` do job antes disso.
 
 ### Versão mínima do app nativo
 
