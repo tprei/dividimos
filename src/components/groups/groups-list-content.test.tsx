@@ -276,6 +276,30 @@ describe("GroupsListContent", () => {
     expect(screen.getByText("Convite · Ainda não")).toBeInTheDocument();
   });
 
+  it("keeps an invited DM out of the invitations section", () => {
+    seed([
+      snapshot("dm1", {
+        group: {
+          kind: "dm",
+          name: "",
+          creatorId: "user-2",
+          dmUserA: "user-1",
+          dmUserB: "user-2",
+        },
+        members: [
+          member("user-1", "Alice", "invited", "user-2"),
+          member("user-2", "Carol Souza", "accepted"),
+        ],
+      }),
+    ]);
+
+    render(<GroupsListContent />);
+
+    expect(screen.queryByText(/^Convite · /)).not.toBeInTheDocument();
+    expect(screen.queryByText("Carol Souza")).not.toBeInTheDocument();
+    expect(screen.getByText("Nenhum grupo ainda")).toBeInTheDocument();
+  });
+
   it("removes an invitation only after the accepted snapshot lands", async () => {
     const invitedSnapshot = snapshot("g2", {
       group: { name: "Casa nova" },

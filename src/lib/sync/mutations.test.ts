@@ -1236,6 +1236,31 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1).toBeUndefined();
     });
 
+    it("notifies the invited user when the DM is created", async () => {
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: 55, created: true });
+
+      await getOrCreateDm(USER_2.id);
+
+      expect(refreshGroup).toHaveBeenCalledWith("dm-1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ eventId: 55 }),
+          keepalive: true,
+        }),
+      );
+    });
+
+    it("skips the notify call when the DM already existed", async () => {
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: null, created: false });
+
+      await getOrCreateDm(USER_2.id);
+
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
     it("fails an accept the refreshed membership does not confirm", async () => {
       useAppStore.setState({
         hydrated: true,

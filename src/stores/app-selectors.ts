@@ -172,7 +172,7 @@ export function selectPendingInvitations(state: AppState): GroupSnapshot[] {
   if (meId !== null) {
     for (const groupId of state.groupOrder) {
       const snapshot = state.groups[groupId];
-      if (!snapshot || snapshot.group.kind !== "group") continue;
+      if (!snapshot) continue;
       const member = snapshot.members.find((m) => m.userId === meId);
       if (member?.status !== "invited") continue;
       snapshots.push(snapshot);
