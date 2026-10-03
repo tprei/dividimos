@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Nunito } from "next/font/google";
-import { Geist_Mono } from "next/font/google";
+import { Geist_Mono, Google_Sans, Nunito } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import { MotionProvider } from "@/components/motion-provider";
 import { NativeVersionGate } from "@/components/native-version-gate";
@@ -20,6 +19,19 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
+});
+
+// Google's sign-in button rules require Google Sans. Without preload the file
+// only downloads on pages that render that button. Next ships no fallback
+// metrics for this family, so the fallback is explicit instead of size-adjusted.
+const googleSans = Google_Sans({
+  variable: "--font-google-sans",
+  subsets: ["latin"],
+  weight: "500",
+  display: "swap",
+  preload: false,
+  adjustFontFallback: false,
+  fallback: ["system-ui", "sans-serif"],
 });
 
 const DESCRIPTION =
@@ -71,7 +83,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${nunito.variable} ${geistMono.variable} h-dvh overflow-hidden antialiased`}
+      className={`${nunito.variable} ${geistMono.variable} ${googleSans.variable} h-dvh overflow-hidden antialiased`}
       suppressHydrationWarning
     >
       <head>

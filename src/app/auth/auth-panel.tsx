@@ -5,11 +5,17 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
+import { AppleSignInButton } from "@/components/auth/apple-sign-in-button";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { Button } from "@/components/ui/button";
+import { useClientOnly } from "@/hooks/use-client-only";
 import { haptics } from "@/hooks/use-haptics";
 import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import {
+  appleSignIn,
   googleSignIn,
+  isAppleSignInAvailable,
+  isNativeGoogleSignInAvailable,
   isNativePlatform,
   prepareGoogleSignIn,
   startGoogleRedirect,
@@ -25,26 +31,6 @@ type FocusTarget = "back" | "invite";
 
 const LINK_BUTTON_CLASS =
   "h-auto min-h-11 gap-2 rounded-md px-2 text-[15px] font-bold text-obj-primary-ink underline-offset-3";
-
-function GoogleMark() {
-  return (
-    <svg className="size-[18px]" viewBox="0 0 18 18" aria-hidden="true">
-      <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18Z" />
-      <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2.02c-.72.48-1.63.77-2.7.77-2.08 0-3.84-1.4-4.47-3.29H1.84v2.08A8 8 0 0 0 8.98 17Z" />
-      <path fill="#FBBC05" d="M4.51 10.52A4.78 4.78 0 0 1 4.26 9c0-.53.09-1.04.25-1.52V5.4H1.84A8 8 0 0 0 .98 9c0 1.29.31 2.51.86 3.6l2.67-2.08Z" />
-      <path fill="#EA4335" d="M8.98 3.58c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 .98 9l2.87 2.23C4.14 4.99 6.5 3.58 8.98 3.58Z" />
-    </svg>
-  );
-}
-
-function Spinner() {
-  return (
-    <svg className="size-[18px] animate-[spin_0.8s_linear_infinite]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="var(--obj-border)" strokeWidth="3" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="var(--obj-google-ink)" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function InviteQrIcon() {
   return (
@@ -77,6 +63,12 @@ export function AuthPanel({ className }: AuthPanelProps) {
   const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("choose");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const appleRef = useRef<HTMLButtonElement>(null);
+  const appleSignInAvailable = useClientOnly(isAppleSignInAvailable);
+  const googleUnavailable = useClientOnly(
+    () => isNativePlatform() && !isNativeGoogleSignInAvailable(),
+  );
   const [scanPaused, setScanPaused] = useState(false);
   const error = searchParams.get("error");
   const [dismissedError, setDismissedError] = useState(false);
@@ -124,6 +116,23 @@ export function AuthPanel({ className }: AuthPanelProps) {
     [router],
   );
 
+  const handleAppleSignIn = async () => {
+    setIsAppleLoading(true);
+    setSignInError(null);
+    haptics.tap();
+    const result = await appleSignIn(supabase);
+    if (result.status === "signed_in") {
+      router.replace(`/auth/continue?next=${encodeURIComponent(next)}`);
+      router.refresh();
+      return;
+    }
+    setIsAppleLoading(false);
+    if (result.status === "failed" && result.reason !== "busy") {
+      haptics.error();
+      setSignInError("Não conseguimos concluir a entrada com a Apple.");
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     setSignInError(null);
@@ -158,7 +167,11 @@ export function AuthPanel({ className }: AuthPanelProps) {
   const handleDismissError = () => {
     setDismissedError(true);
     setSignInError(null);
-    googleRef.current?.focus({ preventScroll: true });
+    if (appleSignInAvailable) {
+      appleRef.current?.focus({ preventScroll: true });
+    } else {
+      googleRef.current?.focus({ preventScroll: true });
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.delete("error");
     router.replace(params.toString() ? `/auth?${params.toString()}` : "/auth");
@@ -180,7 +193,7 @@ export function AuthPanel({ className }: AuthPanelProps) {
     <div
       className={cn(
         "intro-object mt-4.5 w-full max-w-85 flex-none rounded-2xl border border-obj-border bg-obj-card px-5.5 pt-6 pb-5 text-obj-ink shadow-[0_6px_0_var(--obj-shadow)]",
-        "intro-short:mt-3 intro-short:px-5 intro-short:pt-5 intro-short:pb-4 intro-landscape:mt-0",
+        "intro-short:mt-3 intro-short:px-5 intro-short:pt-5 intro-short:pb-4 intro-narrow:px-4 intro-landscape:mt-0",
         className,
       )}
     >
@@ -200,10 +213,10 @@ export function AuthPanel({ className }: AuthPanelProps) {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm leading-[1.35] font-extrabold text-obj-danger-ink">
-                    {signInError ?? "Não conseguimos concluir a entrada com o Google."}
+                    {signInError ?? "Não conseguimos concluir a entrada."}
                   </p>
                   <p className="mt-[3px] text-[12.5px] leading-[1.45] text-obj-ink-soft">
-                    Toque em &quot;Entrar com Google&quot; para tentar de novo.
+                    Tente de novo com uma das opções abaixo.
                   </p>
                 </div>
                 <Button
@@ -218,18 +231,23 @@ export function AuthPanel({ className }: AuthPanelProps) {
               </div>
             )}
 
-            <Button
-              ref={googleRef}
-              data-google-sign-in=""
-              variant="ghost"
-              onClick={handleGoogleSignIn}
-              disabled={isGoogleLoading}
-              aria-busy={isGoogleLoading}
-              className="h-12 w-full gap-3 rounded-xl border-obj-border bg-obj-card text-[15px] font-bold text-obj-google-ink shadow-[0_3px_0_var(--obj-edge)] hover:bg-obj-muted hover:text-obj-google-ink active:translate-y-px active:shadow-[0_2px_0_var(--obj-edge)] disabled:opacity-100 motion-safe:active:scale-100 dark:hover:bg-obj-muted"
-            >
-              {isGoogleLoading ? <Spinner /> : <GoogleMark />}
-              {isGoogleLoading ? "Entrando..." : "Entrar com Google"}
-            </Button>
+            {appleSignInAvailable && (
+              <AppleSignInButton
+                ref={appleRef}
+                onClick={handleAppleSignIn}
+                pending={isAppleLoading}
+                disabled={isAppleLoading || isGoogleLoading}
+              />
+            )}
+
+            {!googleUnavailable && (
+              <GoogleSignInButton
+                ref={googleRef}
+                onClick={handleGoogleSignIn}
+                pending={isGoogleLoading}
+                disabled={isGoogleLoading || isAppleLoading}
+              />
+            )}
 
             <p className="text-center text-[11px] leading-[1.55] text-obj-ink-soft select-text">
               Ao continuar, você aceita os{" "}

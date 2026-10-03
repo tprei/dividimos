@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { readClipboardText } from "@/lib/platform/clipboard";
-import { useSignOut } from "@/hooks/use-sign-out";
+import { AccountLocalWipeError, deleteAccount } from "@/lib/sync/account-deletion";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { useAppStore } from "@/stores/app-store";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,11 @@ import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 import type { OnboardingActionResult } from "./types";
 import { haptics } from "@/hooks/use-haptics";
+import { usePendingSignInName } from "@/hooks/use-pending-sign-in-name";
 import { springs } from "@/lib/animations";
 import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { nameToHandle } from "@/lib/handle";
+import { onboardingNameFallback } from "@/lib/pending-sign-in-name";
 
 type OnboardingFormProps = {
   me: Me;
@@ -68,7 +70,8 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string; short?: string; icon: 
 
 function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
   const router = useRouter();
-  const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
+  const [leaving, setLeaving] = useState(false);
+  const [leaveFailed, setLeaveFailed] = useState(false);
   const authUrl = `/auth?next=${encodeURIComponent(next)}`;
   const leaveToAuth = useCallback(() => router.replace(authUrl), [router, authUrl]);
 
@@ -82,13 +85,37 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
     });
   }, [leaveToAuth]);
 
+  // An account that has not finished onboarding has no confirmed handle, Pix
+  // key or groups, so leaving discards it instead of only signing out. Otherwise an
+  // accidental second account (Apple with Hide My Email, say) would keep that
+  // Apple or Google identity tied to an empty profile, and linking it to the
+  // person's real account would fail with "identity already in use".
   const handleSwitchAccount = async () => {
-    const result = await signOut();
-    if (result.ok) leaveToAuth();
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveFailed(false);
+    try {
+      const result = await deleteAccount();
+      if (result.ok) {
+        leaveToAuth();
+        return;
+      }
+      setLeaveFailed(true);
+    } catch (error) {
+      if (error instanceof AccountLocalWipeError) {
+        leaveToAuth();
+        return;
+      }
+      setLeaveFailed(true);
+    } finally {
+      setLeaving(false);
+    }
   };
 
   const [step, setStep] = useState<OnboardStep>("profile");
-  const [name, setName] = useState(me.name);
+  const pendingName = usePendingSignInName(me.id);
+  const [editedName, setEditedName] = useState<string | null>(null);
+  const name = editedName ?? pendingName ?? onboardingNameFallback(me);
   const [handle, setHandle] = useState(me.handle);
   const [handleTouched, setHandleTouched] = useState(false);
   const [handleError, setHandleError] = useState("");
@@ -121,7 +148,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
   }, [handle, me.handle, me.id, step]);
 
   const handleNameChange = (value: string) => {
-    setName(value);
+    setEditedName(value);
     if (!handleTouched) {
       setHandle(nameToHandle(value));
       setHandleCheck(null);
@@ -502,13 +529,16 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
             variant="outline"
             size="lg"
             onClick={handleSwitchAccount}
-            disabled={signOutPending || isPending}
+            disabled={leaving || isPending}
             className="w-full gap-2"
           >
             <LogOut className="h-4 w-4" />
-            {signOutPending ? "Saindo..." : "Usar outra conta do Google"}
+            {leaving ? "Saindo..." : "Usar outra conta"}
           </Button>
-          {signOutError && (
+          <p className="text-xs text-muted-foreground">
+            Esta conta ainda não foi concluída. Se você sair agora, ela é descartada.
+          </p>
+          {leaveFailed && (
             <p role="alert" className="text-sm text-destructive-text">
               Não deu pra sair agora. Tenta de novo.
             </p>
