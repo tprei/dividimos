@@ -228,13 +228,13 @@ export function DashboardContent() {
     setQuickChargeOpen(true);
   };
 
-  const firstName = me.name.split(" ")[0] ?? me.name;
   let balanceLabel = "Tudo acertado";
   if (net > 0) balanceLabel = "A receber no total";
   else if (net < 0) balanceLabel = "Você deve no total";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 pb-8 compact:space-y-3">
+      <h1 className="sr-only">Início</h1>
       <header className="flex items-center justify-between pt-4 compact:pt-2">
         <Logo size="sm" />
         <div className="flex items-center gap-1">
@@ -253,25 +253,6 @@ export function DashboardContent() {
           {headerActions}
         </div>
       </header>
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app/profile"
-          aria-label="Seu perfil"
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring"
-        >
-          <UserAvatar
-            id={me.id}
-            name={me.name}
-            avatarUrl={me.avatarUrl}
-            size="sm"
-            priority
-            isBot={me.isBot}
-          />
-        </Link>
-        <h1 className="min-w-0 break-words text-lg font-semibold">
-          Oi, {firstName}
-        </h1>
-      </div>
       <section
         aria-label="Seu saldo"
         className="space-y-3 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-3 md:space-y-0"
@@ -285,6 +266,22 @@ export function DashboardContent() {
             { label: "A pagar", value: <Money cents={owesTotal} size="sm" tone={owesTotal > 0 ? "negative" : "neutral"} /> },
             { label: "A receber", value: <Money cents={owedTotal} size="sm" tone={owedTotal > 0 ? "positive" : "neutral"} /> },
           ]}
+          headerAction={
+            <Link
+              href="/app/profile"
+              aria-label="Seu perfil"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring"
+            >
+              <UserAvatar
+                id={me.id}
+                name={me.name}
+                avatarUrl={me.avatarUrl}
+                size="sm"
+                priority
+                isBot={me.isBot}
+              />
+            </Link>
+          }
         />
         <div
           className="grid grid-cols-3 gap-2 md:grid-cols-1 md:content-start"

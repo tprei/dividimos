@@ -123,14 +123,15 @@ export function DashboardSkeleton() {
           {[1, 2, 3].map((action) => <Skeleton key={action} className="size-10 rounded-full" />)}
         </div>
       </header>
-      <div className="flex h-11 items-center gap-3" aria-hidden="true">
-        <div className="flex size-11 items-center justify-center"><Skeleton className="size-8 rounded-full" /></div>
-        <Skeleton className="h-6 w-32" />
-      </div>
       <div role="status" aria-label="Carregando" className="space-y-3 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-3 md:space-y-0">
         <div className="gradient-mesh rounded-2xl border bg-card p-5">
-          <div className="flex h-5 items-center"><Skeleton className="h-4 w-36" /></div>
-          <div className="mt-2 flex h-[1.25em] items-center text-4xl"><Skeleton className="h-9 w-44 max-w-full" /></div>
+          <div className="flex flex-wrap-reverse items-end gap-x-3">
+            <div className="flex-1">
+              <div className="flex h-5 items-center"><Skeleton className="h-4 w-36" /></div>
+              <div className="mt-2 flex h-[1.25em] items-center text-4xl"><Skeleton className="h-9 w-44 max-w-full" /></div>
+            </div>
+            <div className="-mt-1.5 -mr-1.5 ml-auto flex size-11 shrink-0 items-center justify-center"><Skeleton className="size-8 rounded-full" /></div>
+          </div>
           <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3">
             {[1, 2].map((detail) => (
               <div key={detail}>

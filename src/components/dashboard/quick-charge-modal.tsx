@@ -413,7 +413,7 @@ export function QuickChargeModal({
     >
       <PopoverContent
         anchor={anchor}
-        side={wideLayout ? "inline-start" : "top"}
+        side={wideLayout ? "inline-start" : "bottom"}
         align="start"
         collisionAvoidance={PINNED_SIDE}
         data-testid="quick-charge-modal"
