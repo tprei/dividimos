@@ -10,6 +10,7 @@ import type {
   ExpensePayload,
   MutationAck,
 } from "@/types/ledger";
+import { ASSIGNMENT_ROOM_GRANT_TOKEN_RE } from "@/lib/assignment-room-qr";
 import {
   decodeAnnounceAssignmentRoomResult,
   decodeAssignmentRoomCompletion,
@@ -156,7 +157,7 @@ export function clearAllAssignmentRoomCredentials(): void {
   }
 }
 
-function randomToken(prefix: "armj1" | "armm1"): string {
+export function randomToken(prefix: "armj1" | "armm1" | "armr1"): string {
   const cryptoApi = globalThis.crypto;
   if (!cryptoApi?.getRandomValues) throw new LedgerError("invalid_token");
   try {
@@ -342,11 +343,17 @@ export async function createAssignmentRoom(
 export async function joinAssignmentRoom(
   input: JoinAssignmentRoomInput
 ): Promise<AssignmentRoomView> {
-  if (!JOIN_TOKEN.test(input.joinToken)) throw new LedgerError("invalid_token");
+  const isGrant = ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(input.joinToken);
+  if (!isGrant && !JOIN_TOKEN.test(input.joinToken)) {
+    throw new LedgerError("invalid_token");
+  }
   const existingMemberToken = readCredentials(input.roomId).memberToken;
   if (existingMemberToken) return refreshAssignmentRoomMember(input.roomId);
   const memberToken = randomToken("armm1");
-  writeCredentials(input.roomId, { joinToken: input.joinToken, memberToken });
+  writeCredentials(
+    input.roomId,
+    isGrant ? { memberToken } : { joinToken: input.joinToken, memberToken }
+  );
   const attempt = useAssignmentRoomStore.getState().beginRead(input.roomId);
   const authGeneration = getAuthGeneration();
   try {

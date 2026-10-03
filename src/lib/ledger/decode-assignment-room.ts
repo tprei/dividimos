@@ -692,3 +692,27 @@ export function decodeAnnounceAssignmentRoomResult(
   const eventId = int(raw.eventId, [...path, "eventId"]);
   return eventId.ok ? ok({ eventId: eventId.value }) : eventId;
 }
+
+export function decodeAssignmentRoomCodeIssue(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<{ expiresInSeconds: number }, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["expiresInSeconds"], path);
+  if (!keys.ok) return keys;
+  const expiresInSeconds = int(raw.expiresInSeconds, [...path, "expiresInSeconds"]);
+  if (!expiresInSeconds.ok) return expiresInSeconds;
+  if (expiresInSeconds.value <= 0) return fail([...path, "expiresInSeconds"]);
+  return ok({ expiresInSeconds: expiresInSeconds.value });
+}
+
+export function decodeAssignmentRoomCodeResolution(
+  raw: unknown,
+  path: Path = []
+): ValidationResult<{ roomId: string }, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const keys = exactKeys(raw, ["roomId"], path);
+  if (!keys.ok) return keys;
+  const roomId = id(raw.roomId, [...path, "roomId"]);
+  return roomId.ok ? ok({ roomId: roomId.value }) : roomId;
+}

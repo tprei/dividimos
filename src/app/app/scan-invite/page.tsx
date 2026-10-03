@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { parseClaimQrCode } from "@/lib/claim-qr";
 import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { INVITE_TOKEN_RE, parseGroupInviteQrCode, parseProfileQrCode } from "@/lib/invite-qr";
+import { canonicalizeRoomCode } from "@/lib/room-code";
+import { resolveAssignmentRoomCode } from "@/lib/sync/assignment-room-codes";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { joinViaLink, lookupUserByHandle } from "@/lib/sync/mutations-group";
 import type { UserProfile } from "@/types/ledger";
@@ -77,6 +79,20 @@ export default function ScanInvitePage() {
         })();
       }
       if (!profile) setHint("Esse código não é um convite do Dividimos.");
+    },
+    [router],
+  );
+
+  const openRoomCode = useCallback(
+    async (code: string) => {
+      setPaused(true);
+      try {
+        const { roomId, grantToken } = await resolveAssignmentRoomCode(code);
+        router.push(`/room/${roomId}#${grantToken}`);
+      } catch (error) {
+        setHint(ledgerErrorMessage(error));
+        setPaused(false);
+      }
     },
     [router],
   );
@@ -150,11 +166,19 @@ export default function ScanInvitePage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 const code = manualCode.trim();
-                handleDecode(INVITE_TOKEN_RE.test(code) ? `/join/${code}` : code);
+                if (INVITE_TOKEN_RE.test(code)) {
+                  handleDecode(`/join/${code}`);
+                  return;
+                }
+                if (canonicalizeRoomCode(code) !== null) {
+                  void openRoomCode(code);
+                  return;
+                }
+                handleDecode(code);
               }}
             >
               <label htmlFor="invite-code" className="block text-sm font-semibold">Link ou código</label>
-              <Input ref={codeInputRef} id="invite-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Convite do Dividimos" autoCapitalize="none" autoCorrect="off" enterKeyHint="go" />
+              <Input ref={codeInputRef} id="invite-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Link, convite ou código da sala" autoCapitalize="none" autoCorrect="off" enterKeyHint="go" />
               {/* Keeping focus in the field on press stops the camera from re-expanding under the finger before the click lands. */}
               <Button type="submit" variant={manualCode.trim() ? "default" : "outline"} className="w-full" disabled={!manualCode.trim() || paused} onMouseDown={(event) => event.preventDefault()}>Abrir convite</Button>
             </form>
