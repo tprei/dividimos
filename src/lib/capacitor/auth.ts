@@ -268,6 +268,26 @@ export function linkGoogleIdentity(supabase: SupabaseClient): Promise<NativeLink
   return nativeLink(supabase, "google");
 }
 
+export type AppleReauthorizationResult =
+  | { status: "authorized"; authorizationCode: string }
+  | { status: "cancelled" }
+  | { status: "failed" };
+
+/**
+ * Asks Apple for a fresh authorization of the already linked Apple ID without
+ * touching the Supabase session, so the server can store a revocable token
+ * before deleting an account whose earlier upload never arrived.
+ */
+export async function reauthorizeApple(): Promise<AppleReauthorizationResult> {
+  if (!isAppleSignInAvailable()) return { status: "failed" };
+  return singleFlight<AppleReauthorizationResult>({ status: "failed" }, async () => {
+    const credential = await requestNativeCredential("apple");
+    if (credential.status !== "credential") return credential;
+    if (credential.authorizationCode === null) return { status: "failed" };
+    return { status: "authorized", authorizationCode: credential.authorizationCode };
+  });
+}
+
 export async function loadLinkedProviders(
   supabase: SupabaseClient,
 ): Promise<{ apple: boolean; google: boolean }> {

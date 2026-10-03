@@ -7,7 +7,9 @@ import { removeConfirmationPreferences } from "@/lib/confirmation-preferences";
 import { removeNativePushConsent } from "@/lib/push/native-consent";
 import { revokeAiConsent } from "@/lib/ai-consent";
 import { removeOnboardingTour } from "@/hooks/use-onboarding-tour";
+import { isAppleSignInAvailable, reauthorizeApple } from "@/lib/capacitor/auth";
 import { useAppStore } from "@/stores/app-store";
+import { registerAppleCredential } from "./apple-credential";
 import {
   clearAccountDeletionMarker,
   completeAccountDeletionSignOut,
@@ -82,8 +84,22 @@ async function finishSuccessfulDeletion(userId: string): Promise<void> {
   }
 }
 
+// The server refuses to delete an account linked to Apple until it holds a
+// token it can revoke; inside the iOS app that token comes from one Apple
+// sheet. Elsewhere the refusal reaches the screen, which explains it.
+async function postDeletionWithAppleAuthorization(): Promise<AccountDeletionResponse | null> {
+  const first = await postDeletion();
+  if (first?.ok !== false || first.code !== "apple_reauthorization_required" || !isAppleSignInAvailable()) {
+    return first;
+  }
+  const authorization = await reauthorizeApple();
+  if (authorization.status !== "authorized") return first;
+  await registerAppleCredential(authorization.authorizationCode);
+  return postDeletion();
+}
+
 export async function deleteAccount(): Promise<AccountDeletionResponse> {
-  const decoded = await postDeletion();
+  const decoded = await postDeletionWithAppleAuthorization();
   if (!decoded) return { ok: false, code: "deletion_failed", retryable: true };
   if (decoded.ok) {
     const sessionUserId = await currentSessionUserId();

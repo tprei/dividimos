@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { exportPKCS8, generateKeyPair, jwtVerify } from "jose";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
@@ -8,6 +9,8 @@ import {
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
+import { encryptPixKey } from "@/lib/crypto";
+import { decodeAccountDeletionResponse } from "@/lib/account-deletion";
 
 vi.mock("server-only", () => ({}));
 
@@ -64,6 +67,58 @@ vi.mock("@/lib/supabase/admin", async (importOriginal) => {
 // Imported after the vi.mock factories: the route module must only evaluate
 // once the cookie jar exists.
 const { POST } = await import("@/app/api/account/delete/route");
+
+// Sign in with Apple revocation fixtures: one server key, a dispatcher that
+// fakes only appleid.apple.com and forwards everything else (Supabase) to the
+// real fetch, and the stored-credential helpers.
+const appleKeys = await generateKeyPair("ES256", { extractable: true });
+const applePrivateKeyPem = await exportPKCS8(appleKeys.privateKey);
+
+type AppleRevokePlan = { status: number; body: string } | { throw: true } | null;
+let appleRevokePlan: AppleRevokePlan = null;
+const revokeRequests: URLSearchParams[] = [];
+const realFetch = globalThis.fetch;
+const appleAwareFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (url === "https://appleid.apple.com/auth/revoke") {
+    revokeRequests.push(new URLSearchParams(String(init?.body ?? "")));
+    if (appleRevokePlan !== null && "throw" in appleRevokePlan) {
+      throw new Error("apple unreachable");
+    }
+    const body = appleRevokePlan !== null && "body" in appleRevokePlan ? appleRevokePlan.body : null;
+    return new Response(body, { status: appleRevokePlan === null ? 200 : appleRevokePlan.status });
+  }
+  return realFetch(input, init);
+};
+
+async function insertAppleCredential(userId: string, refreshToken: string): Promise<void> {
+  await withPg(async (pg) => {
+    await pg.query(
+      "insert into public.apple_sign_in_credentials (user_id, apple_subject, refresh_token_encrypted) values ($1, $2, $3)",
+      [userId, `apple-sub-${userId.slice(0, 8)}`, encryptPixKey(refreshToken)],
+    );
+  });
+}
+
+async function appleCredentialRowCount(userId: string): Promise<number> {
+  return withPg(async (pg) => {
+    const result = await pg.query<{ count: number }>(
+      "select count(*)::int as count from public.apple_sign_in_credentials where user_id = $1",
+      [userId],
+    );
+    return result.rows[0]?.count ?? 0;
+  });
+}
+
+async function linkAppleIdentity(userId: string): Promise<void> {
+  await withPg(async (pg) => {
+    await pg.query(
+      `insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+       values ($1, $2, jsonb_build_object('sub', $1::text), 'apple', now(), now(), now())`,
+      [`apple-sub-${userId.slice(0, 8)}`, userId],
+    );
+  });
+}
 
 const AUTH_COOKIE_NAME = `sb-${new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(".")[0]}-auth-token`;
 
@@ -136,10 +191,17 @@ async function settledAccount(): Promise<{ leaver: TestUser; groupId: string }> 
 }
 
 describe.skipIf(!isIntegrationTestReady)("POST /api/account/delete", () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("service role key missing");
     }
+    vi.stubEnv("APPLE_TEAM_ID", "TEAM123456");
+    vi.stubEnv("APPLE_SIGN_IN_KEY_ID", "KEYID99");
+    vi.stubEnv("APPLE_SIGN_IN_PRIVATE_KEY", applePrivateKeyPem);
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
   });
 
   it("requires a session and explicit confirmation and ignores no caller identity override", async () => {
@@ -279,5 +341,155 @@ describe.skipIf(!isIntegrationTestReady)("POST /api/account/delete", () => {
       return result.rowCount;
     });
     expect(authUser).toBe(1);
+  });
+  it("revokes the Apple authorization, drops the row, then closes access", async () => {
+    const { leaver } = await settledAccount();
+    await insertAppleCredential(leaver.id, "rt-revoke-main");
+    actAs(leaver);
+    revokeRequests.length = 0;
+    vi.stubGlobal("fetch", appleAwareFetch);
+    try {
+      const response = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+      expect(response.status).toBe(200);
+      expect(await appleCredentialRowCount(leaver.id)).toBe(0);
+
+      expect(revokeRequests).toHaveLength(1);
+      const form = revokeRequests[0];
+      expect(form.get("token")).toBe("rt-revoke-main");
+      expect(form.get("token_type_hint")).toBe("refresh_token");
+      expect(form.get("client_id")).toBe("ai.dividimos.app");
+      const verifiedSecret = await jwtVerify(form.get("client_secret") ?? "", appleKeys.publicKey);
+      expect(verifiedSecret.payload).toMatchObject({
+        iss: "TEAM123456",
+        sub: "ai.dividimos.app",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("treats an Apple invalid_grant as already revoked and finishes", async () => {
+    const { leaver } = await settledAccount();
+    await insertAppleCredential(leaver.id, "rt-already-gone");
+    actAs(leaver);
+    appleRevokePlan = { status: 400, body: JSON.stringify({ error: "invalid_grant" }) };
+    vi.stubGlobal("fetch", appleAwareFetch);
+    try {
+      const response = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+      expect(response.status).toBe(200);
+      expect(await appleCredentialRowCount(leaver.id)).toBe(0);
+    } finally {
+      appleRevokePlan = null;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stops retryably when Apple is unreachable and a retry completes the revocation", async () => {
+    const { leaver } = await settledAccount();
+    await insertAppleCredential(leaver.id, "rt-retryable");
+    actAs(leaver);
+    appleRevokePlan = { throw: true };
+    vi.stubGlobal("fetch", appleAwareFetch);
+    try {
+      const failed = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+      expect(failed.status).toBe(503);
+      const failedBody = await failed.json();
+      expect(decodeAccountDeletionResponse(failedBody)).toEqual({
+        ok: false,
+        code: "apple_revoke_failed",
+        retryable: true,
+        userId: leaver.id,
+      });
+
+      // The refresh token stays stored and the Auth account was NOT deleted:
+      // the retry has to reach the revocation again, not fail on the tombstone.
+      expect(await appleCredentialRowCount(leaver.id)).toBe(1);
+      const authRows = await withPg(async (pg) => {
+        const result = await pg.query<{ count: number }>(
+          "select count(*)::int as count from auth.users where id = $1",
+          [leaver.id],
+        );
+        return result.rows[0]?.count ?? 0;
+      });
+      expect(authRows).toBe(1);
+
+      appleRevokePlan = null;
+      const retried = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+      expect(retried.status).toBe(200);
+      expect(await appleCredentialRowCount(leaver.id)).toBe(0);
+    } finally {
+      appleRevokePlan = null;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stops retryably when the Apple server env is missing", async () => {
+    const { leaver } = await settledAccount();
+    await insertAppleCredential(leaver.id, "rt-no-env");
+    actAs(leaver);
+    vi.stubEnv("APPLE_TEAM_ID", "");
+    vi.stubGlobal("fetch", appleAwareFetch);
+    try {
+      const response = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: "apple_revoke_failed",
+        retryable: true,
+        userId: leaver.id,
+      });
+      expect(await appleCredentialRowCount(leaver.id)).toBe(1);
+    } finally {
+      vi.stubEnv("APPLE_TEAM_ID", "TEAM123456");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("refuses before deleting anything when a linked Apple ID has no revocable token", async () => {
+    const { leaver } = await settledAccount();
+    await linkAppleIdentity(leaver.id);
+    actAs(leaver);
+
+    const response = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, code: "apple_reauthorization_required" });
+    const state = await withPg(async (pg) => {
+      const profile = await pg.query<{ deleted_at: string | null }>(
+        "select deleted_at from public.users where id = $1",
+        [leaver.id],
+      );
+      const auth = await pg.query<{ deleted_at: string | null }>(
+        "select deleted_at from auth.users where id = $1",
+        [leaver.id],
+      );
+      return { profile: profile.rows[0]?.deleted_at, auth: auth.rows[0]?.deleted_at };
+    });
+    expect(state).toEqual({ profile: null, auth: null });
+  });
+
+  it("keeps the token and stops retryably when the signing key is unusable", async () => {
+    const { leaver } = await settledAccount();
+    await insertAppleCredential(leaver.id, "rt-bad-key");
+    actAs(leaver);
+    revokeRequests.length = 0;
+    vi.stubEnv("APPLE_SIGN_IN_PRIVATE_KEY", "-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----");
+    vi.stubGlobal("fetch", appleAwareFetch);
+    try {
+      const response = await POST(deleteRequest({ confirmation: "EXCLUIR" }));
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: "apple_revoke_failed",
+        retryable: true,
+        userId: leaver.id,
+      });
+      expect(await appleCredentialRowCount(leaver.id)).toBe(1);
+      expect(revokeRequests).toHaveLength(0);
+    } finally {
+      vi.stubEnv("APPLE_SIGN_IN_PRIVATE_KEY", applePrivateKeyPem);
+      vi.unstubAllGlobals();
+    }
   });
 });

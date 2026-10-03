@@ -52,6 +52,26 @@ vi.mock("@/stores/app-store", () => ({
   },
 }));
 
+const appleAvailable = vi.fn(() => false);
+const reauthorizeApple = vi.fn();
+vi.mock("@/lib/capacitor/auth", () => ({
+  isAppleSignInAvailable: () => appleAvailable(),
+  reauthorizeApple: () => reauthorizeApple(),
+}));
+
+const registerAppleCredential = vi.fn<(code: string) => Promise<void>>();
+vi.mock("./apple-credential", () => ({
+  registerAppleCredential: (code: string) => registerAppleCredential(code),
+}));
+
+function appleRefusalBody() {
+  return {
+    ok: false,
+    status: 409,
+    json: async () => ({ ok: false, code: "apple_reauthorization_required" }),
+  } as Response;
+}
+
 function successBody(userId: string) {
   return {
     ok: true,
@@ -71,6 +91,42 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("deleteAccount with a linked Apple ID", () => {
+  it("collects a fresh Apple authorization in the iOS app and retries once", async () => {
+    appleAvailable.mockReturnValue(true);
+    reauthorizeApple.mockResolvedValue({ status: "authorized", authorizationCode: "fresh-code" });
+    registerAppleCredential.mockResolvedValue(undefined);
+    fetchMock
+      .mockResolvedValueOnce(appleRefusalBody())
+      .mockResolvedValueOnce(successBody("0a000000-0000-4000-8000-00000000000a"));
+
+    const result = await deleteAccount();
+
+    expect(result).toEqual({ ok: true, userId: "0a000000-0000-4000-8000-00000000000a" });
+    expect(registerAppleCredential).toHaveBeenCalledWith("fresh-code");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the refusal without deleting when the Apple sheet is cancelled", async () => {
+    appleAvailable.mockReturnValue(true);
+    reauthorizeApple.mockResolvedValue({ status: "cancelled" });
+    fetchMock.mockResolvedValueOnce(appleRefusalBody());
+
+    expect(await deleteAccount()).toEqual({ ok: false, code: "apple_reauthorization_required" });
+    expect(registerAppleCredential).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the refusal outside the iOS app without opening any sheet", async () => {
+    appleAvailable.mockReturnValue(false);
+    fetchMock.mockResolvedValueOnce(appleRefusalBody());
+
+    expect(await deleteAccount()).toEqual({ ok: false, code: "apple_reauthorization_required" });
+    expect(reauthorizeApple).not.toHaveBeenCalled();
+  });
 });
 
 describe("deleteAccount", () => {
