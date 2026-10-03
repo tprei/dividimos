@@ -114,7 +114,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     });
   }, [groupId]);
 
-  const { pendingRoomId, openRoom } = useOpenGroupRoom(groupId, meId);
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(meId);
 
   useEffect(() => {
     if (!hydrated || snapshot || loadError || departedRef.current) return;

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "@/lib/sync/errors";
@@ -17,6 +18,11 @@ const groupMutations = vi.hoisted(() => ({
   retryNudgeDispatch: vi.fn(),
 }));
 vi.mock("@/lib/sync/mutations-group", () => groupMutations);
+
+const assignmentRooms = vi.hoisted(() => ({
+  enterGroupAssignmentRoom: vi.fn(),
+}));
+vi.mock("@/lib/sync/assignment-rooms", () => assignmentRooms);
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -158,6 +164,26 @@ function seedStore(snapshots: GroupSnapshot[], user: Me = me) {
   useAppStore.setState({ hydrated: true, me: user, groups, groupOrder: snapshots.map((item) => item.group.id) });
 }
 
+function openRoom(overrides: Partial<OpenAssignmentRoom> = {}): OpenAssignmentRoom {
+  return {
+    id: "room-1",
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: "Conta do churrasco",
+    occurredOn: "2026-09-20",
+    totalCents: 12000,
+    host: carol,
+    createdAt: "2026-09-20T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 1,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+    ...overrides,
+  };
+}
+
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -274,6 +300,52 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
 
     expect(screen.queryByText("Contas recentes")).not.toBeInTheDocument();
+  });
+
+  it("lists a room hosted by someone else under Salas pra você", () => {
+    seedStore([snapshot()]);
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoom({ id: "room-1", groupId: "g1", host: carol, title: "Conta da pizzaria" })],
+      },
+    });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Salas pra você")).toBeInTheDocument();
+    expect(screen.getByText("Conta da pizzaria")).toBeInTheDocument();
+  });
+
+  it("opens each room with its own groupId when its row is clicked", async () => {
+    assignmentRooms.enterGroupAssignmentRoom.mockResolvedValue(undefined);
+    seedStore([
+      snapshot(),
+      snapshot({
+        group: { id: "g2", name: "Praia" },
+        members: [
+          { groupId: "g2", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          { groupId: "g2", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+        ],
+      }),
+    ]);
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoom({ id: "room-1", groupId: "g1", host: carol, title: "Conta da pizzaria" })],
+        g2: [openRoom({ id: "room-2", groupId: "g2", host: dave, title: "Conta da praia" })],
+      },
+    });
+    const { unmount } = render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Conta da pizzaria/ }));
+    await waitFor(() => {
+      expect(assignmentRooms.enterGroupAssignmentRoom).toHaveBeenCalledWith({ groupId: "g1", roomId: "room-1" });
+    });
+
+    unmount();
+    render(<DashboardContent />);
+    fireEvent.click(screen.getByRole("button", { name: /Conta da praia/ }));
+    await waitFor(() => {
+      expect(assignmentRooms.enterGroupAssignmentRoom).toHaveBeenCalledWith({ groupId: "g2", roomId: "room-2" });
+    });
   });
 
   it("keeps the skeleton visible before hydration", () => {
