@@ -6,7 +6,7 @@ import { LedgerError } from "@/lib/sync/errors";
 import { deleteExpense } from "@/lib/sync/mutations";
 import { createGuestClaimToken } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
-import { useAppStore } from "@/stores/app-store";
+import { expenseReadKey, useAppStore } from "@/stores/app-store";
 import type { ExpenseDetail as ExpenseDetailType, GroupSnapshot, Me } from "@/types/ledger";
 
 const routerMock = vi.hoisted(() => ({
@@ -346,6 +346,12 @@ describe("ExpenseDetail", () => {
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
 
+    act(() => {
+      useAppStore.setState({
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
     const deleted = makeDetail("deleted");
     deleted.expense.deletedBy = "user-2";
     act(() => {
@@ -356,9 +362,60 @@ describe("ExpenseDetail", () => {
     expect(toastMock).toHaveBeenCalledWith("Carol Souza excluiu essa conta");
   });
 
+  it("resolves a former member's name for the deletion toast", () => {
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    act(() => {
+      useAppStore.setState({
+        groups: {
+          g1: {
+            ...snapshot(),
+            formerMembers: [
+              { id: "user-9", handle: "duda", name: "Duda Lima", avatarUrl: null, isBot: false },
+            ],
+          },
+        },
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
+    const deleted = makeDetail("deleted");
+    deleted.expense.deletedBy = "user-9";
+    act(() => {
+      useAppStore.setState({ expenseDetails: { e1: deleted } });
+    });
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock).toHaveBeenCalledWith("Duda Lima excluiu essa conta");
+  });
+
+  it("does not toast when the first ready read delivers the cached bill as deleted", () => {
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    const deleted = makeDetail("deleted");
+    deleted.expense.deletedBy = "user-2";
+    act(() => {
+      useAppStore.setState({
+        expenseDetails: { e1: deleted },
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
+    expect(screen.getByText("Conta excluída")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
   it("does not toast the transition when the viewer deleted the bill", () => {
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
+
+    act(() => {
+      useAppStore.setState({
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
 
     act(() => {
       useAppStore.setState({ expenseDetails: { e1: makeDetail("deleted") } });
@@ -372,8 +429,80 @@ describe("ExpenseDetail", () => {
     seedStore("deleted");
     render(<ExpenseDetail expenseId="e1" />);
 
+    act(() => {
+      useAppStore.setState({
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
     expect(screen.getByText("Conta excluída")).toBeInTheDocument();
     expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("does not toast again when a failed restore republishes the same deletion", () => {
+    seedStore("deleted");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    act(() => {
+      useAppStore.setState({
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
+    const republished = useAppStore.getState().expenseDetails["e1"];
+    act(() => {
+      useAppStore.setState({
+        expenseDetails: {
+          e1: {
+            ...republished,
+            expense: { ...republished.expense, status: "active", deletedAt: null, deletedBy: null },
+          },
+        },
+      });
+    });
+    act(() => {
+      useAppStore.setState({ expenseDetails: { e1: republished } });
+    });
+
+    expect(screen.getByText("Conta excluída")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("marks the deletion as yours with Restaurar enabled while the delete is pending", async () => {
+    const user = userEvent.setup();
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    act(() => {
+      useAppStore.setState({
+        reads: { [expenseReadKey("e1")]: { status: "ready" } },
+      });
+    });
+
+    vi.mocked(deleteExpense).mockImplementationOnce(() => new Promise(() => {}));
+    await user.click(screen.getByRole("button", { name: "Mais opções" }));
+    await user.click(screen.getByRole("button", { name: "Excluir conta" }));
+    await user.click(await screen.findByRole("button", { name: "Excluir" }));
+
+    const deleted = makeDetail("deleted");
+    deleted.expense.deletedBy = me.id;
+    act(() => {
+      useAppStore.setState({ expenseDetails: { e1: deleted } });
+    });
+
+    expect(screen.getByText("Você excluiu essa conta")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restaurar" })).toBeEnabled();
+  });
+
+  it("hides Restaurar from a member who is neither creator nor participant", () => {
+    const detail = makeDetail("deleted");
+    detail.expense.creatorId = "user-2";
+    detail.current.payload.participants = [{ kind: "user", userId: "user-2" }];
+    useAppStore.setState({ expenseDetails: { e1: detail } });
+    render(<ExpenseDetail expenseId="e1" />);
+
+    expect(screen.getByText("Conta excluída")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restaurar" })).not.toBeInTheDocument();
   });
 
   it("calls deleteExpense when confirming exclusion in dialog", async () => {

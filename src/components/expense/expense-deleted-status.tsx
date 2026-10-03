@@ -21,7 +21,7 @@ export function ExpenseDeletedStatus({
 }: ExpenseDeletedStatusProps) {
   return (
     <section className="mx-4 mt-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4">
-      <div role="status" aria-live="polite" aria-atomic="true" className="flex items-start gap-3">
+      <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-background text-destructive-text">
           <Trash2 aria-hidden="true" className="size-5" />
         </div>
