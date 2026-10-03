@@ -17,12 +17,20 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 const mockGoogleSignIn = vi.fn();
+const mockAppleSignIn = vi.fn();
 const mockIsNativePlatform = vi.fn(() => true);
+const mockIsAppleSignInAvailable = vi.fn(() => false);
+const mockIsNativeGoogleSignInAvailable = vi.fn(() => true);
 const mockStartGoogleRedirect = vi.fn<(next: string) => Promise<void>>(async () => undefined);
+
 vi.mock("@/lib/capacitor/auth", () => ({
   googleSignIn: () => mockGoogleSignIn(),
+  appleSignIn: () => mockAppleSignIn(),
   isNativePlatform: () => mockIsNativePlatform(),
+  isAppleSignInAvailable: () => mockIsAppleSignInAvailable(),
+  isNativeGoogleSignInAvailable: () => mockIsNativeGoogleSignInAvailable(),
   prepareGoogleSignIn: async () => undefined,
+  prepareAppleSignIn: async () => undefined,
   startGoogleRedirect: (next: string) => mockStartGoogleRedirect(next),
 }));
 
@@ -42,7 +50,14 @@ describe("sign-in destination", () => {
       provider: "google",
       authorizationCode: null,
     });
+    mockAppleSignIn.mockResolvedValue({
+      status: "signed_in",
+      provider: "apple",
+      authorizationCode: "apple-auth-code",
+    });
     mockIsNativePlatform.mockReturnValue(true);
+    mockIsAppleSignInAvailable.mockReturnValue(false);
+    mockIsNativeGoogleSignInAvailable.mockReturnValue(true);
     decodeHolder.payload = "";
     searchParams.set("next", "/join/abc123");
   });
@@ -99,6 +114,124 @@ describe("sign-in destination", () => {
     });
     expect(mockGoogleSignIn).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+
+describe("Sign in with Apple behavior", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsNativePlatform.mockReturnValue(true);
+    mockIsAppleSignInAvailable.mockReturnValue(true);
+    mockIsNativeGoogleSignInAvailable.mockReturnValue(true);
+    searchParams.set("next", "/app/groups");
+  });
+
+  it("renders Apple button above Google on iOS", () => {
+    render(<AuthPanel />);
+    const buttons = screen.getAllByRole("button");
+    const appleBtn = screen.getByRole("button", { name: /apple/i });
+    const googleBtn = screen.getByRole("button", { name: /google/i });
+    expect(appleBtn).toBeInTheDocument();
+    expect(googleBtn).toBeInTheDocument();
+    expect(buttons.indexOf(appleBtn)).toBeLessThan(buttons.indexOf(googleBtn));
+  });
+
+  it("does not render Apple button when isAppleSignInAvailable is false", () => {
+    mockIsAppleSignInAvailable.mockReturnValue(false);
+    render(<AuthPanel />);
+    expect(screen.queryByRole("button", { name: /apple/i })).not.toBeInTheDocument();
+  });
+
+  it("hides Google button on native when isNativeGoogleSignInAvailable is false", () => {
+    mockIsNativeGoogleSignInAvailable.mockReturnValue(false);
+    render(<AuthPanel />);
+    expect(screen.queryByRole("button", { name: /google/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /apple/i })).toBeInTheDocument();
+  });
+
+  it("disables both buttons while Apple sign-in is pending", async () => {
+    let resolveApple!: (val: unknown) => void;
+    mockAppleSignIn.mockReturnValue(
+      new Promise((res) => {
+        resolveApple = res;
+      }),
+    );
+    render(<AuthPanel />);
+
+    const appleBtn = screen.getByRole("button", { name: /apple/i });
+    const googleBtn = screen.getByRole("button", { name: /google/i });
+
+    fireEvent.click(appleBtn);
+
+    expect(appleBtn).toBeDisabled();
+    expect(googleBtn).toBeDisabled();
+
+    resolveApple({ status: "cancelled" });
+    await waitFor(() => {
+      expect(appleBtn).toBeEnabled();
+      expect(googleBtn).toBeEnabled();
+    });
+  });
+
+  it("disables both buttons while Google sign-in is pending", async () => {
+    let resolveGoogle!: (val: unknown) => void;
+    mockGoogleSignIn.mockReturnValue(
+      new Promise((res) => {
+        resolveGoogle = res;
+      }),
+    );
+    render(<AuthPanel />);
+
+    const appleBtn = screen.getByRole("button", { name: /apple/i });
+    const googleBtn = screen.getByRole("button", { name: /google/i });
+
+    fireEvent.click(googleBtn);
+
+    expect(appleBtn).toBeDisabled();
+    expect(googleBtn).toBeDisabled();
+
+    resolveGoogle({ status: "cancelled" });
+    await waitFor(() => {
+      expect(appleBtn).toBeEnabled();
+      expect(googleBtn).toBeEnabled();
+    });
+  });
+
+  it("clears pending silently on user cancellation without showing error", async () => {
+    mockAppleSignIn.mockResolvedValueOnce({ status: "cancelled" });
+    render(<AuthPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: /apple/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /apple/i })).toBeEnabled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows an error banner when Apple sign-in fails", async () => {
+    mockAppleSignIn.mockResolvedValueOnce({ status: "failed", reason: "network" });
+    render(<AuthPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: /apple/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+
+  it("routes to /auth/continue with next parameter preserved on successful Apple sign in", async () => {
+    mockAppleSignIn.mockResolvedValueOnce({
+      status: "signed_in",
+      provider: "apple",
+      authorizationCode: "apple-auth-code",
+    });
+    render(<AuthPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: /apple/i }));
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/auth/continue?next=%2Fapp%2Fgroups");
+      expect(mockRefresh).toHaveBeenCalled();
+    });
   });
 });
 
