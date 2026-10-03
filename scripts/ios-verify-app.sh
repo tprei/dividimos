@@ -45,6 +45,15 @@ for key in NSContactsUsageDescription NSLocationWhenInUseUsageDescription NSLoca
   fi
 done
 
+# @capacitor/camera rejects every getPhoto unless all three camera and photo
+# keys exist, and iOS kills the app when the microphone or speech recognizer
+# starts without its key.
+for key in NSCameraUsageDescription NSPhotoLibraryUsageDescription NSPhotoLibraryAddUsageDescription NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription; do
+  if [ -z "$(plist_value "$key")" ]; then
+    fail "Info.plist is missing $key, which a shipped feature needs."
+  fi
+done
+
 if [ ! -f "$CAP_CONFIG" ]; then
   fail "$CAP_CONFIG is missing; run 'npx cap sync ios' before building."
 else

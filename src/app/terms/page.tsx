@@ -16,7 +16,7 @@ export default function TermsPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Termos de Uso</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 27 de setembro de 2026
+        Última atualização: 3 de outubro de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -47,8 +47,8 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold">3. Conta e responsabilidades</h2>
           <ul className="mt-2 list-inside list-disc space-y-1 text-muted-foreground">
             <li>
-              Você é responsável por manter a segurança da sua conta Google utilizada para
-              autenticação.
+              Você é responsável por manter a segurança da sua conta Google ou do seu Apple ID
+              utilizados para autenticação.
             </li>
             <li>
               O handle escolhido durante o cadastro é único e público dentro da plataforma, sendo
@@ -172,7 +172,8 @@ export default function TermsPage() {
             aparecer como “Mensagem apagada”, de “Conta excluída”. Despesas, pagamentos e o
             histórico financeiro continuam ligados a um identificador interno para preservar os
             saldos das outras pessoas, e evidências de denúncias podem continuar guardadas para
-            moderação. A exclusão é irreversível e não exclui sua conta Google.
+            moderação. A exclusão é irreversível e não exclui sua conta Google nem sua conta Apple;
+            se você entrou com a Apple, a autorização do login com a Apple é revogada na exclusão.
           </p>
           <p className="mt-2">
             A página{" "}
