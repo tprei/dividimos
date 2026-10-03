@@ -113,6 +113,23 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     [members, detail],
   );
 
+  const lastStatusRef = useRef({ expenseId, status: detail?.expense.status });
+  useEffect(() => {
+    const seen = lastStatusRef.current;
+    const status = detail?.expense.status;
+    const deletedBy = detail?.expense.deletedBy ?? null;
+    lastStatusRef.current = { expenseId, status };
+    if (
+      seen.expenseId === expenseId &&
+      seen.status === "active" &&
+      status === "deleted" &&
+      deletedBy !== null &&
+      deletedBy !== me?.id
+    ) {
+      toast(`${nameOf(deletedBy)} excluiu essa conta`);
+    }
+  }, [detail, expenseId, me?.id, nameOf]);
+
   const avatarUrlOf = useCallback(
     (userId: string): string | null => {
       const member = members?.find((m) => m.userId === userId);
