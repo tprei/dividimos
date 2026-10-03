@@ -461,10 +461,15 @@
       "authenticated": false,
       "note": "Internal immutable check; called only inside profile RPCs and the auth trigger."
     },
+    "public.issue_assignment_room_code(p_room_id uuid, p_code text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Host-only spoken room code; stores a digest bound to the current join credential."
+    },
     "public.join_assignment_room(p_room_id uuid, p_join_token text, p_member_token text, p_display_name text)": {
       "anon": true,
       "authenticated": true,
-      "note": "Capability-authenticated room join; stores only token digests and never grants group membership."
+      "note": "Capability-authenticated room join with a link token or a single-use code grant; stores only token digests and never grants group membership."
     },
     "public.join_via_link(p_token text)": {
       "anon": false,
@@ -610,6 +615,11 @@
       "anon": false,
       "authenticated": false,
       "note": "Service-role report creation after session authentication and rate limiting in the API route."
+    },
+    "public.resolve_assignment_room_code(p_code text, p_grant_token text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Called by the IP-rate-limited /api/room-code route; issues a single-use join grant digest."
     },
     "public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)": {
       "anon": false,
