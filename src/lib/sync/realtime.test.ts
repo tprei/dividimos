@@ -4,6 +4,7 @@ import { useAppStore } from "@/stores/app-store";
 import type { Database } from "@/types/database";
 import type { ChatMessage, GroupMember, GroupSnapshot, Me } from "@/types/ledger";
 import { catchUpBootstrap } from "./bootstrap";
+import type * as BootstrapModule from "./bootstrap";
 import {
   invalidateChatReconciliation,
   reconcileChat,
@@ -16,7 +17,7 @@ import {
   startRealtime,
   subscribeChat,
 } from "./realtime";
-import { refreshGroup, refreshOpenAssignmentRooms } from "./refresh";
+import { refreshGroup, refreshMyOpenAssignmentRooms } from "./refresh";
 const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("./client", () => ({
   getSupabase: vi.fn(),
@@ -26,9 +27,13 @@ vi.mock("./client", () => ({
 vi.mock("./refresh", () => ({
   loadConversation: vi.fn(async () => null),
   refreshGroup: vi.fn(async () => {}),
-  refreshOpenAssignmentRooms: vi.fn(async () => {}),
+  refreshMyOpenAssignmentRooms: vi.fn(async () => {}),
   refreshHostedAssignmentRooms: vi.fn(async () => {}),
 }));
+vi.mock("./bootstrap", async (importOriginal) => {
+  const actual = await importOriginal<typeof BootstrapModule>();
+  return { ...actual, catchUpBootstrap: vi.fn(actual.catchUpBootstrap) };
+});
 vi.mock("./chat-reconcile", async (importOriginal) => {
   const actual = await importOriginal<object>();
   return {
@@ -985,7 +990,7 @@ describe("startRealtime", () => {
     it("does not merge a user-topic message for a chat without an active subscription", () => {
       seedGroup();
       joinUserTopic();
-      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+      vi.mocked(refreshMyOpenAssignmentRooms).mockClear();
       const channel = userChannel(meUser.id);
 
       channel.emit("message", chatPayload());
@@ -995,7 +1000,7 @@ describe("startRealtime", () => {
       expect(state.groups["group-1"]?.unreadCount).toBe(0);
       expect(state.groups["group-1"]?.lastMessage).toBeNull();
       expect(refreshGroup).not.toHaveBeenCalled();
-      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+      expect(refreshMyOpenAssignmentRooms).not.toHaveBeenCalled();
       expect(reconcileChat).not.toHaveBeenCalled();
     });
 
@@ -1056,7 +1061,7 @@ describe("startRealtime", () => {
 
       expect(useAppStore.getState().assignmentRoomSummaries[roomSummary.id]).toEqual(roomSummary);
       expect(refreshGroup).not.toHaveBeenCalled();
-      expect(refreshOpenAssignmentRooms).not.toHaveBeenCalled();
+      expect(refreshMyOpenAssignmentRooms).not.toHaveBeenCalled();
     });
 
     it("drops malformed room payloads and summaries for groups not in state", () => {
@@ -1114,21 +1119,24 @@ describe("startRealtime", () => {
       openChat("group-1");
       expect(reconcileChat).toHaveBeenCalledTimes(1);
       const channel = userChannel(meUser.id);
+      // The pass settle may fire a bootstrap, whose own rooms refresh is not
+      // this test's subject.
+      vi.mocked(catchUpBootstrap).mockImplementation(async () => {});
 
       channel.emitStatus("SUBSCRIBED");
       expect(reconcileChat).toHaveBeenCalledTimes(2);
-      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(1);
+      expect(refreshMyOpenAssignmentRooms).toHaveBeenCalledTimes(1);
 
       channel.emitStatus("SUBSCRIBED");
       expect(reconcileChat).toHaveBeenCalledTimes(2);
-      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(1);
+      expect(refreshMyOpenAssignmentRooms).toHaveBeenCalledTimes(1);
 
       channel.emitStatus("CHANNEL_ERROR");
       channel.emitStatus("SUBSCRIBED");
       expect(reconcileChat).toHaveBeenCalledTimes(3);
       expect(reconcileChat).toHaveBeenLastCalledWith("group-1");
-      expect(refreshOpenAssignmentRooms).toHaveBeenCalledTimes(2);
-      expect(refreshOpenAssignmentRooms).toHaveBeenLastCalledWith("group-1");
+      expect(refreshMyOpenAssignmentRooms).toHaveBeenCalledTimes(2);
+      expect(refreshMyOpenAssignmentRooms).toHaveBeenLastCalledWith();
     });
 
     it("invalidates reconciliation only when the final subscriber closes", () => {
