@@ -24,6 +24,7 @@ import { parseClaimQrCode } from "@/lib/claim-qr";
 import { parseJoinQrCode } from "@/lib/join-qr";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/client";
+import { storeAppleAuthorization } from "@/lib/sync/apple-credential";
 import { cn } from "@/lib/utils";
 
 type AuthMode = "choose" | "scan";
@@ -122,6 +123,7 @@ export function AuthPanel({ className }: AuthPanelProps) {
     haptics.tap();
     const result = await appleSignIn(supabase);
     if (result.status === "signed_in") {
+      storeAppleAuthorization(result.authorizationCode);
       router.replace(`/auth/continue?next=${encodeURIComponent(next)}`);
       router.refresh();
       return;
