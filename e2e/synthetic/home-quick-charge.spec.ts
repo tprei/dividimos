@@ -34,7 +34,7 @@ test.describe("Home quick charge and Pix amount editing", () => {
     await expect(page.getByRole("heading", { name: "Cobrar rápido" })).toBeVisible();
   });
 
-  test("the charge stays above its button and fits without scrolling once the QR appears", async ({
+  test("the charge stays clear of its button and fits without scrolling once the QR appears", async ({
     page,
     seed,
     loginAs,
@@ -51,20 +51,38 @@ test.describe("Home quick charge and Pix amount editing", () => {
     await quickCharge.click();
 
     const surface = page.getByTestId("quick-charge-modal");
-    const sitsAboveButton = async () => {
+    const sitsClearOfButton = async () => {
       const [surfaceBox, buttonBox] = await Promise.all([
         surface.boundingBox(),
         quickCharge.boundingBox(),
       ]);
-      return Boolean(surfaceBox && buttonBox && surfaceBox.y + surfaceBox.height <= buttonBox.y);
+      return Boolean(
+        surfaceBox &&
+          buttonBox &&
+          (surfaceBox.y + surfaceBox.height <= buttonBox.y ||
+            surfaceBox.y >= buttonBox.y + buttonBox.height),
+      );
     };
-    await expect.poll(sitsAboveButton).toBe(true);
+    await expect.poll(sitsClearOfButton).toBe(true);
+    const sideRelativeToButton = async () => {
+      const [surfaceBox, buttonBox] = await Promise.all([
+        surface.boundingBox(),
+        quickCharge.boundingBox(),
+      ]);
+      if (!surfaceBox || !buttonBox) throw new Error("surface or button lost its box");
+      if (surfaceBox.x + surfaceBox.width <= buttonBox.x) return "inline-start";
+      if (surfaceBox.y >= buttonBox.y + buttonBox.height) return "bottom";
+      if (surfaceBox.y + surfaceBox.height <= buttonBox.y) return "top";
+      return "overlap";
+    };
+    const initialSide = await sideRelativeToButton();
 
     await page.getByRole("button", { name: "Adicionar R$20", exact: true }).click();
     await page.getByRole("button", { name: "Gerar QR" }).click();
     await expect(page.getByRole("img", { name: /QR Pix de/ })).toBeVisible();
 
-    await expect.poll(sitsAboveButton).toBe(true);
+    await expect.poll(sitsClearOfButton).toBe(true);
+    expect(await sideRelativeToButton()).toBe(initialSide);
     expect(await surface.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
     const jaRecebi = page.getByRole("button", { name: "Já recebi" });
     const copiarCodigo = page.getByRole("button", { name: "Copiar código" });
