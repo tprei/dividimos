@@ -1,6 +1,5 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
 import { isGroupArchived } from "@/lib/group-lifecycle";
-import type { HomeInvitationItem } from "@/components/dashboard/invitations-card";
 import {
   formatOccurredOn,
   groupNameOf,
@@ -103,6 +102,13 @@ export function selectHomeMode(state: AppState): HomeMode {
 export interface OpenRoomCardItem {
   room: OpenAssignmentRoom;
   placeLabel: string;
+}
+
+export interface HomeInvitationItem {
+  groupId: string;
+  kind: "group" | "dm";
+  title: string;
+  inviter: { id: string; name: string; avatarUrl: string | null } | null;
 }
 
 let openRoomsCache: {

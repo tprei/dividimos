@@ -11,15 +11,9 @@ import { ListRow } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
 import { haptics } from "@/hooks/use-haptics";
 import { fadeUp } from "@/lib/animations";
+import type { HomeInvitationItem } from "./home-selectors";
 
 const COLLAPSED_INVITATION_COUNT = 3;
-
-export interface HomeInvitationItem {
-  groupId: string;
-  kind: "group" | "dm";
-  title: string;
-  inviter: { id: string; name: string; avatarUrl: string | null } | null;
-}
 
 export interface InvitationsCardProps {
   invitations: HomeInvitationItem[];
