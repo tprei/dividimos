@@ -3,7 +3,7 @@ import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import type { UserProfile } from "@/types/ledger";
 import { getAuthGeneration, rpc } from "./client";
-import { readUserBlocks, refreshHostedAssignmentRooms } from "./refresh";
+import { readUserBlocks, refreshHostedAssignmentRooms, refreshMyOpenAssignmentRooms } from "./refresh";
 
 let blockListEpoch = 0;
 
@@ -26,6 +26,9 @@ async function executeBootstrap(generation: number): Promise<void> {
   const epoch = blockListEpoch;
   store.setBootstrapLoading();
   void refreshHostedAssignmentRooms();
+  // Tracked and coalesced with the realtime handler's refresh; the store
+  // action makes apply order against applyBootstrap irrelevant.
+  void refreshMyOpenAssignmentRooms();
 
   let data;
   let blockedUsers: UserProfile[] | null;
