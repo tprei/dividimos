@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
+import { getPendingSignInName, setPendingSignInName } from "@/lib/pending-sign-in-name";
 
 const mockGetPlatform = vi.fn(() => "android");
 const mockIsNativePlatform = vi.fn(() => true);
@@ -24,6 +26,15 @@ vi.mock("@capgo/capacitor-social-login", () => ({
   },
 }));
 
+const APPLE_CANCEL =
+  "The operation couldn’t be completed. (com.apple.AuthenticationServices.AuthorizationError error 1001.)";
+const APPLE_CANCEL_PT_BR =
+  "Não foi possível concluir a operação. (com.apple.AuthenticationServices.AuthorizationError erro 1001.)";
+const APPLE_FAILURE =
+  "The operation couldn’t be completed. (com.apple.AuthenticationServices.AuthorizationError error 1000.)";
+const GOOGLE_IOS_CANCEL = "The user canceled the sign-in flow.";
+const ANDROID_CANCEL = "Google Sign-In failed: activity is cancelled by the user.";
+
 function makeSupabase() {
   return {
     auth: {
@@ -32,9 +43,35 @@ function makeSupabase() {
   };
 }
 
+function appleLogin(overrides: Record<string, unknown> = {}) {
+  return {
+    provider: "apple",
+    result: {
+      accessToken: null,
+      idToken: "apple-id-token",
+      profile: { user: "apple-sub", email: null, givenName: "", familyName: "" },
+      authorizationCode: "apple-code",
+      ...overrides,
+    },
+  };
+}
+
+function googleLogin(idToken: string | null = "google-id-token") {
+  return {
+    provider: "google",
+    result: { responseType: "online", idToken, accessToken: null, profile: {} },
+  };
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  mockIsNativePlatform.mockReturnValue(true);
+  window.sessionStorage.clear();
   process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID = "ios-client-id.apps.googleusercontent.com";
 });
 
@@ -51,31 +88,193 @@ Object.defineProperty(window, "location", {
   writable: true,
 });
 
+// The module reads NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID and keeps plugin state at
+// load time, so each test imports a fresh copy after vi.resetModules().
 async function loadModule() {
   return import("./auth");
 }
 
-describe("ensureInitialized (via googleSignIn)", () => {
-  it("passes webClientId on Android", async () => {
-    mockGetPlatform.mockReturnValue("android");
-    mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
-    mockSignInWithIdToken.mockResolvedValue({ error: null });
-
-    const { googleSignIn } = await loadModule();
-    await googleSignIn(makeSupabase() as never);
-
-    expect(mockInitialize).toHaveBeenCalledWith({
-      google: {
-        webClientId: expect.stringContaining("apps.googleusercontent.com"),
-      },
-    });
-    expect(mockInitialize.mock.calls[0][0].google).not.toHaveProperty("iOSClientId");
+describe("provider availability", () => {
+  it("offers Apple only inside the iOS app", async () => {
+    const cases: [boolean, string, boolean][] = [
+      [true, "ios", true],
+      [true, "android", false],
+      [false, "web", false],
+    ];
+    for (const [native, platform, expected] of cases) {
+      mockIsNativePlatform.mockReturnValue(native);
+      mockGetPlatform.mockReturnValue(platform);
+      const { isAppleSignInAvailable } = await loadModule();
+      expect(isAppleSignInAvailable()).toBe(expected);
+    }
   });
 
-  it("passes iOSClientId and iOSServerClientId on iOS", async () => {
+  it("offers native Google on iOS only when the iOS client id is configured", async () => {
     mockGetPlatform.mockReturnValue("ios");
-    mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
-    mockSignInWithIdToken.mockResolvedValue({ error: null });
+    expect((await loadModule()).isNativeGoogleSignInAvailable()).toBe(true);
+
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID = "";
+    expect((await loadModule()).isNativeGoogleSignInAvailable()).toBe(false);
+
+    mockGetPlatform.mockReturnValue("android");
+    expect((await loadModule()).isNativeGoogleSignInAvailable()).toBe(true);
+
+    mockIsNativePlatform.mockReturnValue(false);
+    mockGetPlatform.mockReturnValue("web");
+    expect((await loadModule()).isNativeGoogleSignInAvailable()).toBe(false);
+  });
+
+  it("reports unavailable without opening a sheet", async () => {
+    mockGetPlatform.mockReturnValue("android");
+    const { appleSignIn } = await loadModule();
+
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "unavailable" });
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+});
+
+describe("appleSignIn", () => {
+  beforeEach(() => {
+    mockGetPlatform.mockReturnValue("ios");
+  });
+
+  it("sends Apple sha256(nonce) and Supabase the raw nonce, returning the authorization code", async () => {
+    mockLogin.mockResolvedValue(appleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+
+    const { appleSignIn } = await loadModule();
+    const result = await appleSignIn(makeSupabase() as never);
+
+    expect(result).toEqual({ status: "signed_in", provider: "apple", authorizationCode: "apple-code" });
+    expect(mockInitialize).toHaveBeenCalledWith({
+      apple: { clientId: "ai.dividimos.app", useProperTokenExchange: true },
+    });
+    const rawNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
+    expect(rawNonce.length).toBeGreaterThanOrEqual(32);
+    expect(mockLogin).toHaveBeenCalledWith({ provider: "apple", options: { nonce: sha256(rawNonce) } });
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
+      provider: "apple",
+      token: "apple-id-token",
+      nonce: rawNonce,
+    });
+  });
+
+  it("uses a fresh nonce for every attempt", async () => {
+    mockLogin.mockResolvedValue(appleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+
+    const { appleSignIn } = await loadModule();
+    await appleSignIn(makeSupabase() as never);
+    await appleSignIn(makeSupabase() as never);
+
+    const [first, second] = mockSignInWithIdToken.mock.calls.map((call) => call[0].nonce);
+    expect(first).not.toBe(second);
+  });
+
+  it.each([APPLE_CANCEL, APPLE_CANCEL_PT_BR])("treats %s as a cancellation", async (message) => {
+    mockLogin.mockRejectedValue(new Error(message));
+
+    const { appleSignIn } = await loadModule();
+
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "cancelled" });
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing authorization code as null instead of an empty string", async () => {
+    mockLogin.mockResolvedValue(appleLogin({ authorizationCode: "" }));
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+
+    const { appleSignIn } = await loadModule();
+
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({
+      status: "signed_in",
+      provider: "apple",
+      authorizationCode: null,
+    });
+  });
+
+  it("settles and frees the sheet when the exchange throws", async () => {
+    mockLogin.mockResolvedValue(appleLogin());
+    mockSignInWithIdToken.mockRejectedValueOnce(new SyntaxError("Unexpected token <"));
+    const { appleSignIn } = await loadModule();
+
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "rejected" });
+
+    mockSignInWithIdToken.mockResolvedValueOnce({ data: { user: { id: "user-1" } }, error: null });
+    expect((await appleSignIn(makeSupabase() as never)).status).toBe("signed_in");
+  });
+
+  it("reports other authorization errors as rejected", async () => {
+    mockLogin.mockRejectedValue(new Error(APPLE_FAILURE));
+
+    const { appleSignIn } = await loadModule();
+
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "rejected" });
+  });
+
+  it("separates network failures from rejected tokens", async () => {
+    mockLogin.mockResolvedValue(appleLogin());
+    const { appleSignIn } = await loadModule();
+
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: { user: null },
+      error: new AuthRetryableFetchError("Failed to fetch", 0),
+    });
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "network" });
+
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: { user: null },
+      error: new AuthApiError("Nonces mismatch", 400, "bad_jwt"),
+    });
+    expect(await appleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "rejected" });
+  });
+
+  it("keeps Apple's first-authorization name for onboarding, keyed to the user", async () => {
+    mockLogin.mockResolvedValue(
+      appleLogin({ profile: { user: "s", email: null, givenName: " Ana ", familyName: "Souza" } }),
+    );
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+
+    const { appleSignIn } = await loadModule();
+    await appleSignIn(makeSupabase() as never);
+
+    expect(getPendingSignInName("user-1")).toBe("Ana Souza");
+  });
+
+  it("never stores an empty name from a later authorization", async () => {
+    setPendingSignInName("user-1", "Ana Souza");
+    mockLogin.mockResolvedValue(appleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+
+    const { appleSignIn } = await loadModule();
+    await appleSignIn(makeSupabase() as never);
+
+    expect(getPendingSignInName("user-1")).toBe("Ana Souza");
+  });
+});
+
+describe("googleSignIn", () => {
+  it("keeps Android's nonce-less Credential Manager flow", async () => {
+    mockGetPlatform.mockReturnValue("android");
+    mockLogin.mockResolvedValue(googleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
+
+    const { googleSignIn } = await loadModule();
+    const result = await googleSignIn(makeSupabase() as never);
+
+    expect(result).toEqual({ status: "signed_in", provider: "google", authorizationCode: null });
+    expect(mockInitialize).toHaveBeenCalledWith({
+      google: { webClientId: expect.stringContaining("apps.googleusercontent.com") },
+    });
+    expect(mockLogin).toHaveBeenCalledWith({ provider: "google", options: {} });
+    expect(mockSignInWithIdToken).toHaveBeenCalledWith({ provider: "google", token: "google-id-token" });
+  });
+
+  it("binds the iOS id_token to this attempt and skips the restored session", async () => {
+    mockGetPlatform.mockReturnValue("ios");
+    mockLogin.mockResolvedValue(googleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
 
     const { googleSignIn } = await loadModule();
     await googleSignIn(makeSupabase() as never);
@@ -86,71 +285,89 @@ describe("ensureInitialized (via googleSignIn)", () => {
         iOSServerClientId: expect.stringContaining("apps.googleusercontent.com"),
       },
     });
-    expect(mockInitialize.mock.calls[0][0].google).not.toHaveProperty("webClientId");
+    const rawNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
+    expect(mockLogin).toHaveBeenCalledWith({
+      provider: "google",
+      options: { nonce: sha256(rawNonce), forcePrompt: true },
+    });
   });
 
-  it("initializes only once", async () => {
-    mockGetPlatform.mockReturnValue("android");
-    mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
-    mockSignInWithIdToken.mockResolvedValue({ error: null });
+  it.each([
+    ["ios", GOOGLE_IOS_CANCEL],
+    ["android", ANDROID_CANCEL],
+  ])("treats the %s cancellation as cancelled", async (platform, message) => {
+    mockGetPlatform.mockReturnValue(platform);
+    mockLogin.mockRejectedValue(new Error(message));
 
     const { googleSignIn } = await loadModule();
-    const supabase = makeSupabase() as never;
-    await googleSignIn(supabase);
-    await googleSignIn(supabase);
+
+    expect(await googleSignIn(makeSupabase() as never)).toEqual({ status: "cancelled" });
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake unrelated failures for a cancellation", async () => {
+    mockGetPlatform.mockReturnValue("android");
+    mockLogin.mockRejectedValue(new Error("Google Sign-In failed: No credentials available"));
+
+    const { googleSignIn } = await loadModule();
+
+    expect(await googleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "rejected" });
+  });
+
+  it("rejects a response without an id_token", async () => {
+    mockGetPlatform.mockReturnValue("android");
+    mockLogin.mockResolvedValue(googleLogin(null));
+
+    const { googleSignIn } = await loadModule();
+
+    expect(await googleSignIn(makeSupabase() as never)).toEqual({ status: "failed", reason: "rejected" });
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it("initializes the plugin only once", async () => {
+    mockGetPlatform.mockReturnValue("android");
+    mockLogin.mockResolvedValue(googleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
+
+    const { googleSignIn } = await loadModule();
+    await googleSignIn(makeSupabase() as never);
+    await googleSignIn(makeSupabase() as never);
 
     expect(mockInitialize).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("googleSignIn", () => {
-  it("returns true on successful sign-in", async () => {
-    mockGetPlatform.mockReturnValue("android");
-    mockLogin.mockResolvedValue({ result: { idToken: "valid-token" } });
-    mockSignInWithIdToken.mockResolvedValue({ error: null });
+describe("one native sheet at a time", () => {
+  it("answers busy across providers while a sheet is open, then frees the slot", async () => {
+    mockGetPlatform.mockReturnValue("ios");
+    const appleSheet = Promise.withResolvers<unknown>();
+    mockLogin.mockImplementationOnce(() => appleSheet.promise);
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
 
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
+    const { appleSignIn, googleSignIn } = await loadModule();
+    const supabase = makeSupabase() as never;
+    const pending = appleSignIn(supabase);
+    await vi.waitFor(() => expect(mockLogin).toHaveBeenCalledTimes(1));
 
-    expect(result).toBe(true);
-    expect(mockSignInWithIdToken).toHaveBeenCalledWith({
-      provider: "google",
-      token: "valid-token",
-    });
+    expect(await googleSignIn(supabase)).toEqual({ status: "failed", reason: "busy" });
+    expect(mockLogin).toHaveBeenCalledTimes(1);
+
+    appleSheet.resolve(appleLogin());
+    expect((await pending).status).toBe("signed_in");
+
+    mockLogin.mockResolvedValueOnce(googleLogin());
+    expect((await googleSignIn(supabase)).status).toBe("signed_in");
   });
 
-  it("returns false when no idToken is returned", async () => {
-    mockGetPlatform.mockReturnValue("android");
-    mockLogin.mockResolvedValue({ result: {} });
+  it("frees the slot after a rejected sheet", async () => {
+    mockGetPlatform.mockReturnValue("ios");
+    mockLogin.mockRejectedValueOnce(new Error(APPLE_FAILURE)).mockResolvedValueOnce(appleLogin());
+    mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
 
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
+    const { appleSignIn } = await loadModule();
 
-    expect(result).toBe(false);
-    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
-  });
-
-  it("returns false when signInWithIdToken fails on Android (no retry)", async () => {
-    mockGetPlatform.mockReturnValue("android");
-    mockLogin.mockResolvedValue({ result: { idToken: "tok" } });
-    mockSignInWithIdToken.mockResolvedValue({ error: new Error("bad") });
-
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
-
-    expect(result).toBe(false);
-    expect(mockLogout).not.toHaveBeenCalled();
-    expect(mockSignInWithIdToken).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not touch the plugin's web popup path", async () => {
-    mockGetPlatform.mockReturnValue("web");
-    mockIsNativePlatform.mockReturnValue(false);
-
-    const { prepareGoogleSignIn } = await loadModule();
-    await prepareGoogleSignIn();
-
-    expect(mockInitialize).not.toHaveBeenCalled();
+    expect((await appleSignIn(makeSupabase() as never)).status).toBe("failed");
+    expect((await appleSignIn(makeSupabase() as never)).status).toBe("signed_in");
   });
 });
 
@@ -161,6 +378,13 @@ describe("web redirect flow", () => {
     window.localStorage.clear();
     mockAssign.mockClear();
     window.location.hash = "";
+  });
+
+  it("never initializes the native plugin", async () => {
+    const { prepareGoogleSignIn } = await loadModule();
+    await prepareGoogleSignIn();
+
+    expect(mockInitialize).not.toHaveBeenCalled();
   });
 
   it("sends Google sha256(nonce) and keeps the raw nonce for Supabase", async () => {
@@ -179,9 +403,7 @@ describe("web redirect flow", () => {
 
     expect(next).toBe("/app/groups");
     const rawNonce = mockSignInWithIdToken.mock.calls[0][0].nonce as string;
-    expect(target.searchParams.get("nonce")).toBe(
-      createHash("sha256").update(rawNonce).digest("hex"),
-    );
+    expect(target.searchParams.get("nonce")).toBe(sha256(rawNonce));
     expect(mockSignInWithIdToken).toHaveBeenCalledWith({
       provider: "google",
       token: "web-token",
@@ -218,58 +440,5 @@ describe("web redirect flow", () => {
     mockSignInWithIdToken.mockResolvedValue({ error: null });
     expect(await completeGoogleRedirect(makeSupabase() as never)).toBeNull();
     expect(mockSignInWithIdToken).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("iOS retry logic", () => {
-  it("retries with logout on iOS when first signInWithIdToken fails", async () => {
-    mockGetPlatform.mockReturnValue("ios");
-    mockLogin
-      .mockResolvedValueOnce({ result: { idToken: "stale-token" } })
-      .mockResolvedValueOnce({ result: { idToken: "fresh-token" } });
-    mockSignInWithIdToken
-      .mockResolvedValueOnce({ error: new Error("nonce mismatch") })
-      .mockResolvedValueOnce({ error: null });
-
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
-
-    expect(result).toBe(true);
-    expect(mockLogout).toHaveBeenCalledWith({ provider: "google" });
-    expect(mockSignInWithIdToken).toHaveBeenCalledTimes(2);
-    expect(mockSignInWithIdToken).toHaveBeenLastCalledWith({
-      provider: "google",
-      token: "fresh-token",
-    });
-  });
-
-  it("returns false when iOS retry also fails", async () => {
-    mockGetPlatform.mockReturnValue("ios");
-    mockLogin
-      .mockResolvedValueOnce({ result: { idToken: "stale" } })
-      .mockResolvedValueOnce({ result: { idToken: "still-stale" } });
-    mockSignInWithIdToken
-      .mockResolvedValueOnce({ error: new Error("fail1") })
-      .mockResolvedValueOnce({ error: new Error("fail2") });
-
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
-
-    expect(result).toBe(false);
-    expect(mockLogout).toHaveBeenCalledTimes(1);
-    expect(mockSignInWithIdToken).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns false when iOS retry gets no token", async () => {
-    mockGetPlatform.mockReturnValue("ios");
-    mockLogin
-      .mockResolvedValueOnce({ result: { idToken: "stale" } })
-      .mockResolvedValueOnce({ result: {} });
-    mockSignInWithIdToken.mockResolvedValue({ error: new Error("fail") });
-
-    const { googleSignIn } = await loadModule();
-    const result = await googleSignIn(makeSupabase() as never);
-
-    expect(result).toBe(false);
   });
 });
