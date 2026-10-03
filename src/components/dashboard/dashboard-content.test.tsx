@@ -60,8 +60,15 @@ vi.mock("@/components/pwa/notification-prompt", () => ({
   NotificationPrompt: () => null,
 }));
 
+const router = vi.hoisted(() => ({
+  push: vi.fn(),
+  prefetch: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useRouter: () => router,
   usePathname: () => "/app",
 }));
 
@@ -159,6 +166,33 @@ function snapshot(overrides: SnapshotOverrides = {}): GroupSnapshot {
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
 
+function invitedDmSnapshot(): GroupSnapshot {
+  return snapshot({
+    group: {
+      id: "g-dm",
+      kind: "dm",
+      name: "",
+      creatorId: carol.id,
+      dmUserA: me.id,
+      dmUserB: carol.id,
+    },
+    dmCounterparty: carol,
+    members: [
+      { groupId: "g-dm", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      { groupId: "g-dm", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+    ],
+  });
+}
+
+function invitedGroupSnapshot(): GroupSnapshot {
+  return snapshot({
+    members: [
+      { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+    ],
+  });
+}
+
 function seedStore(snapshots: GroupSnapshot[], user: Me = me) {
   const groups = Object.fromEntries(snapshots.map((item) => [item.group.id, item]));
   useAppStore.setState({ hydrated: true, me: user, groups, groupOrder: snapshots.map((item) => item.group.id) });
@@ -223,6 +257,35 @@ describe("DashboardContent", () => {
     expect(screen.getByRole("link", { name: "Criar ou entrar num grupo" })).toHaveAttribute("href", "/app/groups");
     expect(screen.getByText("Escanear nota")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeInTheDocument();
+  });
+
+  it("shows an invited DM on a first-use home and wires Aceitar to the invitation", async () => {
+    groupMutations.acceptInvitation.mockResolvedValue(true);
+    seedStore([invitedDmSnapshot()]);
+
+    render(<DashboardContent />);
+
+    expect(screen.getByRole("heading", { name: /Convites/ })).toBeInTheDocument();
+    expect(screen.getByText("Carol Souza")).toBeInTheDocument();
+    expect(screen.getByText("Quer conversar com você")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Aceitar convite para conversa com Carol Souza" }),
+    );
+    await waitFor(() =>
+      expect(groupMutations.acceptInvitation).toHaveBeenCalledWith("g-dm"),
+    );
+  });
+
+  it("opens the conversation and group routes from invitation rows", () => {
+    seedStore([invitedDmSnapshot(), invitedGroupSnapshot()]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByText("Quer conversar com você"));
+    expect(router.push).toHaveBeenCalledWith("/app/conversations/user-2");
+
+    fireEvent.click(screen.getByText("Jantar"));
+    expect(router.push).toHaveBeenCalledWith("/app/groups/g1");
   });
 
   it("keeps QR room entry available with populated groups", () => {
