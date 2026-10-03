@@ -205,6 +205,13 @@ export type Database = {
             foreignKeyName: "assignment_rooms_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: true
+            referencedRelation: "expense_participants_any_status"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "assignment_rooms_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: true
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
@@ -403,6 +410,13 @@ export type Database = {
             foreignKeyName: "expense_versions_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
+            referencedRelation: "expense_participants_any_status"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "expense_versions_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
@@ -558,6 +572,13 @@ export type Database = {
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "group_events_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expense_participants_any_status"
             referencedColumns: ["expense_id"]
           },
           {
@@ -881,6 +902,13 @@ export type Database = {
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "guests_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expense_participants_any_status"
             referencedColumns: ["expense_id"]
           },
           {
@@ -1227,6 +1255,18 @@ export type Database = {
     }
     Views: {
       current_expense_participants: {
+        Row: {
+          expense_id: string | null
+          guest_id: string | null
+          kind: Database["public"]["Enums"]["participant_kind"] | null
+          paid_cents: number | null
+          participant_index: number | null
+          share_cents: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      expense_participants_any_status: {
         Row: {
           expense_id: string | null
           guest_id: string | null
