@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
@@ -7,6 +7,29 @@ import { resolve } from "path";
  */
 
 type EventHandler = (event: Record<string, unknown>) => void;
+
+/**
+ * Peer-linked ports, so a fake window client can ack the relay by posting on
+ * the transferred port and the worker's port1.onmessage fires.
+ */
+class FakeMessagePort {
+  peer: FakeMessagePort | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+
+  postMessage(data: unknown): void {
+    queueMicrotask(() => this.peer?.onmessage?.({ data }));
+  }
+}
+
+class FakeMessageChannel {
+  port1 = new FakeMessagePort();
+  port2 = new FakeMessagePort();
+
+  constructor() {
+    this.port1.peer = this.port2;
+    this.port2.peer = this.port1;
+  }
+}
 
 function createSWEnv(origin = "https://dividimos.app") {
   const listeners: Record<string, EventHandler[]> = {};
@@ -53,6 +76,7 @@ function createSWEnv(origin = "https://dividimos.app") {
     Set,
     console,
     JSON,
+    MessageChannel: FakeMessageChannel,
   };
   env.self = env;
 
@@ -149,10 +173,18 @@ describe("Service Worker — push events", () => {
   });
 
   describe("notificationclick event", () => {
-    it("focuses existing window and navigates to URL", async () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("focuses the window, relays the url, and skips navigate when it acks", async () => {
+      vi.useFakeTimers();
       const mockClient = {
         url: "https://dividimos.app/app",
         focus: vi.fn(async () => mockClient),
+        postMessage: vi.fn((_data: unknown, transfer: FakeMessagePort[]) => {
+          transfer[0].postMessage("ack");
+        }),
         navigate: vi.fn(async () => mockClient),
       };
       sw.clients.matchAll.mockResolvedValue([mockClient]);
@@ -167,10 +199,40 @@ describe("Service Worker — push events", () => {
 
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
+      await vi.advanceTimersByTimeAsync(1500);
 
       expect(event.notification.close).toHaveBeenCalled();
-      expect(mockClient.navigate).toHaveBeenCalledWith("/app/groups/123");
       expect(mockClient.focus).toHaveBeenCalled();
+      expect(mockClient.postMessage).toHaveBeenCalled();
+      expect(mockClient.navigate).not.toHaveBeenCalled();
+    });
+
+    it("navigates to the absolute url when no ack arrives in time", async () => {
+      vi.useFakeTimers();
+      const mockClient = {
+        url: "https://dividimos.app/app",
+        focus: vi.fn(async () => mockClient),
+        postMessage: vi.fn(),
+        navigate: vi.fn(async () => mockClient),
+      };
+      sw.clients.matchAll.mockResolvedValue([mockClient]);
+
+      const event = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url: "/app/groups/123" },
+        },
+      };
+
+      sw.listeners["notificationclick"]![0]!(event);
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(mockClient.focus).toHaveBeenCalled();
+      expect(mockClient.navigate).toHaveBeenCalledWith(
+        "https://dividimos.app/app/groups/123",
+      );
+      await Promise.all(event._promises);
     });
 
     it("opens new window when no client exists", async () => {
@@ -187,10 +249,10 @@ describe("Service Worker — push events", () => {
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.clients.openWindow).toHaveBeenCalledWith("/app/settings");
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("https://dividimos.app/app/settings");
     });
 
-    it("defaults to / when notification has no URL", async () => {
+    it("defaults to /app when notification has no URL", async () => {
       sw.clients.matchAll.mockResolvedValue([]);
 
       const event = {
@@ -204,10 +266,10 @@ describe("Service Worker — push events", () => {
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("https://dividimos.app/app");
     });
 
-    it("falls back to / for javascript: URLs", async () => {
+    it("falls back to /app for javascript: URLs", async () => {
       sw.clients.matchAll.mockResolvedValue([]);
 
       const event = {
@@ -221,10 +283,10 @@ describe("Service Worker — push events", () => {
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("https://dividimos.app/app");
     });
 
-    it("falls back to / for cross-origin URLs", async () => {
+    it("falls back to /app for cross-origin URLs", async () => {
       sw.clients.matchAll.mockResolvedValue([]);
 
       const event = {
@@ -238,10 +300,10 @@ describe("Service Worker — push events", () => {
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("https://dividimos.app/app");
     });
 
-    it("falls back to / for malformed URLs that cannot be parsed", async () => {
+    it("falls back to /app for malformed URLs that cannot be parsed", async () => {
       sw.clients.matchAll.mockResolvedValue([]);
 
       const event = {
@@ -255,7 +317,102 @@ describe("Service Worker — push events", () => {
       sw.listeners["notificationclick"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("https://dividimos.app/app");
+    });
+  });
+
+  describe("message event", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function parkPendingUrl(url: string): Promise<void> {
+      sw.clients.matchAll.mockResolvedValue([]);
+      const event = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url },
+        },
+      };
+      sw.listeners["notificationclick"]![0]!(event);
+      await Promise.all(event._promises);
+    }
+
+    it("replies to a fresh window with the pending url once", async () => {
+      await parkPendingUrl("/app/bill/1");
+
+      const source = { postMessage: vi.fn() };
+      sw.listeners["message"]![0]!({
+        data: { type: "notification-navigate-ready" },
+        source,
+      });
+      expect(source.postMessage).toHaveBeenCalledWith({
+        type: "notification-navigate",
+        url: "/app/bill/1",
+      });
+
+      source.postMessage.mockClear();
+      sw.listeners["message"]![0]!({
+        data: { type: "notification-navigate-ready" },
+        source,
+      });
+      expect(source.postMessage).not.toHaveBeenCalled();
+    });
+
+    it("ignores message types other than the ready handshake", () => {
+      const source = { postMessage: vi.fn() };
+
+      sw.listeners["message"]![0]!({ data: { type: "skip-waiting" }, source });
+      sw.listeners["message"]![0]!({ data: null, source });
+      sw.listeners["message"]![0]!({ data: undefined, source });
+
+      expect(source.postMessage).not.toHaveBeenCalled();
+    });
+
+    it("drops the pending url once it is older than 60s", async () => {
+      vi.useFakeTimers();
+      await parkPendingUrl("/app/bill/1");
+      vi.advanceTimersByTime(61000);
+
+      const source = { postMessage: vi.fn() };
+      sw.listeners["message"]![0]!({
+        data: { type: "notification-navigate-ready" },
+        source,
+      });
+
+      expect(source.postMessage).not.toHaveBeenCalled();
+    });
+
+    it("clears a parked url once a click finds an open window", async () => {
+      await parkPendingUrl("/app/bill/1");
+
+      const mockClient = {
+        url: "https://dividimos.app/app",
+        focus: vi.fn(async () => mockClient),
+        postMessage: vi.fn((_data: unknown, transfer: FakeMessagePort[]) => {
+          transfer[0].postMessage("ack");
+        }),
+        navigate: vi.fn(async () => mockClient),
+      };
+      sw.clients.matchAll.mockResolvedValue([mockClient]);
+      const click = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url: "/app/bill/2" },
+        },
+      };
+      sw.listeners["notificationclick"]![0]!(click);
+      await Promise.all(click._promises);
+
+      const source = { postMessage: vi.fn() };
+      sw.listeners["message"]![0]!({
+        data: { type: "notification-navigate-ready" },
+        source,
+      });
+
+      expect(source.postMessage).not.toHaveBeenCalled();
     });
   });
 });
