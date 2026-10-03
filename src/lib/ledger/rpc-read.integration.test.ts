@@ -1676,8 +1676,8 @@ describe.skipIf(!isIntegrationTestReady)(
           await rpcOk<ExpenseDetail>(authenticateAs(cee), "get_expense", {
             p_expense_id: e2.expenseId,
           })
-        ).participants,
-      ).toEqual([]);
+        ).participants.map((participant) => participant.user?.id ?? null),
+      ).toEqual([ay.id, cee.id]);
       await rpcOk(authenticateAs(cee), "restore_expense", {
         p_expense_id: e2.expenseId,
       });

@@ -235,7 +235,13 @@ export function mergeConversation(
 
 export function summaryFromDetail(detail: ExpenseDetail, meId: string | null): ExpenseSummary {
   const { expense, current, participants } = detail;
-  const mine = meId === null ? undefined : participants.find((p) => p.kind === "user" && p.user?.id === meId);
+  // The server's expense summaries come from the active-only participant
+  // view, so a deleted bill reports a zero share there; a detail fetched
+  // after the participants fix would otherwise disagree and flip chat cards.
+  const mine =
+    meId === null || expense.status === "deleted"
+      ? undefined
+      : participants.find((p) => p.kind === "user" && p.user?.id === meId);
   return {
     id: expense.id,
     groupId: expense.groupId,

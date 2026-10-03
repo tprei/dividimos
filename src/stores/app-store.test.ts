@@ -1,4 +1,4 @@
-import { conversationState } from "./app-store-merge";
+import { conversationState, summaryFromDetail } from "./app-store-merge";
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
   Bootstrap,
@@ -420,6 +420,29 @@ describe("applyExpenseContext", () => {
     });
 
     expect(useAppStore.getState().assignmentRoomsByExpenseId.e1).toBeUndefined();
+  });
+});
+
+describe("summaryFromDetail", () => {
+  it("zeroes my share on a deleted bill to match the active-only server summary", () => {
+    const base = detail("e1");
+    const deleted: ExpenseDetail = {
+      ...base,
+      expense: {
+        ...base.expense,
+        status: "deleted",
+        deletedAt: "2026-01-02T00:00:00Z",
+        deletedBy: me.id,
+      },
+      participants: [
+        { participantIndex: 0, kind: "user", shareCents: 1000, paidCents: 1000, user: me, guest: null },
+      ],
+    };
+
+    expect(summaryFromDetail(base, me.id).myShareCents).toBe(1000);
+    const deletedSummary = summaryFromDetail(deleted, me.id);
+    expect(deletedSummary.myShareCents).toBe(0);
+    expect(deletedSummary.myPaidCents).toBe(0);
   });
 });
 
