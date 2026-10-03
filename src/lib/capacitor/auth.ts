@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { SocialLogin } from "@capgo/capacitor-social-login";
 import {
+  isAuthError,
   isAuthRetryableFetchError,
   type AuthTokenResponse,
   type SupabaseClient,
@@ -38,6 +39,18 @@ export type NativeSignInResult =
   | { status: "signed_in"; provider: NativeProvider; authorizationCode: string | null }
   | { status: "cancelled" }
   | { status: "failed"; reason: NativeSignInFailure };
+
+export type NativeLinkFailure =
+  | "busy"
+  | "network"
+  | "linking_disabled"
+  | "identity_in_use"
+  | "rejected";
+
+export type NativeLinkResult =
+  | { status: "linked"; provider: NativeProvider; authorizationCode: string | null }
+  | { status: "cancelled" }
+  | { status: "failed"; reason: NativeLinkFailure };
 
 type NativeCredential =
   | {
@@ -81,8 +94,15 @@ function isNativeCancellation(error: unknown): boolean {
   return CANCELLATION_PATTERNS.some((pattern) => pattern.test(message));
 }
 
-// One native sheet at a time across providers: a second sheet would replace
-// the first one's completion inside the plugin.
+function linkFailure(error: unknown): Exclude<NativeLinkFailure, "busy"> {
+  if (isAuthRetryableFetchError(error)) return "network";
+  if (isAuthError(error) && error.code === "manual_linking_disabled") return "linking_disabled";
+  if (isAuthError(error) && error.code === "identity_already_exists") return "identity_in_use";
+  return "rejected";
+}
+
+// One native sheet at a time across sign-in and linking: a second sheet would
+// replace the first one's completion inside the plugin.
 async function singleFlight<T>(busy: T, attempt: () => Promise<T>): Promise<T> {
   if (attemptInFlight) return busy;
   attemptInFlight = true;
@@ -203,12 +223,60 @@ async function nativeSignIn(
   });
 }
 
+async function nativeLink(
+  supabase: SupabaseClient,
+  provider: NativeProvider,
+): Promise<NativeLinkResult> {
+  const available = provider === "apple" ? isAppleSignInAvailable() : isNativeGoogleSignInAvailable();
+  if (!available) return { status: "failed", reason: "rejected" };
+
+  return singleFlight<NativeLinkResult>({ status: "failed", reason: "busy" }, async () => {
+    const credential = await requestNativeCredential(provider);
+    if (credential.status === "cancelled") return credential;
+    if (credential.status === "failed") return { status: "failed", reason: "rejected" };
+
+    // linkIdentity attaches the identity to the session's current user, so a
+    // match is proven by the provider sheet, never inferred from an email.
+    let link: AuthTokenResponse;
+    try {
+      link = await supabase.auth.linkIdentity({
+        provider,
+        token: credential.idToken,
+        ...(credential.rawNonce === undefined ? {} : { nonce: credential.rawNonce }),
+      });
+    } catch (thrown) {
+      return { status: "failed", reason: linkFailure(thrown) };
+    }
+    if (link.error) return { status: "failed", reason: linkFailure(link.error) };
+    return { status: "linked", provider, authorizationCode: credential.authorizationCode };
+  });
+}
+
 export function appleSignIn(supabase: SupabaseClient): Promise<NativeSignInResult> {
   return nativeSignIn(supabase, "apple");
 }
 
 export function googleSignIn(supabase: SupabaseClient): Promise<NativeSignInResult> {
   return nativeSignIn(supabase, "google");
+}
+
+export function linkAppleIdentity(supabase: SupabaseClient): Promise<NativeLinkResult> {
+  return nativeLink(supabase, "apple");
+}
+
+export function linkGoogleIdentity(supabase: SupabaseClient): Promise<NativeLinkResult> {
+  return nativeLink(supabase, "google");
+}
+
+export async function loadLinkedProviders(
+  supabase: SupabaseClient,
+): Promise<{ apple: boolean; google: boolean }> {
+  const { data, error } = await supabase.auth.getUserIdentities();
+  if (error) throw error;
+  return {
+    apple: data.identities.some((identity) => identity.provider === "apple"),
+    google: data.identities.some((identity) => identity.provider === "google"),
+  };
 }
 
 // A home-screen PWA gets null back from window.open, so web sign-in navigates

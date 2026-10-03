@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SelectField } from "@/components/ui/select-field";
 import { BlockedUsersSettings } from "@/components/settings/blocked-users-settings";
+import { LinkedAccountsSettings } from "@/components/settings/linked-accounts-settings";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -302,6 +303,8 @@ function SettingsPageContent() {
           </div>
         </div>
       </motion.div>
+
+      <LinkedAccountsSettings key={`linked-${me.id}`} />
 
       <BlockedUsersSettings key={me.id} />
 

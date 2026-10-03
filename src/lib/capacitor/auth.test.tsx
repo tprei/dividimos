@@ -9,6 +9,8 @@ const mockInitialize = vi.fn();
 const mockLogin = vi.fn();
 const mockLogout = vi.fn();
 const mockSignInWithIdToken = vi.fn();
+const mockLinkIdentity = vi.fn();
+const mockGetUserIdentities = vi.fn();
 const mockAssign = vi.fn();
 
 vi.mock("@capacitor/core", () => ({
@@ -39,6 +41,8 @@ function makeSupabase() {
   return {
     auth: {
       signInWithIdToken: mockSignInWithIdToken,
+      linkIdentity: mockLinkIdentity,
+      getUserIdentities: mockGetUserIdentities,
     },
   };
 }
@@ -344,12 +348,13 @@ describe("one native sheet at a time", () => {
     mockLogin.mockImplementationOnce(() => appleSheet.promise);
     mockSignInWithIdToken.mockResolvedValue({ data: { user: { id: "u" } }, error: null });
 
-    const { appleSignIn, googleSignIn } = await loadModule();
+    const { appleSignIn, googleSignIn, linkAppleIdentity } = await loadModule();
     const supabase = makeSupabase() as never;
     const pending = appleSignIn(supabase);
     await vi.waitFor(() => expect(mockLogin).toHaveBeenCalledTimes(1));
 
     expect(await googleSignIn(supabase)).toEqual({ status: "failed", reason: "busy" });
+    expect(await linkAppleIdentity(supabase)).toEqual({ status: "failed", reason: "busy" });
     expect(mockLogin).toHaveBeenCalledTimes(1);
 
     appleSheet.resolve(appleLogin());
@@ -368,6 +373,62 @@ describe("one native sheet at a time", () => {
 
     expect((await appleSignIn(makeSupabase() as never)).status).toBe("failed");
     expect((await appleSignIn(makeSupabase() as never)).status).toBe("signed_in");
+  });
+});
+
+describe("identity linking", () => {
+  beforeEach(() => {
+    mockGetPlatform.mockReturnValue("ios");
+  });
+
+  it("links the Apple identity to the signed-in user with the same nonce contract", async () => {
+    mockLogin.mockResolvedValue(appleLogin());
+    mockLinkIdentity.mockResolvedValue({ data: {}, error: null });
+
+    const { linkAppleIdentity } = await loadModule();
+    const result = await linkAppleIdentity(makeSupabase() as never);
+
+    expect(result).toEqual({ status: "linked", provider: "apple", authorizationCode: "apple-code" });
+    const rawNonce = mockLinkIdentity.mock.calls[0][0].nonce as string;
+    expect(mockLogin).toHaveBeenCalledWith({ provider: "apple", options: { nonce: sha256(rawNonce) } });
+    expect(mockLinkIdentity).toHaveBeenCalledWith({ provider: "apple", token: "apple-id-token", nonce: rawNonce });
+    expect(mockSignInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new AuthApiError("Manual linking is disabled", 404, "manual_linking_disabled"), "linking_disabled"],
+    [new AuthApiError("Identity is already linked to another user", 422, "identity_already_exists"), "identity_in_use"],
+    [new AuthRetryableFetchError("Failed to fetch", 0), "network"],
+    [new AuthApiError("Invalid id token", 400, "bad_jwt"), "rejected"],
+  ])("maps %s to %s", async (error, reason) => {
+    mockLogin.mockResolvedValue(googleLogin());
+    mockLinkIdentity.mockResolvedValue({ data: {}, error });
+
+    const { linkGoogleIdentity } = await loadModule();
+
+    expect(await linkGoogleIdentity(makeSupabase() as never)).toEqual({ status: "failed", reason });
+  });
+
+  it("settles silently when the person cancels the sheet", async () => {
+    mockLogin.mockRejectedValue(new Error(APPLE_CANCEL));
+
+    const { linkAppleIdentity } = await loadModule();
+
+    expect(await linkAppleIdentity(makeSupabase() as never)).toEqual({ status: "cancelled" });
+    expect(mockLinkIdentity).not.toHaveBeenCalled();
+  });
+
+  it("reads which providers are linked from the user's identities", async () => {
+    mockGetUserIdentities.mockResolvedValue({
+      data: { identities: [{ provider: "google" }, { provider: "apple" }] },
+      error: null,
+    });
+    const { loadLinkedProviders } = await loadModule();
+
+    expect(await loadLinkedProviders(makeSupabase() as never)).toEqual({ apple: true, google: true });
+
+    mockGetUserIdentities.mockResolvedValue({ data: null, error: new AuthApiError("expired", 401, "bad_jwt") });
+    await expect(loadLinkedProviders(makeSupabase() as never)).rejects.toThrow("expired");
   });
 });
 
