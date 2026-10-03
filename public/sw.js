@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v8";
+const CACHE_VERSION = "v9";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const SHELL_CACHE = `dividimos-shell-${CACHE_VERSION}`;
@@ -295,25 +295,72 @@ function isSafeUrl(url) {
   } catch { return false; }
 }
 
+// Taps are relayed to the open window with a message instead of
+// WindowClient.navigate(), which WebKit can reject with
+// "TypeError: navigate failed" (bugs.webkit.org/show_bug.cgi?id=263687).
+// The window acks over a MessageChannel; if it never does (a window still
+// running an older bundle without the listener), navigate is the fallback.
+// When no window is open, the target is parked here until the freshly
+// opened page asks for it after mount.
+let pendingNotificationUrl = null;
+const PENDING_URL_TTL_MS = 60000;
+const NAVIGATE_ACK_TIMEOUT_MS = 1500;
+
+// Resolves once the window acked, or after the deadline spent attempting the
+// navigate fallback.
+function relayNavigation(client, url) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    channel.port1.onmessage = finish;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      client
+        .navigate(new URL(url, self.location.origin).toString())
+        .catch((error) => console.warn("[sw] navigate fallback failed:", error))
+        .finally(resolve);
+    }, NAVIGATE_ACK_TIMEOUT_MS);
+    client.postMessage({ type: "notification-navigate", url }, [channel.port2]);
+  });
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   const raw = event.notification.data?.url;
-  const targetUrl = raw && isSafeUrl(raw) ? raw : "/";
+  const targetUrl = raw && isSafeUrl(raw) ? raw : "/app";
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        // Focus an existing window if one is open on the same origin
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && "focus" in client) {
-            client.navigate(targetUrl);
-            return client.focus();
-          }
+      .then(async (clientList) => {
+        const client = clientList.find((c) => c.url.startsWith(self.location.origin));
+        if (client && "focus" in client) {
+          pendingNotificationUrl = null;
+          // focus() must be called during click activation, before any await.
+          const focused = client.focus();
+          await relayNavigation(client, targetUrl);
+          return focused;
         }
-        // Otherwise open a new window
-        return self.clients.openWindow(targetUrl);
+        pendingNotificationUrl = { url: targetUrl, at: Date.now() };
+        return self.clients.openWindow(new URL(targetUrl, self.location.origin).toString());
       })
   );
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "notification-navigate-ready") return;
+  if (!pendingNotificationUrl || Date.now() - pendingNotificationUrl.at > PENDING_URL_TTL_MS) {
+    return;
+  }
+  event.source.postMessage({ type: "notification-navigate", url: pendingNotificationUrl.url });
+  pendingNotificationUrl = null;
 });
