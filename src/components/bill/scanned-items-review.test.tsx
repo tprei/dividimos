@@ -236,6 +236,161 @@ describe("ScannedItemsReview", () => {
     expect(screen.getByLabelText("Nome de Picanha 400g")).toBeInTheDocument();
   });
 
+  it("shows the parsed quantity and per-unit price in the collapsed row", () => {
+    renderReview(
+      makeResult({
+        items: [
+          { description: "Cerveja", quantity: 2, unitPriceCents: 600, totalCents: 1200 },
+          { description: "Picanha", quantity: 1, unitPriceCents: 4500, totalCents: 4500 },
+        ],
+        totalCents: 6270,
+      }),
+    );
+
+    expect(screen.getByText("2x")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.textContent === "R$\u00a06,00 cada"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("1x")).not.toBeInTheDocument();
+  });
+
+  it("keeps the line total and reprices per unit when the quantity increases", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onShare } = renderReview(
+      makeResult({
+        items: [
+          { description: "Cerveja", quantity: 2, unitPriceCents: 600, totalCents: 1200 },
+          { description: "Picanha", quantity: 1, unitPriceCents: 4500, totalCents: 4500 },
+        ],
+        totalCents: 6270,
+      }),
+      vi.fn(),
+      vi.fn(),
+      { participants: [participants[0]] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
+    expect(screen.getByLabelText("Valor total de Cerveja")).toHaveValue("12,00");
+
+    await user.click(screen.getByRole("button", { name: "Aumentar quantidade de Cerveja" }));
+
+    expect(screen.getByLabelText("Valor total de Cerveja")).toHaveValue("12,00");
+    fireEvent.click(screen.getByRole("button", { name: "Criar sala de divisão" }));
+    expect(onShare).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
+    const [draft] = onShare.mock.calls[0] as [ReceiptOcrResult, string];
+    expect(draft.items[0]).toMatchObject({
+      description: "Cerveja",
+      quantity: 3000,
+      unitPriceCents: 400,
+      totalCents: 1200,
+    });
+    expect(draft.totalCents).toBe(6270);
+  });
+
+  it("disables decreasing the quantity at one unit", async () => {
+    const user = userEvent.setup();
+    renderReview();
+
+    await user.click(screen.getByRole("button", { name: "Editar Picanha 400g" }));
+    const decrease = screen.getByRole("button", { name: "Diminuir quantidade de Picanha 400g" });
+    expect(decrease).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Aumentar quantidade de Picanha 400g" }));
+    expect(decrease).toBeEnabled();
+  });
+
+  it("reconciles a rejected amount with the total when the quantity changes", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onShare } = renderReview(
+      makeResult({
+        items: [
+          { description: "Cerveja", quantity: 2, unitPriceCents: 500, totalCents: 1000 },
+          { description: "Picanha", quantity: 1, unitPriceCents: 4500, totalCents: 4500 },
+        ],
+        totalCents: 6050,
+      }),
+      vi.fn(),
+      vi.fn(),
+      { participants: [participants[0]] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
+    fireEvent.change(screen.getByLabelText("Valor total de Cerveja"), {
+      target: { value: "10,05" },
+    });
+
+    expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
+    expect(screen.queryByText("cada")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Aumentar quantidade de Cerveja" }));
+
+    expect(screen.queryByText("Valor incompatível com a quantidade.")).not.toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.textContent === "R$\u00a03,35 cada"),
+    ).toBeInTheDocument();
+    const createRoom = screen.getByRole("button", { name: "Criar sala de divisão" });
+    expect(createRoom).toBeEnabled();
+
+    fireEvent.click(createRoom);
+    expect(onShare).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
+    const [draft] = onShare.mock.calls[0] as [ReceiptOcrResult, string];
+    expect(draft.items[0]).toMatchObject({
+      description: "Cerveja",
+      quantity: 3000,
+      unitPriceCents: 335,
+      totalCents: 1005,
+    });
+  });
+
+  it("keeps fractional quantities editable in whole-unit steps", async () => {
+    const user = userEvent.setup();
+    renderReview(
+      makeResult({
+        items: [{ description: "Cerveja", quantity: 0.5, unitPriceCents: 600, totalCents: 300 }],
+        totalCents: 330,
+      }),
+    );
+
+    expect(screen.getByText("0,5x")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
+    const decrease = screen.getByRole("button", { name: "Diminuir quantidade de Cerveja" });
+    expect(decrease).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Aumentar quantidade de Cerveja" }));
+
+    expect(screen.queryByText("0,5x")).not.toBeInTheDocument();
+    expect(screen.getAllByText("1,5x").length).toBeGreaterThan(0);
+    expect(decrease).toBeEnabled();
+  });
+
+  it("flags a quantity whose per-unit price cannot represent the total", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onShare } = renderReview(
+      makeResult({
+        items: [
+          { description: "Cerveja", quantity: 2, unitPriceCents: 50, totalCents: 100 },
+          { description: "Picanha", quantity: 1, unitPriceCents: 4500, totalCents: 4500 },
+        ],
+        totalCents: 5060,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
+    await user.click(screen.getByRole("button", { name: "Aumentar quantidade de Cerveja" }));
+
+    expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
+    expect(screen.queryByText("cada")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Valor total de Cerveja")).toHaveValue("1,00");
+    expect(screen.getByRole("button", { name: "Criar sala de divisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
+    expect(onShare).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("continues with details edited inside the row panel", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 8, 15, 12));
@@ -250,7 +405,7 @@ describe("ScannedItemsReview", () => {
       fireEvent.change(screen.getByLabelText("Nome de Cerveja Brahma 600ml"), {
         target: { value: "Cerveja" },
       });
-      fireEvent.change(screen.getByLabelText("Valor de Cerveja"), { target: { value: "30,00" } });
+      fireEvent.change(screen.getByLabelText("Valor total de Cerveja"), { target: { value: "30,00" } });
       await user.click(screen.getByRole("button", { name: "Pronto" }));
       await user.click(screen.getByRole("button", { name: "Data do recibo" }));
       await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
@@ -294,7 +449,7 @@ describe("ScannedItemsReview", () => {
 
     expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dividir manualmente" })).toBeDisabled();
-    expect(screen.queryByLabelText("Valor de Cerveja")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Valor total de Cerveja")).not.toBeInTheDocument();
   });
 
   it("lets an unfixable row be removed so continue becomes reachable", async () => {
