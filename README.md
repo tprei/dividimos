@@ -660,6 +660,7 @@ O endpoint cria o usuário se ele não existir, e a resposta seta os cookies de 
 npm run dev                     # Servidor de dev
 npm run build                   # Build de produção (confere os tipos)
 npm run lint                    # ESLint (--max-warnings 0)
+npm run lint:swift              # swift-format nos fontes Swift do iOS (macOS com Xcode)
 
 npm run test                    # Testes unitários uma vez
 npm run test:watch              # Testes unitários em watch
@@ -776,7 +777,7 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 | `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
 | `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
 | `android.yml` | PR que mexe em `android/`, `native-shell/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
-| `ios.yml` | PR que mexe em `ios/`, `native-shell/`, `capacitor.config.ts`, `package*.json`, `scripts/ios-verify-*.sh` ou no próprio workflow; disparo manual na `main` | Build Release pro simulador com Xcode 26.6 fixo, sem secrets, e checagem do `.app` gerado nos PRs; archive assinado, IPA verificado e upload pro TestFlight no disparo manual, depois da aprovação do environment `ios-release` |
+| `ios.yml` | PR que mexe em `ios/`, `native-shell/`, `capacitor.config.ts`, `package*.json`, `scripts/ios-verify-*.sh` ou no próprio workflow; disparo manual na `main` | `swift-format lint --strict` nos fontes Swift, build Release pro simulador com Xcode 26.6 fixo, sem secrets, e checagem do `.app` gerado nos PRs; archive assinado, IPA verificado e upload pro TestFlight no disparo manual, depois da aprovação do environment `ios-release` |
 | `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
 | `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
 | `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |

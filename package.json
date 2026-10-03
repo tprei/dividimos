@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
+    "lint:swift": "xcrun swift-format lint --strict --recursive ios/App/App",
     "icons": "node scripts/generate-icons.mjs",
     "check:migrations": "node scripts/check-migration-safety.mjs --paths",
     "db:assert-ref": "./scripts/assert-linked-ref.sh",

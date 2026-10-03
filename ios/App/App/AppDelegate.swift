@@ -1,7 +1,7 @@
-import UIKit
 import Capacitor
 import FirebaseCore
 import FirebaseMessaging
+import UIKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
@@ -10,7 +10,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
     private var lastForwardedFcmToken: String?
     private var pendingTokenRequests = 0
 
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
         if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
             FirebaseApp.configure()
             Messaging.messaging().delegate = self
@@ -18,17 +21,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
         return true
     }
 
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool
+    {
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
-    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
-        return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    func application(
+        _ application: UIApplication, continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+    ) -> Bool {
+        return ApplicationDelegateProxy.shared.application(
+            application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
-    func application(_ application: UIApplication,
-                     configurationForConnecting connectingSceneSession: UISceneSession,
-                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
         let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
@@ -66,9 +76,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         DispatchQueue.main.async {
             guard let fcmToken = fcmToken,
-                  self.pendingTokenRequests == 0,
-                  UIApplication.shared.isRegisteredForRemoteNotifications,
-                  fcmToken != self.lastForwardedFcmToken else { return }
+                self.pendingTokenRequests == 0,
+                UIApplication.shared.isRegisteredForRemoteNotifications,
+                fcmToken != self.lastForwardedFcmToken
+            else { return }
             self.post(fcmToken: fcmToken)
         }
     }
