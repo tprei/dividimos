@@ -6,6 +6,9 @@ const isIosSimulator = process.env.CAPACITOR_IOS_SIMULATOR === "true";
 
 function getDevServerUrl(): string {
   if (!devMode) return "https://www.dividimos.ai";
+  // An https tunnel: native sign-in hashes its nonce with crypto.subtle, which
+  // the WebView only exposes on secure origins, so http://<LAN_IP> can't sign in.
+  if (process.env.DEV_SERVER_URL) return process.env.DEV_SERVER_URL;
   if (isIosSimulator) return "http://localhost:3000";
   return `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000`;
 }
@@ -32,9 +35,21 @@ const config: CapacitorConfig = {
 
   ios: {
     backgroundColor: "#F9F9FB",
-    contentInset: "automatic",
+    contentInset: "never",
     preferredContentMode: "mobile",
     scheme: "Dividimos",
+    includePlugins: [
+      "@capacitor/app",
+      "@capacitor/browser",
+      "@capacitor/camera",
+      "@capacitor/haptics",
+      "@capacitor/keyboard",
+      "@capacitor/push-notifications",
+      "@capacitor/splash-screen",
+      "@capacitor/status-bar",
+      "@capgo/capacitor-social-login",
+      "@capgo/capacitor-speech-recognition",
+    ],
   },
 
   plugins: {

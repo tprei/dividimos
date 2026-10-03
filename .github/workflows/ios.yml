@@ -1,0 +1,73 @@
+name: iOS Build
+
+on:
+  pull_request:
+    paths:
+      - ios/**
+      - native-shell/**
+      - capacitor.config.ts
+      - package.json
+      - package-lock.json
+      - scripts/ios-verify-app.sh
+      - .github/workflows/ios.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # PR gate: proves the committed project, shared scheme and Podfile.lock build
+  # from a clean checkout. No signing material exists in this job.
+  compile:
+    name: iOS compiles
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Pinned so a runner image update cannot change the toolchain silently.
+      # App Store uploads need the iOS 27 SDK from April 2027. Podfile.lock
+      # records the CocoaPods version, so pod install must match it exactly.
+      - name: Select Xcode and CocoaPods
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+          if [ "$(pod --version)" != "1.17.0" ]; then
+            sudo gem install cocoapods -v 1.17.0 --no-document
+          fi
+          pod --version
+
+      - run: npm ci --ignore-scripts
+
+      - run: npx cap sync ios
+
+      - name: Reject uncommitted native dependency changes
+        run: |
+          if ! git diff --exit-code -- ios/App/Podfile ios/App/Podfile.lock ios/App/App.xcodeproj; then
+            echo "::error::npx cap sync ios changed committed native files; run it locally and commit the result."
+            exit 1
+          fi
+
+      - name: Build Release for the simulator
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme Dividimos \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify the built app
+        run: scripts/ios-verify-app.sh build/ios/Build/Products/Release-iphonesimulator/App.app

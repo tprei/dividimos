@@ -19,10 +19,10 @@ Use this as the default architecture:
 - Client state: Zustand.
 - Styling: Tailwind CSS v4 + shadcn/ui + Framer Motion.
 - Tests: Vitest + React Testing Library (unit and integration), Playwright (synthetic E2E).
-- Mobile: Capacitor 8 (Android; iOS later).
+- Mobile: Capacitor 8 (Android and iOS). The iOS project lives in `ios/App`, uses CocoaPods, and builds with the shared `Dividimos` scheme.
 - Deploy: Vercel (frontend), Supabase (database).
 
-Do not introduce a separate backend service, an ORM (Prisma, Drizzle), Redis, a message queue, a background worker, a dedicated search service, a different state library (Redux, Recoil, Jotai), iOS builds, or protobuf/gRPC unless the user explicitly asks or the product requirement makes it unavoidable.
+Do not introduce a separate backend service, an ORM (Prisma, Drizzle), Redis, a message queue, a background worker, a dedicated search service, a different state library (Redux, Recoil, Jotai), or protobuf/gRPC unless the user explicitly asks or the product requirement makes it unavoidable.
 
 ## Product Constraints
 

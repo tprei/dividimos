@@ -91,8 +91,14 @@ export default function RootLayout({
         <MotionProvider>
           <NativeVersionGate>{children}</NativeVersionGate>
         </MotionProvider>
+        {/* The toaster is fixed to the layout viewport, so the body's safe-top
+            padding doesn't reach it; without the inset, toasts sit under the
+            status bar and the Dynamic Island in the native apps. */}
         <Toaster
           position="top-center"
+          containerStyle={{
+            top: "calc(var(--app-viewport-top) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px)",
+          }}
           toastOptions={{
             className: "!bg-card !text-card-foreground !border !border-border !shadow-lg",
             duration: 3000,

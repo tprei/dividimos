@@ -1,8 +1,23 @@
 import type { NextConfig } from "next";
 import path from "path";
 
+function devServerHostname(url: string): string {
+  if (!URL.canParse(url) || new URL(url).protocol !== "https:") {
+    throw new Error(`DEV_SERVER_URL must be a full https:// URL, got "${url}".`);
+  }
+  return new URL(url).hostname;
+}
+
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["10.0.2.2"],
+  // Next only serves hot reload to these hosts and localhost; without it a
+  // WebView on another host reloads in a loop and never hydrates. The Android
+  // emulator reaches the Mac at 10.0.2.2, a physical phone at the LAN_IP or
+  // DEV_SERVER_URL that scripts/cap-dev.sh synced into the native config.
+  allowedDevOrigins: [
+    "10.0.2.2",
+    ...(process.env.LAN_IP ? [process.env.LAN_IP] : []),
+    ...(process.env.DEV_SERVER_URL ? [devServerHostname(process.env.DEV_SERVER_URL)] : []),
+  ],
   // Surface Vercel's deployment ID to Next.js so old client bundles
   // (cached by service workers, Capacitor WebViews, PWAs) detect version
   // skew on their next navigation and hard-reload instead of calling

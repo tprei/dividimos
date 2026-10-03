@@ -80,6 +80,13 @@ android/app/build/
 android/.gradle/
 android/build/
 
+# Apple signing material and release artifacts
+*.p12
+*.p8
+*.mobileprovision
+*.xcarchive
+*.ipa
+
 # Local planning notes and reports
 docs/
 supabase/.branches/

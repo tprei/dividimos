@@ -131,7 +131,7 @@ stateDiagram-v2
 - **Perfil no início.** O avatar fica no canto superior direito do cartão de saldo. Tocar nele abre seu perfil; **Compartilhar perfil** mostra o QR Code para outras pessoas abrirem seu perfil público.
 - **Abre sem esperar a rede.** As telas leem um store local salvo em IndexedDB. O service worker serve o app do cache e mostra uma página offline quando não há conexão. A página offline (`public/offline.html`) é a mesma página do boteco do Android (`native-shell/offline.html`), só que "Tentar novamente" e a volta da conexão recarregam a página que a pessoa tentou abrir.
 - **Troca de aba na hora.** Tocar numa aba da barra de navegação já marca a aba. Se a tela demora mais de 120 ms pra chegar (rede lenta ou instável), o esqueleto dela aparece no lugar da tela anterior até a rota carregar. Cada aba registra o seu esqueleto em `navItems` no `app-shell.tsx`.
-- **PWA e Android.** Instalável no navegador. O app Android usa Capacitor, com login Google nativo, câmera, fala e contatos.
+- **PWA, Android e iOS.** Instalável no navegador. Os apps Android e iOS usam Capacitor e carregam o site hospedado em `https://www.dividimos.ai`. O Android tem login Google nativo, câmera, fala e contatos; a importação de contatos não existe no iOS.
 - **Tema.** Claro, escuro ou o do sistema.
 - **Apresentação na primeira visita.** Quem abre `/auth` pela primeira vez no aparelho vê três slides animados (ler a notinha, marcar quem comeu o quê, cobrar por Pix) antes do login. Links com destino, como convites, e a volta de um login que falhou vão direto pro login. Em telas largas, a apresentação roda em loop ao lado do login.
 - **Tour guiado.** Na primeira sessão, um tour apresenta **Seu saldo**, **Ações rápidas**, **Quem deve o quê** e a navegação.
@@ -504,7 +504,7 @@ Os helpers internos também moram nas migrations: `recompute_group_balances` e `
 | Auth | Google OAuth (web), Google Credential Manager via `@capgo/capacitor-social-login` (Android) |
 | IA | Gemini 2.5 Flash-Lite via `@google/genai`: cupom, voz e texto |
 | Push | Web Push (VAPID) e FCM HTTP v1 |
-| Mobile | Capacitor 8 (Android; iOS por enquanto como PWA) |
+| Mobile | Capacitor 8 (Android e iOS) |
 | Testes | Vitest 4, React Testing Library, fast-check, Playwright |
 | Deploy | Vercel (frontend), Supabase em `sa-east-1` (banco) |
 | Linguagem | TypeScript 5 |
@@ -579,6 +579,7 @@ supabase/
 └── security-allowlist.json     # Exceções revisadas do verificador de segurança
 scripts/                        # dev-setup, cap-dev, verificadores de migration, repórter do ambient
 android/                        # Projeto nativo Android (Capacitor)
+ios/                            # Projeto nativo iOS (Capacitor, CocoaPods)
 public/sw.js                    # Service worker
 agent-guidance/                 # Guias para agentes: migrations, TypeScript, stacked diffs, mudanças visuais
 ```
@@ -681,6 +682,7 @@ supabase migration new <nome>   # Cria uma migration nova com timestamp
 supabase db reset --local       # Repete todas as migrations commitadas
 
 npm run cap:dev:android         # Emulador Android apontando pro servidor de dev
+npm run cap:dev:ios             # Simulador iOS apontando pro servidor de dev
 npm run cap:sync                # Copia os assets web e os plugins pro projeto nativo
 npm run cap:assets              # Regera ícones e splash nativos
 npm run icons                   # Regera os ícones do PWA
@@ -756,6 +758,7 @@ Os workflows ficam em `.github/workflows/`. O `CONTRIBUTING.md` detalha cada che
 | `migrations.yml` | PR | Segurança das migrations novas, replay num banco independente, verificação da época confiável, suite de contrato de integração, invariantes de segurança do banco e `src/types/database.ts` regerado |
 | `migration-history.yml` | PR, push na `main` | Migrations aplicadas ficam congeladas; as novas precisam de timestamp único e posterior |
 | `android.yml` | PR que mexe em `android/`, `native-shell/`, `capacitor.config.ts`, `package*.json` ou no próprio workflow; push na `main` | Compilação debug nos PRs, sem secrets; AAB release assinado no push na `main` |
+| `ios.yml` | PR que mexe em `ios/`, `native-shell/`, `capacitor.config.ts`, `package*.json`, `scripts/ios-verify-app.sh` ou no próprio workflow | Build Release pro simulador com Xcode 26.6 fixo, sem secrets, e checagem do `.app` gerado |
 | `soak.yml` | Toda noite | Testes de propriedade do ledger com muitas execuções e seed nova; uma falha abre a issue `soak-failure` com a seed |
 | `ambient.yml` | A cada 30 min | Sondas sintéticas contra produção; veja [Monitoramento sintético](#monitoramento-sintético) |
 | `retarget-stack.yml` | PR mergeado | Reaponta os PRs filhos de um stack pra base do PR mergeado |
@@ -799,7 +802,27 @@ Precisa do JDK 21 e do platform-tools do Android SDK no `PATH`. Inspecione a Web
 
 O app embarca só a `native-shell/offline.html` como fallback. Em builds de produção, o `server.errorPath` do Capacitor mostra a página só em falhas de rede ou erros HTTP 5xx no carregamento completo; páginas 4xx renderizam normalmente. O botão "Tentar novamente" abre `https://www.dividimos.ai/`. Depois de puxar mudanças em `native-shell/` ou `capacitor.config.ts`, rode `npx cap sync android` antes de compilar no Android Studio, porque os assets sincronizados e as flags de providers do SocialLogin ficam fora do Git. A página não tem acesso aos plugins, então o `MainActivity` fecha o app quando o usuário aperta voltar nela; sem isso o voltar recarregaria a página que falhou e cairia de novo no fallback.
 
-O iOS nativo não está inicializado neste repositório: não existe diretório `ios/`, e `scripts/cap-dev.sh ios` se recusa com essa mensagem em vez de gerar um projeto não verificado. O iOS é coberto pelo PWA no Safari e pelo projeto sintético WebKit.
+No iOS, o projeto fica em `ios/App` e usa CocoaPods, não Swift Package Manager: o hook do `@capgo/capacitor-social-login` só tira o SDK do Facebook do build pelo podspec, e o pacote Swift dele sempre linka esse SDK. O `ios.includePlugins` do `capacitor.config.ts` deixa o `@capacitor-community/contacts` fora do iOS, porque a importação de contatos só existe no Android. Um plugin nativo novo precisa entrar nessa lista.
+
+Pra desenvolver no iOS, instale o Xcode 26 ou mais novo (o build de CI usa o 26.6) e o CocoaPods 1.17.0, a versão gravada no `Podfile.lock` e fixada na CI (`brew install cocoapods` instala a mesma enquanto ela for a atual; senão, `sudo gem install cocoapods -v 1.17.0`), e rode `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` uma vez. O simulador não precisa de conta da Apple; um iPhone físico precisa de um time de assinatura no Xcode.
+
+```bash
+npm run cap:dev:ios                                     # simulador; a WebView abre http://localhost:3000
+DEV_SERVER_URL=https://<túnel> scripts/cap-dev.sh ios --device --run  # iPhone, pelo túnel HTTPS
+npm run cap:open:ios                                    # abre ios/App/App.xcworkspace no Xcode
+```
+
+O simulador divide a rede com o Mac, então usa `localhost`. O iPhone não tem redirecionamento de porta por USB, então o script exige `DEV_SERVER_URL` ou `LAN_IP` com `--device`. Com `LAN_IP`, o servidor de dev precisa do mesmo IP (`LAN_IP=192.168.0.14 npm run dev`): o Next só entrega o hot reload a `localhost` e aos hosts de `allowedDevOrigins` (`next.config.ts`), e sem isso a WebView recarrega sem parar e não responde ao toque. Nenhum dos dois precisa de exceção de ATS, porque o iOS não aplica ATS a `localhost` nem a endereços IP; o `Info.plist` não declara `NSAppTransportSecurity`. Inspecione a WebView pelo Safari do Mac em Desenvolver. O `cap-dev.sh` grava a URL de dev em `ios/App/App/capacitor.config.json`; rode `npx cap sync ios` sem `CAPACITOR_DEV` antes de arquivar, e o `scripts/ios-verify-app.sh` recusa um `.app` com URL de dev, cleartext, ATS aberto, permissão que nenhum recurso pede ou framework desativado.
+
+Em `http://<LAN_IP>` a WebView não é um contexto seguro, então não existem `crypto.subtle` nem `crypto.randomUUID`: o login nativo falha antes de abrir o painel do provedor, e o app logado quebra ao carregar, porque o `bill-store` gera ids com `crypto.randomUUID`. Com `LAN_IP`, só as páginas públicas funcionam. Pra usar o app no iPhone com o servidor de dev, exponha o `npm run dev` e o Supabase local por HTTPS (por exemplo, `cloudflared tunnel --url http://localhost:3000` e outro túnel pra porta 54321), rode `DEV_SERVER_URL=https://<túnel-do-dev> scripts/cap-dev.sh ios --device` e suba o servidor com o mesmo `DEV_SERVER_URL` e `NEXT_PUBLIC_SUPABASE_URL=https://<túnel-do-supabase>`. Desligue os túneis ao terminar: o Supabase local usa chaves de demonstração públicas.
+
+O scheme compartilhado é `Dividimos` (`ios.scheme` no `capacitor.config.ts`). O alvo é só iPhone (`TARGETED_DEVICE_FAMILY = 1`), com iOS 15.0 mínimo, o maior mínimo entre os plugins instalados. `MARKETING_VERSION` e `CURRENT_PROJECT_VERSION` ficam no projeto como valores de desenvolvimento.
+
+```bash
+xcodebuild -workspace ios/App/App.xcworkspace -scheme Dividimos -configuration Release \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
+scripts/ios-verify-app.sh build/ios/Build/Products/Release-iphonesimulator/App.app
+```
 
 ## Testes
 
