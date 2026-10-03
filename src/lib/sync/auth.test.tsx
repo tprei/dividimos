@@ -523,6 +523,19 @@ describe("sign-out push detach", () => {
     expect(useAppStore.getState().me).toBeNull();
     detach();
   });
+
+  it("detaches push locally on a direct account switch without touching the server", async () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    emit("SIGNED_IN", "user-b");
+
+    // A's row goes stale at FCM through the local detach; the authenticated
+    // server detach must never run as B to remove A's token.
+    expect(mockLocalDetach).toHaveBeenCalledWith("user-a");
+    expect(mockDetachPush).not.toHaveBeenCalled();
+    detach();
+  });
 });
 
 describe("session caches on sign-out", () => {

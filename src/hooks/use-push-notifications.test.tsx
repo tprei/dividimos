@@ -24,10 +24,18 @@ const mockAddListener = vi.fn(
   },
 );
 
+const mockPlatform = "android";
+
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
     isNativePlatform: () => mockIsNativePlatform,
+    getPlatform: () => mockPlatform,
+    isPluginAvailable: () => false,
   },
+}));
+
+vi.mock("@/lib/push/fcm-token-plugin", () => ({
+  FcmToken: { deleteToken: vi.fn() },
 }));
 
 vi.mock("@capacitor/push-notifications", () => ({
@@ -48,6 +56,7 @@ import { usePushNotifications } from "./use-push-notifications";
 import { useAppStore } from "@/stores/app-store";
 import {
   __resetNativePushConsentForTests,
+  hasNativePushConsent,
   setNativePushConsent,
 } from "@/lib/push/native-consent";
 
@@ -497,6 +506,64 @@ describe("usePushNotifications", () => {
       expect(mockRegister).not.toHaveBeenCalled();
       expect(result.current.permission).toBe("denied");
       expect(result.current.isSubscribed).toBe(false);
+    });
+
+    it("native subscribe does nothing without a signed-in account", async () => {
+      // The suite shares the store; make the signed-out state explicit.
+      useAppStore.setState({ me: null });
+      __resetNativePushConsentForTests();
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+      mockRequestPermissions.mockResolvedValue({ receive: "granted" });
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
+      globalThis.fetch = fetchMock;
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await settle();
+
+      await act(async () => {
+        await result.current.subscribe();
+      });
+
+      expect(mockRequestPermissions).not.toHaveBeenCalled();
+      expect(mockRegister).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    it("records the account consent before the native registration starts", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+      mockRequestPermissions.mockResolvedValue({ receive: "granted" });
+      optInOnThisDevice();
+      __resetNativePushConsentForTests();
+
+      let consentedBeforeRegister = false;
+      mockRegister.mockImplementation(async () => {
+        consentedBeforeRegister = hasNativePushConsent(ACCOUNT_ID);
+      });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await settle();
+
+      const subscribePromise = act(async () => {
+        await result.current.subscribe();
+      });
+
+      await act(async () => {
+        await fireRegistration("consent-order-token");
+      });
+
+      await subscribePromise;
+
+      expect(consentedBeforeRegister).toBe(true);
+      expect(hasNativePushConsent(ACCOUNT_ID)).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/push/subscribe",
+        expect.objectContaining({
+          body: JSON.stringify({ token: "consent-order-token", channel: "fcm" }),
+        }),
+      );
     });
 
     it("native unsubscribe POSTs token and calls PushNotifications.unregister", async () => {

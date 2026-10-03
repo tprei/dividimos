@@ -15,6 +15,7 @@ import {
 } from "@/lib/push/detach";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
 import { invalidateNativeRegistration } from "@/lib/push/native-registration";
+import { clearHeldNotificationDestination } from "@/lib/push/notification-destination";
 import {
   clearAllAssignmentRoomCredentials,
   resetAssignmentRoomRuntime,
@@ -120,6 +121,13 @@ export function attachAuthListener(
     resetAssignmentRoomRuntime();
     if (previousUserId !== null) clearAllAssignmentRoomCredentials();
     invalidateNativeRegistration();
+    // Same local detach as sign-out: it kills the pending registration and
+    // deletes the FCM token, so A's server row goes stale instead of
+    // delivering A's notifications to B's device. Never the authenticated
+    // server detach — this session now belongs to B.
+    void detachLocalPushForSignOut(previousUserId);
+    // A tap held during A's session belongs to A's notification.
+    clearHeldNotificationDestination();
     invalidateSyncReads();
     clearPendingVendorChargeCancellations();
     archiveCurrentDraft(previousUserId);

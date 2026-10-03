@@ -2,6 +2,7 @@
 
 import { getAuthGeneration } from "@/lib/sync/client";
 import { Capacitor } from "@capacitor/core";
+import { FcmToken } from "./fcm-token-plugin";
 
 type TokenHandler = (token: string | null) => void;
 interface PendingResolver {
@@ -20,6 +21,26 @@ let registerInflight: Promise<string> | null = null;
 let registerInflightGeneration: number | null = null;
 let registerTimeout: ReturnType<typeof setTimeout> | null = null;
 const pendingResolvers: PendingResolver[] = [];
+// A local detach in flight still owns the native registration: it ends by
+// clearing the cached token, and on iOS the previous account's FCM token stays
+// claimable until Firebase deletes it. A new registration waits for the detach
+// and retries a failed FCM deletion before asking for a token.
+let localDetach: Promise<void> | null = null;
+let fcmDeletionFailed = false;
+
+function canDeleteFcmToken(): boolean {
+  return Capacitor.getPlatform() === "ios" && Capacitor.isPluginAvailable("FcmToken");
+}
+
+async function deleteFcmToken(): Promise<void> {
+  try {
+    await FcmToken.deleteToken();
+    fcmDeletionFailed = false;
+  } catch (error) {
+    fcmDeletionFailed = true;
+    throw error;
+  }
+}
 
 const subscribers = new Set<TokenHandler>();
 function notifySubscribers(token: string | null): void {
@@ -66,22 +87,36 @@ async function postUnsubscribe(token: string): Promise<void> {
   }
 }
 
-export async function unregisterNativePushTokenLocally(): Promise<void> {
+export function unregisterNativePushTokenLocally(): Promise<void> {
   activeRegistrationGeneration = null;
   clearRegisterTimeout();
   registerInflight = null;
   registerInflightGeneration = null;
   rejectPending(new Error("Native push registration cancelled"));
 
+  const detach = detachNativeRegistration().finally(() => {
+    if (localDetach === detach) localDetach = null;
+  });
+  localDetach = detach;
+  return detach;
+}
+
+async function detachNativeRegistration(): Promise<void> {
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
-    await Promise.allSettled([PushNotifications.unregister()]);
+    const detachments: Promise<unknown>[] = [PushNotifications.unregister()];
+    // On iOS, unregister() only leaves the APNs topic; the FCM registration
+    // stays live at Firebase until deleted. Android's unregister() already
+    // deletes its own FCM token, and the plugin does not exist there.
+    if (canDeleteFcmToken()) detachments.push(deleteFcmToken());
+    await Promise.allSettled(detachments);
   } finally {
     cachedToken = null;
     lastPostedToken = null;
     notifySubscribers(null);
   }
 }
+
 function clearRegisterTimeout(): void {
   if (registerTimeout !== null) {
     clearTimeout(registerTimeout);
@@ -207,6 +242,14 @@ export async function registerNativePushToken(): Promise<string | null> {
   const { PushNotifications } = await import("@capacitor/push-notifications");
   await ensureListenersAttached();
   if (getAuthGeneration() !== generation) return null;
+  if (localDetach !== null) {
+    await localDetach;
+    if (getAuthGeneration() !== generation) return null;
+  }
+  if (fcmDeletionFailed) {
+    await deleteFcmToken();
+    if (getAuthGeneration() !== generation) return null;
+  }
 
   if (
     registerInflight !== null &&
@@ -313,6 +356,8 @@ export function invalidateNativeRegistration(): void {
 /** Test-only: reset module state between tests. */
 export function __resetNativeRegistrationForTests(): void {
   activeRegistrationGeneration = null;
+  localDetach = null;
+  fcmDeletionFailed = false;
   clearRegisterTimeout();
   cachedToken = null;
   lastPostedToken = null;
