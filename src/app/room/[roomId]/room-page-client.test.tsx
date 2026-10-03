@@ -2,7 +2,11 @@ import { StrictMode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssignmentBillBreakdown, AssignmentRoomView } from "@/types/assignment-room";
+import type {
+  AssignmentBillBreakdown,
+  AssignmentRoomCodeState,
+  AssignmentRoomView,
+} from "@/types/assignment-room";
 
 const mocks = vi.hoisted(() => ({
   rehydrate: vi.fn(() => Promise.resolve()),
@@ -28,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   cancel: vi.fn(),
   finalize: vi.fn(),
+  issueCode: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back: mocks.back, push: mocks.push }) }));
@@ -43,6 +48,9 @@ vi.mock("@/lib/sync/auth", () => ({ attachAuthListener: mocks.attachAuth }));
 vi.mock("@/lib/sync/client", () => ({ getAuthGeneration: mocks.authGeneration }));
 vi.mock("@/lib/sync/assignment-room-realtime", () => ({
   startAssignmentRoomRealtime: mocks.startRealtime,
+}));
+vi.mock("@/lib/sync/assignment-room-codes", () => ({
+  issueAssignmentRoomCode: mocks.issueCode,
 }));
 vi.mock("@/lib/sync/assignment-rooms", () => ({
   getAssignmentRoomMemberToken: () => mocks.memberToken,
@@ -100,6 +108,7 @@ vi.mock("@/components/assignment-room/room-board", () => ({
     onInviteOpenChange,
     inviteError,
     onRotateInvite,
+    roomCode,
   }: {
     view: AssignmentRoomView;
     onBack: () => void;
@@ -109,10 +118,12 @@ vi.mock("@/components/assignment-room/room-board", () => ({
     onInviteOpenChange: (open: boolean) => void;
     inviteError: string | null;
     onRotateInvite: () => void;
+    roomCode: AssignmentRoomCodeState;
   }) => (
     <section>
       <p>{`${view.role}:${view.room.status}`}</p>
       <p>{inviteOpen ? "convite-aberto" : "convite-fechado"}</p>
+      {roomCode.status === "ready" && <p>{`codigo:${roomCode.display}`}</p>}
       {claimError && (
         <p role="alert">{`${claimError.itemId}:${claimError.participantId}`}</p>
       )}
@@ -305,6 +316,10 @@ beforeEach(() => {
   mocks.startRealtime.mockReturnValue(mocks.stopRealtime);
   mocks.joinAccount.mockResolvedValue(null);
   mocks.authGeneration.mockReturnValue(1);
+  mocks.issueCode.mockResolvedValue({
+    display: "pipoca-moleza",
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+  });
 });
 
 describe("RoomPageClient", () => {
@@ -435,6 +450,37 @@ describe("RoomPageClient", () => {
     await user.click(screen.getByRole("button", { name: "Rotacionar" }));
     expect(await screen.findByText(ledgerErrorMessage(new Error("boom")))).toBeInTheDocument();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+  it("issues the spoken code for the host and reissues it after the invite rotates", async () => {
+    const user = userEvent.setup();
+    mocks.memberToken = `armm1_${"B".repeat(43)}`;
+    mocks.refresh.mockImplementation(async () => {
+      useAssignmentRoomStore.getState().install(roomView("host"));
+      useAssignmentRoomStore.getState().setConnected(ROOM_ID, true);
+    });
+    mocks.issueCode
+      .mockResolvedValueOnce({
+        display: "pipoca-moleza",
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      })
+      .mockResolvedValueOnce({
+        display: "cafuné-legal",
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      });
+    mocks.rotateJoin.mockResolvedValue(undefined);
+    window.history.replaceState(null, "", `/room/${ROOM_ID}?invite=1`);
+
+    render(<RoomPageClient roomId={ROOM_ID} />);
+
+    expect(await screen.findByText("codigo:pipoca-moleza")).toBeInTheDocument();
+    expect(mocks.issueCode).toHaveBeenCalledTimes(1);
+    expect(mocks.issueCode).toHaveBeenCalledWith(ROOM_ID);
+
+    await user.click(screen.getByRole("button", { name: "Rotacionar" }));
+
+    expect(mocks.rotateJoin).toHaveBeenCalledWith(ROOM_ID);
+    expect(await screen.findByText("codigo:cafuné-legal")).toBeInTheDocument();
+    expect(mocks.issueCode).toHaveBeenCalledTimes(2);
   });
   it("opens the registered expense from the authorized completion action", async () => {
     mocks.joinToken = INVITE;

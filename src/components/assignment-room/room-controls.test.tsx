@@ -6,6 +6,7 @@ import { RoomHostControls, RoomHostMenu, RoomHostPerson } from "./room-host-cont
 import { RoomJoin } from "./room-join";
 import { RoomShare } from "./room-share";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
+import type { AssignmentRoomCodeState } from "@/types/assignment-room";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back: vi.fn() }) }));
 
@@ -21,6 +22,9 @@ const participants = [
 
 const shareProps = {
   url: "https://dividimos.test/room/room-id#secret",
+  code: { status: "idle" } satisfies AssignmentRoomCodeState,
+  codeEntryAddress: "dividimos.app/room",
+  onRetryCode: vi.fn(),
   rotating: false,
   rotationDisabled: false,
   errorMessage: null,

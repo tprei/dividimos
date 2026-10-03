@@ -57,6 +57,7 @@ Participantes junta nome da conta, data, grupo e quem participa. Depois de escan
 A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O anfitrião escaneia, cria a sala e mostra o QR Code. Cada pessoa entra pelo próprio celular e marca o que consumiu.
 
 - **Entra quem tem o link.** Quem tem conta entra com o próprio nome. Quem não tem digita um nome e vincula a conta depois. Cabem até 50 pessoas.
+- **Ou pelo código falado.** Junto do QR, o anfitrião vê um código de duas palavras, tipo `pipoca-moleza`, que vale 15 minutos. Quem está na mesa abre `/room` (ou **Link ou código** em Escanear, se tiver conta) e digita; acento, maiúscula e espaço no lugar do hífen não importam. Gerar novo link, tirar alguém da sala ou fechar a sala mata o código.
 - **Na conversa direta também.** Escanear com uma DM selecionada cria a sala na conversa. Só vocês dois entram: o link ou QR recusa qualquer outra pessoa. Ao registrar, a conta entra na própria DM.
 - **Convite que explica a sala.** Antes de entrar, a tela mostra em três passos como funciona: escolher o que consumiu, ver a parte calculada e acertar pelo Pix. Ela não mostra nada da sala antes de a pessoa entrar.
 - **Frações de item.** Dá pra marcar o item inteiro, metade, um terço ou uma quantidade exata. Cada item mostra quanto ainda resta até a sala ficar com **Tudo com dono**.
@@ -452,7 +453,7 @@ erDiagram
 | | `rate_limit_counters` | Janelas fixas por bucket e usuário |
 | Denúncias | `reports` | Evidência de abuso só para service role, com dedupe por autor e resolução do operador |
 
-Além das tabelas, a view `current_expense_participants` explode a versão atual de cada conta ativa em uma linha por participante; é dela que o recompute tira os saldos. O schema `guest_credentials` guarda os hashes dos tokens de claim e de sala, e o tópico de Realtime de cada sala. O bucket privado `group-avatars` guarda as fotos de grupo, com até 1 MB.
+Além das tabelas, a view `current_expense_participants` explode a versão atual de cada conta ativa em uma linha por participante; é dela que o recompute tira os saldos. O schema `guest_credentials` guarda os hashes dos tokens de claim e de sala, dos códigos falados e das permissões de entrada que eles geram, e o tópico de Realtime de cada sala. O bucket privado `group-avatars` guarda as fotos de grupo, com até 1 MB.
 
 ## RPCs
 
@@ -488,7 +489,8 @@ flowchart LR
 | Conversas | `send_message`, `mark_read` | `mutations.ts` |
 | Cobrar rápido | `record_vendor_charge`, `confirm_vendor_charge`, `cancel_vendor_charge` | `mutations-group.ts` |
 | Sala de itens | `create_assignment_room`, `list_open_assignment_rooms`, `enter_group_assignment_room`, `announce_assignment_room`, `get_assignment_room`, `join_assignment_room`, `refresh_assignment_room_member`, `set_assignment_room_claim`, `remove_assignment_room_participant`, `rotate_assignment_room_join`, `claim_assignment_room_guest`, `close_assignment_room`, `cancel_assignment_room`, `finalize_assignment_room`, `get_assignment_room_completion` | `src/lib/sync/assignment-rooms.ts` |
-| Só servidor | `lookup_user_by_handle`, `set_group_avatar`, `claim_push_subscription`, `increment_rate_limit`, `cleanup_expired_rate_limit_counters`, `report_content`, `mark_report_notified`, `resolve_report`, `erase_chat_message` | Rotas de API com service role; `erase_chat_message` também é a operação compartilhada de moderação que apaga o texto de uma mensagem denunciada |
+| Código falado da sala | `issue_assignment_room_code` | `src/lib/sync/assignment-room-codes.ts` |
+| Só servidor | `lookup_user_by_handle`, `set_group_avatar`, `claim_push_subscription`, `increment_rate_limit`, `cleanup_expired_rate_limit_counters`, `report_content`, `mark_report_notified`, `resolve_report`, `erase_chat_message`, `resolve_assignment_room_code` | Rotas de API com service role; `erase_chat_message` também é a operação compartilhada de moderação que apaga o texto de uma mensagem denunciada |
 
 Os helpers internos também moram nas migrations: `recompute_group_balances` e `group_transfers` (a projeção e a minimização), `validate_expense_payload` (a mesma regra de dinheiro de `src/lib/expense-money.ts`), `effective_expense_payload`, os `ledger_*_json` que montam as respostas, e `broadcast_group`/`broadcast_user`/`broadcast_assignment_room` que chamam `realtime.send`. As rotas de API com service role leem algumas tabelas direto (`/api/pix/generate`, `/api/notify`), porque o service role ignora RLS; nenhum código de cliente faz isso.
 
@@ -529,7 +531,8 @@ src/
 │   │   ├── scan-invite/        # Leitor de QR: sala, grupo, perfil, convidado
 │   │   ├── profile/            # Perfil e chave Pix
 │   │   └── settings/           # Tema, push, categorias, confirmações
-│   ├── room/[roomId]/          # Sala de itens (pública, entra por link)
+│   ├── room/                   # Entrada por código falado (pública)
+│   ├── room/[roomId]/          # Sala de itens (pública, entra por link ou código)
 │   ├── claim/                  # Claim de convidado
 │   ├── join/[token]/           # Link de convite de grupo
 │   ├── u/[handle]/             # Perfil público
@@ -858,6 +861,8 @@ Os testes sintéticos (`e2e/synthetic/*.spec.ts`) percorrem jornadas reais pela 
 **Salas de itens**: uma sala prepara um cupom escaneado. O anfitrião cria a sala com os itens e um token de entrada; quem tem o link entra (`join_assignment_room`, logado ou como convidado com nome) e recebe um token de membro. As marcações ficam em ticks (120 por milésimo de unidade), então metade, um terço e quantidades exatas dividem sem arredondar. Cada marcação manda a `revision` esperada do item, e as ações do anfitrião mandam a da sala, então uma corrida falha com `stale_version`. `close_assignment_room` exige todos os itens com dono. `finalize_assignment_room` refaz o payload canônico a partir das marcações, exige que o payload do cliente seja idêntico, convida pro grupo de destino quem entrou com conta e cria a conta usando o id da sala como `client_id`. Quem entrou sem conta reivindica a parte depois com `claim_assignment_room_guest`.
 
 Quando a sala aponta pra um grupo existente, quem já é membro aceito do grupo não precisa do link: `list_open_assignment_rooms` lista as salas abertas do grupo, e `enter_group_assignment_room` confere se a pessoa é membro e emite o mesmo token de membro que o link emite. O link com QR continua valendo pra quem está de fora.
+
+O código falado existe pra quem está na mesa entrar sem link. O cliente do anfitrião sorteia duas palavras de `src/lib/room-code-words.ts` (3.034 palavras, CC BY-SA 4.0) e `issue_assignment_room_code` guarda só o sha256 da forma sem acento (`cafune-legal`), preso ao token de entrada atual da sala e válido por 15 minutos; cada sala tem no máximo um código. `join_assignment_room` é público e não tem limite de tentativas, então nunca aceita o código direto. O cliente de quem entra gera uma permissão `armr1_` e manda código e permissão pra `POST /api/room-code`, que limita 20 tentativas a cada 10 minutos por IP (IPv6 por /64) e chama `resolve_assignment_room_code` com service role. A permissão vale uma entrada em 10 minutos, vai só no fragmento da URL da sala e nunca fica salva no navegador; `join_assignment_room` aceita `armr1_` no lugar do `armj1_` do link e consome a permissão na mesma transação da entrada. Como código e permissão ficam presos ao token de entrada, girar o link, remover alguém ou fechar a sala invalida os dois.
 
 Uma sala também pode apontar pra uma DM. Ela nasce só com o anfitrião (`create_assignment_room` recusa outro participante com `invalid_argument`), e o link (`join_assignment_room`) aceita apenas as duas pessoas da conversa entrando com a própria conta; visitante anônimo, terceira conta ou par bloqueado recebem `dm_room_pair_only`. `enter_group_assignment_room` e `list_open_assignment_rooms` funcionam igual aos grupos, `list_hosted_assignment_rooms` usa o nome da outra pessoa como `groupName`, e `finalize_assignment_room` registra a conta na própria DM.
 
