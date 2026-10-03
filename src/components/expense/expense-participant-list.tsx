@@ -12,7 +12,7 @@ interface ExpenseParticipantListProps {
   participants: Participant[];
   meId: string | null;
   invitedUserIds: ReadonlySet<string>;
-  onInviteGuest: (participant: Participant, anchor: HTMLButtonElement) => void;
+  onInviteGuest?: (participant: Participant, anchor: HTMLButtonElement) => void;
   showHeading?: boolean;
 }
 
@@ -79,7 +79,7 @@ export function ExpenseParticipantList({
                       <> · Pagou <Money cents={participant.paidCents} className="text-xs" /></>
                     )}
                   </p>
-                  {participant.guest?.claimedBy === null && (
+                  {participant.guest?.claimedBy === null && onInviteGuest && (
                     <Button
                       type="button"
                       variant="outline"

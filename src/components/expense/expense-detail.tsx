@@ -1,9 +1,10 @@
 "use client";
 
-import { MoreHorizontal, Pencil, Receipt, RotateCcw, Share2, Trash2, UserPlus } from "lucide-react";
+import { MoreHorizontal, Pencil, Receipt, Share2, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { ExpenseDeletedStatus } from "./expense-deleted-status";
 import { ExpenseHistory } from "./expense-history";
 import { ExpenseItems } from "./expense-items";
 import { ExpensePayers } from "./expense-payers";
@@ -50,6 +51,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [unavailable, setUnavailable] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [deleteAnchor, setDeleteAnchor] = useState<HTMLButtonElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -103,14 +105,50 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     (userId: string): string => {
       const member = members?.find((m) => m.userId === userId);
       if (member) return member.user.name;
+      const formerMember = snapshot?.formerMembers.find((person) => person.id === userId);
+      if (formerMember) return formerMember.name;
       const participantUser = detail?.participants
         .map((p) => p.user)
         .find((user) => user?.id === userId);
       if (participantUser) return participantUser.name;
       return "Alguém";
     },
-    [members, detail],
+    [members, snapshot, detail],
   );
+
+  const lastStatusRef = useRef({
+    expenseId,
+    status: detail?.expense.status,
+    deletedAt: detail?.expense.deletedAt,
+  });
+  const armedReadRef = useRef<string | null>(null);
+  useEffect(() => {
+    const seen = lastStatusRef.current;
+    const status = detail?.expense.status;
+    const deletedAt = detail?.expense.deletedAt ?? null;
+    const deletedBy = detail?.expense.deletedBy ?? null;
+    const justArmed = read.status === "ready" && armedReadRef.current !== expenseId;
+    if (justArmed) armedReadRef.current = expenseId;
+    lastStatusRef.current = {
+      expenseId,
+      status,
+      deletedAt: status === "deleted" ? deletedAt : seen.deletedAt,
+    };
+    if (
+      !justArmed &&
+      armedReadRef.current === expenseId &&
+      seen.expenseId === expenseId &&
+      seen.status === "active" &&
+      status === "deleted" &&
+      deletedAt !== null &&
+      deletedAt !== seen.deletedAt &&
+      me !== null &&
+      deletedBy !== null &&
+      deletedBy !== me.id
+    ) {
+      toast(`${nameOf(deletedBy)} excluiu essa conta`);
+    }
+  }, [detail, expenseId, me, nameOf, read.status]);
 
   const avatarUrlOf = useCallback(
     (userId: string): string | null => {
@@ -205,6 +243,12 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const isDeleted = expense.status === "deleted";
   const canManage =
     assignmentRoom === undefined || assignmentRoom.hostUserId === me?.id;
+  const canRestore =
+    canManage &&
+    (expense.creatorId === me?.id ||
+      current.payload.participants.some(
+        (p) => p.kind === "user" && p.userId === me?.id,
+      ));
   const names = displayNames(detail.participants.map((p) => ({
     id: participantId(p.participantIndex), name: participantName(p.participantIndex),
     handle: p.user?.handle, isGuest: p.kind === "guest",
@@ -228,7 +272,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   }
 
   async function handleRestore() {
-    setWorking(true);
+    setRestoring(true);
     try {
       await restoreExpense(expenseId);
       haptics.success();
@@ -237,7 +281,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
-      setWorking(false);
+      setRestoring(false);
     }
   }
 
@@ -247,7 +291,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       meId={me?.id ?? null}
       invitedUserIds={invitedUserIds}
       showHeading={!assignmentRoom}
-      onInviteGuest={(participant) => {
+      onInviteGuest={isDeleted ? undefined : (participant) => {
         setInviteIndex(participant.participantIndex);
       }}
     />
@@ -279,15 +323,30 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       <ScreenHeader
         back
         title={current.title}
-        subtitle={`${detail.group.name} · ${formatOccurredOn(current.occurredOn)} · pago por ${payerNames}`}
+        subtitle={`${detail.group.name} · ${formatOccurredOn(current.occurredOn)}${isDeleted ? "" : ` · pago por ${payerNames}`}`}
         action={<>
           {canManage && !isDeleted && <Button variant="ghost" size="icon" aria-label="Editar conta" onClick={() => router.push(`/app/bill/new?edit=${expenseId}`)}><Pencil className="size-5" /></Button>}
           <Button ref={menuAnchor} variant="ghost" size="icon" aria-label="Mais opções" onClick={() => setMenuOpen(true)}><MoreHorizontal className="size-5" /></Button>
         </>}
       />
+      {isDeleted && (
+        <ExpenseDeletedStatus
+          deletedByName={expense.deletedBy ? nameOf(expense.deletedBy) : "Alguém"}
+          deletedByMe={expense.deletedBy === me?.id}
+          deletedAt={expense.deletedAt}
+          canRestore={canRestore}
+          restoring={restoring}
+          onRestore={handleRestore}
+        />
+      )}
       <div className="px-4 py-6">
         <p className="mb-1 text-sm text-muted-foreground">Total da conta</p>
-        <Money cents={current.totalCents} size="hero" />
+        <Money
+          cents={current.totalCents}
+          size={isDeleted ? "lg" : "hero"}
+          className={isDeleted ? "text-muted-foreground line-through decoration-1" : undefined}
+        />
+        {isDeleted && <p className="mt-2 text-sm text-muted-foreground">Não entra mais nos saldos</p>}
       </div>
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverContent anchor={menuAnchor.current} align="end">
@@ -303,22 +362,14 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
               }
             }).catch(() => toast.error("Não deu pra compartilhar a conta."));
           }}><Share2 className="size-4" />Compartilhar conta</Button>
-          {unclaimedGuest && <Button variant="ghost" className="w-full justify-start" onClick={() => { setMenuOpen(false); setInviteIndex(unclaimedGuest.participantIndex); }}><UserPlus className="size-4" />Convidar participante</Button>}
+          {!isDeleted && unclaimedGuest && <Button variant="ghost" className="w-full justify-start" onClick={() => { setMenuOpen(false); setInviteIndex(unclaimedGuest.participantIndex); }}><UserPlus className="size-4" />Convidar participante</Button>}
           {canManage && !isDeleted && <Button variant="ghost" className="w-full justify-start text-destructive-text" onClick={() => { setDeleteAnchor(menuAnchor.current); setMenuOpen(false); setConfirmOpen(true); }}><Trash2 className="size-4" />Excluir conta</Button>}
           {assignmentRoom && <Button variant="ghost" className="w-full justify-start" onClick={() => router.push(`/room/${assignmentRoom.id}`)}><Receipt className="size-4" />Ver sala</Button>}
         </PopoverContent>
       </Popover>
 
       <div className="px-4">
-        {isDeleted && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-muted/50 px-4 py-3">
-            <p className="text-sm text-muted-foreground">Conta excluída</p>
-            {canManage && <Button variant="outline" disabled={working} onClick={handleRestore}><RotateCcw className="size-4" />Restaurar</Button>}
-          </div>
-        )}
-
-      </div>
-      <div className="px-4">
+        {isDeleted && <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Registro da conta</h2>}
         <ExpensePayers
           payers={payers}
           participantName={participantName}
@@ -399,7 +450,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         </PopoverContent>
       </Popover>
 
-      {inviteParticipant?.guest && (
+      {!isDeleted && inviteParticipant?.guest && (
         <GuestInviteDialog
           open
           onOpenChange={(open) => {
