@@ -646,7 +646,6 @@ describe("selectHomeInvitations", () => {
         kind: "dm",
         title: "Carol Souza",
         inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
-        memberCount: 1,
       },
     ]);
   });
@@ -671,7 +670,6 @@ describe("selectHomeInvitations", () => {
         kind: "group",
         title: "Grupo 1",
         inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
-        memberCount: 1,
       },
     ]);
   });
@@ -695,7 +693,6 @@ describe("selectHomeInvitations", () => {
         kind: "group",
         title: "Grupo 1",
         inviter: null,
-        memberCount: 0,
       },
     ]);
   });

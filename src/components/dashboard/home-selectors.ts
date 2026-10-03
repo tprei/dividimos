@@ -230,10 +230,6 @@ let invitationsCache: {
 
 const EMPTY_INVITATIONS: HomeInvitationItem[] = [];
 
-/**
- * An invited snapshot only ships the viewer and their inviter, so the member
- * count is the accepted members it carries, never the group's real size.
- */
 export function selectHomeInvitations(state: AppState): HomeInvitationItem[] {
   const snapshots = selectPendingInvitations(state);
   const previous = invitationsCache;
@@ -261,8 +257,6 @@ export function selectHomeInvitations(state: AppState): HomeInvitationItem[] {
             avatarUrl: inviterProfile.avatarUrl,
           }
         : null,
-      memberCount: snapshot.members.filter((m) => m.status === "accepted")
-        .length,
     };
   });
   invitationsCache = { snapshots, invitations };
