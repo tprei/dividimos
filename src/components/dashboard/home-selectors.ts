@@ -134,7 +134,7 @@ export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
         if (!room.joined && blockedIds.has(room.host.id)) continue;
         items.push({
           room,
-          placeLabel: groupNameOf(group, meId),
+          placeLabel: group.group.kind === "dm" ? "Conversa" : groupNameOf(group, meId),
         });
       }
     }

@@ -234,7 +234,7 @@ describe("selectOpenRoomsFromOthers", () => {
     ]);
   });
 
-  it("labels DM rows with the other person and group rows with the group name", () => {
+  it("labels DM rows as a conversation and group rows with the group name", () => {
     const dm = snapshot({
       group: { id: "dm-1", kind: "dm", name: "", dmUserA: me.id, dmUserB: carol.id, creatorId: me.id, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
       members: [
@@ -257,7 +257,7 @@ describe("selectOpenRoomsFromOthers", () => {
       (item) => item.placeLabel,
     );
     expect(labels).toContain("Grupo 1");
-    expect(labels).toContain("Carol Souza");
+    expect(labels).toContain("Conversa");
   });
 
   it("orders by createdAt desc then id desc", () => {
