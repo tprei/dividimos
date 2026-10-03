@@ -4,9 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Camera, ScanLine } from "lucide-react";
 import type QrScanner from "qr-scanner";
+import { OpenAppSettingsButton } from "@/components/shared/open-app-settings-button";
 import { Button } from "@/components/ui/button";
 import { popIn } from "@/lib/animations";
+import { opensAppSettings } from "@/lib/capacitor/app-settings";
 import { cn } from "@/lib/utils";
+
+const CAMERA_DENIED_MESSAGE = "Permissão de câmera negada. Habilite nas configurações do navegador.";
+const IOS_CAMERA_DENIED_MESSAGE = "Permita o acesso à câmera nos Ajustes.";
 
 export interface QrScannerViewProps {
   /** Called with the raw decoded string from any QR code */
@@ -23,6 +28,24 @@ export interface QrScannerViewProps {
 }
 
 const START_FAILED = "Não foi possível iniciar a câmera.";
+
+// qr-scanner swallows getUserMedia's error and rejects with the string
+// "Camera not found.", so a second request names the real cause.
+async function cameraStartError(): Promise<string> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach((track) => track.stop());
+    return START_FAILED;
+  } catch (probe) {
+    if (probe instanceof DOMException && probe.name === "NotAllowedError") {
+      return opensAppSettings() ? IOS_CAMERA_DENIED_MESSAGE : CAMERA_DENIED_MESSAGE;
+    }
+    if (probe instanceof DOMException && probe.name === "NotFoundError") {
+      return "Nenhuma câmera encontrada neste dispositivo.";
+    }
+    return START_FAILED;
+  }
+}
 
 /**
  * Live camera QR code scanner using the qr-scanner library.
@@ -88,17 +111,12 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
         if (suspendedRef.current) void scanner.pause(true);
 
         setStarting(false);
-      } catch (err) {
+      } catch {
+        if (destroyed) return;
+        const message = await cameraStartError();
         if (destroyed) return;
         setStarting(false);
-
-        if (err instanceof DOMException && err.name === "NotAllowedError") {
-          setError("Permissão de câmera negada. Habilite nas configurações do navegador.");
-        } else if (err instanceof DOMException && err.name === "NotFoundError") {
-          setError("Nenhuma câmera encontrada neste dispositivo.");
-        } else {
-          setError(START_FAILED);
-        }
+        setError(message);
       }
     }
 
@@ -132,6 +150,7 @@ export function QrScannerView({ onDecode, paused = false, collapsed = false, onE
       )}>
         <Camera className={cn("shrink-0 text-destructive-text", collapsed ? "size-4" : "size-8")} />
         <p role="alert" className="text-sm text-destructive-text">{error}</p>
+        {error === IOS_CAMERA_DENIED_MESSAGE && !collapsed && <OpenAppSettingsButton />}
       </div>
     );
   }

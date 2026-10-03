@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Política de Privacidade</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 27 de setembro de 2026
+        Última atualização: 3 de outubro de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -29,8 +29,10 @@ export default function PrivacyPage() {
           <ul className="mt-2 list-inside list-disc space-y-1 text-muted-foreground">
             <li>
               <strong className="text-foreground">Conta e perfil:</strong> nome, e-mail e endereço
-              da foto de perfil recebidos no login com Google, além do nome e do handle que você
-              usa no Dividimos, e suas preferências.
+              da foto de perfil recebidos no login com Google ou Apple, além do nome e do handle que
+              você usa no Dividimos, e suas preferências. No login com a Apple, você escolhe
+              compartilhar seu nome e e-mail; se escolher ocultar o e-mail, a Apple envia um
+              endereço alternativo que encaminha as mensagens para você.
             </li>
             <li>
               <strong className="text-foreground">Chave Pix:</strong> se você cadastrar uma chave,
@@ -144,7 +146,8 @@ export default function PrivacyPage() {
               <strong className="text-foreground">Serviços de notificação:</strong> o FCM e os
               serviços de Web Push recebem o necessário para entregar as notificações, que podem
               trazer nomes de pessoas e grupos, títulos de despesas e valores, como a sua parte numa
-              despesa. Tokens e inscrições ficam criptografados no nosso banco.
+              despesa. No iPhone, as notificações também passam pelo serviço de notificação da Apple
+              (APNs). Tokens e inscrições ficam criptografados no nosso banco.
             </li>
             <li>
               <strong className="text-foreground">Telegram:</strong> as denúncias vão para o canal
@@ -183,13 +186,20 @@ export default function PrivacyPage() {
             <li>
               <strong className="text-foreground">Microfone:</strong> usado quando você escolhe a
               despesa por voz. A fala passa pelo reconhecedor do aparelho ou do navegador, ou é
-              gravada por um instante e enviada à nossa API para o Gemini transcrever.
+              gravada por um instante e enviada à nossa API para o Gemini transcrever. No iPhone, o
+              app pede a permissão de microfone e a permissão de reconhecimento de fala do sistema;
+              nesse caso, o áudio é processado pelo serviço de reconhecimento de fala da Apple, que
+              pode ocorrer nos servidores da Apple, e a transcrição só segue para o Gemini se você
+              permitir o uso de IA.
             </li>
             <li>
               <strong className="text-foreground">Câmera e fotos:</strong> usadas quando você
-              escaneia um cupom ou uma nota, ou lê um QR code. A imagem do cupom enviada para
-              interpretação segue para o Gemini. Fotos escolhidas para um grupo ficam no
-              armazenamento do Supabase.
+              escaneia um cupom ou uma nota, lê um QR code ou escolhe a foto de um grupo. No iPhone,
+              a permissão de câmera cobre a foto do cupom, a foto do grupo e a leitura de QR codes;
+              escolher uma foto da galeria usa o seletor do sistema, sem dar ao Dividimos acesso à sua
+              galeria, e o Dividimos não grava nada nela. A imagem do cupom enviada para interpretação
+              segue para o Gemini.
+              Fotos escolhidas para um grupo ficam no armazenamento do Supabase.
             </li>
             <li>
               <strong className="text-foreground">Contatos:</strong> você escolhe os contatos no
@@ -197,7 +207,8 @@ export default function PrivacyPage() {
               despesa, ou o número quando não há nome, vira o nome de um convidado; o telefone só é
               usado para o link do WhatsApp. Não criamos nem alteramos contatos. No Android, a
               permissão de escrita aparece junto porque o plugin de contatos exige as duas; o
-              Dividimos não escreve na sua agenda.
+              Dividimos não escreve na sua agenda. No iPhone, importar contatos não está
+              disponível.
             </li>
             <li>
               <strong className="text-foreground">Notificações:</strong> são opcionais. Dá para
@@ -290,9 +301,10 @@ export default function PrivacyPage() {
           <p className="mt-2">
             A conta de autenticação é desativada e mantém só o identificador interno necessário a
             esses registros. A exclusão não pode ser desfeita: se você entrar de novo com o mesmo
-            Google ou a mesma Apple ID, será uma conta nova do Dividimos. Sua conta Google ou Apple
-            não é excluída. Se você entrava com Apple, a autorização do Dividimos na sua Apple ID é
-            revogada na exclusão.
+            Google ou a mesma conta Apple, será uma conta nova do Dividimos. Sua conta Google ou sua
+            conta Apple não é excluída. Se você entrou com a Apple, a exclusão também revoga a
+            autorização do login com a Apple, e o Dividimos deixa de aparecer entre os apps que usam
+            sua Apple ID para iniciar sessão.
           </p>
           <p className="mt-2">
             Ao concluir, o app encerra sua sessão e apaga os dados locais da conta no dispositivo
