@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ASSIGNMENT_ROOM_GRANT_TOKEN_RE,
   ASSIGNMENT_ROOM_JOIN_TOKEN_RE,
   buildAssignmentRoomUrl,
   parseAssignmentRoomQrCode,
@@ -27,6 +28,23 @@ describe("ASSIGNMENT_ROOM_JOIN_TOKEN_RE", () => {
       false
     );
     expect(ASSIGNMENT_ROOM_JOIN_TOKEN_RE.test(`armj1_${"+".repeat(43)}`)).toBe(
+      false
+    );
+  });
+});
+
+describe("ASSIGNMENT_ROOM_GRANT_TOKEN_RE", () => {
+  it("accepts only the exact room-code grant shape", () => {
+    expect(ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(`armr1_${"A".repeat(43)}`)).toBe(
+      true
+    );
+    expect(ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(`armj1_${"A".repeat(43)}`)).toBe(
+      false
+    );
+    expect(ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(`armr1_${"A".repeat(42)}`)).toBe(
+      false
+    );
+    expect(ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(`armr1_${"A".repeat(44)}`)).toBe(
       false
     );
   });
@@ -105,6 +123,14 @@ describe("parseAssignmentRoomQrCode", () => {
       parseAssignmentRoomQrCode(`http://localhost:3000${PATH}`)
     ).toBeNull();
   });
+
+  it("rejects a QR payload whose fragment is a room-code grant", () => {
+    expect(
+      parseAssignmentRoomQrCode(
+        `https://www.dividimos.ai/room/${ROOM_ID}#armr1_${"A".repeat(43)}`
+      )
+    ).toBeNull();
+  });
 });
 
 describe("buildAssignmentRoomUrl", () => {
@@ -135,6 +161,11 @@ describe("readAssignmentRoomFragment", () => {
   it("accepts the invite fragment of the opened room in production", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(readAssignmentRoomFragment(ROOM_ID, `#${TOKEN}`)).toBe(TOKEN);
+  });
+
+  it("accepts a room-code grant fragment", () => {
+    const grant = `armr1_${"A".repeat(43)}`;
+    expect(readAssignmentRoomFragment(ROOM_ID, `#${grant}`)).toBe(grant);
   });
 
   it("rejects a malformed room id, a foreign token shape and an empty hash", () => {

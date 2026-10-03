@@ -2,6 +2,8 @@ import { isAcceptedAppOrigin, PRODUCTION_CLAIM_ORIGIN } from "@/lib/claim-qr";
 
 export const ASSIGNMENT_ROOM_JOIN_TOKEN_RE = /^armj1_[A-Za-z0-9_-]{43}$/;
 
+export const ASSIGNMENT_ROOM_GRANT_TOKEN_RE = /^armr1_[A-Za-z0-9_-]{43}$/;
+
 const ROOM_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ROOM_PATH_RE =
@@ -41,7 +43,9 @@ export function readAssignmentRoomFragment(
 ): string | null {
   if (!ROOM_ID_RE.test(roomId)) return null;
   const token = hash.startsWith("#") ? hash.slice(1) : hash;
-  return ASSIGNMENT_ROOM_JOIN_TOKEN_RE.test(token) ? token : null;
+  return ASSIGNMENT_ROOM_JOIN_TOKEN_RE.test(token) || ASSIGNMENT_ROOM_GRANT_TOKEN_RE.test(token)
+    ? token
+    : null;
 }
 
 export function assignmentRoomPath(pathname: string): string | null {

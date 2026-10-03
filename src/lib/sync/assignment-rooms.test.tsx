@@ -129,6 +129,22 @@ describe("assignment room sync", () => {
     expect(useAssignmentRoomStore.getState().rooms[ROOM_ID].view?.room.topic).toBeNull();
   });
 
+  it("sends a room-code grant as the join token and persists only the member capability", async () => {
+    const grantToken = `armr1_${"E".repeat(43)}`;
+    mocks.rpc.mockImplementation(decodeThrough(view(2)));
+
+    await joinAssignmentRoom({ roomId: ROOM_ID, joinToken: grantToken, displayName: "Ana" });
+
+    expect(mocks.rpc.mock.calls[0]?.[0]).toBe("join_assignment_room");
+    expect(mocks.rpc.mock.calls[0]?.[1]).toMatchObject({ p_join_token: grantToken });
+    const stored = JSON.parse(
+      localStorage.getItem(`dividimos.assignment-room.${ROOM_ID}`) ?? "{}"
+    ) as Record<string, unknown>;
+    expect(Object.keys(stored)).toEqual(["memberToken"]);
+    expect(stored.memberToken).toMatch(/^armm1_[A-Za-z0-9_-]{43}$/);
+    expect(getAssignmentRoomJoinToken(ROOM_ID)).toBeNull();
+  });
+
   it("fails before dispatch when room-scoped persistence fails", async () => {
     const setItem = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
       throw new Error("quota");

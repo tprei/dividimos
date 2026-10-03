@@ -13,7 +13,8 @@ export type RateLimitBucket =
   | "push.send"
   | "push.send-pair"
   | "push.subscribe"
-  | "reports.create";
+  | "reports.create"
+  | "room-code.resolve";
 
 export interface RateLimitConfig {
   limit: number;
@@ -32,6 +33,7 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
   "push.subscribe":     { limit: 20,  windowSeconds: 3600 },
   "reports.create":     { limit: 5,   windowSeconds: 60 },
+  "room-code.resolve":  { limit: 20,  windowSeconds: 600 },
 };
 
 const MAX_SUBJECT_BYTES = 512;
@@ -61,7 +63,8 @@ if (
 }
 
 /**
- * Spend one token from `bucket` for `subject` (the authenticated user ID).
+ * Spend one token from `bucket` for `subject`: the authenticated user ID, or
+ * `ip:<address>` for public routes.
  *
  * Resolves on success. Throws `AppError("RATE_LIMIT_EXCEEDED", ...)` when the
  * bucket is saturated for this window, or `AppError("RATE_LIMIT_UNAVAILABLE",

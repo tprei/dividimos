@@ -10,6 +10,7 @@ const { decodeHolder, mocks } = vi.hoisted(() => ({
     joinViaLink: vi.fn(),
     lookupUserByHandle: vi.fn(),
     getOrCreateDm: vi.fn(),
+    resolveAssignmentRoomCode: vi.fn(),
   },
 }));
 
@@ -40,6 +41,10 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   getOrCreateDm: mocks.getOrCreateDm,
 }));
 
+vi.mock("@/lib/sync/assignment-room-codes", () => ({
+  resolveAssignmentRoomCode: mocks.resolveAssignmentRoomCode,
+}));
+
 import ScanInvitePage from "./page";
 import { LedgerError } from "@/lib/sync/errors";
 
@@ -65,7 +70,7 @@ describe("ScanInvitePage router", () => {
     mocks.joinViaLink.mockResolvedValueOnce({ groupId: "g-manual", ledgerVersion: 1, eventId: 1 });
     render(<ScanInvitePage />);
     const field = screen.getByLabelText("Link ou código");
-    await user.type(field, "texto qualquer");
+    await user.type(field, "texto 123");
     await user.click(screen.getByRole("button", { name: "Abrir convite" }));
     expect(screen.getByRole("status")).toHaveTextContent("Esse código não é um convite do Dividimos.");
     expect(mocks.push).not.toHaveBeenCalled();
@@ -73,6 +78,43 @@ describe("ScanInvitePage router", () => {
     await user.type(field, TOKEN);
     await user.click(screen.getByRole("button", { name: "Abrir convite" }));
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/app/groups/g-manual"));
+  });
+
+  it("resolves a typed room code and opens its join screen", async () => {
+    const user = userEvent.setup();
+    const grantToken = `armr1_${"F".repeat(43)}`;
+    mocks.resolveAssignmentRoomCode.mockResolvedValueOnce({ roomId: ROOM_ID, grantToken });
+    render(<ScanInvitePage />);
+
+    const field = screen.getByLabelText("Link ou código");
+    await user.type(field, "Pipoca Moleza");
+    await user.click(screen.getByRole("button", { name: "Abrir convite" }));
+
+    await waitFor(() => {
+      expect(mocks.resolveAssignmentRoomCode).toHaveBeenCalledWith("Pipoca Moleza");
+    });
+    await waitFor(() => {
+      expect(mocks.push).toHaveBeenCalledWith(`/room/${ROOM_ID}#${grantToken}`);
+    });
+    expect(mocks.joinViaLink).not.toHaveBeenCalled();
+  });
+
+  it("shows the room-code hint in the status line when the code is rejected", async () => {
+    const user = userEvent.setup();
+    mocks.resolveAssignmentRoomCode.mockRejectedValueOnce(
+      new LedgerError("invalid_room_code")
+    );
+    render(<ScanInvitePage />);
+
+    const field = screen.getByLabelText("Link ou código");
+    await user.type(field, "pipoca moleza");
+    await user.click(screen.getByRole("button", { name: "Abrir convite" }));
+
+    const hint = await screen.findByText(
+      "Esse código não existe ou já expirou. Confere com quem criou a sala."
+    );
+    expect(hint).toHaveAttribute("role", "status");
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 
   it("folds the camera away while a code is typed and brings it back after", async () => {
