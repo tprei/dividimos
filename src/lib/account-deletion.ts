@@ -9,6 +9,8 @@ export type AccountDeletionResponse =
   | { ok: false; code: "unauthenticated" }
   | { ok: false; code: "invalid_argument" }
   | { ok: false; code: "deletion_failed"; retryable: true }
+  | { ok: false; code: "apple_reauthorization_required" }
+  | { ok: false; code: "apple_revoke_failed"; retryable: true; userId: string }
   | { ok: false; code: "auth_delete_failed"; retryable: true; userId: string };
 
 const UUID_PATTERN =
@@ -53,8 +55,14 @@ export function decodeAccountDeletionResponse(raw: unknown): AccountDeletionResp
   }
   if (record.code === "unauthenticated") return { ok: false, code: "unauthenticated" };
   if (record.code === "invalid_argument") return { ok: false, code: "invalid_argument" };
+  if (record.code === "apple_reauthorization_required") {
+    return { ok: false, code: "apple_reauthorization_required" };
+  }
   if (record.code === "deletion_failed" && record.retryable === true) {
     return { ok: false, code: "deletion_failed", retryable: true };
+  }
+  if (record.code === "apple_revoke_failed" && record.retryable === true && isUuid(record.userId)) {
+    return { ok: false, code: "apple_revoke_failed", retryable: true, userId: record.userId };
   }
   if (record.code === "auth_delete_failed" && record.retryable === true && isUuid(record.userId)) {
     return { ok: false, code: "auth_delete_failed", retryable: true, userId: record.userId };

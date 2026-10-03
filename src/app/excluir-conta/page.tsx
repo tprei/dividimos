@@ -67,7 +67,8 @@ export default async function ExcluirContaPage({
           <p className="mt-2 text-muted-foreground">
             Seu nome, e-mail, foto, chave Pix e preferências são apagados ou anonimizados. Você sai
             dos grupos, seus links de convite são desativados e suas mensagens aparecem como
-            “Mensagem apagada”, de “Conta excluída”.
+            “Mensagem apagada”, de “Conta excluída”. Quem entrou com Apple também tem a autorização
+            do Dividimos revogada na Apple ID.
           </p>
         </section>
 
@@ -84,8 +85,8 @@ export default async function ExcluirContaPage({
         <section>
           <h2 className="text-base font-semibold">Precisa de ajuda?</h2>
           <p className="mt-2 text-muted-foreground">
-            A exclusão não pode ser desfeita. Se você entrar de novo com o mesmo Google, uma nova
-            conta será criada.
+            A exclusão não pode ser desfeita. Se você entrar de novo com o mesmo Google ou a mesma
+            Apple ID, uma nova conta será criada.
           </p>
           <p className="mt-2">
             Precisa de ajuda? Fale com{" "}

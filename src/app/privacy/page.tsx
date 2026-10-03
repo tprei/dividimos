@@ -290,7 +290,9 @@ export default function PrivacyPage() {
           <p className="mt-2">
             A conta de autenticação é desativada e mantém só o identificador interno necessário a
             esses registros. A exclusão não pode ser desfeita: se você entrar de novo com o mesmo
-            Google, será uma conta nova do Dividimos. Sua conta Google não é excluída.
+            Google ou a mesma Apple ID, será uma conta nova do Dividimos. Sua conta Google ou Apple
+            não é excluída. Se você entrava com Apple, a autorização do Dividimos na sua Apple ID é
+            revogada na exclusão.
           </p>
           <p className="mt-2">
             Ao concluir, o app encerra sua sessão e apaga os dados locais da conta no dispositivo
