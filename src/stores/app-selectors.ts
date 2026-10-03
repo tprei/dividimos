@@ -131,9 +131,14 @@ export function selectMyDebts(state: AppState): MyDebts[] {
 }
 
 export function selectUnreadTotal(state: AppState): number {
+  const meId = state.me?.id ?? null;
   let total = 0;
   for (const snapshot of Object.values(state.groups)) {
     if (isGroupArchived(snapshot)) continue;
+    if (meId !== null) {
+      const member = snapshot.members.find((m) => m.userId === meId);
+      if (member?.status === "invited") continue;
+    }
     total += snapshot.unreadCount;
   }
   return total;
@@ -172,7 +177,7 @@ export function selectPendingInvitations(state: AppState): GroupSnapshot[] {
   if (meId !== null) {
     for (const groupId of state.groupOrder) {
       const snapshot = state.groups[groupId];
-      if (!snapshot || snapshot.group.kind !== "group") continue;
+      if (!snapshot) continue;
       const member = snapshot.members.find((m) => m.userId === meId);
       if (member?.status !== "invited") continue;
       snapshots.push(snapshot);

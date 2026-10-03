@@ -525,6 +525,67 @@ describe("mutations", () => {
       expect(conversation?.messages.map((m) => m.id)).toEqual(["msg-old", "msg-server-id"]);
       expect(conversation?.messages[1]?.clientId).toBe(message.clientId);
     });
+
+    it("pings the DM invite route only while the counterparty is invited", async () => {
+      const invitedDm = makeGroupSnapshot("dm-1");
+      invitedDm.group.kind = "dm";
+      invitedDm.members = invitedDm.members.map((m) =>
+        m.userId === USER_2.id ? { ...m, status: "invited" as const, acceptedAt: null } : m,
+      );
+      const acceptedDm = makeGroupSnapshot("dm-2");
+      acceptedDm.group.kind = "dm";
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { "dm-1": invitedDm, "dm-2": acceptedDm, g1: makeGroupSnapshot("g1") },
+        groupOrder: ["dm-1", "dm-2", "g1"],
+        conversations: {},
+      });
+
+      vi.mocked(rpc).mockImplementationOnce(async () => ({
+        id: "msg-dm",
+        clientId: "dm-client",
+        groupId: "dm-1",
+        senderId: ME.id,
+        content: "oi",
+        createdAt: "2026-01-01T00:01:00.000Z",
+        sender: ME,
+      }));
+      await sendMessage("dm-1", "oi");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify-dm-invite",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ groupId: "dm-1", messageId: "msg-dm" }),
+          keepalive: true,
+        }),
+      );
+
+      vi.mocked(rpc).mockImplementationOnce(async () => ({
+        id: "msg-accepted",
+        clientId: "accepted-client",
+        groupId: "dm-2",
+        senderId: ME.id,
+        content: "oi de novo",
+        createdAt: "2026-01-01T00:01:00.000Z",
+        sender: ME,
+      }));
+      await sendMessage("dm-2", "oi de novo");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      vi.mocked(rpc).mockImplementationOnce(async () => ({
+        id: "msg-group",
+        clientId: "group-client",
+        groupId: "g1",
+        senderId: ME.id,
+        content: "oi grupo",
+        createdAt: "2026-01-01T00:01:00.000Z",
+        sender: ME,
+      }));
+      await sendMessage("g1", "oi grupo");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
     it("does not publish an acknowledgement after the account changes", async () => {
       useAppStore.setState({
         hydrated: true,
