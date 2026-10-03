@@ -28,6 +28,14 @@
 				<string>$(GOOGLE_IOS_URL_SCHEME)</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ai.dividimos.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dividimos</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -37,6 +45,16 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera serve pra fotografar a notinha ou a foto de um grupo e ler QR codes de convite.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O microfone só é usado quando você escolhe registrar uma conta falando.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>O Dividimos não salva fotos na sua galeria; a foto da notinha serve só pra ler os itens.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A galeria só abre quando você escolhe uma foto da notinha ou de um grupo.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Pra registrar a conta por voz, o áudio vai pro reconhecimento de fala da Apple e vira texto.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

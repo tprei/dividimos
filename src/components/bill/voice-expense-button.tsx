@@ -12,7 +12,9 @@ import { sketchVoiceBill } from "@/lib/voice-bill-sketch";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 import { VoiceBillPreview, VoiceExamples } from "@/components/bill/voice-bill-preview";
 import { VoiceLevelMeter, type VoiceMeterState } from "@/components/bill/voice-level-meter";
+import { OpenAppSettingsButton } from "@/components/shared/open-app-settings-button";
 import { Button } from "@/components/ui/button";
+import { opensAppSettings } from "@/lib/capacitor/app-settings";
 import { fade, popIn } from "@/lib/animations";
 
 interface VoiceExpenseButtonProps {
@@ -55,6 +57,7 @@ export function VoiceExpenseButton({
     transcript,
     interimTranscript,
     error: voiceError,
+    permissionDenied,
     startListening,
     stopListening,
     isSupported,
@@ -176,6 +179,7 @@ export function VoiceExpenseButton({
           {voiceError}
         </p>
       )}
+      {voiceError && permissionDenied && opensAppSettings() && <OpenAppSettingsButton />}
     </motion.div>
   );
 
