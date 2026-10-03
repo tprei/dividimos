@@ -6,7 +6,11 @@ import { Money } from "@/components/shared/money";
 import { ItemIcon } from "@/components/shared/item-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
+import {
+  MAX_EXPENSE_QUANTITY_MILLIUNITS,
+  formatExpenseQuantity,
+  type ExpenseQuantity,
+} from "@/lib/expense-quantity";
 import type { ReceiptItem } from "@/lib/receipt-ocr";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +77,7 @@ export function ReceiptItemRow({
               </span>
             )}
           </span>
-          {item.quantity !== 1000 && (
+          {!amountInvalid && item.quantity !== 1000 && (
             <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
               <Money cents={item.unitPriceCents} className="text-xs font-normal" /> cada
             </span>
@@ -143,6 +147,7 @@ export function ReceiptItemRow({
                 type="button"
                 variant="ghost"
                 size="icon"
+                disabled={item.quantity + 1000 > MAX_EXPENSE_QUANTITY_MILLIUNITS}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onQuantityChange(index, item.quantity + 1000)}
                 aria-label={`Aumentar quantidade de ${itemLabel}`}

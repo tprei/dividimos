@@ -175,7 +175,7 @@ export function ScannedItemsReview({
       current.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
         if (unitPriceCents === null) return { ...item, quantity: quantityMilliunits };
-        return { ...item, quantity: quantityMilliunits, unitPriceCents };
+        return { ...item, quantity: quantityMilliunits, unitPriceCents, totalCents: total };
       }),
     );
   };
