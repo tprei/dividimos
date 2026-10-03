@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 
 export type RateLimitBucket =
   | "users.lookup"
+  | "apple.credential"
   | "pix.generate"
   | "pix.generate-self"
   | "voice.parse"
@@ -22,6 +23,7 @@ export interface RateLimitConfig {
 
 const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "users.lookup":       { limit: 30,  windowSeconds: 60 },
+  "apple.credential":   { limit: 5,   windowSeconds: 300 },
   "pix.generate":       { limit: 60,  windowSeconds: 60 },
   "pix.generate-self":  { limit: 60,  windowSeconds: 60 },
   "voice.parse":        { limit: 30,  windowSeconds: 60 },

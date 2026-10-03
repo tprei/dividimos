@@ -30,8 +30,12 @@ vi.mock("@/lib/capacitor/auth", () => ({
   isAppleSignInAvailable: () => mockIsAppleSignInAvailable(),
   isNativeGoogleSignInAvailable: () => mockIsNativeGoogleSignInAvailable(),
   prepareGoogleSignIn: async () => undefined,
-  prepareAppleSignIn: async () => undefined,
   startGoogleRedirect: (next: string) => mockStartGoogleRedirect(next),
+}));
+
+const mockStoreAppleAuthorization = vi.fn();
+vi.mock("@/lib/sync/apple-credential", () => ({
+  storeAppleAuthorization: (code: string | null) => mockStoreAppleAuthorization(code),
 }));
 
 vi.mock("@/components/bill/qr-scanner-view", () => ({
@@ -218,7 +222,7 @@ describe("Sign in with Apple behavior", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 
-  it("routes to /auth/continue with next parameter preserved on successful Apple sign in", async () => {
+  it("stores Apple's authorization code and keeps the destination on success", async () => {
     mockAppleSignIn.mockResolvedValueOnce({
       status: "signed_in",
       provider: "apple",
@@ -232,6 +236,7 @@ describe("Sign in with Apple behavior", () => {
       expect(mockReplace).toHaveBeenCalledWith("/auth/continue?next=%2Fapp%2Fgroups");
       expect(mockRefresh).toHaveBeenCalled();
     });
+    expect(mockStoreAppleAuthorization).toHaveBeenCalledWith("apple-auth-code");
   });
 });
 
