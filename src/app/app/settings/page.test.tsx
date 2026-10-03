@@ -178,6 +178,28 @@ describe("SettingsPage", () => {
     });
   });
 
+  it("keeps the retryable Apple revocation error committed to the account", async () => {
+    vi.mocked(deleteAccount).mockResolvedValueOnce({
+      ok: false,
+      code: "apple_revoke_failed",
+      retryable: true,
+      userId: "user-a",
+    });
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Excluir sua conta do Dividimos" }));
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Excluir minha conta do Dividimos" }));
+
+    expect(
+      await screen.findByText(
+        "Seus dados já foram apagados ou anonimizados. Falta revogar o acesso na Apple. Tente novamente.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Tentar novamente" })).toBeDefined();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.getState().reset();

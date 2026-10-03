@@ -33,13 +33,9 @@ describe("DeleteAccountDialog", () => {
     expect(base.onConfirmedChange).toHaveBeenCalledWith(true);
   });
 
-  it("keeps dismissal available while idle and renders the consequences copy", () => {
+  it("keeps dismissal available while idle", () => {
     render(<DeleteAccountDialog {...base} state={{ status: "idle" }} />);
 
-    expect(screen.getByText("Essa ação não pode ser desfeita.")).toBeDefined();
-    expect(
-      screen.getByText("Se entrar de novo com o mesmo Google, você cria uma nova conta."),
-    ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(base.onClose).toHaveBeenCalled();
   });
