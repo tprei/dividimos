@@ -1,6 +1,5 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
 import { isGroupArchived } from "@/lib/group-lifecycle";
-import type { OpenRoomCardItem } from "@/components/dashboard/open-rooms-card";
 import {
   formatOccurredOn,
   groupNameOf,
@@ -8,6 +7,7 @@ import {
   type RecentBillItem,
 } from "@/stores/app-selectors";
 import type { AppState } from "@/stores/app-store";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 
 type HomeMode = "first-use" | "outstanding" | "settled";
 let recentCache: {
@@ -97,10 +97,16 @@ export function selectHomeMode(state: AppState): HomeMode {
   return "settled";
 }
 
+export interface OpenRoomCardItem {
+  room: OpenAssignmentRoom;
+  placeLabel: string;
+}
+
 let openRoomsCache: {
   groups: AppState["groups"];
   roomsByGroupId: AppState["openAssignmentRoomsByGroupId"];
   me: AppState["me"];
+  blockedUsers: AppState["blockedUsers"];
   items: OpenRoomCardItem[];
 } | null = null;
 
@@ -110,18 +116,22 @@ export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
     previous &&
     previous.groups === state.groups &&
     previous.roomsByGroupId === state.openAssignmentRoomsByGroupId &&
-    previous.me === state.me
+    previous.me === state.me &&
+    previous.blockedUsers === state.blockedUsers
   )
     return previous.items;
 
   const items: OpenRoomCardItem[] = [];
   const meId = state.me?.id;
   if (meId !== undefined) {
+    const blockedIds = new Set(state.blockedUsers.map((user) => user.id));
     for (const group of Object.values(state.groups)) {
+      if (isGroupArchived(group)) continue;
       const rooms = state.openAssignmentRoomsByGroupId[group.group.id];
       if (rooms === undefined) continue;
       for (const room of rooms) {
         if (room.status !== "open" || room.host.id === meId) continue;
+        if (!room.joined && blockedIds.has(room.host.id)) continue;
         items.push({
           room,
           placeLabel: groupNameOf(group, meId),
@@ -138,6 +148,7 @@ export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
     groups: state.groups,
     roomsByGroupId: state.openAssignmentRoomsByGroupId,
     me: state.me,
+    blockedUsers: state.blockedUsers,
     items,
   };
   return items;

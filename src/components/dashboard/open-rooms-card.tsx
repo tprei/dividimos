@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ClaimerAvatars, itemsWithOwnerText } from "@/components/assignment-room/claimer-avatars";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
@@ -13,33 +13,37 @@ import { ListRow } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
 import { haptics } from "@/hooks/use-haptics";
 import { fadeUp } from "@/lib/animations";
+import { displayNames } from "@/lib/people";
 import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type { OpenRoomCardItem } from "./home-selectors";
 
 const COLLAPSED_ROOM_COUNT = 3;
 
-export interface OpenRoomCardItem {
-  room: OpenAssignmentRoom;
-  placeLabel: string;
-}
-
-interface OpenRoomsCardProps {
+interface HomeOpenRoomsCardProps {
   rooms: OpenRoomCardItem[];
   pendingRoomId: string | null;
   onOpen: (room: OpenAssignmentRoom) => void;
 }
 
-function OpenRoomRow({ room, placeLabel, pending, onOpen }: OpenRoomCardItem & {
+function OpenRoomRow({ room, placeLabel, hostName, pending, disabled, onOpen }: OpenRoomCardItem & {
+  hostName: string;
   pending: boolean;
+  disabled: boolean;
   onOpen: (room: OpenAssignmentRoom) => void;
 }) {
   return (
     <ListRow
       title={room.title}
-      subtitle={`${room.host.name} · ${placeLabel}`}
+      subtitle={`${hostName} · ${placeLabel}`}
       leading={
-        <UserAvatar id={room.host.id} name={room.host.name} avatarUrl={room.host.avatarUrl} />
+        <UserAvatar
+          id={room.host.id}
+          name={room.host.name}
+          avatarUrl={room.host.avatarUrl}
+          isBot={room.host.isBot}
+        />
       }
-      disabled={pending}
+      disabled={disabled}
       className={room.joined ? "text-foreground" : "bg-accent/10 text-foreground"}
       onClick={() => {
         if (pending) return;
@@ -74,10 +78,14 @@ function OpenRoomRow({ room, placeLabel, pending, onOpen }: OpenRoomCardItem & {
   );
 }
 
-export function OpenRoomsCard({ rooms, pendingRoomId, onOpen }: OpenRoomsCardProps) {
+export function HomeOpenRoomsCard({ rooms, pendingRoomId, onOpen }: HomeOpenRoomsCardProps) {
   const [expanded, setExpanded] = useState(false);
   const reducedMotion = useReducedMotion();
   const listId = useId();
+  const hostNames = useMemo(
+    () => displayNames(rooms.map((item) => item.room.host), { style: "short" }),
+    [rooms],
+  );
 
   if (rooms.length === 0) return null;
 
@@ -97,7 +105,9 @@ export function OpenRoomsCard({ rooms, pendingRoomId, onOpen }: OpenRoomsCardPro
             key={room.id}
             room={room}
             placeLabel={placeLabel}
+            hostName={hostNames.get(room.host.id) ?? room.host.name}
             pending={pendingRoomId === room.id}
+            disabled={pendingRoomId !== null}
             onOpen={onOpen}
           />
         ))}
