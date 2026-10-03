@@ -1,7 +1,8 @@
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import { archiveCurrentDraft, restoreAccountDraft } from "@/lib/bill-draft-isolation";
-import { forgetGoogleAccount } from "@/lib/capacitor/auth";
+import { forgetAppleAccount, forgetGoogleAccount } from "@/lib/capacitor/auth";
+import { clearPendingSignInName } from "@/lib/pending-sign-in-name";
 import { runBootstrap } from "./bootstrap";
 import {
   advanceAuthGeneration,
@@ -61,6 +62,7 @@ function sharedSignOutTeardown(signedOutUserId: string | null): void {
   invalidateSyncReads();
   clearPendingVendorChargeCancellations();
   clearSessionCaches();
+  clearPendingSignInName();
   void detachLocalPushForSignOut(signedOutUserId);
 }
 
@@ -187,6 +189,10 @@ export async function completeAccountDeletionSignOut(
     return { ok: false, error };
   }
   try {
+    // The plugin keeps the last identity token (with email and subject) in
+    // UserDefaults; a deleted account must not leave it on the device.
+    await forgetGoogleAccount();
+    await forgetAppleAccount();
     const { error } = await getSupabase().auth.signOut({ scope: "local" });
     return error ? { ok: false, error } : { ok: true };
   } catch (error) {
@@ -202,6 +208,7 @@ export async function signOut(): Promise<SignOutResult> {
   try {
     await detachPushForSignOut();
     await forgetGoogleAccount();
+    await forgetAppleAccount();
     const { error } = await getSupabase().auth.signOut();
     return error ? { ok: false, error } : { ok: true };
   } catch (error) {

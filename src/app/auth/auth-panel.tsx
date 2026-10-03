@@ -134,22 +134,24 @@ export function AuthPanel({ className }: AuthPanelProps) {
         return;
       }
 
-      const success = await googleSignIn(supabase);
-      if (success) {
+      const result = await googleSignIn(supabase);
+      if (result.status === "signed_in") {
         // Go through /auth/continue so a first login makes the onboarded
         // decision before any invite or claim mutation runs, and returns
         // to this exact destination afterwards.
         router.replace(`/auth/continue?next=${encodeURIComponent(next)}`);
         router.refresh();
-      } else {
-        setIsGoogleLoading(false);
+        return;
+      }
+      setIsGoogleLoading(false);
+      if (result.status === "failed" && result.reason !== "busy") {
         haptics.error();
-        setSignInError("Não conseguimos entrar com o Google. Tente de novo.");
+        setSignInError("Não conseguimos concluir a entrada com o Google.");
       }
     } catch {
       setIsGoogleLoading(false);
       haptics.error();
-      setSignInError("Sem conexão com o Google. Tente de novo.");
+      setSignInError("Não conseguimos concluir a entrada com o Google.");
     }
   };
 

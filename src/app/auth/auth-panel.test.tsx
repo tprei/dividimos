@@ -16,7 +16,7 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: {} }),
 }));
 
-const mockGoogleSignIn = vi.fn(async () => true);
+const mockGoogleSignIn = vi.fn();
 const mockIsNativePlatform = vi.fn(() => true);
 const mockStartGoogleRedirect = vi.fn<(next: string) => Promise<void>>(async () => undefined);
 vi.mock("@/lib/capacitor/auth", () => ({
@@ -37,14 +37,18 @@ import { AuthPanel } from "./auth-panel";
 describe("sign-in destination", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGoogleSignIn.mockResolvedValue(true);
+    mockGoogleSignIn.mockResolvedValue({
+      status: "signed_in",
+      provider: "google",
+      authorizationCode: null,
+    });
     mockIsNativePlatform.mockReturnValue(true);
     decodeHolder.payload = "";
     searchParams.set("next", "/join/abc123");
   });
 
   it("keeps a failed Google sign-in inline and allows retry", async () => {
-    mockGoogleSignIn.mockResolvedValueOnce(false);
+    mockGoogleSignIn.mockResolvedValueOnce({ status: "failed", reason: "rejected" });
     render(<AuthPanel />);
     fireEvent.click(screen.getByRole("button", { name: /google/i }));
     expect(await screen.findByRole("alert")).toBeVisible();
