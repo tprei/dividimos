@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RoomBoard } from "@/components/assignment-room/room-board";
 import { RoomBreakdown } from "@/components/assignment-room/room-breakdown";
 import { RoomJoin, type RoomJoinIdentity } from "@/components/assignment-room/room-join";
@@ -15,6 +15,8 @@ import { haptics } from "@/hooks/use-haptics";
 import { buildAssignmentExpense } from "@/lib/assignment-room-money";
 import { buildAssignmentRoomUrl, readAssignmentRoomFragment } from "@/lib/assignment-room-qr";
 import { allocateEvenly } from "@/lib/expense-money";
+import { roomCodeEntryAddress as resolveRoomCodeEntryAddress } from "@/lib/room-code";
+import { issueAssignmentRoomCode } from "@/lib/sync/assignment-room-codes";
 import { startAssignmentRoomRealtime } from "@/lib/sync/assignment-room-realtime";
 import {
   acceptInvitation,
@@ -42,6 +44,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useAssignmentRoomStore } from "@/stores/assignment-room-store";
 import type {
   AssignmentItemShare,
+  AssignmentRoomCodeState,
   AssignmentRoomCompletion,
   AssignmentRoomView,
 } from "@/types/assignment-room";
@@ -329,7 +332,47 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     };
   }, [completionError, completionPending]);
 
+  const [roomCode, setRoomCode] = useState<AssignmentRoomCodeState>({ status: "idle" });
+  const roomCodeRequestRef = useRef(0);
+  const resetRoomCode = useCallback(() => {
+    roomCodeRequestRef.current += 1;
+    setRoomCode({ status: "idle" });
+  }, []);
+  const canShowRoomCode = view?.role === "host" && view.room.status === "open";
+
+  useEffect(() => {
+    if (!inviteOpen || !canShowRoomCode || roomCode.status !== "idle") return;
+    roomCodeRequestRef.current += 1;
+    const request = roomCodeRequestRef.current;
+    setRoomCode({ status: "issuing" });
+    void issueAssignmentRoomCode(roomId)
+      .then((issued) => {
+        if (roomCodeRequestRef.current !== request) return;
+        setRoomCode({ status: "ready", display: issued.display, expiresAt: issued.expiresAt });
+      })
+      .catch((error) => {
+        if (roomCodeRequestRef.current !== request) return;
+        setRoomCode({ status: "error", message: ledgerErrorMessage(error) });
+      });
+  }, [canShowRoomCode, inviteOpen, roomCode.status, roomId]);
+
+  useEffect(() => {
+    if (roomCode.status !== "ready") return;
+    const timer = window.setTimeout(
+      resetRoomCode,
+      Math.max(0, Date.parse(roomCode.expiresAt) - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [roomCode, resetRoomCode]);
+
+  useEffect(() => {
+    return () => {
+      resetRoomCode();
+    };
+  }, [roomId, resetRoomCode]);
+
   let joinUrl: string | null = null;
+  let roomCodeEntryAddress: string | null = null;
   if (view?.role === "host") {
     try {
       const token = getAssignmentRoomJoinToken(roomId);
@@ -337,6 +380,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     } catch {
       joinUrl = null;
     }
+    roomCodeEntryAddress = resolveRoomCodeEntryAddress();
   }
 
   async function handleJoin(displayName: string) {
@@ -410,6 +454,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
     setInviteError(null);
     try {
       await rotateAssignmentRoomJoin(roomId);
+      resetRoomCode();
     } catch (error) {
       setInviteError(ledgerErrorMessage(error));
     } finally {
@@ -427,6 +472,7 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         participantId,
         expectedRevision: view.room.revision,
       });
+      resetRoomCode();
       haptics.success();
     } catch (error) {
       haptics.error();
@@ -656,6 +702,9 @@ export function RoomPageClient({ roomId }: RoomPageClientProps) {
         view={view}
         connected={entry?.connected ?? false}
         joinUrl={joinUrl}
+        roomCode={roomCode}
+        roomCodeEntryAddress={roomCodeEntryAddress}
+        onRetryRoomCode={resetRoomCode}
         pendingItemIds={entry?.pendingItemIds ?? []}
         claimError={claimError}
         splitError={splitError}

@@ -24,6 +24,12 @@ import type {
 
 export type AssignmentRoomStatus = "open" | "closed" | "finalized" | "cancelled";
 
+export type AssignmentRoomCodeState =
+  | { status: "idle" }
+  | { status: "issuing" }
+  | { status: "ready"; display: string; expiresAt: string }
+  | { status: "error"; message: string };
+
 export type AssignmentRoomActivity =
   { revision: number; observedAt: number } &
   (
