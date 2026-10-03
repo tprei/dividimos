@@ -37,19 +37,26 @@ function clearReveal(root: HTMLElement): void {
   delete root.dataset.lights;
 }
 
+const DESKTOP_TRANSITION_QUERY =
+  "(min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
+
 export function switchLights(origin: Element): void {
   const root = document.documentElement;
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduceMotion || !("startViewTransition" in document)) {
-    setThemePreference(readLightsOn() ? "dark" : "light");
+  const turningOn = !(requestedOn ?? readLightsOn());
+  const canAnimate = window.matchMedia(DESKTOP_TRANSITION_QUERY).matches;
+  if (!canAnimate || !("startViewTransition" in document)) {
+    activeTransition = null;
+    requestedOn = null;
+    clearReveal(root);
+    setThemePreference(turningOn ? "light" : "dark");
     return;
   }
-  const turningOn = !(requestedOn ?? readLightsOn());
   requestedOn = turningOn;
+  markReveal(root, origin, turningOn);
   const flip = (): void => {
+    if (activeTransition !== transition) return;
     setThemePreference(turningOn ? "light" : "dark");
   };
-  markReveal(root, origin, turningOn);
   const transition = document.startViewTransition(flip);
   activeTransition = transition;
   const settle = (): void => {

@@ -14,15 +14,27 @@ interface FakeTransition {
 const originalMatchMedia = window.matchMedia.bind(window);
 let pending: FakeTransition[] = [];
 
-function stubReducedMotion(reduced: boolean): void {
+function stubDeviceMedia(options: { reducedMotion?: boolean; desktop?: boolean } = {}): void {
+  const { reducedMotion = false, desktop = true } = options;
   vi.spyOn(window, "matchMedia").mockImplementation((query: string) => {
     const media = originalMatchMedia(query);
+    const matches =
+      query === "(prefers-reduced-motion: reduce)"
+        ? reducedMotion
+        : query ===
+            "(min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)"
+          ? desktop && !reducedMotion
+          : false;
     Object.defineProperty(media, "matches", {
-      value: reduced && query === "(prefers-reduced-motion: reduce)",
+      value: matches,
       configurable: true,
     });
     return media;
   });
+}
+
+function stubReducedMotion(reduced: boolean): void {
+  stubDeviceMedia({ reducedMotion: reduced, desktop: true });
 }
 
 function stubStartViewTransition(): FakeTransition[] {
@@ -148,5 +160,50 @@ describe("switchLights", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(localStorage.getItem("theme")).toBe("light");
     expect(document.documentElement.hasAttribute("data-lights")).toBe(false);
+  });
+
+  it("flips the theme synchronously and alternates rapidly on mobile or coarse pointer", () => {
+    document.documentElement.classList.add("dark");
+    stubDeviceMedia({ desktop: false, reducedMotion: false });
+    const transitions = stubStartViewTransition();
+
+    const origin = document.createElement("div");
+    switchLights(origin);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe("light");
+
+    switchLights(origin);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("theme")).toBe("dark");
+
+    switchLights(origin);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe("light");
+
+    expect(transitions).toHaveLength(0);
+    expect(document.documentElement.hasAttribute("data-lights")).toBe(false);
+  });
+
+  it("ignores obsolete queued desktop transitions when subsequent synchronous toggles occur", () => {
+    document.documentElement.classList.add("dark");
+    stubDeviceMedia({ desktop: true, reducedMotion: false });
+    const transitions = stubStartViewTransition();
+    const origin = document.createElement("div");
+
+    switchLights(origin);
+    expect(transitions).toHaveLength(1);
+
+    stubDeviceMedia({ desktop: false, reducedMotion: false });
+    switchLights(origin);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("theme")).toBe("dark");
+
+    switchLights(origin);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe("light");
+
+    transitions[0].update();
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe("light");
   });
 });

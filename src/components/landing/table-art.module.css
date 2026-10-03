@@ -67,7 +67,7 @@
   --cap-dent: oklch(0.27 0.04 250);
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .bubble {
     animation: bubble-rise var(--t) linear var(--d) infinite;
   }
@@ -76,7 +76,9 @@
     transform-origin: 50% 27%;
     animation: foam 3.6s ease-in-out infinite alternate;
   }
+}
 
+@media (prefers-reduced-motion: no-preference) {
   .cap:hover {
     animation: cap-spin 0.8s cubic-bezier(0.2, 0.7, 0.3, 1);
   }
