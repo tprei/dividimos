@@ -4,10 +4,12 @@ import {
   formatOccurredOn,
   groupNameOf,
   selectHomeRecentBills as selectHistoryBills,
+  selectPendingInvitations,
   type RecentBillItem,
 } from "@/stores/app-selectors";
 import type { AppState } from "@/stores/app-store";
 import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type { GroupSnapshot } from "@/types/ledger";
 
 type HomeMode = "first-use" | "outstanding" | "settled";
 let recentCache: {
@@ -102,6 +104,13 @@ export interface OpenRoomCardItem {
   placeLabel: string;
 }
 
+export interface HomeInvitationItem {
+  groupId: string;
+  kind: "group" | "dm";
+  title: string;
+  inviter: { id: string; name: string; avatarUrl: string | null } | null;
+}
+
 let openRoomsCache: {
   groups: AppState["groups"];
   roomsByGroupId: AppState["openAssignmentRoomsByGroupId"];
@@ -152,4 +161,44 @@ export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
     items,
   };
   return items;
+}
+
+let invitationsCache: {
+  snapshots: GroupSnapshot[];
+  invitations: HomeInvitationItem[];
+} | null = null;
+
+const EMPTY_INVITATIONS: HomeInvitationItem[] = [];
+
+export function selectHomeInvitations(state: AppState): HomeInvitationItem[] {
+  const snapshots = selectPendingInvitations(state);
+  const previous = invitationsCache;
+  if (previous && previous.snapshots === snapshots) {
+    return previous.invitations;
+  }
+  const meId = state.me?.id ?? null;
+  if (meId === null || snapshots.length === 0) {
+    invitationsCache = { snapshots, invitations: EMPTY_INVITATIONS };
+    return EMPTY_INVITATIONS;
+  }
+  const invitations = snapshots.map((snapshot) => {
+    const member = snapshot.members.find((m) => m.userId === meId);
+    const inviterProfile = member?.invitedBy
+      ? snapshot.members.find((m) => m.userId === member.invitedBy)?.user
+      : undefined;
+    return {
+      groupId: snapshot.group.id,
+      kind: snapshot.group.kind === "dm" ? ("dm" as const) : ("group" as const),
+      title: groupNameOf(snapshot, meId),
+      inviter: inviterProfile
+        ? {
+            id: inviterProfile.id,
+            name: inviterProfile.name,
+            avatarUrl: inviterProfile.avatarUrl,
+          }
+        : null,
+    };
+  });
+  invitationsCache = { snapshots, invitations };
+  return invitations;
 }

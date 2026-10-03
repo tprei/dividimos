@@ -3,6 +3,7 @@ import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import {
+  selectHomeInvitations,
   selectHomeMode,
   selectHomeRecentBills,
   selectOpenRoomsFromOthers,
@@ -24,7 +25,11 @@ const me: Me = {
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
 const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null, isBot: false };
 
-function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+type SnapshotOverrides = Omit<Partial<GroupSnapshot>, "group"> & {
+  group?: Partial<GroupSnapshot["group"]>;
+};
+
+function snapshot(overrides: SnapshotOverrides = {}): GroupSnapshot {
   const base: GroupSnapshot = {
     group: {
       id: "g1",
@@ -388,5 +393,114 @@ describe("selectOpenRoomsFromOthers", () => {
 
     expect(after).not.toBe(before);
     expect(after.map((item) => item.room.id)).toEqual(["room-1"]);
+  });
+});
+
+describe("selectHomeInvitations", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("maps an invited DM to the counterparty name and its inviter", () => {
+    const dm = snapshot({
+      group: {
+        id: "g-dm",
+        kind: "dm",
+        name: "",
+        creatorId: carol.id,
+        dmUserA: me.id,
+        dmUserB: carol.id,
+      },
+      dmCounterparty: carol,
+      members: [
+        { groupId: "g-dm", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "g-dm", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { "g-dm": dm },
+      groupOrder: ["g-dm"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g-dm",
+        kind: "dm",
+        title: "Carol Souza",
+        inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
+      },
+    ]);
+  });
+
+  it("maps an invited group to the group name and its inviter", () => {
+    const invited = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: invited },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g1",
+        kind: "group",
+        title: "Grupo 1",
+        inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
+      },
+    ]);
+  });
+
+  it("returns null as inviter when the inviting member is absent from the snapshot", () => {
+    const invited = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: invited },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g1",
+        kind: "group",
+        title: "Grupo 1",
+        inviter: null,
+      },
+    ]);
+  });
+
+  it("excludes groups where the viewer is already accepted", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([]);
+  });
+
+  it("returns the same array while inputs are unchanged", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+    const state = useAppStore.getState();
+
+    expect(selectHomeInvitations(state)).toBe(selectHomeInvitations(state));
   });
 });

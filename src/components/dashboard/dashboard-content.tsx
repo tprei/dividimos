@@ -3,18 +3,22 @@
 import { QrCode, Receipt, ScanLine, Search, Users, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { HostedRoomsCard } from "@/components/dashboard/hosted-rooms-card";
+import { InvitationsCard } from "@/components/dashboard/invitations-card";
 import { HomeOpenRoomsCard } from "@/components/dashboard/open-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import {
+  selectHomeInvitations,
   selectHomeMode,
   selectHomeRecentBills,
   selectOpenRoomsFromOthers,
+  type HomeInvitationItem,
 } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -41,6 +45,7 @@ import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
+import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
 import { useAppStore } from "@/stores/app-store";
 
@@ -71,6 +76,9 @@ export function DashboardContent() {
   const recentBills = useAppStore(selectHomeRecentBills);
   const hostedRooms = useAppStore((state) => state.hostedAssignmentRooms);
   const openRooms = useAppStore(selectOpenRoomsFromOthers);
+  const invitations = useAppStore(selectHomeInvitations);
+  const { accept, decline, pendingGroupId } = useInvitationActions();
+  const router = useRouter();
   const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
@@ -116,6 +124,18 @@ export function DashboardContent() {
 
   const headerActions = useScreenHeaderActions();
   const screenRefresh = useScreenRefresh();
+  const openInvitation = useCallback(
+    (invitation: HomeInvitationItem) => {
+      if (invitation.kind === "dm") {
+        if (invitation.inviter) {
+          router.push(`/app/conversations/${invitation.inviter.id}`);
+        }
+        return;
+      }
+      router.push(`/app/groups/${invitation.groupId}`);
+    },
+    [router],
+  );
   if (!hydrated || !me) {
     return <DashboardSkeleton />;
   }
@@ -327,6 +347,17 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
+      <InvitationsCard
+        invitations={invitations}
+        pendingGroupId={pendingGroupId}
+        onAccept={(invitation) => {
+          void accept(invitation.groupId);
+        }}
+        onDecline={(invitation) => {
+          void decline(invitation.groupId);
+        }}
+        onOpen={openInvitation}
+      />
       <HomeOpenRoomsCard rooms={openRooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
       <HostedRoomsCard rooms={hostedRooms} />
       <NotificationPrompt />
