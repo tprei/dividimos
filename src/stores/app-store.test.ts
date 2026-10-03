@@ -540,6 +540,93 @@ describe("openAssignmentRoomsByGroupId", () => {
   });
 });
 
+describe("applyAllOpenAssignmentRooms", () => {
+  function acceptedMember(groupId: string) {
+    return {
+      groupId,
+      userId: me.id,
+      status: "accepted" as const,
+      invitedBy: null,
+      acceptedAt: "2026-01-01T00:00:00Z",
+      user: me,
+    };
+  }
+
+  it("empties a group's stale list when the response has nothing for it", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", [], { members: [acceptedMember("g1")] }),
+        g2: snapshot("g2", [], { members: [acceptedMember("g2")] }),
+      },
+    });
+    useAppStore.getState().applyOpenAssignmentRooms("g1", [openRoom()]);
+
+    useAppStore.getState().applyAllOpenAssignmentRooms([
+      { ...openRoom(), id: "room-2", groupId: "g2" },
+    ]);
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      g1: [],
+      g2: [{ ...openRoom(), id: "room-2", groupId: "g2" }],
+    });
+  });
+
+  it("keeps a higher-revision cached summary over the response body", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", [], { members: [acceptedMember("g1")] }) },
+    });
+    useAppStore.getState().applyAssignmentRoomSummaries([
+      { ...openRoom(), revision: 5, ownedItemCount: 2 },
+    ]);
+
+    useAppStore.getState().applyAllOpenAssignmentRooms([openRoom()]);
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([
+      { ...openRoom(), revision: 5, ownedItemCount: 2 },
+    ]);
+    expect(useAppStore.getState().assignmentRoomSummaries["room-1"]?.revision).toBe(5);
+  });
+
+  it("stores response groups before their groups arrive and clears omitted accepted groups", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", [], { members: [acceptedMember("g1")] }) },
+    });
+
+    useAppStore.getState().applyAllOpenAssignmentRooms([
+      { ...openRoom(), groupId: "g-future" },
+    ]);
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      "g-future": [{ ...openRoom(), groupId: "g-future" }],
+      g1: [],
+    });
+  });
+
+  it("skips groups the caller's allowlist excludes", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", [], { members: [acceptedMember("g1")] }),
+        g2: snapshot("g2", [], { members: [acceptedMember("g2")] }),
+      },
+    });
+    useAppStore.getState().applyOpenAssignmentRooms("g1", [openRoom()]);
+
+    useAppStore.getState().applyAllOpenAssignmentRooms(
+      [{ ...openRoom(), id: "room-2", groupId: "g2" }],
+      (groupId) => groupId !== "g1",
+    );
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      g1: [openRoom()],
+      g2: [{ ...openRoom(), id: "room-2", groupId: "g2" }],
+    });
+  });
+});
+
 describe("hostedAssignmentRooms", () => {
   function summary(overrides: Partial<AssignmentRoomSummary> = {}): AssignmentRoomSummary {
     return {

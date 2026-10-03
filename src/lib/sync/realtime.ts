@@ -15,7 +15,7 @@ import type { ChatLastMessage, ChatMessage, GroupSnapshot } from "@/types/ledger
 import { catchUpBootstrap } from "./bootstrap";
 import { handleBlocksChanged } from "./user-blocks";
 import { getAuthGeneration, getSupabase } from "./client";
-import { refreshGroup, refreshOpenAssignmentRooms } from "./refresh";
+import { refreshGroup, refreshMyOpenAssignmentRooms } from "./refresh";
 
 interface LedgerBroadcastPayload {
   group_id: string;
@@ -199,30 +199,12 @@ function handleUserRoomBroadcast(payload: unknown, authGeneration: number): void
 const activeChatSubscriptions = new Map<string, number>();
 let userTopicSubscribed = false;
 
-function acceptedNonDmGroupIds(): string[] {
-  const state = useAppStore.getState();
-  const viewerId = state.me?.id ?? null;
-  if (viewerId === null) return [];
-  return Object.values(state.groups)
-    .filter(
-      (snapshot) =>
-        snapshot.group.kind !== "dm" &&
-        snapshot.members.some(
-          (member) =>
-            member.userId === viewerId && member.status === "accepted",
-        ),
-    )
-    .map((snapshot) => snapshot.group.id);
-}
-
 function onUserTopicJoined(): void {
   userTopicSubscribed = true;
   for (const groupId of activeChatSubscriptions.keys()) {
     reconcileChat(groupId);
   }
-  for (const groupId of acceptedNonDmGroupIds()) {
-    void refreshOpenAssignmentRooms(groupId);
-  }
+  void refreshMyOpenAssignmentRooms();
 }
 
 function catchUpMemberships(): void {

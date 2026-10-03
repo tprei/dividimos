@@ -104,6 +104,7 @@ export const sharedSpendingReadKey = (userId: string) => `sharedSpending:${userI
 export const CHARGES_READ_KEY = "charges";
 export const MY_EXPENSES_READ_KEY = "myExpenses";
 export const HOSTED_ASSIGNMENT_ROOMS_READ_KEY = "hostedAssignmentRooms";
+export const MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY = "myOpenAssignmentRooms";
 
 /** Nothing has been attempted for this resource yet. */
 export const IDLE_READ: ResourceReadState = { status: "idle" };
@@ -181,6 +182,10 @@ export interface AppState extends AppStateData {
   setBootstrapError(code: LedgerErrorCode): void;
   applyGroup(s: GroupSnapshot): void;
   applyOpenAssignmentRooms(groupId: string, rooms: OpenAssignmentRoom[]): void;
+  applyAllOpenAssignmentRooms(
+    rooms: OpenAssignmentRoom[],
+    appliesToGroup?: (groupId: string) => boolean,
+  ): void;
   applyHostedAssignmentRooms(rooms: HostedAssignmentRoom[]): void;
   applyAssignmentRoomSummaries(summaries: AssignmentRoomSummary[]): void;
   setAssignmentRoomAccess(entries: AssignmentRoomAccessEntry[]): void;
@@ -281,6 +286,50 @@ function patchHostedRoom(
   return rooms.map((room) =>
     room.id === summary.id ? hostedFromSummary(summary, room.groupName) : room,
   );
+}
+
+interface OpenRoomsWorking {
+  hostedAssignmentRooms: HostedAssignmentRoom[];
+  assignmentRoomSummaries: Record<string, AssignmentRoomSummary>;
+  assignmentRoomAccess: Record<string, AssignmentRoomAccess>;
+  openAssignmentRoomsByGroupId: Record<string, OpenAssignmentRoom[]>;
+}
+
+/**
+ * The single merge rule for one group's open-rooms list: newer revisions win
+ * the summary cache, a fresher summary patches the hosted card, a cached
+ * higher revision keeps its body while adopting the response's `joined`,
+ * only open rooms are listed, and `joined` feeds the access map. Mutates the
+ * caller's working copies; an unchanged empty list keeps its reference.
+ */
+function mergeOpenRooms(
+  working: OpenRoomsWorking,
+  groupId: string,
+  rooms: OpenAssignmentRoom[],
+): void {
+  for (const room of rooms) {
+    const cached = working.assignmentRoomSummaries[room.id];
+    if (cached === undefined || room.revision > cached.revision) {
+      working.assignmentRoomSummaries[room.id] = room;
+    }
+  }
+  for (const room of rooms) {
+    working.hostedAssignmentRooms = patchHostedRoom(working.hostedAssignmentRooms, room);
+  }
+  const list = rooms
+    .map((room) => {
+      const cached = working.assignmentRoomSummaries[room.id];
+      return cached !== undefined && cached.revision > room.revision
+        ? { ...cached, joined: room.joined }
+        : room;
+    })
+    .filter((room) => room.status === "open");
+  const existing = working.openAssignmentRoomsByGroupId[groupId];
+  if (list.length === 0 && existing !== undefined && existing.length === 0) return;
+  for (const room of list) {
+    if (room.joined) working.assignmentRoomAccess[room.id] = "joined";
+  }
+  working.openAssignmentRoomsByGroupId[groupId] = list;
 }
 
 function normalizeCursor(value: unknown): PageCursor | null {
@@ -754,38 +803,55 @@ export const useAppStore = create<AppState>()(
       applyOpenAssignmentRooms: (groupId, rooms) =>
         set((state) => {
           if (state.groups[groupId] === undefined) return {};
-          const assignmentRoomSummaries = { ...state.assignmentRoomSummaries };
-          for (const room of rooms) {
-            const cached = assignmentRoomSummaries[room.id];
-            if (cached === undefined || room.revision > cached.revision) {
-              assignmentRoomSummaries[room.id] = room;
-            }
-          }
-          let hostedAssignmentRooms = state.hostedAssignmentRooms;
-          for (const room of rooms) {
-            hostedAssignmentRooms = patchHostedRoom(hostedAssignmentRooms, room);
-          }
-          const list = rooms
-            .map((room) => {
-              const cached = assignmentRoomSummaries[room.id];
-              return cached !== undefined && cached.revision > room.revision
-                ? { ...cached, joined: room.joined }
-                : room;
-            })
-            .filter((room) => room.status === "open");
-          const assignmentRoomAccess = { ...state.assignmentRoomAccess };
-          for (const room of list) {
-            if (room.joined) assignmentRoomAccess[room.id] = "joined";
-          }
-          return {
-            hostedAssignmentRooms,
-            assignmentRoomSummaries,
-            assignmentRoomAccess,
-            openAssignmentRoomsByGroupId: {
-              ...state.openAssignmentRoomsByGroupId,
-              [groupId]: list,
-            },
+          const working: OpenRoomsWorking = {
+            hostedAssignmentRooms: state.hostedAssignmentRooms,
+            assignmentRoomSummaries: { ...state.assignmentRoomSummaries },
+            assignmentRoomAccess: { ...state.assignmentRoomAccess },
+            openAssignmentRoomsByGroupId: { ...state.openAssignmentRoomsByGroupId },
           };
+          mergeOpenRooms(working, groupId, rooms);
+          return working;
+        }),
+
+      applyAllOpenAssignmentRooms: (rooms, appliesToGroup) =>
+        set((state) => {
+          const canApply = (groupId: string): boolean =>
+            appliesToGroup === undefined || appliesToGroup(groupId);
+          const roomsByGroupId: Record<string, OpenAssignmentRoom[]> = {};
+          for (const room of rooms) {
+            const known = roomsByGroupId[room.groupId];
+            if (known === undefined) roomsByGroupId[room.groupId] = [room];
+            else known.push(room);
+          }
+
+          const viewerId = state.me?.id ?? null;
+          const working: OpenRoomsWorking = {
+            hostedAssignmentRooms: state.hostedAssignmentRooms,
+            assignmentRoomSummaries: { ...state.assignmentRoomSummaries },
+            assignmentRoomAccess: { ...state.assignmentRoomAccess },
+            openAssignmentRoomsByGroupId: { ...state.openAssignmentRoomsByGroupId },
+          };
+          let applied = false;
+
+          // The server already filtered membership, so a group the store has
+          // not published yet (bootstrap still in flight) keeps its list.
+          for (const [groupId, groupRooms] of Object.entries(roomsByGroupId)) {
+            if (!canApply(groupId)) continue;
+            mergeOpenRooms(working, groupId, groupRooms);
+            applied = true;
+          }
+          // A group the response omits has no open rooms, but only accepted
+          // members' cached lists may be cleared.
+          for (const [groupId, groupSnapshot] of Object.entries(state.groups)) {
+            if (roomsByGroupId[groupId] !== undefined) continue;
+            const accepted = groupSnapshot.members.some(
+              (member) => member.userId === viewerId && member.status === "accepted",
+            );
+            if (!accepted || !canApply(groupId)) continue;
+            mergeOpenRooms(working, groupId, []);
+            applied = true;
+          }
+          return applied ? working : {};
         }),
 
       applyHostedAssignmentRooms: (rooms) =>
