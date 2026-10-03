@@ -700,6 +700,21 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; member clears own archived flag."
+    },
+    "public.store_apple_credential(p_user_id uuid, p_apple_subject text, p_refresh_token_encrypted text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role only; the API route derives the caller id from verified claims and the subject from Apple's signed id_token."
+    },
+    "public.read_apple_credential_for_revocation(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role only; feeds the deletion route's Apple token revocation and deliberately reads tombstoned profiles."
+    },
+    "public.delete_apple_credential(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role only; the deletion route drops the row only after Apple confirmed the revocation."
     }
   }
 }
