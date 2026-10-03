@@ -51,6 +51,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [unavailable, setUnavailable] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [deleteAnchor, setDeleteAnchor] = useState<HTMLButtonElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -104,31 +105,50 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     (userId: string): string => {
       const member = members?.find((m) => m.userId === userId);
       if (member) return member.user.name;
+      const formerMember = snapshot?.formerMembers.find((person) => person.id === userId);
+      if (formerMember) return formerMember.name;
       const participantUser = detail?.participants
         .map((p) => p.user)
         .find((user) => user?.id === userId);
       if (participantUser) return participantUser.name;
       return "Alguém";
     },
-    [members, detail],
+    [members, snapshot, detail],
   );
 
-  const lastStatusRef = useRef({ expenseId, status: detail?.expense.status });
+  const lastStatusRef = useRef({
+    expenseId,
+    status: detail?.expense.status,
+    deletedAt: detail?.expense.deletedAt,
+  });
+  const armedReadRef = useRef<string | null>(null);
   useEffect(() => {
     const seen = lastStatusRef.current;
     const status = detail?.expense.status;
+    const deletedAt = detail?.expense.deletedAt ?? null;
     const deletedBy = detail?.expense.deletedBy ?? null;
-    lastStatusRef.current = { expenseId, status };
+    const justArmed = read.status === "ready" && armedReadRef.current !== expenseId;
+    if (justArmed) armedReadRef.current = expenseId;
+    lastStatusRef.current = {
+      expenseId,
+      status,
+      deletedAt: status === "deleted" ? deletedAt : seen.deletedAt,
+    };
     if (
+      !justArmed &&
+      armedReadRef.current === expenseId &&
       seen.expenseId === expenseId &&
       seen.status === "active" &&
       status === "deleted" &&
+      deletedAt !== null &&
+      deletedAt !== seen.deletedAt &&
+      me !== null &&
       deletedBy !== null &&
-      deletedBy !== me?.id
+      deletedBy !== me.id
     ) {
       toast(`${nameOf(deletedBy)} excluiu essa conta`);
     }
-  }, [detail, expenseId, me?.id, nameOf]);
+  }, [detail, expenseId, me, nameOf, read.status]);
 
   const avatarUrlOf = useCallback(
     (userId: string): string | null => {
@@ -223,6 +243,12 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const isDeleted = expense.status === "deleted";
   const canManage =
     assignmentRoom === undefined || assignmentRoom.hostUserId === me?.id;
+  const canRestore =
+    canManage &&
+    (expense.creatorId === me?.id ||
+      current.payload.participants.some(
+        (p) => p.kind === "user" && p.userId === me?.id,
+      ));
   const names = displayNames(detail.participants.map((p) => ({
     id: participantId(p.participantIndex), name: participantName(p.participantIndex),
     handle: p.user?.handle, isGuest: p.kind === "guest",
@@ -246,7 +272,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   }
 
   async function handleRestore() {
-    setWorking(true);
+    setRestoring(true);
     try {
       await restoreExpense(expenseId);
       haptics.success();
@@ -255,7 +281,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       haptics.error();
       toast.error(ledgerErrorMessage(error));
     } finally {
-      setWorking(false);
+      setRestoring(false);
     }
   }
 
@@ -308,8 +334,8 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           deletedByName={expense.deletedBy ? nameOf(expense.deletedBy) : "Alguém"}
           deletedByMe={expense.deletedBy === me?.id}
           deletedAt={expense.deletedAt}
-          canRestore={canManage}
-          restoring={working}
+          canRestore={canRestore}
+          restoring={restoring}
           onRestore={handleRestore}
         />
       )}

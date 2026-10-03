@@ -365,6 +365,9 @@ export async function editExpense(input: {
 
 export async function deleteExpense(expenseId: string): Promise<MutationAck> {
   const store = useAppStore.getState();
+  const me = store.me;
+  if (!me) throw new LedgerError("unauthenticated");
+
   const summary = store.expenses[expenseId];
   const detail = store.expenseDetails[expenseId];
   const groupId = summary?.groupId ?? detail?.expense.groupId;
@@ -375,9 +378,13 @@ export async function deleteExpense(expenseId: string): Promise<MutationAck> {
     balances = applyExpenseDelta(group.balances, detail.current.payload, -1);
   }
 
+  const deletedAt = new Date().toISOString();
   const patchedSummary: ExpenseSummary | null = summary ? { ...summary, status: "deleted" } : null;
   const patchedDetail: ExpenseDetail | null = detail
-    ? { ...detail, expense: { ...detail.expense, status: "deleted" } }
+    ? {
+        ...detail,
+        expense: { ...detail.expense, status: "deleted", deletedAt, deletedBy: me.id },
+      }
     : null;
   const patchedGroup = groupId && group && balances ? { ...group, balances } : null;
 
@@ -416,7 +423,10 @@ export async function restoreExpense(expenseId: string): Promise<MutationAck> {
 
   const patchedSummary: ExpenseSummary | null = summary ? { ...summary, status: "active" } : null;
   const patchedDetail: ExpenseDetail | null = detail
-    ? { ...detail, expense: { ...detail.expense, status: "active" } }
+    ? {
+        ...detail,
+        expense: { ...detail.expense, status: "active", deletedAt: null, deletedBy: null },
+      }
     : null;
   const patchedGroup = groupId && group && balances ? { ...group, balances } : null;
 
