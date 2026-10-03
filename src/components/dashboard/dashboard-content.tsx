@@ -8,11 +8,13 @@ import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { HostedRoomsCard } from "@/components/dashboard/hosted-rooms-card";
+import { OpenRoomsCard } from "@/components/dashboard/open-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import {
   selectHomeMode,
   selectHomeRecentBills,
+  selectOpenRoomsFromOthers,
 } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -39,6 +41,7 @@ import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
+import { useOpenGroupRoom } from "@/hooks/use-open-group-room";
 import { useAppStore } from "@/stores/app-store";
 
 const PixQrModal = dynamic(
@@ -67,6 +70,8 @@ export function DashboardContent() {
   const homeMode = useAppStore(selectHomeMode);
   const recentBills = useAppStore(selectHomeRecentBills);
   const hostedRooms = useAppStore((state) => state.hostedAssignmentRooms);
+  const openRooms = useAppStore(selectOpenRoomsFromOthers);
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
   /**
@@ -322,6 +327,7 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
+      <OpenRoomsCard rooms={openRooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
       <HostedRoomsCard rooms={hostedRooms} />
       <NotificationPrompt />
 

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { selectHomeMode, selectHomeRecentBills } from "./home-selectors";
+import {
+  selectHomeMode,
+  selectHomeRecentBills,
+  selectOpenRoomsFromOthers,
+} from "./home-selectors";
 
 const me: Me = {
   id: "user-1",
@@ -180,5 +185,145 @@ describe("selectHomeRecentBills", () => {
     expect(selectHomeRecentBills(useAppStore.getState()).map((bill) => bill.title)).toEqual([
       "Ativa",
     ]);
+  });
+});
+
+function openRoomFixture(overrides: Partial<OpenAssignmentRoom> = {}): OpenAssignmentRoom {
+  return {
+    id: "room-1",
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: "Conta do churrasco",
+    occurredOn: "2026-09-20",
+    totalCents: 12000,
+    host: carol,
+    createdAt: "2026-09-20T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 1,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+    ...overrides,
+  };
+}
+
+describe("selectOpenRoomsFromOthers", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("keeps only open rooms hosted by someone else", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: {
+        g1: [
+          openRoomFixture({ id: "room-mine", host: me }),
+          openRoomFixture({ id: "room-closed", status: "closed" }),
+          openRoomFixture({ id: "room-open" }),
+        ],
+      },
+    });
+
+    expect(selectOpenRoomsFromOthers(useAppStore.getState()).map((item) => item.room.id)).toEqual([
+      "room-open",
+    ]);
+  });
+
+  it("labels DM rows with the other person and group rows with the group name", () => {
+    const dm = snapshot({
+      group: { id: "dm-1", kind: "dm", name: "", dmUserA: me.id, dmUserB: carol.id, creatorId: me.id, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
+      members: [
+        { groupId: "dm-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+        { groupId: "dm-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot(), "dm-1": dm },
+      groupOrder: ["g1", "dm-1"],
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoomFixture({ id: "room-group", groupId: "g1" })],
+        "dm-1": [openRoomFixture({ id: "room-dm", groupId: "dm-1" })],
+      },
+    });
+
+    const labels = selectOpenRoomsFromOthers(useAppStore.getState()).map(
+      (item) => item.placeLabel,
+    );
+    expect(labels).toContain("Grupo 1");
+    expect(labels).toContain("Carol Souza");
+  });
+
+  it("orders by createdAt desc then id desc", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: {
+        g1: [
+          openRoomFixture({ id: "room-a", createdAt: "2026-09-20T12:00:00Z" }),
+          openRoomFixture({ id: "room-z", createdAt: "2026-09-21T12:00:00Z" }),
+          openRoomFixture({ id: "room-b", createdAt: "2026-09-20T12:00:00Z" }),
+        ],
+      },
+    });
+
+    expect(selectOpenRoomsFromOthers(useAppStore.getState()).map((item) => item.room.id)).toEqual([
+      "room-z",
+      "room-b",
+      "room-a",
+    ]);
+  });
+
+  it("returns the same array while inputs are unchanged", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: { g1: [openRoomFixture()] },
+    });
+    const state = useAppStore.getState();
+
+    expect(selectOpenRoomsFromOthers(state)).toBe(selectOpenRoomsFromOthers(state));
+  });
+
+  it("returns a new array after openAssignmentRoomsByGroupId changes", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: { g1: [openRoomFixture()] },
+    });
+    const before = selectOpenRoomsFromOthers(useAppStore.getState());
+
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoomFixture(), openRoomFixture({ id: "room-2" })],
+      },
+    });
+
+    const after = selectOpenRoomsFromOthers(useAppStore.getState());
+    expect(after).not.toBe(before);
+    expect(after.map((item) => item.room.id)).toEqual(["room-2", "room-1"]);
+  });
+
+  it("returns an empty array when signed out", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: null,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: { g1: [openRoomFixture()] },
+    });
+
+    expect(selectOpenRoomsFromOthers(useAppStore.getState())).toEqual([]);
   });
 });
