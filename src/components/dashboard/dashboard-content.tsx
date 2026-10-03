@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { HostedRoomsCard } from "@/components/dashboard/hosted-rooms-card";
-import { OpenRoomsCard } from "@/components/dashboard/open-rooms-card";
+import { HomeOpenRoomsCard } from "@/components/dashboard/open-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import {
@@ -327,7 +327,7 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
-      <OpenRoomsCard rooms={openRooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
+      <HomeOpenRoomsCard rooms={openRooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
       <HostedRoomsCard rooms={hostedRooms} />
       <NotificationPrompt />
 

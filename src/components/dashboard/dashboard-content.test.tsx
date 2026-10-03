@@ -19,6 +19,11 @@ const groupMutations = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations-group", () => groupMutations);
 
+const assignmentRooms = vi.hoisted(() => ({
+  enterGroupAssignmentRoom: vi.fn(),
+}));
+vi.mock("@/lib/sync/assignment-rooms", () => assignmentRooms);
+
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
 vi.mock("react-hot-toast", () => ({
@@ -308,6 +313,39 @@ describe("DashboardContent", () => {
 
     expect(screen.getByText("Salas pra você")).toBeInTheDocument();
     expect(screen.getByText("Conta da pizzaria")).toBeInTheDocument();
+  });
+
+  it("opens each room with its own groupId when its row is clicked", async () => {
+    assignmentRooms.enterGroupAssignmentRoom.mockResolvedValue(undefined);
+    seedStore([
+      snapshot(),
+      snapshot({
+        group: { id: "g2", name: "Praia" },
+        members: [
+          { groupId: "g2", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          { groupId: "g2", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+        ],
+      }),
+    ]);
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoom({ id: "room-1", groupId: "g1", host: carol, title: "Conta da pizzaria" })],
+        g2: [openRoom({ id: "room-2", groupId: "g2", host: dave, title: "Conta da praia" })],
+      },
+    });
+    const { unmount } = render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Conta da pizzaria/ }));
+    await waitFor(() => {
+      expect(assignmentRooms.enterGroupAssignmentRoom).toHaveBeenCalledWith({ groupId: "g1", roomId: "room-1" });
+    });
+
+    unmount();
+    render(<DashboardContent />);
+    fireEvent.click(screen.getByRole("button", { name: /Conta da praia/ }));
+    await waitFor(() => {
+      expect(assignmentRooms.enterGroupAssignmentRoom).toHaveBeenCalledWith({ groupId: "g2", roomId: "room-2" });
+    });
   });
 
   it("keeps the skeleton visible before hydration", () => {

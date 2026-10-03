@@ -22,6 +22,7 @@ const me: Me = {
 };
 
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
+const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null, isBot: false };
 
 function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   const base: GroupSnapshot = {
@@ -325,5 +326,67 @@ describe("selectOpenRoomsFromOthers", () => {
     });
 
     expect(selectOpenRoomsFromOthers(useAppStore.getState())).toEqual([]);
+  });
+
+  it("skips rooms of archived groups", () => {
+    const archived = snapshot({ archivedAt: "2026-01-03T00:00:00Z" });
+    const active = snapshot({
+      group: { id: "g2", kind: "group", name: "Ativo", creatorId: me.id, dmUserA: null, dmUserB: null, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: archived, g2: active },
+      groupOrder: ["g1", "g2"],
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoomFixture({ id: "room-archived", groupId: "g1", createdAt: "2026-09-25T12:00:00Z" })],
+        g2: [openRoomFixture({ id: "room-active", groupId: "g2" })],
+      },
+    });
+
+    expect(selectOpenRoomsFromOthers(useAppStore.getState()).map((item) => item.room.id)).toEqual([
+      "room-active",
+    ]);
+  });
+
+  it("hides unjoined rooms from blocked hosts but keeps joined ones", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      blockedUsers: [carol],
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: {
+        g1: [
+          openRoomFixture({ id: "room-blocked" }),
+          openRoomFixture({ id: "room-joined", joined: true, createdAt: "2026-09-21T12:00:00Z" }),
+          openRoomFixture({ id: "room-other", host: dave }),
+        ],
+      },
+    });
+
+    expect(selectOpenRoomsFromOthers(useAppStore.getState()).map((item) => item.room.id)).toEqual([
+      "room-joined",
+      "room-other",
+    ]);
+  });
+
+  it("recomputes when blockedUsers changes", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      blockedUsers: [carol],
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+      openAssignmentRoomsByGroupId: { g1: [openRoomFixture()] },
+    });
+    const before = selectOpenRoomsFromOthers(useAppStore.getState());
+    expect(before).toEqual([]);
+
+    useAppStore.setState({ blockedUsers: [] });
+    const after = selectOpenRoomsFromOthers(useAppStore.getState());
+
+    expect(after).not.toBe(before);
+    expect(after.map((item) => item.room.id)).toEqual(["room-1"]);
   });
 });
