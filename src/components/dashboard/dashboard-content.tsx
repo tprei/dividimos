@@ -8,7 +8,7 @@ import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
-import { InvitationsCard, type HomeInvitationItem } from "@/components/dashboard/invitations-card";
+import { InvitationsCard } from "@/components/dashboard/invitations-card";
 import { HomeOpenRoomsCard } from "@/components/dashboard/open-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
@@ -17,6 +17,7 @@ import {
   selectHomeMode,
   selectHomeRecentBills,
   selectHomeRooms,
+  type HomeInvitationItem,
 } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
