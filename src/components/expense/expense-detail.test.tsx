@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExpenseDetail } from "./expense-detail";
 import { LedgerError } from "@/lib/sync/errors";
@@ -20,9 +20,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
 }));
 
-vi.mock("react-hot-toast", () => ({
-  default: { success: vi.fn(), error: vi.fn() },
-}));
+const toastMock = vi.hoisted(() =>
+  Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+);
+
+vi.mock("react-hot-toast", () => ({ default: toastMock }));
 
 vi.mock("@/lib/sync/refresh", () => ({
   refreshExpense: vi.fn().mockResolvedValue(undefined),
@@ -338,6 +340,40 @@ describe("ExpenseDetail", () => {
     expect(
       screen.getByRole("button", { name: "Restaurar" }),
     ).toBeInTheDocument();
+  });
+
+  it("toasts once when another member deletes the bill being viewed", () => {
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    const deleted = makeDetail("deleted");
+    deleted.expense.deletedBy = "user-2";
+    act(() => {
+      useAppStore.setState({ expenseDetails: { e1: deleted } });
+    });
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock).toHaveBeenCalledWith("Carol Souza excluiu essa conta");
+  });
+
+  it("does not toast the transition when the viewer deleted the bill", () => {
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    act(() => {
+      useAppStore.setState({ expenseDetails: { e1: makeDetail("deleted") } });
+    });
+
+    expect(screen.getByText("Conta excluída")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("does not toast when opening an already-deleted bill", () => {
+    seedStore("deleted");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    expect(screen.getByText("Conta excluída")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
   });
 
   it("calls deleteExpense when confirming exclusion in dialog", async () => {
