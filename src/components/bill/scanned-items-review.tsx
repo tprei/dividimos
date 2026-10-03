@@ -23,7 +23,11 @@ import {
 } from "@/lib/expense-money";
 import { centsText } from "@/lib/item-division";
 import { isItemIcon } from "@/lib/item-icons";
-import { parseExpenseQuantity, unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
+import {
+  MAX_EXPENSE_QUANTITY_MILLIUNITS,
+  parseExpenseQuantity,
+  unitPriceCentsForLineTotal,
+} from "@/lib/expense-quantity";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import type { ReceiptItem, ReceiptOcrResult } from "@/lib/receipt-ocr";
 
@@ -161,6 +165,21 @@ export function ScannedItemsReview({
     );
   };
 
+  const handleQuantityChange = (index: number, quantityMilliunits: number) => {
+    if (quantityMilliunits <= 0 || quantityMilliunits > MAX_EXPENSE_QUANTITY_MILLIUNITS) return;
+    const currentItem = items[index];
+    if (!currentItem) return;
+    const total = amountCentsForText(amountTexts[index] ?? "") ?? currentItem.totalCents;
+    const unitPriceCents = unitPriceCentsForLineTotal(quantityMilliunits, total);
+    setItems((current) =>
+      current.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        if (unitPriceCents === null) return { ...item, quantity: quantityMilliunits };
+        return { ...item, quantity: quantityMilliunits, unitPriceCents };
+      }),
+    );
+  };
+
   const handleRemoveItem = (index: number) => {
     setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
     setAmountTexts((current) => {
@@ -251,6 +270,7 @@ export function ScannedItemsReview({
               panelOpen={panel?.index === index}
               onTogglePanel={togglePanel}
               onNameChange={handleNameChange}
+              onQuantityChange={handleQuantityChange}
               onAmountChange={handleAmountChange}
               onRemove={handleRemoveItem}
             />
