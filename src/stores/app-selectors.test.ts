@@ -348,10 +348,13 @@ describe("selectPendingInvitations", () => {
     ).toEqual(["g1", "g3"]);
   });
 
-  it("excludes DMs even when the viewer is invited", () => {
+  it("includes invited DMs alongside invited groups, in groupOrder order", () => {
     useAppStore.setState({
       me,
       groups: {
+        g1: snapshot("g1", {
+          members: [member("user-2", "accepted"), member("user-1", "invited", "user-2")],
+        }),
         dm1: snapshot("dm1", {
           members: [member("user-1", "invited", "user-2"), member("user-2", "accepted")],
           group: {
@@ -365,11 +368,14 @@ describe("selectPendingInvitations", () => {
             createdAt: "2026-01-01T00:00:00Z",
           },
         }),
+        g2: snapshot("g2", { members: [member("user-2", "accepted")] }),
       },
-      groupOrder: ["dm1"],
+      groupOrder: ["g1", "dm1", "g2"],
     });
 
-    expect(selectPendingInvitations(useAppStore.getState())).toEqual([]);
+    expect(
+      selectPendingInvitations(useAppStore.getState()).map((s) => s.group.id),
+    ).toEqual(["g1", "dm1"]);
   });
 
   it("excludes groups where the viewer already accepted", () => {

@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Archive, Bot, ChevronRight, Plus, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { IconButton } from "@/components/ui/icon-button";
@@ -107,7 +107,11 @@ export function GroupsListContent() {
       meId: state.me?.id ?? null,
     }))
   );
-  const invitations = useAppStore(selectPendingInvitations);
+  const pendingInvitations = useAppStore(selectPendingInvitations);
+  const invitations = useMemo(
+    () => pendingInvitations.filter((snapshot) => snapshot.group.kind === "group"),
+    [pendingInvitations],
+  );
   const { accept, decline, pendingGroupId } = useInvitationActions();
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
