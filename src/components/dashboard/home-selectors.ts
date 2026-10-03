@@ -1,5 +1,6 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
 import { isGroupArchived } from "@/lib/group-lifecycle";
+import type { OpenRoomCardItem } from "@/components/dashboard/open-rooms-card";
 import {
   formatOccurredOn,
   groupNameOf,
@@ -94,4 +95,50 @@ export function selectHomeMode(state: AppState): HomeMode {
   }
 
   return "settled";
+}
+
+let openRoomsCache: {
+  groups: AppState["groups"];
+  roomsByGroupId: AppState["openAssignmentRoomsByGroupId"];
+  me: AppState["me"];
+  items: OpenRoomCardItem[];
+} | null = null;
+
+export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
+  const previous = openRoomsCache;
+  if (
+    previous &&
+    previous.groups === state.groups &&
+    previous.roomsByGroupId === state.openAssignmentRoomsByGroupId &&
+    previous.me === state.me
+  )
+    return previous.items;
+
+  const items: OpenRoomCardItem[] = [];
+  const meId = state.me?.id;
+  if (meId !== undefined) {
+    for (const group of Object.values(state.groups)) {
+      const rooms = state.openAssignmentRoomsByGroupId[group.group.id];
+      if (rooms === undefined) continue;
+      for (const room of rooms) {
+        if (room.status !== "open" || room.host.id === meId) continue;
+        items.push({
+          room,
+          placeLabel: groupNameOf(group, meId),
+        });
+      }
+    }
+    items.sort(
+      (a, b) =>
+        b.room.createdAt.localeCompare(a.room.createdAt) ||
+        b.room.id.localeCompare(a.room.id),
+    );
+  }
+  openRoomsCache = {
+    groups: state.groups,
+    roomsByGroupId: state.openAssignmentRoomsByGroupId,
+    me: state.me,
+    items,
+  };
+  return items;
 }

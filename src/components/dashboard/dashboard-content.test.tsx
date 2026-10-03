@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "@/lib/sync/errors";
@@ -158,6 +159,26 @@ function seedStore(snapshots: GroupSnapshot[], user: Me = me) {
   useAppStore.setState({ hydrated: true, me: user, groups, groupOrder: snapshots.map((item) => item.group.id) });
 }
 
+function openRoom(overrides: Partial<OpenAssignmentRoom> = {}): OpenAssignmentRoom {
+  return {
+    id: "room-1",
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: "Conta do churrasco",
+    occurredOn: "2026-09-20",
+    totalCents: 12000,
+    host: carol,
+    createdAt: "2026-09-20T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 1,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+    ...overrides,
+  };
+}
+
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -274,6 +295,19 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
 
     expect(screen.queryByText("Contas recentes")).not.toBeInTheDocument();
+  });
+
+  it("lists a room hosted by someone else under Salas pra você", () => {
+    seedStore([snapshot()]);
+    useAppStore.setState({
+      openAssignmentRoomsByGroupId: {
+        g1: [openRoom({ id: "room-1", groupId: "g1", host: carol, title: "Conta da pizzaria" })],
+      },
+    });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Salas pra você")).toBeInTheDocument();
+    expect(screen.getByText("Conta da pizzaria")).toBeInTheDocument();
   });
 
   it("keeps the skeleton visible before hydration", () => {

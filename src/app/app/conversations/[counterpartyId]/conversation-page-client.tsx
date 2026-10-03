@@ -126,7 +126,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const me = useAppStore((s) => s.me);
   const dm = useAppStore((s) => (me ? findDmGroup(s, me.id, counterpartyId) : null));
   const conversation = useAppStore((s) => (dm ? s.conversations[dm.group.id] : undefined));
-  const { pendingRoomId, openRoom } = useOpenGroupRoom(dm?.group.id ?? "", me?.id ?? null);
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
   const [resolveError, setResolveError] = useState<{
     accountKey: string;
     message: string;
