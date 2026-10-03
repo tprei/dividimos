@@ -244,6 +244,32 @@ describe("selectUnreadTotal", () => {
 
     expect(selectUnreadTotal(useAppStore.getState())).toBe(2);
   });
+
+  it("skips groups where the viewer is still invited", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        dm1: snapshot("dm1", {
+          group: {
+            id: "dm1",
+            kind: "dm",
+            name: "",
+            creatorId: "user-2",
+            dmUserA: me.id,
+            dmUserB: "user-2",
+            ledgerVersion: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+          members: [member(me.id, "invited", "user-2"), member("user-2", "accepted")],
+          unreadCount: 4,
+        }),
+        g1: snapshot("g1", { members: [member(me.id, "accepted")], unreadCount: 2 }),
+      },
+      groupOrder: ["dm1", "g1"],
+    });
+
+    expect(selectUnreadTotal(useAppStore.getState())).toBe(2);
+  });
 });
 
 describe("selectGroupListSections", () => {

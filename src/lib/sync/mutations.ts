@@ -170,6 +170,15 @@ export function notify(eventId: number | null): void {
   }).catch(() => undefined);
 }
 
+export function notifyDmInvite(groupId: string, messageId: string): void {
+  fetch("/api/notify-dm-invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groupId, messageId }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 export async function createExpense(input: {
   groupId: string;
   clientId: string;
@@ -624,6 +633,11 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
     useAppStore
       .getState()
       .applyConversation(groupId, { kind: "broadcast", messages: [ack], events: [] });
+    const snapshot = useAppStore.getState().groups[groupId];
+    const counterparty = snapshot?.members.find((member) => member.userId !== me.id);
+    if (snapshot?.group.kind === "dm" && counterparty?.status === "invited") {
+      notifyDmInvite(groupId, ack.id);
+    }
     return ack;
   } catch (error) {
     if (getAuthGeneration() !== generation) throw error;
