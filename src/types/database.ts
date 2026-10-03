@@ -34,6 +34,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      apple_sign_in_credentials: {
+        Row: {
+          apple_subject: string
+          created_at: string
+          refresh_token_encrypted: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          apple_subject: string
+          created_at?: string
+          refresh_token_encrypted: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          apple_subject?: string
+          created_at?: string
+          refresh_token_encrypted?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "apple_sign_in_credentials_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignment_room_claims: {
         Row: {
           item_id: string
@@ -1532,6 +1564,12 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_apple_credential: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       delete_expense: {
         Args: {
           p_expense_id: string
@@ -1967,6 +2005,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      read_apple_credential_for_revocation: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Json
+      }
       recompute_group_balances: {
         Args: {
           p_group_id: string
@@ -2116,6 +2160,14 @@ export type Database = {
           p_photo_id: string
         }
         Returns: Json
+      }
+      store_apple_credential: {
+        Args: {
+          p_user_id: string
+          p_apple_subject: string
+          p_refresh_token_encrypted: string
+        }
+        Returns: undefined
       }
       unarchive_group: {
         Args: {
