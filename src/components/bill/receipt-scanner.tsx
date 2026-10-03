@@ -105,9 +105,10 @@ export function ReceiptScanner({
         return;
       }
 
-      // Backing out leaves the scanner entirely, same as closing the camera.
+      // Backing out of the native camera lands on the choice screen below,
+      // where the user can retry the camera or pick from the gallery.
       if (outcome.kind === "cancelled") {
-        onBack();
+        setCaptureError(null);
         return;
       }
       haptics.error();
@@ -117,7 +118,7 @@ export function ReceiptScanner({
           : outcome.message,
       );
     },
-    [onBack, showFile],
+    [showFile],
   );
 
   // Native camera entry: launch exactly one capture per intent, deliver the
@@ -296,6 +297,12 @@ export function ReceiptScanner({
             variants={popIn} initial="hidden" animate="visible" exit="exit"
             className="flex flex-col gap-2"
           >
+            <Button
+              className="min-h-11 w-full"
+              onClick={isNative ? startNativeCamera : startWebCamera}
+            >
+              Tirar foto
+            </Button>
             <Button
               variant="outline"
               className="min-h-11 w-full"
