@@ -19,6 +19,11 @@ vi.mock("@/lib/sync/identity-links", () => ({
   linkGoogleAccount: () => mockLinkGoogle(),
 }));
 
+const mockStoreAppleAuthorization = vi.fn();
+vi.mock("@/lib/sync/apple-credential", () => ({
+  storeAppleAuthorization: (code: string | null) => mockStoreAppleAuthorization(code),
+}));
+
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: { success: vi.fn(), error: vi.fn(), tap: vi.fn() },
 }));
@@ -38,7 +43,7 @@ describe("LinkedAccountsSettings", () => {
     expect(mockFetchLinkedProviders).not.toHaveBeenCalled();
   });
 
-  it("marks Apple as connected after a successful link", async () => {
+  it("marks Apple as connected and stores its authorization code after a link", async () => {
     mockLinkApple.mockResolvedValue({ status: "linked", provider: "apple", authorizationCode: "code" });
     const user = userEvent.setup();
     render(<LinkedAccountsSettings />);
@@ -47,6 +52,7 @@ describe("LinkedAccountsSettings", () => {
 
     await waitFor(() => expect(screen.queryByRole("button", { name: /conectar.*apple/i })).toBeNull());
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(mockStoreAppleAuthorization).toHaveBeenCalledWith("code");
   });
 
   it("explains a failed link and keeps the action available", async () => {
