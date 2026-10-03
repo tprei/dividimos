@@ -73,6 +73,9 @@ function hostView(
 const boardProps = {
   connected: true,
   joinUrl: "https://dividimos.test/room/00000000-0000-4000-8000-000000000001#secret",
+  roomCode: { status: "idle" } as const,
+  roomCodeEntryAddress: "localhost:3000/room",
+  onRetryRoomCode: noop,
   pendingItemIds: [],
   claimError: null,
   splitError: null,

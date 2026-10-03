@@ -11,6 +11,7 @@ import { isShareSupported, shareLink } from "@/lib/platform/share";
 import { qrToCanvas } from "@/lib/qr";
 import type {
   AssignmentRoomActivity,
+  AssignmentRoomCodeState,
   AssignmentRoomItem,
   AssignmentRoomParticipant,
 } from "@/types/assignment-room";
@@ -25,6 +26,9 @@ import {
 
 interface RoomShareProps {
   url: string | null;
+  code: AssignmentRoomCodeState;
+  codeEntryAddress: string | null;
+  onRetryCode: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rotating: boolean;
@@ -39,6 +43,9 @@ interface RoomShareProps {
 
 export function RoomShare({
   url,
+  code,
+  codeEntryAddress,
+  onRetryCode,
   open,
   onOpenChange,
   rotating,
@@ -69,6 +76,8 @@ export function RoomShare({
   const qrFailed = url !== null && qrFailedUrl === url;
   const shareFailed = open && url !== null && shareFailedUrl === url;
   const canShare = useClientOnly(isShareSupported);
+  const spokenCode: AssignmentRoomCodeState =
+    rotating && code.status === "ready" ? { status: "issuing" } : code;
 
   // The QR stays hidden while a rotation is in flight so an old code is never
   // presented as current. The cancellation flag keeps a completion from an
@@ -158,6 +167,45 @@ export function RoomShare({
           <p className="text-sm text-muted-foreground">
             Gere um convite pra mostrar o QR.
           </p>
+        )}
+
+        {spokenCode.status !== "idle" && (
+          <section className="min-w-0 space-y-2 rounded-2xl bg-muted/70 p-4" aria-labelledby="room-share-code-heading">
+            <h3 id="room-share-code-heading" className="text-sm font-semibold">
+              Ou fala o código
+            </h3>
+            {spokenCode.status === "ready" && (
+              <>
+                <p className="text-3xl leading-tight font-bold tracking-tight text-foreground wrap-anywhere sm:text-4xl">
+                  {spokenCode.display}
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {codeEntryAddress ? (
+                    <>Quem for entrar abre <span className="font-medium text-foreground wrap-anywhere">{codeEntryAddress}</span> e digita. </>
+                  ) : (
+                    <>Quem for entrar digita o código. </>
+                  )}
+                  Vale por 15 minutos.
+                </p>
+              </>
+            )}
+            {spokenCode.status === "issuing" && (
+              <p role="status" className="text-sm text-muted-foreground">Gerando código...</p>
+            )}
+            {spokenCode.status === "error" && (
+              <div className="space-y-2">
+                <p role="alert" className="text-sm text-destructive-text">{spokenCode.message}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 motion-reduce:transform-none motion-reduce:transition-none"
+                  onClick={onRetryCode}
+                >
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
+          </section>
         )}
 
         {errorMessage && (
