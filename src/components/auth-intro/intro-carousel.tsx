@@ -184,7 +184,9 @@ export function IntroCarousel({ playStory }: IntroCarouselProps) {
   useEffect(() => {
     if (phase.kind !== "settled" || index !== LOGIN_INDEX || !focusLoginOnSettle.current) return;
     focusLoginOnSettle.current = false;
-    rootRef.current?.querySelector<HTMLButtonElement>("[data-google-sign-in]")?.focus({ preventScroll: true });
+    rootRef.current
+      ?.querySelector<HTMLButtonElement>("[data-apple-sign-in], [data-google-sign-in]")
+      ?.focus({ preventScroll: true });
   }, [phase, index]);
 
   const onArrowKey = useEffectEvent((event: KeyboardEvent) => {
