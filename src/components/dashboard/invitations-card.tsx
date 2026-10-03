@@ -1,13 +1,12 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ChevronRight, Loader2, Users } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
 import { ListRow } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
 import { haptics } from "@/hooks/use-haptics";
@@ -20,7 +19,6 @@ export interface HomeInvitationItem {
   kind: "group" | "dm";
   title: string;
   inviter: { id: string; name: string; avatarUrl: string | null } | null;
-  memberCount: number;
 }
 
 export interface InvitationsCardProps {
@@ -60,11 +58,6 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
           <GroupAvatar name={invitation.title} groupId={invitation.groupId} />
         )}
         trailing={<ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />}
-        footer={!isDm && (
-          <Chip tone="neutral" icon={<Users />}>
-            {invitation.memberCount} {invitation.memberCount === 1 ? "pessoa" : "pessoas"}
-          </Chip>
-        )}
         onClick={() => {
           haptics.tap();
           onOpen(invitation);
