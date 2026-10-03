@@ -17,6 +17,7 @@ export interface AmountHeroCardProps extends Omit<ComponentProps<"div">, "childr
   eyebrow?: ReactNode;
   /** Compact facts under a divider; two or three read best on a phone. */
   details?: AmountHeroDetail[];
+  headerAction?: ReactNode;
 }
 
 const DETAIL_COLUMNS: Record<number, string> = {
@@ -30,12 +31,25 @@ const DETAIL_COLUMNS: Record<number, string> = {
  * tabular amount in its semantic tone, then an optional row of small facts.
  * Pass `role="region"` and an `aria-label` when the card is a landmark.
  */
-export function AmountHeroCard({ label, cents, tone = "neutral", eyebrow, details = [], className, ...props }: AmountHeroCardProps) {
+export function AmountHeroCard({ label, cents, tone = "neutral", eyebrow, details = [], headerAction, className, ...props }: AmountHeroCardProps) {
+  const summary = (
+    <>
+      <p className="text-sm font-semibold text-muted-foreground">{label}</p>
+      <Money cents={cents} size="hero" tone={tone} className="mt-2 block leading-tight" />
+    </>
+  );
+
   return (
     <SectionCard {...props} className={cn("gradient-mesh p-5", className)}>
       {eyebrow && <div className="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">{eyebrow}</div>}
-      <p className="text-sm font-semibold text-muted-foreground">{label}</p>
-      <Money cents={cents} size="hero" tone={tone} className="mt-2 block leading-tight" />
+      {headerAction ? (
+        <div className="flex flex-wrap-reverse items-end gap-x-3">
+          <div className="flex-1">{summary}</div>
+          <div className="-mt-1.5 -mr-1.5 ml-auto shrink-0">{headerAction}</div>
+        </div>
+      ) : (
+        summary
+      )}
       {details.length > 0 && (
         <dl className={cn("mt-4 grid gap-3 border-t border-border pt-3", DETAIL_COLUMNS[Math.min(details.length, 3)])}>
           {details.map((detail) => (

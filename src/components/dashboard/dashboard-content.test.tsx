@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "@/lib/sync/errors";
@@ -280,7 +280,7 @@ describe("DashboardContent", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);
 
-    expect(screen.queryByText("Oi, Alice")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Seu perfil" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("status", { name: "Carregando" }).length).toBeGreaterThan(0);
   });
 
@@ -306,8 +306,8 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    expect(screen.getByText("Oi, Alice")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Seu perfil" })).toHaveAttribute("href", "/app/profile");
+    expect(screen.getByRole("heading", { name: "Início", level: 1 })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Seu saldo" })).getByRole("link", { name: "Seu perfil" })).toHaveAttribute("href", "/app/profile");
     expect(screen.getByText(/20,00/)).toBeInTheDocument();
     expect(screen.getAllByText(/50,00/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/30,00/).length).toBeGreaterThan(0);
