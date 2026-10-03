@@ -33,13 +33,23 @@ import { usePendingNavigation } from "@/hooks/use-pending-navigation";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
 import { hasNativePushConsent } from "@/lib/push/native-consent";
 import { registerNativePushToken } from "@/lib/push/native-registration";
+import {
+  holdNotificationDestination,
+  notificationTapHref,
+  resolveNotificationDestination,
+  takeHeldNotificationDestination,
+} from "@/lib/push/notification-destination";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { attachVisibilityRefresh, runBootstrap } from "@/lib/sync/bootstrap";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { cn } from "@/lib/utils";
 import { startRealtime } from "@/lib/sync/realtime";
 import { loadActivity } from "@/lib/sync/refresh";
-import { selectPendingInvitations, selectUnreadTotal } from "@/stores/app-selectors";
+import {
+  selectNotificationTapsOpen,
+  selectPendingInvitations,
+  selectUnreadTotal,
+} from "@/stores/app-selectors";
 import {
   ScreenHeaderActionsContext,
   ScreenRefreshContext,
@@ -163,6 +173,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // alone proves nothing: it may belong to a previous account or a read that
   // never succeeded.
   const knownGood = me !== null && lastBootstrappedAccountId === me.id;
+  const notificationTapsOpen = useAppStore(selectNotificationTapsOpen);
 
   const [retrying, setRetrying] = useState(false);
   const [deletionBusy, setDeletionBusy] = useState(false);
@@ -193,30 +204,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
+  // Where a session-less exit goes. A notification tap held while the
+  // session was in doubt rides along; /auth re-applies it after login.
+  const routeOnUnauthenticated = useCallback((): string => {
+    const held = takeHeldNotificationDestination();
+    return held === null ? "/auth" : notificationTapHref(held, false);
+  }, []);
+
   const retryBootstrap = useCallback(() => {
     setRetrying(true);
     runBootstrap()
       .catch((err) => {
         if (err instanceof LedgerError && err.code === "account_deleted") return;
         if (err instanceof LedgerError && err.code === "unauthenticated") {
-          router.replace("/auth");
+          router.replace(routeOnUnauthenticated());
           return;
         }
         toast.error(ledgerErrorMessage(err));
       })
       .finally(() => setRetrying(false));
-  }, [router]);
+  }, [router, routeOnUnauthenticated]);
 
   const reportBootstrapError = useCallback(
     (err: unknown) => {
       if (err instanceof LedgerError && err.code === "account_deleted") return;
       if (err instanceof LedgerError && err.code === "unauthenticated") {
-        router.replace("/auth");
+        router.replace(routeOnUnauthenticated());
         return;
       }
       toast.error(ledgerErrorMessage(err));
     },
-    [router],
+    [router, routeOnUnauthenticated],
   );
 
   useEffect(() => {
@@ -224,14 +242,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     const stopRealtime = startRealtime();
     const stopAuth = attachAuthListener(() => {
-      router.replace("/auth");
+      router.replace(routeOnUnauthenticated());
     }, reportBootstrapError);
 
     return () => {
       stopRealtime();
       stopAuth();
     };
-  }, [router, reportBootstrapError]);
+  }, [router, reportBootstrapError, routeOnUnauthenticated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -260,6 +278,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // startup or an explicit visit to Settings tries again.
     });
   }, [knownGood, me]);
+
+  // Replay a notification tap that arrived while taps were not open yet. One
+  // replay per tap: the slot empties here.
+  useEffect(() => {
+    if (!notificationTapsOpen) return;
+    const destination = takeHeldNotificationDestination();
+    if (destination !== null) router.push(destination);
+  }, [notificationTapsOpen, router]);
 
   // The badge is derived from authoritative snapshots and this account's own
   // recorded view, so there is no second unread store to fall out of sync.
@@ -314,9 +340,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const listener = await PushNotifications.addListener(
           "pushNotificationActionPerformed",
           (action) => {
-            const url = action.notification?.data?.url;
-            if (typeof url === "string" && url.startsWith("/app/")) {
-              router.push(url);
+            const destination = resolveNotificationDestination(
+              action.notification?.data?.url,
+            );
+            if (destination === null) return;
+            if (selectNotificationTapsOpen(useAppStore.getState())) {
+              // An older held tap must not replay over this newer one.
+              takeHeldNotificationDestination();
+              router.push(destination);
+            } else {
+              holdNotificationDestination(destination);
             }
           },
         );
@@ -346,13 +379,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     } catch (err) {
       if (err instanceof LedgerError && err.code === "account_deleted") return false;
       if (err instanceof LedgerError && err.code === "unauthenticated") {
-        router.replace("/auth");
+        router.replace(routeOnUnauthenticated());
         return false;
       }
       toast.error(ledgerErrorMessage(err));
       return false;
     }
-  }, [router]);
+  }, [router, routeOnUnauthenticated]);
 
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlight = useRef(false);

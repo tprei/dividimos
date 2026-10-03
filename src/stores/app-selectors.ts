@@ -139,6 +139,27 @@ export function selectUnreadTotal(state: AppState): number {
   return total;
 }
 
+const SESSION_ENDING_ERRORS: Partial<Record<LedgerErrorCode, true>> = {
+  unauthenticated: true,
+  account_deleted: true,
+};
+
+/**
+ * Whether a notification tap may navigate now. The persisted bootstrap of this
+ * account is not enough until this session's read settles, since an expired
+ * session must send the tap through /auth; a refresh that failed for any other
+ * reason leaves this account's data on screen, so the tap opens.
+ */
+export function selectNotificationTapsOpen(state: AppState): boolean {
+  if (state.me === null || state.lastBootstrappedAccountId !== state.me.id) return false;
+  if (state.bootstrapStatus === "ready") return true;
+  return (
+    state.bootstrapStatus === "error" &&
+    state.bootstrapErrorCode !== null &&
+    SESSION_ENDING_ERRORS[state.bootstrapErrorCode] !== true
+  );
+}
+
 export function selectExpenseList(state: AppState, groupId: string) {
   const list = state.expenseLists[groupId];
   const summaries = [];

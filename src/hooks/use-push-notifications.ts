@@ -249,6 +249,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     if (native) {
       try {
+        // Without a signed-in account there is no owner for the token, so
+        // nothing is requested, registered, or uploaded.
+        if (accountId === null) return;
         const { PushNotifications } = await import(
           "@capacitor/push-notifications"
         );
@@ -262,9 +265,12 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           return;
         }
 
+        // Consent is recorded before registering so the token never exists
+        // without it; a failed registration is retried on the next bootstrap.
+        setNativePushConsent(accountId, true);
+
         await registerNativePushToken();
         if (!isCurrentAttempt(attempt)) return;
-        setNativePushConsent(accountId, true);
         setIsSubscribed(true);
       } catch (cause) {
         if (!isCurrentAttempt(attempt)) return;
