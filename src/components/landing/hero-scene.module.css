@@ -21,7 +21,7 @@
   bottom: 0;
   left: 0;
   border-radius: 44px;
-  transform: perspective(2600px) rotateX(8deg);
+  transform: none;
   transform-origin: 50% 100%;
 }
 
@@ -42,7 +42,7 @@
 }
 
 .top::after {
-  content: "";
+  content: none;
   position: absolute;
   top: 0;
   bottom: 0;
@@ -294,7 +294,6 @@
     top: auto;
     height: 800px;
     border-radius: 64px;
-    transform: perspective(1800px) rotateX(32deg);
   }
 
   .legs {
@@ -423,22 +422,34 @@
   }
 }
 
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) {
+  .slab {
+    transform: perspective(1800px) rotateX(32deg);
+  }
+
+  .top::after {
+    content: "";
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .toy {
     cursor: pointer;
   }
 
+  .bottle1:hover,
+  .bottle2:hover {
+    animation: wobble 0.9s ease-in-out;
+  }
+}
+
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .top::after {
     animation: sheen 11s ease-in-out 2s infinite;
   }
 
   .drop {
     animation: drip 6s ease-in var(--d) infinite;
-  }
-
-  .bottle1:hover,
-  .bottle2:hover {
-    animation: wobble 0.9s ease-in-out;
   }
 }
 

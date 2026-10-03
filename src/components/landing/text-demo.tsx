@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useReducedMotion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { parseDemoExpense, type DemoExpenseDraft } from "@/lib/landing-expense-draft";
 import { useRipple } from "./click-fx";
 import { DraftCard } from "./draft-card";
@@ -15,9 +16,11 @@ type TextLog =
 const INITIAL_TEXT = "jantar 120 dividido em 4";
 const EXAMPLES = ["uber 48 com bia e caio", "mercado 86,40 com a carla", "pizza 90 em 3", INITIAL_TEXT];
 const REPLY_DELAY_MS = 750;
-
+const DESKTOP_AUTOPLAY_QUERY =
+  "(min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
 export function TextDemo() {
   const reduceMotion = useReducedMotion();
+  const canAutoplay = useMediaQuery(DESKTOP_AUTOPLAY_QUERY);
   const { onPointerDown, ripples } = useRipple();
   const [log, setLog] = useState<TextLog>(() => ({
     id: 0,
@@ -49,18 +52,20 @@ export function TextDemo() {
   useEffect(() => () => clearTimeout(replyTimer.current), []);
 
   useEffect(() => {
+    if (!canAutoplay) return;
     const card = formRef.current?.closest("article");
-    if (reduceMotion !== false || !card) return;
+    if (!card) return;
+    let isIntersecting = false;
     let example = 0;
     let timer: NodeJS.Timeout | undefined;
 
     const typeNext = () => {
-      if (!autoTyping.current) return;
+      if (!autoTyping.current || !isIntersecting || document.hidden) return;
       const text = EXAMPLES[example % EXAMPLES.length];
       example += 1;
       let typed = 0;
       const step = () => {
-        if (!autoTyping.current) return;
+        if (!autoTyping.current || !isIntersecting || document.hidden) return;
         typed += 1;
         setValue(text.slice(0, typed));
         if (typed < text.length) {
@@ -68,7 +73,7 @@ export function TextDemo() {
           return;
         }
         timer = setTimeout(() => {
-          if (!autoTyping.current) return;
+          if (!autoTyping.current || !isIntersecting || document.hidden) return;
           setValue("");
           send(text);
           timer = setTimeout(typeNext, 3400);
@@ -77,39 +82,60 @@ export function TextDemo() {
       step();
     };
 
+    const update = () => {
+      clearTimeout(timer);
+      if (!autoTyping.current) return;
+      const active = isIntersecting && !document.hidden;
+      if (active) {
+        timer = setTimeout(typeNext, 1400);
+      } else {
+        setValue("");
+      }
+    };
+
     const observer = new IntersectionObserver(
       (entries) => {
-        clearTimeout(timer);
+        isIntersecting = entries.some((entry) => entry.isIntersecting);
         if (!autoTyping.current) {
           observer.disconnect();
           return;
         }
-        if (entries.some((entry) => entry.isIntersecting)) {
-          timer = setTimeout(typeNext, 1400);
-          return;
-        }
-        setValue("");
+        update();
       },
       { threshold: 0.5 },
     );
     observer.observe(card);
+
+    const onVisibilityChange = () => {
+      update();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       clearTimeout(timer);
     };
-  }, [reduceMotion, send]);
+  }, [canAutoplay, send]);
 
-  const stopAutoTyping = () => {
+  const stopAutoTyping = (clearValue = true) => {
     setUserDriven(true);
     if (!autoTyping.current) return;
     autoTyping.current = false;
-    setValue("");
+    if (clearValue) {
+      setValue("");
+    }
+  };
+
+  const onInputChange = (nextValue: string) => {
+    stopAutoTyping(false);
+    setValue(nextValue);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const text = autoTyping.current ? "" : value.trim();
-    stopAutoTyping();
+    const text = (canAutoplay && autoTyping.current ? "" : value).trim();
+    stopAutoTyping(false);
     if (!text) {
       inputRef.current?.focus();
       return;
@@ -117,7 +143,6 @@ export function TextDemo() {
     send(text);
     setValue("");
   };
-
   return (
     <>
       <div className={styles.log} aria-live={userDriven ? "polite" : "off"}>
@@ -151,9 +176,9 @@ export function TextDemo() {
           placeholder="pizza 90 em 3"
           maxLength={80}
           value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onFocus={stopAutoTyping}
-          onPointerDown={stopAutoTyping}
+          onChange={(event) => onInputChange(event.target.value)}
+          onFocus={() => stopAutoTyping()}
+          onPointerDown={() => stopAutoTyping()}
         />
         <button type="submit" className={styles.send} aria-label="Enviar" onPointerDown={onPointerDown}>
           <ArrowUp aria-hidden="true" strokeWidth={2.4} />

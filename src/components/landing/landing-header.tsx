@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { LandingLink } from "./landing-link";
 import { LightSwitch } from "./light-switch";
 import { landingContainer } from "./landing-section";
+import styles from "./landing.module.css";
 
 const NAV = [
   { href: "#como-funciona", label: "Como funciona" },
@@ -13,10 +14,13 @@ const NAV = [
 
 export function LandingHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border/70 bg-surface/80 backdrop-blur-xl backdrop-saturate-180">
+    <header className={cn("sticky z-50 border-b border-border/70", styles.header)}>
       <a
         href="#main"
-        className="absolute top-[-60px] left-3 z-60 inline-flex min-h-11 items-center rounded-[10px] bg-primary px-4 text-sm font-extrabold text-primary-foreground focus:top-2.5"
+        className={cn(
+          "absolute left-3 z-60 inline-flex min-h-11 items-center rounded-[10px] bg-primary px-4 text-sm font-extrabold text-primary-foreground",
+          styles.skipLink,
+        )}
       >
         Pular para o conteúdo
       </a>

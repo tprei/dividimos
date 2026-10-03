@@ -1,6 +1,57 @@
+:global(html):has(.page) {
+  height: auto;
+  min-height: 100%;
+  overflow-x: clip;
+  overflow-y: auto;
+}
+
+:global(body):has(.page) {
+  position: static;
+  top: auto;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.header {
+  top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  background: var(--surface);
+}
+
+.header::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  background: var(--surface);
+  pointer-events: none;
+}
+
+.skipLink {
+  top: calc(-60px - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+}
+
+.skipLink:focus {
+  top: 10px;
+}
+
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) {
+  .header {
+    background: color-mix(in oklab, var(--surface) 80%, transparent);
+    backdrop-filter: blur(24px) saturate(1.8);
+  }
+}
+
 .page {
   background-color: var(--canvas);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='260' height='260' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) {
+  .page {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='260' height='260' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
+  }
 }
 
 .btn {
@@ -104,6 +155,12 @@
   background: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
   color: var(--gradient-foreground);
   text-shadow: 0 1px 1px oklch(0.45 0.12 55 / 0.45);
+}
+
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  :global(html):has(.page) {
+    scroll-behavior: smooth;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

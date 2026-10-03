@@ -16,6 +16,7 @@ const PHRASES = [
 ];
 const INITIAL_PHRASE = PHRASES[3];
 const LISTEN_MS = 2400;
+const TICK_MS = 100;
 
 const BARS = [
   { h: "14px", dl: "0s" },
@@ -50,31 +51,41 @@ export function VoiceDemo() {
     draft: parseDemoExpense(INITIAL_PHRASE),
   }));
   const phraseIndex = useRef(0);
-  const frame = useRef(0);
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activePhrase = useRef(INITIAL_PHRASE);
 
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const finish = (phrase: string, seconds: number) => {
+    clearTimeout(timerRef.current);
+    timerRef.current = undefined;
     setState({ listening: false, seconds, transcript: `“${phrase}”`, draft: parseDemoExpense(phrase) });
   };
 
   const listen = () => {
+    clearTimeout(timerRef.current);
     const phrase = PHRASES[phraseIndex.current % PHRASES.length];
     phraseIndex.current += 1;
     activePhrase.current = phrase;
     const words = phrase.split(" ");
     const duration = reduceMotion ? 0 : LISTEN_MS;
     const startedAt = performance.now();
+    let lastWordCount = 0;
+    let lastSeconds = -1;
 
     const tick = () => {
       const elapsed = performance.now() - startedAt;
       const progress = duration === 0 ? 1 : Math.min(1, elapsed / duration);
       const seconds = Math.floor(elapsed / 1000);
       if (progress < 1) {
-        const shown = words.slice(0, Math.max(1, Math.ceil(progress * words.length))).join(" ");
-        setState({ listening: true, seconds, transcript: `“${shown}…`, draft: null });
-        frame.current = requestAnimationFrame(tick);
+        const wordCount = Math.max(1, Math.ceil(progress * words.length));
+        if (wordCount !== lastWordCount || seconds !== lastSeconds) {
+          lastWordCount = wordCount;
+          lastSeconds = seconds;
+          const shown = words.slice(0, wordCount).join(" ");
+          setState({ listening: true, seconds, transcript: `“${shown}…`, draft: null });
+        }
+        timerRef.current = setTimeout(tick, TICK_MS);
         return;
       }
       finish(phrase, seconds);
@@ -87,7 +98,6 @@ export function VoiceDemo() {
       listen();
       return;
     }
-    cancelAnimationFrame(frame.current);
     finish(activePhrase.current, state.seconds);
   };
 

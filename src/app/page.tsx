@@ -22,7 +22,7 @@ export default function LandingPage() {
   return (
     <div
       className={cn(
-        "flex h-dvh flex-col overflow-x-hidden overflow-y-auto motion-safe:scroll-smooth",
+        "flex min-h-dvh flex-col overflow-x-clip",
         styles.page,
       )}
     >

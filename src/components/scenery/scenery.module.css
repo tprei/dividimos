@@ -372,7 +372,7 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@media (min-width: 760px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .wavesFar {
     animation: wave-drift 16s linear infinite;
   }
