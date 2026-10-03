@@ -86,6 +86,7 @@ android/build/
 *.mobileprovision
 *.xcarchive
 *.ipa
+ios/App/App/GoogleService-Info.plist
 
 # Local planning notes and reports
 docs/
