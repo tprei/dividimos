@@ -302,7 +302,7 @@ jobs:
           MARKETING_VERSION: ${{ inputs.marketing_version }}
           IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
           APPLE_APP_ID_PREFIX: ${{ vars.APPLE_APP_ID_PREFIX }}
-        run: scripts/ios-verify-release.sh "$RUNNER_TEMP/export/App.ipa" "$MARKETING_VERSION" "$BUILD_NUMBER" "$IOS_TEAM_ID" "$APPLE_APP_ID_PREFIX"
+        run: scripts/ios-verify-release.sh "$RUNNER_TEMP/export/Dividimos.ipa" "$MARKETING_VERSION" "$BUILD_NUMBER" "$IOS_TEAM_ID" "$APPLE_APP_ID_PREFIX"
 
       - name: Validate and upload to App Store Connect
         if: inputs.upload
@@ -315,11 +315,11 @@ jobs:
           KEY="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
           printf '%s' "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | base64 -D > "$KEY"
           trap 'rm -f "$KEY"' EXIT
-          xcrun altool --validate-app "$RUNNER_TEMP/export/App.ipa" \
+          xcrun altool --validate-app "$RUNNER_TEMP/export/Dividimos.ipa" \
             --api-key "$APP_STORE_CONNECT_API_KEY_ID" \
             --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
             --p8-file-path "$KEY"
-          xcrun altool --upload-package "$RUNNER_TEMP/export/App.ipa" \
+          xcrun altool --upload-package "$RUNNER_TEMP/export/Dividimos.ipa" \
             --api-key "$APP_STORE_CONNECT_API_KEY_ID" \
             --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
             --p8-file-path "$KEY" \
@@ -329,7 +329,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dividimos-ios-${{ inputs.marketing_version }}-${{ env.BUILD_NUMBER }}
-          path: ${{ runner.temp }}/export/App.ipa
+          path: ${{ runner.temp }}/export/Dividimos.ipa
           retention-days: 7
           overwrite: true
 

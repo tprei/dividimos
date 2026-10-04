@@ -828,7 +828,7 @@ xcodebuild -workspace ios/App/App.xcworkspace -scheme Dividimos -configuration R
   MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=<build maior que o último enviado> archive
 xcodebuild -exportArchive -archivePath build/Dividimos.xcarchive \
   -exportOptionsPlist <ExportOptions.plist com method app-store-connect> -exportPath build/ipa
-scripts/ios-verify-release.sh build/ipa/App.ipa 1.0.0 <build> <TEAM_ID> <APPLE_APP_ID_PREFIX>
+scripts/ios-verify-release.sh build/ipa/Dividimos.ipa 1.0.0 <build> <TEAM_ID> <APPLE_APP_ID_PREFIX>
 ```
 
 Abra o archive no Organizer do Xcode e gere o relatório de privacidade (Generate Privacy Report) antes de cada versão que muda SDKs nativos.

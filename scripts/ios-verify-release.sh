@@ -2,11 +2,15 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/ios-verify-release.sh <path/to/App.ipa> <marketing-version> <build-number> <team-id> <app-id-prefix>" >&2
+  echo "Usage: scripts/ios-verify-release.sh <path/to/Dividimos.ipa> <marketing-version> <build-number> <team-id> <app-id-prefix>" >&2
 }
 
-if [ $# -ne 5 ] || [ ! -f "$1" ]; then
+if [ $# -ne 5 ]; then
   usage
+  exit 1
+fi
+if [ ! -f "$1" ]; then
+  echo "error: $1 does not exist; xcodebuild -exportArchive names the IPA after the scheme." >&2
   exit 1
 fi
 
