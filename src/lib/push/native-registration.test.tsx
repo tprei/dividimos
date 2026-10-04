@@ -4,6 +4,8 @@ type RegistrationHandler = (payload: { value: string }) => void | Promise<void>;
 type RegistrationErrorHandler = (payload: { error: string }) => void;
 
 let mockIsNativePlatform = true;
+let mockPlatform = "ios";
+let mockFcmPluginAvailable = true;
 let registrationHandler: RegistrationHandler | null = null;
 let registrationErrorHandler: RegistrationErrorHandler | null = null;
 
@@ -22,11 +24,19 @@ const mockAddListener = vi.fn(
 );
 const mockRegister = vi.fn();
 const mockUnregister = vi.fn();
+const mockDeleteToken = vi.fn();
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
     isNativePlatform: () => mockIsNativePlatform,
+    getPlatform: () => mockPlatform,
+    isPluginAvailable: (name: string) =>
+      name === "FcmToken" && mockFcmPluginAvailable,
   },
+}));
+
+vi.mock("./fcm-token-plugin", () => ({
+  FcmToken: { deleteToken: (...args: unknown[]) => mockDeleteToken(...args) },
 }));
 
 vi.mock("@capacitor/push-notifications", () => ({
@@ -53,11 +63,14 @@ describe("native-registration", () => {
   beforeEach(() => {
     __resetNativeRegistrationForTests();
     mockIsNativePlatform = true;
+    mockPlatform = "ios";
+    mockFcmPluginAvailable = true;
     registrationHandler = null;
     registrationErrorHandler = null;
     mockAddListener.mockClear();
     mockRegister.mockReset().mockResolvedValue(undefined);
     mockUnregister.mockReset().mockResolvedValue(undefined);
+    mockDeleteToken.mockReset().mockResolvedValue(undefined);
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
   });
 
@@ -244,6 +257,130 @@ describe("native-registration", () => {
 
     mockUnregister.mockRejectedValueOnce(new Error("bridge unavailable"));
     await expect(unregisterNativePushToken()).resolves.toBeUndefined();
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("deletes the FCM token through the iOS companion plugin on local unregister", async () => {
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    await registrationHandler!({ value: "ios-token" });
+    await promise;
+    expect(getCachedFcmToken()).toBe("ios-token");
+
+    const { unregisterNativePushTokenLocally } = await import(
+      "./native-registration"
+    );
+    await unregisterNativePushTokenLocally();
+
+    expect(mockUnregister).toHaveBeenCalled();
+    expect(mockDeleteToken).toHaveBeenCalledTimes(1);
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("still clears the cached token when the FCM deletion fails", async () => {
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    await registrationHandler!({ value: "ios-token-fail" });
+    await promise;
+
+    mockDeleteToken.mockRejectedValueOnce(new Error("firebase unavailable"));
+    const { unregisterNativePushTokenLocally } = await import(
+      "./native-registration"
+    );
+    await expect(unregisterNativePushTokenLocally()).resolves.toBeUndefined();
+
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("finishes a failed FCM deletion before registering the next account", async () => {
+    const { unregisterNativePushTokenLocally } = await import("./native-registration");
+    mockDeleteToken.mockRejectedValueOnce(new Error("firebase unavailable"));
+    await unregisterNativePushTokenLocally();
+
+    mockDeleteToken.mockRejectedValueOnce(new Error("still unavailable"));
+    await expect(registerNativePushToken()).rejects.toThrow("still unavailable");
+    expect(mockRegister).not.toHaveBeenCalled();
+
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(mockRegister).toHaveBeenCalledTimes(1));
+    expect(mockDeleteToken).toHaveBeenCalledTimes(3);
+    await registrationHandler!({ value: "ios-token-next" });
+    await expect(promise).resolves.toBe("ios-token-next");
+  });
+
+  it("waits for an account switch's detach before registering, keeping the new token", async () => {
+    const { unregisterNativePushTokenLocally } = await import("./native-registration");
+    const deletion = Promise.withResolvers<void>();
+    mockDeleteToken.mockReturnValueOnce(deletion.promise);
+    const detach = unregisterNativePushTokenLocally();
+    await vi.waitFor(() => expect(mockDeleteToken).toHaveBeenCalledTimes(1));
+
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    expect(mockRegister).not.toHaveBeenCalled();
+
+    deletion.resolve();
+    await detach;
+    await vi.waitFor(() => expect(mockRegister).toHaveBeenCalledTimes(1));
+    await registrationHandler!({ value: "ios-token-b" });
+
+    await expect(promise).resolves.toBe("ios-token-b");
+    expect(getCachedFcmToken()).toBe("ios-token-b");
+  });
+
+  it("skips the FCM deletion when the plugin is not installed on iOS", async () => {
+    mockFcmPluginAvailable = false;
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    await registrationHandler!({ value: "old-build-token" });
+    await promise;
+
+    const { unregisterNativePushTokenLocally } = await import(
+      "./native-registration"
+    );
+    await unregisterNativePushTokenLocally();
+
+    expect(mockUnregister).toHaveBeenCalled();
+    expect(mockDeleteToken).not.toHaveBeenCalled();
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("never touches the FCM token plugin on Android", async () => {
+    mockPlatform = "android";
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    await registrationHandler!({ value: "android-token" });
+    await promise;
+
+    const { unregisterNativePushTokenLocally } = await import(
+      "./native-registration"
+    );
+    await unregisterNativePushTokenLocally();
+
+    expect(mockUnregister).toHaveBeenCalled();
+    expect(mockDeleteToken).not.toHaveBeenCalled();
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("drops a token that arrives after an account switch ran the local detach", async () => {
+    const resultPromise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+
+    // A -> B: the auth listener advances the generation and runs the local
+    // detach, then Firebase delivers the token A's registration asked for.
+    const { advanceAuthGeneration } = await import("@/lib/sync/client");
+    advanceAuthGeneration();
+    const { unregisterNativePushTokenLocally } = await import(
+      "./native-registration"
+    );
+    await unregisterNativePushTokenLocally();
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    globalThis.fetch = fetchMock;
+    await registrationHandler!({ value: "token-of-a" });
+
+    await expect(resultPromise).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(getCachedFcmToken()).toBeNull();
   });
 

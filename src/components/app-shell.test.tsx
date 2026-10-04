@@ -79,8 +79,35 @@ vi.mock("@/lib/sync/auth", () => ({
     mockAttachAuthListener(cb, onError),
 }));
 
+let mockNativePlatform = false;
+
+type TapAction = { notification?: { data?: { url?: unknown } } };
+type TapHandler = (action: TapAction) => void;
+let tapHandler: TapHandler | null = null;
+
+const mockPushAddListener = vi.fn((event: string, handler: TapHandler) => {
+  if (event === "pushNotificationActionPerformed") tapHandler = handler;
+  return Promise.resolve({ remove: vi.fn().mockResolvedValue(undefined) });
+});
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    isNativePlatform: () => mockNativePlatform,
+  },
+  registerPlugin: () => ({}),
+}));
+
+vi.mock("@capacitor/push-notifications", () => ({
+  PushNotifications: {
+    addListener: (...args: unknown[]) =>
+      mockPushAddListener(args[0] as string, args[1] as TapHandler),
+  },
+}));
+
 import { haptics } from "@/hooks/use-haptics";
 import { useAppStore } from "@/stores/app-store";
+import { clearHeldNotificationDestination } from "@/lib/push/notification-destination";
+import { LedgerError } from "@/lib/sync/errors";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { AppShell } from "./app-shell";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -807,5 +834,237 @@ describe("AppShell keyboard padding", () => {
     mockKeyboardVisible.mockReturnValue(false);
     rerender(<AppShell><div>content</div></AppShell>);
     expect(screen.getByRole("navigation")).toBeInTheDocument();
+  });
+});
+
+describe("AppShell notification taps", () => {
+  const BILL_ID = "123e4567-e89b-12d3-a456-426614174000";
+  const GROUP_ID = "223e4567-e89b-42d3-a456-426614174001";
+
+  function commitBootstrap(): void {
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
+  }
+
+  async function renderWithTapListener(): Promise<void> {
+    render(<AppShell><div>content</div></AppShell>);
+    await vi.waitFor(() => expect(tapHandler).not.toBeNull());
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname.mockReturnValue("/app");
+    mockNativePlatform = true;
+    tapHandler = null;
+    clearHeldNotificationDestination();
+    useAppStore.setState({
+      hydrated: false,
+      me: null,
+      groups: {},
+      groupOrder: [],
+      bootstrapStatus: "idle",
+      bootstrapErrorCode: null,
+      lastBootstrappedAccountId: null,
+    });
+  });
+
+  afterEach(() => {
+    mockNativePlatform = false;
+    clearHeldNotificationDestination();
+  });
+
+  it("holds a cold tap and navigates exactly once once the bootstrap commits", async () => {
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    act(() => {
+      commitBootstrap();
+    });
+
+    await vi.waitFor(() =>
+      expect(mockRouter.push).toHaveBeenCalledWith(`/app/bill/${BILL_ID}`),
+    );
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses duplicate identical taps held before the bootstrap", async () => {
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+
+    act(() => {
+      commitBootstrap();
+    });
+
+    await vi.waitFor(() => expect(mockRouter.push).toHaveBeenCalled());
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).toHaveBeenCalledWith(`/app/bill/${BILL_ID}`);
+  });
+
+  it("keeps the newest tap when two different notifications arrive early", async () => {
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+      tapHandler!({ notification: { data: { url: `/app/groups/${GROUP_ID}` } } });
+    });
+
+    act(() => {
+      commitBootstrap();
+    });
+
+    await vi.waitFor(() => expect(mockRouter.push).toHaveBeenCalled());
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).toHaveBeenCalledWith(`/app/groups/${GROUP_ID}`);
+  });
+
+  it("drops destinations outside the known producer set", async () => {
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: "https://evil/app" } } });
+      tapHandler!({ notification: { data: { url: "/app/bill/x/../../" } } });
+      tapHandler!({ notification: { data: { url: `/app/groups/${GROUP_ID}?x` } } });
+    });
+
+    act(() => {
+      commitBootstrap();
+    });
+
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
+  it("navigates immediately when the tap lands after the bootstrap", async () => {
+    act(() => {
+      commitBootstrap();
+    });
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/groups/${GROUP_ID}` } } });
+    });
+
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).toHaveBeenCalledWith(`/app/groups/${GROUP_ID}`);
+  });
+
+  it("sends a held tap to the login screen with next when the session ends", async () => {
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+
+    const onSignedOut = mockAttachAuthListener.mock.calls[0][0];
+    act(() => {
+      onSignedOut();
+    });
+
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      `/auth?next=${encodeURIComponent(`/app/bill/${BILL_ID}`)}`,
+    );
+  });
+
+  function seedPersistedSession(): void {
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "loading",
+      lastBootstrappedAccountId: mockMe.id,
+    });
+  }
+
+  it("routes a tap through login when the persisted session turns out expired", async () => {
+    act(() => {
+      seedPersistedSession();
+    });
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    const reportBootstrapError = mockAttachAuthListener.mock.calls[0][1];
+    act(() => {
+      useAppStore.setState({ bootstrapStatus: "error", bootstrapErrorCode: "unauthenticated" });
+      reportBootstrapError(new LedgerError("unauthenticated"));
+    });
+
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      `/auth?next=${encodeURIComponent(`/app/bill/${BILL_ID}`)}`,
+    );
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
+  it("opens a held tap when the refresh fails for a reason other than the session", async () => {
+    act(() => {
+      seedPersistedSession();
+    });
+    await renderWithTapListener();
+
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    act(() => {
+      useAppStore.setState({ bootstrapStatus: "error", bootstrapErrorCode: "network" });
+    });
+
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).toHaveBeenCalledWith(`/app/bill/${BILL_ID}`);
+  });
+
+  it("lets a tap that lands as the session opens win over an older held one", async () => {
+    await renderWithTapListener();
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+
+    act(() => {
+      commitBootstrap();
+      tapHandler!({ notification: { data: { url: `/app/groups/${GROUP_ID}` } } });
+    });
+
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).toHaveBeenCalledWith(`/app/groups/${GROUP_ID}`);
+  });
+
+  it("routes a held tap through login when a pull-to-refresh finds the session expired", async () => {
+    act(() => {
+      seedPersistedSession();
+    });
+    await renderWithTapListener();
+    act(() => {
+      tapHandler!({ notification: { data: { url: `/app/bill/${BILL_ID}` } } });
+    });
+
+    mockRunBootstrap.mockRejectedValueOnce(new LedgerError("unauthenticated"));
+    const main = document.querySelector("main")!;
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      `/auth?next=${encodeURIComponent(`/app/bill/${BILL_ID}`)}`,
+    );
   });
 });
