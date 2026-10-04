@@ -1,77 +1,75 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Loader2 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
-import { ClaimerAvatars, itemsWithOwnerText } from "@/components/assignment-room/claimer-avatars";
+import { ChevronRight, ListChecks, Loader2 } from "lucide-react";
+import { useId, useState } from "react";
+import { ClaimerAvatars } from "@/components/assignment-room/claimer-avatars";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { ListRow } from "@/components/ui/list-row";
+import { ListRow, type ListRowProps } from "@/components/ui/list-row";
 import { SectionCard } from "@/components/ui/section-card";
 import { haptics } from "@/hooks/use-haptics";
 import { fadeUp } from "@/lib/animations";
-import { displayNames } from "@/lib/people";
 import type { OpenAssignmentRoom } from "@/types/assignment-room";
-import type { OpenRoomCardItem } from "./home-selectors";
+import type { HomeRoomCardItem } from "./home-selectors";
 
 const COLLAPSED_ROOM_COUNT = 3;
 
 interface HomeOpenRoomsCardProps {
-  rooms: OpenRoomCardItem[];
+  rooms: HomeRoomCardItem[];
   pendingRoomId: string | null;
   onOpen: (room: OpenAssignmentRoom) => void;
 }
 
-function OpenRoomRow({ room, placeLabel, hostName, pending, disabled, onOpen }: OpenRoomCardItem & {
-  hostName: string;
+function HomeRoomRow({ item, pending, disabled, onOpen }: {
+  item: HomeRoomCardItem;
   pending: boolean;
   disabled: boolean;
   onOpen: (room: OpenAssignmentRoom) => void;
 }) {
+  const { room, hostLabel, placeLabel } = item;
+  const navigation: ListRowProps = item.kind === "hosted"
+    ? { title: room.title, href: `/room/${room.id}` }
+    : {
+        title: room.title,
+        disabled,
+        onClick: () => {
+          haptics.tap();
+          onOpen(item.room);
+        },
+      };
+
   return (
     <ListRow
-      title={room.title}
-      subtitle={`${hostName} · ${placeLabel}`}
+      {...navigation}
+      subtitle={`${hostLabel} abriu · ${placeLabel}`}
+      className="py-3"
       leading={
-        <UserAvatar
-          id={room.host.id}
-          name={room.host.name}
-          avatarUrl={room.host.avatarUrl}
-          isBot={room.host.isBot}
-        />
+        <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-primary-text">
+          <ListChecks aria-hidden="true" className="size-5" />
+        </span>
       }
-      disabled={disabled}
-      className={room.joined ? "text-foreground" : "bg-accent/10 text-foreground"}
-      onClick={() => {
-        if (pending) return;
-        haptics.tap();
-        onOpen(room);
-      }}
+      trailing={
+        <span className="flex flex-col items-end gap-1">
+          <Money cents={room.totalCents} size="sm" />
+          {pending ? (
+            <Loader2 aria-label="Abrindo sala" className="size-4 text-muted-foreground motion-safe:animate-spin" />
+          ) : (
+            <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
+          )}
+        </span>
+      }
       footer={
-        <span className="flex flex-col gap-2 pt-1">
-          <span className="flex items-center justify-between gap-3">
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {itemsWithOwnerText(room.ownedItemCount, room.itemCount)}
+        <span className="flex min-w-0 items-center justify-between gap-3 pt-1 pl-13">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
+              {room.ownedItemCount}/{room.itemCount} itens atribuídos
             </span>
-            <ClaimerAvatars claimers={room.claimers} />
+            {room.status === "closed" && <Chip tone="neutral">Em revisão</Chip>}
           </span>
-          <span className="flex items-center justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-2">
-              <Money cents={room.totalCents} size="sm" />
-              {!room.joined && <Chip tone="neutral">Nova</Chip>}
-            </span>
-            <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-foreground" aria-live="polite">
-              {pending ? "Abrindo…" : room.joined ? "Continuar" : "Entrar"}
-              {pending ? (
-                <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-              ) : (
-                <ArrowRight aria-hidden="true" className="size-4" />
-              )}
-            </span>
-          </span>
+          <ClaimerAvatars claimers={room.claimers} />
         </span>
       }
     />
@@ -82,10 +80,6 @@ export function HomeOpenRoomsCard({ rooms, pendingRoomId, onOpen }: HomeOpenRoom
   const [expanded, setExpanded] = useState(false);
   const reducedMotion = useReducedMotion();
   const listId = useId();
-  const hostNames = useMemo(
-    () => displayNames(rooms.map((item) => item.room.host), { style: "short" }),
-    [rooms],
-  );
 
   if (rooms.length === 0) return null;
 
@@ -93,20 +87,18 @@ export function HomeOpenRoomsCard({ rooms, pendingRoomId, onOpen }: HomeOpenRoom
 
   return (
     <motion.section
-      aria-label="Salas pra você"
+      aria-label="Suas salas"
       variants={fadeUp()}
       initial={reducedMotion ? false : "hidden"}
       animate="visible"
     >
-      <SectionHeading title="Salas pra você" count={rooms.length} />
+      <SectionHeading title="Suas salas" count={rooms.length} />
       <SectionCard id={listId}>
-        {visibleRooms.map(({ room, placeLabel }) => (
-          <OpenRoomRow
-            key={room.id}
-            room={room}
-            placeLabel={placeLabel}
-            hostName={hostNames.get(room.host.id) ?? room.host.name}
-            pending={pendingRoomId === room.id}
+        {visibleRooms.map((item) => (
+          <HomeRoomRow
+            key={item.room.id}
+            item={item}
+            pending={pendingRoomId === item.room.id}
             disabled={pendingRoomId !== null}
             onOpen={onOpen}
           />

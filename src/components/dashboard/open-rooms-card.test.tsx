@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as FramerMotion from "framer-motion";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
-import type { OpenRoomCardItem } from "./home-selectors";
+import type { HostedAssignmentRoom, OpenAssignmentRoom } from "@/types/assignment-room";
+import type { HomeRoomCardItem } from "./home-selectors";
 import { HomeOpenRoomsCard } from "./open-rooms-card";
 
 vi.mock("@/hooks/use-haptics", () => ({
@@ -15,30 +15,63 @@ vi.mock("framer-motion", async (importOriginal) => ({
   useReducedMotion: () => true,
 }));
 
-function item(id: string, overrides: Partial<OpenAssignmentRoom> = {}): OpenRoomCardItem {
+vi.mock("next/link", () => ({
+  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string } & React.ComponentProps<"a">) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+}));
+
+const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
+
+function openRoom(id: string, overrides: Partial<OpenAssignmentRoom> = {}): OpenAssignmentRoom {
   return {
-    room: {
-      id,
-      groupId: "g1",
-      status: "open",
-      revision: 1,
-      title: `Conta ${id}`,
-      occurredOn: "2026-09-20",
-      totalCents: 12000,
-      host: { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false },
-      createdAt: "2026-09-20T12:00:00Z",
-      itemCount: 4,
-      ownedItemCount: 1,
-      claimers: [],
-      expenseId: null,
-      joined: false,
-      ...overrides,
-    },
-    placeLabel: "Jantar",
+    id,
+    groupId: "g1",
+    status: "open",
+    revision: 1,
+    title: `Conta ${id}`,
+    occurredOn: "2026-09-20",
+    totalCents: 12000,
+    host: carol,
+    createdAt: "2026-09-20T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 1,
+    claimers: [],
+    expenseId: null,
+    joined: false,
+    ...overrides,
   };
 }
 
-function renderCard(rooms: OpenRoomCardItem[], pendingRoomId: string | null = null) {
+function openItem(id: string, overrides: Partial<OpenAssignmentRoom> = {}): HomeRoomCardItem {
+  return { kind: "open", room: openRoom(id, overrides), hostLabel: "Carol", placeLabel: "Jantar" };
+}
+
+function hostedRoom(id: string, overrides: Partial<HostedAssignmentRoom> = {}): HostedAssignmentRoom {
+  return {
+    id,
+    groupId: "g1",
+    groupName: "Casa da Ana",
+    status: "open",
+    revision: 1,
+    title: `Conta ${id}`,
+    occurredOn: "2026-09-20",
+    totalCents: 12345,
+    host: carol,
+    createdAt: "2026-09-21T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 2,
+    claimers: [{ participantId: "p1", userId: "user-1", name: "Ana Souza", avatarUrl: null }],
+    expenseId: null,
+    ...overrides,
+  };
+}
+
+function hostedItem(id: string, overrides: Partial<HostedAssignmentRoom> = {}, placeLabel = "Casa da Ana"): HomeRoomCardItem {
+  return { kind: "hosted", room: hostedRoom(id, overrides), hostLabel: "Você", placeLabel };
+}
+
+function renderCard(rooms: HomeRoomCardItem[], pendingRoomId: string | null = null) {
   return render(<HomeOpenRoomsCard rooms={rooms} pendingRoomId={pendingRoomId} onOpen={vi.fn()} />);
 }
 
@@ -48,41 +81,77 @@ describe("HomeOpenRoomsCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("offers Entrar on a new room and Continuar on a joined one", () => {
-    renderCard([item("room-new"), item("room-joined", { joined: true })]);
+  it("links hosted rows to their room and names grouped and standalone places", () => {
+    renderCard([
+      hostedItem("grouped"),
+      hostedItem("standalone", { groupId: null, groupName: null }, "Sem grupo"),
+    ]);
 
-    const fresh = screen.getByRole("button", { name: /Conta room-new/ });
-    expect(within(fresh).getByText("Nova")).toBeInTheDocument();
-    expect(within(fresh).getByText("Entrar")).toBeInTheDocument();
+    const grouped = screen.getByRole("link", { name: /Conta grouped/ });
+    const standalone = screen.getByRole("link", { name: /Conta standalone/ });
+    expect(grouped).toHaveAttribute("href", "/room/grouped");
+    expect(standalone).toHaveAttribute("href", "/room/standalone");
+    expect(within(grouped).getByText("Você abriu · Casa da Ana")).toBeInTheDocument();
+    expect(within(standalone).getByText("Você abriu · Sem grupo")).toBeInTheDocument();
+  });
 
-    const joined = screen.getByRole("button", { name: /Conta room-joined/ });
-    expect(within(joined).getByText("Continuar")).toBeInTheDocument();
-    expect(within(joined).queryByText("Nova")).not.toBeInTheDocument();
+  it("marks a closed hosted room as awaiting review", () => {
+    renderCard([hostedItem("review", { status: "closed" }), hostedItem("claiming")]);
+
+    const review = screen.getByRole("link", { name: /Conta review/ });
+    expect(within(review).getByText("Em revisão")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("link", { name: /Conta claiming/ })).queryByText("Em revisão")
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens a room opened by someone else when its row is tapped", async () => {
+    const onOpen = vi.fn();
+    const room = openRoom("room-a");
+    render(
+      <HomeOpenRoomsCard
+        rooms={[{ kind: "open", room, hostLabel: "Carol", placeLabel: "Jantar" }]}
+        pendingRoomId={null}
+        onOpen={onOpen}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /Conta room-a/ }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledWith(room);
   });
 
   it("disables every row while a room is opening and keeps the opening row busy", async () => {
     const onOpen = vi.fn();
-    render(<HomeOpenRoomsCard rooms={[item("room-a"), item("room-b")]} pendingRoomId="room-a" onOpen={onOpen} />);
+    render(<HomeOpenRoomsCard rooms={[openItem("room-a"), openItem("room-b")]} pendingRoomId="room-a" onOpen={onOpen} />);
 
     const opening = screen.getByRole("button", { name: /Conta room-a/ });
     const other = screen.getByRole("button", { name: /Conta room-b/ });
     expect(opening).toBeDisabled();
     expect(other).toBeDisabled();
-    expect(within(opening).getByText("Abrindo…")).toBeInTheDocument();
-    expect(within(opening).queryByText("Entrar")).not.toBeInTheDocument();
+    expect(within(opening).getByLabelText("Abrindo sala")).toBeInTheDocument();
 
     await userEvent.click(other);
     expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it("keeps only three rows collapsed and expands with Ver todas", async () => {
-    renderCard([item("room-1"), item("room-2"), item("room-3"), item("room-4")]);
+  it("shows claimed item progress as N/M itens atribuídos", () => {
+    renderCard([openItem("room-progress", { ownedItemCount: 1, itemCount: 4 })]);
+    expect(screen.getByText("1/4 itens atribuídos")).toBeInTheDocument();
+  });
 
-    expect(screen.queryByRole("button", { name: /Conta room-4/ })).not.toBeInTheDocument();
+  it("keeps only three rows collapsed and expands without losing navigation", async () => {
+    renderCard([openItem("room-1"), openItem("room-2"), hostedItem("room-3"), hostedItem("room-4")]);
+
+    expect(screen.getByRole("region", { name: "Suas salas" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Conta room-4/ })).not.toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "Ver todas (4)" });
     await userEvent.click(toggle);
 
-    expect(screen.getByRole("button", { name: /Conta room-4/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Conta room-4/ })).toHaveAttribute("href", "/room/room-4");
     expect(screen.getByRole("button", { name: "Ver menos" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ver menos" }));
+    expect(screen.queryByRole("link", { name: /Conta room-4/ })).not.toBeInTheDocument();
   });
 });

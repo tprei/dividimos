@@ -7,7 +7,8 @@ import {
   type RecentBillItem,
 } from "@/stores/app-selectors";
 import type { AppState } from "@/stores/app-store";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type { HostedAssignmentRoom, OpenAssignmentRoom } from "@/types/assignment-room";
+import { displayNames } from "@/lib/people";
 
 type HomeMode = "first-use" | "outstanding" | "settled";
 let recentCache: {
@@ -149,6 +150,68 @@ export function selectOpenRoomsFromOthers(state: AppState): OpenRoomCardItem[] {
     roomsByGroupId: state.openAssignmentRoomsByGroupId,
     me: state.me,
     blockedUsers: state.blockedUsers,
+    items,
+  };
+  return items;
+}
+
+export type HomeRoomCardItem = {
+  hostLabel: string;
+  placeLabel: string;
+} & (
+  | { kind: "hosted"; room: HostedAssignmentRoom }
+  | { kind: "open"; room: OpenAssignmentRoom }
+);
+
+let homeRoomsCache: {
+  openRooms: OpenRoomCardItem[];
+  hostedRooms: AppState["hostedAssignmentRooms"];
+  groups: AppState["groups"];
+  me: AppState["me"];
+  items: HomeRoomCardItem[];
+} | null = null;
+
+export function selectHomeRooms(state: AppState): HomeRoomCardItem[] {
+  const openRooms = selectOpenRoomsFromOthers(state);
+  const previous = homeRoomsCache;
+  if (
+    previous &&
+    previous.openRooms === openRooms &&
+    previous.hostedRooms === state.hostedAssignmentRooms &&
+    previous.groups === state.groups &&
+    previous.me === state.me
+  )
+    return previous.items;
+
+  const items: HomeRoomCardItem[] = [];
+  if (state.me) {
+    const hostNames = displayNames(openRooms.map(({ room }) => room.host), { style: "short" });
+    for (const room of state.hostedAssignmentRooms) {
+      const group = room.groupId ? state.groups[room.groupId] : undefined;
+      items.push({
+        kind: "hosted",
+        room,
+        hostLabel: "Você",
+        placeLabel: group ? groupNameOf(group, state.me.id) : room.groupName ?? "Sem grupo",
+      });
+    }
+    for (const { room, placeLabel } of openRooms) {
+      items.push({
+        kind: "open",
+        room,
+        hostLabel: hostNames.get(room.host.id) ?? room.host.name,
+        placeLabel,
+      });
+    }
+    items.sort((a, b) =>
+      b.room.createdAt.localeCompare(a.room.createdAt) || b.room.id.localeCompare(a.room.id),
+    );
+  }
+  homeRoomsCache = {
+    openRooms,
+    hostedRooms: state.hostedAssignmentRooms,
+    groups: state.groups,
+    me: state.me,
     items,
   };
   return items;

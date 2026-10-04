@@ -7,14 +7,13 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
-import { HostedRoomsCard } from "@/components/dashboard/hosted-rooms-card";
 import { HomeOpenRoomsCard } from "@/components/dashboard/open-rooms-card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import {
   selectHomeMode,
   selectHomeRecentBills,
-  selectOpenRoomsFromOthers,
+  selectHomeRooms,
 } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -69,8 +68,7 @@ export function DashboardContent() {
   const rows = useAppStore(selectDebtRows);
   const homeMode = useAppStore(selectHomeMode);
   const recentBills = useAppStore(selectHomeRecentBills);
-  const hostedRooms = useAppStore((state) => state.hostedAssignmentRooms);
-  const openRooms = useAppStore(selectOpenRoomsFromOthers);
+  const rooms = useAppStore(selectHomeRooms);
   const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [debtAnchor, setDebtAnchor] = useState<HTMLElement | null>(null);
@@ -324,8 +322,7 @@ export function DashboardContent() {
           </Button>
         </div>
       </section>
-      <HomeOpenRoomsCard rooms={openRooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
-      <HostedRoomsCard rooms={hostedRooms} />
+      <HomeOpenRoomsCard rooms={rooms} pendingRoomId={pendingRoomId} onOpen={openRoom} />
       <NotificationPrompt />
 
       <div className="space-y-6 empty:hidden" data-tour="debt-lists">

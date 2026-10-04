@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { OpenAssignmentRoom } from "@/types/assignment-room";
+import type { HostedAssignmentRoom, OpenAssignmentRoom } from "@/types/assignment-room";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "@/lib/sync/errors";
@@ -184,6 +184,26 @@ function openRoom(overrides: Partial<OpenAssignmentRoom> = {}): OpenAssignmentRo
   };
 }
 
+function hostedRoom(overrides: Partial<HostedAssignmentRoom> = {}): HostedAssignmentRoom {
+  return {
+    id: "hosted-1",
+    groupId: "g1",
+    groupName: "Jantar",
+    status: "open",
+    revision: 1,
+    title: "Conta hospedada",
+    occurredOn: "2026-09-20",
+    totalCents: 8000,
+    host: me,
+    createdAt: "2026-09-21T12:00:00Z",
+    itemCount: 4,
+    ownedItemCount: 2,
+    claimers: [],
+    expenseId: null,
+    ...overrides,
+  };
+}
+
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -302,17 +322,25 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("Contas recentes")).not.toBeInTheDocument();
   });
 
-  it("lists a room hosted by someone else under Salas pra você", () => {
+  it("merges hosted rooms and rooms opened by others under one Suas salas section", () => {
     seedStore([snapshot()]);
     useAppStore.setState({
+      hostedAssignmentRooms: [
+        hostedRoom({ id: "room-mine", groupId: "g1", groupName: "Jantar", title: "Minha churrasqueira" }),
+      ],
       openAssignmentRoomsByGroupId: {
         g1: [openRoom({ id: "room-1", groupId: "g1", host: carol, title: "Conta da pizzaria" })],
       },
     });
     render(<DashboardContent />);
 
-    expect(screen.getByText("Salas pra você")).toBeInTheDocument();
-    expect(screen.getByText("Conta da pizzaria")).toBeInTheDocument();
+    const section = screen.getByRole("region", { name: "Suas salas" });
+    expect(within(section).getByRole("heading", { name: /Suas salas/ })).toBeInTheDocument();
+    expect(within(section).getByRole("link", { name: /Minha churrasqueira/ })).toHaveAttribute(
+      "href",
+      "/room/room-mine",
+    );
+    expect(within(section).getByRole("button", { name: /Conta da pizzaria/ })).toBeInTheDocument();
   });
 
   it("opens each room with its own groupId when its row is clicked", async () => {
