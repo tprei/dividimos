@@ -136,6 +136,22 @@ function SettingsPageContent() {
         });
         return;
       }
+      if (result.code === "apple_revoke_failed") {
+        setDeletionState({
+          status: "error",
+          committed: true,
+          message: "Seus dados já foram apagados ou anonimizados. Falta revogar o acesso na Apple. Tente novamente.",
+        });
+        return;
+      }
+      if (result.code === "apple_reauthorization_required") {
+        setDeletionState({
+          status: "error",
+          committed: false,
+          message: "Sua conta entra com a Apple. Pra excluir, confirme com a Apple no app do Dividimos no iPhone.",
+        });
+        return;
+      }
       if (result.code === "unauthenticated") {
         setDeletionState({
           status: "error",
