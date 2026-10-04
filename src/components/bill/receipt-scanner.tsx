@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { RotateCcw, ScanLine, X } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { Camera, ImagePlus, RotateCcw, ScanLine, X } from "lucide-react";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
+import { ReceiptCaptureArt } from "@/components/bill/receipt-capture-art";
 import { OpenAppSettingsButton } from "@/components/shared/open-app-settings-button";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
 import { useAiConsent } from "@/hooks/use-ai-consent";
-import { popIn } from "@/lib/animations";
+import { fade, popIn } from "@/lib/animations";
 import { opensAppSettings } from "@/lib/capacitor/app-settings";
 import {
   isNativeCameraAvailable,
@@ -42,6 +43,8 @@ export function ReceiptScanner({
   const isNative = isNativeCameraAvailable();
   const nativeGallery = picksGalleryNatively();
   const { granted } = useAiConsent();
+  const reducedMotion = useReducedMotion();
+  const entrance = reducedMotion ? fade : popIn;
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -226,9 +229,9 @@ export function ReceiptScanner({
   return (
     <div className="space-y-4">
       {captureError !== null && (
-        <p role="alert" className="text-sm text-destructive-text">
+        <div role="alert" className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive-text">
           {captureError}
-        </p>
+        </div>
       )}
       {captureError === IOS_CAMERA_DENIED_MESSAGE && <OpenAppSettingsButton />}
 
@@ -244,7 +247,7 @@ export function ReceiptScanner({
         {cameraOpen ? (
           <motion.div
             key="camera"
-            variants={popIn} initial="hidden" animate="visible" exit="exit"
+            variants={entrance} initial="hidden" animate="visible" exit="exit"
           >
             <ReceiptCameraView
               onCapture={handleCameraCapture}
@@ -255,14 +258,14 @@ export function ReceiptScanner({
         ) : preview ? (
           <motion.div
             key="preview"
-            variants={popIn} initial="hidden" animate="visible" exit="exit"
-            className="space-y-3"
+            variants={entrance} initial="hidden" animate="visible" exit="exit"
+            className="mx-auto flex min-h-[calc(var(--app-viewport-height)-8rem)] max-w-sm flex-col justify-center gap-6 pb-[max(1rem,env(safe-area-inset-bottom))]"
           >
             <div className="relative overflow-hidden rounded-2xl border bg-muted">
               <img
                 src={preview}
                 alt="Foto da nota fiscal"
-                className="max-h-80 w-full object-contain"
+                className="h-[min(48dvh,24rem)] w-full object-contain p-4"
               />
               <button
                 type="button"
@@ -275,10 +278,10 @@ export function ReceiptScanner({
               </button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid gap-3">
               <Button
                 variant="outline"
-                className="flex-1 gap-2"
+                className="min-h-12 gap-2"
                 onClick={handleRetake}
                 disabled={processing}
               >
@@ -286,7 +289,7 @@ export function ReceiptScanner({
                 Trocar foto
               </Button>
               <Button
-                className="flex-1 gap-2"
+                className="min-h-14 gap-2 text-base"
                 onClick={handleProcess}
                 disabled={processing}
               >
@@ -302,29 +305,37 @@ export function ReceiptScanner({
         ) : nativeCamera ? null : (
           <motion.div
             key="fallback"
-            variants={popIn} initial="hidden" animate="visible" exit="exit"
-            className="flex flex-col gap-2"
+            variants={entrance} initial="hidden" animate="visible" exit="exit"
+            className="mx-auto flex min-h-[calc(var(--app-viewport-height)-8rem)] w-full max-w-sm flex-col justify-center gap-8 pb-[max(1rem,env(safe-area-inset-bottom))] compact:gap-4"
           >
-            <Button
-              className="min-h-11 w-full"
-              onClick={isNative ? startNativeCamera : startWebCamera}
-            >
-              Tirar foto
-            </Button>
-            <Button
-              variant="outline"
-              className="min-h-11 w-full"
-              onClick={nativeGallery ? handleNativeGallery : handleCameraGallery}
-            >
-              Escolher da galeria
-            </Button>
-            <Button
-              variant="outline"
-              className="min-h-11 w-full"
-              onClick={onBack}
-            >
-              Voltar
-            </Button>
+            <div className="text-center">
+              <ReceiptCaptureArt />
+              <h2 className="mt-4 text-xl font-bold tracking-tight">Sua nota, sem digitar</h2>
+            </div>
+            <div className="grid gap-3">
+              <Button
+                className="min-h-14 w-full gap-2 text-base"
+                onClick={isNative ? startNativeCamera : startWebCamera}
+              >
+                <Camera className="size-5" />
+                Tirar foto
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-12 w-full gap-2"
+                onClick={nativeGallery ? handleNativeGallery : handleCameraGallery}
+              >
+                <ImagePlus className="size-5" />
+                Escolher da galeria
+              </Button>
+              <Button
+                variant="ghost"
+                className="min-h-11 w-full"
+                onClick={onBack}
+              >
+                Voltar
+              </Button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

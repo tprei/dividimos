@@ -301,7 +301,6 @@ describe("ReceiptScanner", () => {
       expect(getUserMedia).toHaveBeenCalledOnce();
       expect(clickInput).not.toHaveBeenCalled();
       expect(screen.getByTestId("receipt-camera-video")).toBeInTheDocument();
-      expect(screen.queryByText("Camera")).not.toBeInTheDocument();
     });
 
 

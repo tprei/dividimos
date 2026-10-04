@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, ImagePlus } from "lucide-react";
+import { ReceiptCaptureArt } from "@/components/bill/receipt-capture-art";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { haptics } from "@/hooks/use-haptics";
@@ -206,25 +207,32 @@ export function ReceiptCameraView({
 
   if (status === "error") {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-destructive/30 bg-destructive/5 p-6 text-center">
-        <CameraOff className="h-8 w-8 text-destructive-text" />
-        <p role="alert" className="text-sm text-destructive-text">
-          {errorMessage}
-        </p>
-        <div className="flex w-full flex-col gap-2">
-          <Button type="button" onClick={handleRetry}>
+      <div className="mx-auto flex min-h-[calc(var(--app-viewport-height)-8rem)] w-full max-w-sm flex-col justify-center gap-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="text-center">
+          <ReceiptCaptureArt />
+          <h2 className="mt-4 flex items-center justify-center gap-2 text-xl font-bold tracking-tight">
+            <CameraOff className="size-5 text-muted-foreground" />
+            Câmera indisponível
+          </h2>
+          <p role="alert" className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">
+            {errorMessage}
+          </p>
+        </div>
+        <div className="grid w-full gap-3">
+          <Button type="button" className="min-h-14 gap-2 text-base" onClick={handleRetry}>
+            <Camera className="size-5" />
             Tentar novamente
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="gap-2"
+            className="min-h-12 gap-2"
             onClick={handleGallery}
           >
             <ImagePlus className="h-4 w-4" />
             Galeria
           </Button>
-          <Button type="button" variant="ghost" onClick={handleClose}>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={handleClose}>
             Voltar
           </Button>
         </div>
@@ -235,29 +243,36 @@ export function ReceiptCameraView({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent showCloseButton={false}
-        className="left-0 top-(--app-viewport-top) h-(--app-viewport-height) max-h-none w-full max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 sm:max-w-none">
+        className="left-0 top-(--app-viewport-top) flex h-(--app-viewport-height) max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-background p-0 sm:max-w-none">
         <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
-          <DialogTitle>Nota fiscal</DialogTitle>
-          <Button variant="ghost" onClick={handleClose}>Fechar</Button>
+          <DialogTitle className="text-base font-bold">Escanear nota</DialogTitle>
+          <Button variant="ghost" className="min-h-11" onClick={handleClose}>Fechar</Button>
         </div>
         <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
           <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover" autoPlay playsInline muted onLoadedMetadata={handleVideoReady} data-testid="receipt-camera-video" />
-          <div aria-hidden="true" className="pointer-events-none absolute inset-[8%] rounded-2xl border-2 border-primary shadow-[0_0_0_100vmax_rgb(0_0_0/0.3)]" />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-[12%] inset-y-[8%] rounded-2xl border-2 border-primary">
+            <span className="absolute -left-0.5 -top-0.5 size-10 rounded-tl-2xl border-l-4 border-t-4 border-primary" />
+            <span className="absolute -right-0.5 -top-0.5 size-10 rounded-tr-2xl border-r-4 border-t-4 border-primary" />
+            <span className="absolute -bottom-0.5 -left-0.5 size-10 rounded-bl-2xl border-b-4 border-l-4 border-primary" />
+            <span className="absolute -bottom-0.5 -right-0.5 size-10 rounded-br-2xl border-b-4 border-r-4 border-primary" />
+          </div>
           {status === "starting" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/90" role="status">
-              <Camera className="size-8 text-primary motion-safe:animate-pulse" />
-              <p className="text-sm">Iniciando câmera…</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/95" role="status">
+              <div className="w-full max-w-xs compact:hidden"><ReceiptCaptureArt reading /></div>
+              <Camera className="hidden size-8 text-primary compact:block motion-safe:animate-pulse" />
+              <p className="text-base font-semibold">Iniciando câmera…</p>
             </div>
           )}
         </div>
-        <div className="grid grid-cols-3 items-center gap-3 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Button variant="outline" className="h-auto min-h-12 flex-col gap-1 py-2" onClick={handleGallery}>
+        <p className="pt-4 text-center text-sm text-muted-foreground">Nota inteira no quadro</p>
+        <div className="grid grid-cols-3 items-center gap-3 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <Button variant="ghost" className="min-h-14 flex-col gap-1 py-2" onClick={handleGallery}>
             <ImagePlus className="size-5" />Galeria
           </Button>
           <Button onClick={handleCapture} disabled={status !== "ready"} aria-label="Capturar foto" className="mx-auto size-16 rounded-full ring-2 ring-primary ring-offset-4 ring-offset-background">
             <Camera className="size-7" />
           </Button>
-          <span className="text-center text-xs text-muted-foreground">Nota inteira no quadro</span>
+          <div aria-hidden="true" />
         </div>
       </DialogContent>
     </Dialog>
