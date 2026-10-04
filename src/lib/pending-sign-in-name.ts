@@ -1,5 +1,6 @@
+import { isApplePrivateRelayEmail } from "./apple-private-relay";
+
 const PENDING_SIGN_IN_NAME_KEY = "dividimos:pending-sign-in-name";
-const APPLE_PRIVATE_RELAY_DOMAIN = "@privaterelay.appleid.com";
 
 interface PendingSignInName {
   userId: string;
@@ -67,7 +68,6 @@ export function clearPendingSignInName(): void {
  */
 export function onboardingNameFallback(me: { name: string; email: string }): string {
   const email = me.email.trim();
-  const isRelay = email.toLowerCase().endsWith(APPLE_PRIVATE_RELAY_DOMAIN);
-  if (isRelay && me.name === email.slice(0, email.indexOf("@"))) return "";
+  if (isApplePrivateRelayEmail(email) && me.name === email.slice(0, email.indexOf("@"))) return "";
   return me.name;
 }
