@@ -1546,6 +1546,24 @@ describe("mutations", () => {
       expect(useAppStore.getState().me).toEqual({ ...ME, name: "Nome Novo" });
     });
 
+    it("sends the DM invite push even when the overview refresh fails", async () => {
+      useAppStore.setState({ me: ME });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: 77, created: true });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("not_a_member"));
+
+      await expect(getOrCreateDm(USER_2.id)).rejects.toThrow(LedgerError);
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ eventId: 77 }),
+          keepalive: true,
+        }),
+      );
+    });
+
     it("creates DM, links, and updates profile", async () => {
       useAppStore.setState({ me: ME });
 
