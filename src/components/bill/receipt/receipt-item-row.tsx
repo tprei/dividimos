@@ -1,6 +1,5 @@
 "use client";
 
-import { Fragment } from "react";
 import { Minus, Pencil, Plus, Trash2 } from "lucide-react";
 import { Money } from "@/components/shared/money";
 import { ItemIcon } from "@/components/shared/item-icon";
@@ -53,7 +52,7 @@ export function ReceiptItemRow({
     .join(" ");
 
   return (
-    <Fragment>
+    <div>
       <button
         type="button"
         aria-label={`Editar ${itemLabel}`}
@@ -192,6 +191,6 @@ export function ReceiptItemRow({
           </div>
         </div>
       )}
-    </Fragment>
+    </div>
   );
 }

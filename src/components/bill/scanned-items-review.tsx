@@ -298,7 +298,7 @@ export function ScannedItemsReview({
                   aria-label="Taxa de serviço (%)"
                   aria-invalid={!serviceFeeResult.ok}
                   aria-describedby={!serviceFeeResult.ok ? "receipt-service-fee-error" : undefined}
-                  className="h-9 w-10 border-0 bg-transparent p-0 text-right text-base tabular-nums shadow-none focus-visible:ring-0 md:text-sm"
+                  className="h-9 w-16 border-0 bg-transparent p-0 text-right text-base tabular-nums shadow-none focus-visible:ring-0 md:text-sm"
                 />
                 <span aria-hidden="true" className="text-sm text-muted-foreground">%</span>
               </div>
