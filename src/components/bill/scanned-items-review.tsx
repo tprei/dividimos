@@ -235,15 +235,15 @@ export function ScannedItemsReview({
       <ScreenHeader back onBack={onCancel} subtitle="Leitura" title="Recibo" />
       <div>
         <div className="overflow-hidden rounded-2xl border bg-card">
-          <div className="px-4 pb-4 pt-6 text-center">
+          <div className="bg-muted/30 px-4 py-3 text-center">
             <Input
               value={merchant}
               onChange={(event) => setMerchant(event.target.value)}
               aria-label="Nome do estabelecimento"
               placeholder="Nome do estabelecimento"
-              className="h-11 border-0 bg-transparent px-0 text-center text-base font-bold uppercase tracking-[0.12em] shadow-none"
+              className="h-11 border-0 bg-transparent px-0 text-center text-base font-bold shadow-none"
             />
-            <div className="mx-auto mt-2 w-fit">
+            <div className="mx-auto mt-1 w-fit">
               <DateField label="Data do recibo" value={occurredOn} onChange={setOccurredOn} />
             </div>
             {!isOccurredOnValid(occurredOn) && (
@@ -258,6 +258,7 @@ export function ScannedItemsReview({
               Nenhum item. Tente escanear novamente ou adicione manualmente.
             </p>
           )}
+          <div className="divide-y divide-border/60">
           {items.map((item, index) => (
             <ReceiptItemRow
               key={index}
@@ -275,27 +276,33 @@ export function ScannedItemsReview({
               onRemove={handleRemoveItem}
             />
           ))}
+          </div>
           <div className="border-t border-dashed" />
-          <div className="py-2 pl-4 pr-[2.375rem]">
-            <div className="flex items-baseline justify-between gap-3 py-2">
-              <span className="text-sm leading-5">Subtotal</span>
+          <div className="space-y-1 bg-muted/20 px-4 py-3">
+            <div className="flex items-baseline justify-between gap-3 py-1">
+              <span className="text-sm leading-5 text-muted-foreground">Subtotal</span>
               <Money cents={subtotalCents} className="text-sm" />
             </div>
-            <div className="flex min-h-14 items-center gap-3 py-2">
-              <label htmlFor="receipt-service-fee" className="min-w-0 flex-1 text-sm leading-5">
-                Taxa de serviço (%)
+            <div className="flex min-h-11 items-center gap-2">
+              <label htmlFor="receipt-service-fee" className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
+                Taxa de serviço
               </label>
-              <Input
-                id="receipt-service-fee"
-                value={serviceFee}
-                onChange={(event) =>
-                  setServiceFee(event.target.value.replace(/[^\d,.]/g, ""))
-                }
-                inputMode="decimal"
-                aria-invalid={!serviceFeeResult.ok}
-                aria-describedby={!serviceFeeResult.ok ? "receipt-service-fee-error" : undefined}
-                className="h-11 w-24 shrink-0 bg-transparent text-right font-mono"
-              />
+              <div className="flex h-11 shrink-0 items-center gap-1 rounded-lg border border-input bg-card px-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                <Input
+                  id="receipt-service-fee"
+                  value={serviceFee}
+                  onChange={(event) =>
+                    setServiceFee(event.target.value.replace(/[^\d,.]/g, ""))
+                  }
+                  inputMode="decimal"
+                  aria-label="Taxa de serviço (%)"
+                  aria-invalid={!serviceFeeResult.ok}
+                  aria-describedby={!serviceFeeResult.ok ? "receipt-service-fee-error" : undefined}
+                  className="h-9 w-10 border-0 bg-transparent p-0 text-right text-base tabular-nums shadow-none focus-visible:ring-0 md:text-sm"
+                />
+                <span aria-hidden="true" className="text-sm text-muted-foreground">%</span>
+              </div>
+              <Money cents={serviceFeeCents} className="min-w-16 shrink-0 text-right text-sm" />
             </div>
             {!serviceFeeResult.ok && (
               <p id="receipt-service-fee-error" className="pb-2 text-xs leading-4 text-destructive">
@@ -304,17 +311,17 @@ export function ScannedItemsReview({
             )}
             {result.fixedFeesCents > 0 && (
               <div className="flex min-h-14 items-baseline justify-between gap-3 py-2">
-                <span className="text-sm leading-5 font-bold uppercase tracking-[0.12em]">
+                <span className="text-sm leading-5 text-muted-foreground">
                   Taxa impressa na nota
                 </span>
                 <Money cents={result.fixedFeesCents} className="text-base font-bold" />
               </div>
             )}
-            <div className="flex min-h-14 items-baseline justify-between gap-3 py-2">
-              <span className="text-sm leading-5 font-bold uppercase tracking-[0.12em]">
+            <div className="mt-3 flex min-h-14 items-center justify-between gap-3 border-t border-dashed border-border pt-3">
+              <span className="text-base font-semibold">
                 Total
               </span>
-              <Money cents={totalCents} className="text-base font-bold" />
+              <Money cents={totalCents} className="text-xl font-bold" />
             </div>
             {result.totalCents > 0 && result.totalCents !== totalCents && (
               <p className="pb-2 text-xs leading-4 text-muted-foreground">

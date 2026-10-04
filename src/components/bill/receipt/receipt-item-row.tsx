@@ -60,38 +60,42 @@ export function ReceiptItemRow({
         aria-expanded={panelOpen}
         aria-describedby={invalid ? errorIds : undefined}
         onClick={() => onTogglePanel(index)}
-        className="flex min-h-14 w-full items-center px-4 py-2 text-left transition-colors hover:bg-muted/40"
+        className={cn(
+          "flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left motion-safe:transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+          panelOpen && "bg-muted/50",
+        )}
       >
-        {showIcon && <ItemIcon icon={item.icon} className="mr-2" />}
-        <span className="min-w-0">
+        {showIcon && (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+            <ItemIcon icon={item.icon} className="size-8" />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
           <span
             className={cn(
-              "block break-words text-sm leading-5 font-semibold [overflow-wrap:anywhere]",
+              "block break-words text-base leading-5 font-semibold [overflow-wrap:anywhere]",
               nameInvalid && "text-destructive",
             )}
           >
             {item.description.trim() || "Item sem nome"}
-            {item.quantity !== 1000 && (
-              <span className="ml-1.5 inline-block whitespace-nowrap text-muted-foreground tabular-nums">
-                {quantityText}x
-              </span>
-            )}
           </span>
-          {!amountInvalid && item.quantity !== 1000 && (
-            <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
-              <Money cents={item.unitPriceCents} className="text-xs font-normal" /> cada
+          {item.quantity !== 1000 && (
+            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-muted-foreground tabular-nums">
+              <span className="font-semibold">{quantityText}x</span>
+              {!amountInvalid && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span><Money cents={item.unitPriceCents} className="text-xs font-normal" /> cada</span>
+                </>
+              )}
             </span>
           )}
         </span>
-        <span
-          aria-hidden="true"
-          className="mx-2 min-w-2 flex-1 shrink-0 translate-y-[-0.25rem] border-b border-dotted border-border/60"
-        />
         <Money
           cents={item.totalCents}
-          className={cn("shrink-0 text-sm", amountInvalid && "text-destructive")}
+          className={cn("shrink-0 text-sm font-semibold", amountInvalid && "text-destructive")}
         />
-        <Pencil className="ml-2 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Pencil className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
       {invalid && (
         <div className="space-y-1 px-4 pb-2 text-xs text-destructive">
@@ -100,29 +104,29 @@ export function ReceiptItemRow({
         </div>
       )}
       {panelOpen && (
-        <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 pt-3 pb-4">
-          <div className="space-y-1">
-            <label htmlFor={`receipt-item-${index}-name`} className="text-xs text-muted-foreground">
-              Nome
-            </label>
-            <Input
-              id={`receipt-item-${index}-name`}
-              value={item.description}
-              onChange={(event) => onNameChange(index, event.target.value)}
-              aria-label={`Nome de ${itemLabel}`}
-              aria-invalid={nameInvalid}
-              aria-describedby={nameInvalid ? nameErrorId : undefined}
-              className="h-11 w-full bg-card text-base md:text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <p id={`receipt-item-${index}-quantity-label`} className="text-xs text-muted-foreground">
-              Quantidade
+        <div className="space-y-3 border-t border-border bg-muted/30 px-4 pt-3 pb-4">
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1 space-y-1">
+              <label htmlFor={`receipt-item-${index}-name`} className="text-xs text-muted-foreground">
+                Nome
+              </label>
+              <Input
+                id={`receipt-item-${index}-name`}
+                value={item.description}
+                onChange={(event) => onNameChange(index, event.target.value)}
+                aria-label={`Nome de ${itemLabel}`}
+                aria-invalid={nameInvalid}
+                aria-describedby={nameInvalid ? nameErrorId : undefined}
+                className="h-11 w-full bg-card text-base md:text-sm"
+              />
+            </div>
+            <p id={`receipt-item-${index}-quantity-label`} className="sr-only">
+              Quantidade de {itemLabel}
             </p>
             <div
               role="group"
               aria-labelledby={`receipt-item-${index}-quantity-label`}
-              className="flex h-11 w-fit items-center rounded-[0.75rem] border border-input bg-card"
+              className="flex h-11 shrink-0 items-center overflow-hidden rounded-lg border border-input bg-card"
             >
               <Button
                 type="button"
@@ -132,14 +136,14 @@ export function ReceiptItemRow({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onQuantityChange(index, item.quantity - 1000)}
                 aria-label={`Diminuir quantidade de ${itemLabel}`}
-                className="size-11 rounded-l-[0.75rem] rounded-r-none text-muted-foreground"
+                className="size-11 rounded-none text-muted-foreground"
               >
                 <Minus className="size-3.5" aria-hidden="true" />
               </Button>
               <span
                 aria-live="polite"
                 aria-atomic="true"
-                className="min-w-9 px-1 text-center text-base font-semibold tabular-nums md:text-sm"
+                className="min-w-7 text-center text-base font-semibold tabular-nums md:text-sm"
               >
                 {quantityText}x
               </span>
@@ -151,7 +155,7 @@ export function ReceiptItemRow({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onQuantityChange(index, item.quantity + 1000)}
                 aria-label={`Aumentar quantidade de ${itemLabel}`}
-                className="size-11 rounded-l-none rounded-r-[0.75rem] text-muted-foreground"
+                className="size-11 rounded-none text-muted-foreground"
               >
                 <Plus className="size-3.5" aria-hidden="true" />
               </Button>
@@ -182,7 +186,7 @@ export function ReceiptItemRow({
               <Trash2 className="size-4" aria-hidden="true" />
               Remover
             </Button>
-            <Button variant="ghost" className="h-11 flex-1" onClick={() => onTogglePanel(index)}>
+            <Button variant="outline" className="h-11 flex-1 bg-card" onClick={() => onTogglePanel(index)}>
               Pronto
             </Button>
           </div>
