@@ -592,6 +592,13 @@
     @slot;
   }
 }
+/* Width step: below 360px the sign-in buttons' brand-fixed titles need a
+   shorter button and tighter card padding to fit. */
+@custom-variant intro-narrow {
+  @container intro-vp (max-width: 359px) {
+    @slot;
+  }
+}
 
 @layer components {
   .intro-vp {

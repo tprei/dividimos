@@ -15,7 +15,7 @@ Use this as the default architecture:
 - Framework: Next.js 16 (App Router), React 19.
 - Language: TypeScript.
 - Backend / database: Supabase (PostgreSQL + Row-Level Security + Auth + Realtime). The Next.js API routes and Supabase RPC functions are the backend.
-- Auth: Google OAuth via Supabase Auth on web; Google Credential Manager on Android. No phone, no 2FA.
+- Auth: Supabase Auth with Google ID tokens everywhere (web redirect, Credential Manager on Android, native Google Sign-In on iOS) and native Sign in with Apple on iOS. No phone, no 2FA.
 - Client state: Zustand.
 - Styling: Tailwind CSS v4 + shadcn/ui + Framer Motion.
 - Tests: Vitest + React Testing Library (unit and integration), Playwright (synthetic E2E).
@@ -27,7 +27,7 @@ Do not introduce a separate backend service, an ORM (Prisma, Drizzle), Redis, a 
 ## Product Constraints
 
 - The app is PT-BR first. Keep user-facing copy informal, Brazilian, and useful.
-- Authentication is Google OAuth only. Do not add phone, password, or 2FA flows.
+- Authentication is Google on every platform plus Sign in with Apple in the iOS app (App Store guideline 4.8). Do not remove Apple from iOS, and do not add phone, password, or 2FA flows. Linking Apple and Google on one account goes through `linkIdentity` from the signed-in session; never merge accounts by name or email.
 - Money is integer centavos everywhere — store, types, and database. Never floating point for arithmetic.
 - Users are discovered by exact `@handle` only. No search, no listing, no enumeration.
 - Pix keys are encrypted at rest (AES-256-GCM) and decrypted server-side only. Raw keys never reach the client.

@@ -547,7 +547,7 @@ describe("RoomPageClient", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Tentar de novo" }));
 
     expect(
-      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+      await screen.findByRole("button", { name: "Entrar para vincular minha parte" }),
     ).toBeInTheDocument();
     expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -571,7 +571,7 @@ describe("RoomPageClient", () => {
     });
 
     expect(
-      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+      await screen.findByRole("button", { name: "Entrar para vincular minha parte" }),
     ).toBeInTheDocument();
     expect(mocks.refreshCompletion).toHaveBeenCalledTimes(2);
   });
@@ -602,7 +602,7 @@ describe("RoomPageClient", () => {
       retry.resolve(signInCompletion());
     });
     expect(
-      await screen.findByRole("button", { name: "Entrar com Google para vincular minha parte" }),
+      await screen.findByRole("button", { name: "Entrar para vincular minha parte" }),
     ).toBeInTheDocument();
   });
 
@@ -618,7 +618,7 @@ describe("RoomPageClient", () => {
 
     render(<RoomPageClient roomId={ROOM_ID} />);
 
-    const signIn = "Entrar com Google para vincular minha parte";
+    const signIn = "Entrar para vincular minha parte";
     expect(await screen.findByRole("button", { name: signIn })).toBeInTheDocument();
     act(() => {
       const current = finalizedGuestView();

@@ -97,7 +97,7 @@ function completionActionLabel(
     case "claim_guest":
       return "Vincular minha parte e ver conta";
     case "sign_in":
-      return "Entrar com Google para vincular minha parte";
+      return "Entrar para vincular minha parte";
     case "unavailable":
       return undefined;
   }

@@ -12,17 +12,21 @@ const lookup = vi.mocked(lookupUserByHandle);
 const nav = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace }) }));
 const authMocks = vi.hoisted(() => ({
-  signOut: vi.fn(),
   attachAuthListener: vi.fn<(onSignedOut: () => void, onError: (error: unknown) => void) => () => void>(
     () => () => {},
   ),
 }));
 vi.mock("@/lib/sync/auth", () => authMocks);
+const deletionMocks = vi.hoisted(() => {
+  class AccountLocalWipeError extends Error {}
+  return { deleteAccount: vi.fn(), AccountLocalWipeError };
+});
+vi.mock("@/lib/sync/account-deletion", () => deletionMocks);
 
 beforeEach(() => {
   lookup.mockReset().mockResolvedValue(null);
   nav.replace.mockReset();
-  authMocks.signOut.mockReset().mockResolvedValue({ ok: true });
+  deletionMocks.deleteAccount.mockReset().mockResolvedValue({ ok: true, userId: "user-a" });
 });
 afterEach(() => { vi.useRealTimers(); });
 
@@ -200,28 +204,42 @@ describe("OnboardForm phone Pix key", () => {
 });
 
 describe("switching accounts", () => {
-  it("signs out and returns to auth with the original destination", async () => {
+  it("discards the unfinished account and returns to auth with the original destination", async () => {
     const user = userEvent.setup();
     render(<OnboardForm me={me} action={action} next="/invite?token=abc" />);
 
     expect(screen.getByText("ana@example.com")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Usar outra conta do Google/i }));
+    await user.click(screen.getByRole("button", { name: "Usar outra conta" }));
 
     await waitFor(() =>
       expect(nav.replace).toHaveBeenCalledWith("/auth?next=%2Finvite%3Ftoken%3Dabc"),
     );
-    expect(authMocks.signOut).toHaveBeenCalledTimes(1);
+    expect(deletionMocks.deleteAccount).toHaveBeenCalledTimes(1);
   });
 
-  it("stays put and explains when sign-out fails", async () => {
-    authMocks.signOut.mockResolvedValueOnce({ ok: false, error: new Error("offline") });
+  it("still leaves when the account is gone but the local wipe failed", async () => {
+    deletionMocks.deleteAccount.mockRejectedValueOnce(new deletionMocks.AccountLocalWipeError("wipe"));
     const user = userEvent.setup();
     render(<OnboardForm me={me} action={action} next="/app" />);
 
-    await user.click(screen.getByRole("button", { name: /Usar outra conta do Google/i }));
+    await user.click(screen.getByRole("button", { name: "Usar outra conta" }));
+
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/auth?next=%2Fapp"));
+  });
+
+  it.each([
+    ["the server refuses", () => deletionMocks.deleteAccount.mockResolvedValueOnce({ ok: false, code: "deletion_failed", retryable: true })],
+    ["the request fails", () => deletionMocks.deleteAccount.mockRejectedValueOnce(new TypeError("Failed to fetch"))],
+  ])("stays put and explains when %s", async (_case, arrange) => {
+    arrange();
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await user.click(screen.getByRole("button", { name: "Usar outra conta" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Não deu pra sair agora");
     expect(nav.replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Usar outra conta" })).toBeEnabled();
   });
 
   it("resets local state when the session ends while onboarding", async () => {
@@ -233,5 +251,50 @@ describe("switching accounts", () => {
     });
 
     expect(nav.replace).toHaveBeenCalledWith("/auth?next=%2Fapp");
+  });
+});
+
+describe("onboarding name prefill", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it("prefills with pending Apple name when present for user", () => {
+    window.sessionStorage.setItem(
+      "dividimos:pending-sign-in-name",
+      JSON.stringify({ userId: "user-a", name: "Apple User Name" }),
+    );
+    render(<OnboardForm me={me} action={action} next="/app" />);
+    expect(screen.getByLabelText("Nome")).toHaveValue("Apple User Name");
+  });
+
+  it("prefills empty string when private relay email local part equals me.name", () => {
+    const relayMe: Me = {
+      ...me,
+      name: "relay123",
+      email: "relay123@privaterelay.appleid.com",
+    };
+    render(<OnboardForm me={relayMe} action={action} next="/app" />);
+    expect(screen.getByLabelText("Nome")).toHaveValue("");
+  });
+
+  it("submits the name Apple shared", async () => {
+    window.sessionStorage.setItem(
+      "dividimos:pending-sign-in-name",
+      JSON.stringify({ userId: "user-a", name: "Apple User Name" }),
+    );
+    const user = userEvent.setup();
+    action.mockResolvedValueOnce(undefined);
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await advanceToPixStep(user);
+    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const formData = action.mock.calls.at(-1)?.[0] as FormData;
+    expect(formData.get("name")).toBe("Apple User Name");
   });
 });
