@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { resolveNotificationDestination } from "@/lib/push/notification-destination";
 
 interface NotificationNavigateMessage {
   type: "notification-navigate";
@@ -34,10 +35,10 @@ export function useNotificationNavigation(): void {
 
     const onMessage = (event: MessageEvent) => {
       if (!isNotificationNavigateMessage(event.data)) return;
-      const { url } = event.data;
-      if (url !== "/app" && !url.startsWith("/app/") && !url.startsWith("/room/")) return;
+      const destination = resolveNotificationDestination(event.data.url);
+      if (destination === null) return;
       event.ports[0]?.postMessage("ack");
-      router.push(url);
+      router.push(destination);
     };
 
     container.addEventListener("message", onMessage);

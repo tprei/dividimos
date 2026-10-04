@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { useNotificationNavigation } from "./use-notification-navigation";
 
 const mockPush = vi.fn();
+const BILL_PATH = "/app/bill/0b6f3a1e-5c2d-4f8a-9e7b-1d2c3b4a5f60";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: (url: string) => mockPush(url) }),
@@ -54,7 +55,7 @@ describe("useNotificationNavigation", () => {
     });
   });
 
-  it("pushes an /app/ or /room/ path relayed by the worker", async () => {
+  it("pushes a notification destination relayed by the worker", async () => {
     renderHook(() => useNotificationNavigation());
     await waitFor(() =>
       expect(serviceWorker.controller?.postMessage).toHaveBeenCalledWith({
@@ -63,13 +64,11 @@ describe("useNotificationNavigation", () => {
     );
 
     serviceWorker.receive({ type: "notification-navigate", url: "/app" });
-    serviceWorker.receive({ type: "notification-navigate", url: "/app/bill/x" });
-    serviceWorker.receive({ type: "notification-navigate", url: "/room/tok-1" });
+    serviceWorker.receive({ type: "notification-navigate", url: BILL_PATH });
 
-    expect(mockPush).toHaveBeenCalledTimes(3);
+    expect(mockPush).toHaveBeenCalledTimes(2);
     expect(mockPush).toHaveBeenNthCalledWith(1, "/app");
-    expect(mockPush).toHaveBeenNthCalledWith(2, "/app/bill/x");
-    expect(mockPush).toHaveBeenNthCalledWith(3, "/room/tok-1");
+    expect(mockPush).toHaveBeenNthCalledWith(2, BILL_PATH);
   });
 
   it("acks the relay over the transferred port", async () => {
@@ -83,12 +82,12 @@ describe("useNotificationNavigation", () => {
     const port = new MessagePort();
     const postMessage = vi.spyOn(port, "postMessage");
     serviceWorker.receive(
-      { type: "notification-navigate", url: "/app/bill/x" },
+      { type: "notification-navigate", url: BILL_PATH },
       [port],
     );
 
     expect(postMessage).toHaveBeenCalledWith("ack");
-    expect(mockPush).toHaveBeenCalledWith("/app/bill/x");
+    expect(mockPush).toHaveBeenCalledWith(BILL_PATH);
   });
 
   it("ignores urls that are not in-app notification paths", async () => {
@@ -102,9 +101,12 @@ describe("useNotificationNavigation", () => {
     serviceWorker.receive({ type: "notification-navigate", url: "https://evil.example/app" });
     serviceWorker.receive({ type: "notification-navigate", url: "/api/x" });
     serviceWorker.receive({ type: "notification-navigate", url: "/appx" });
+    serviceWorker.receive({ type: "notification-navigate", url: "/app/bill/x" });
+    serviceWorker.receive({ type: "notification-navigate", url: "/room/tok-1" });
+    serviceWorker.receive({ type: "notification-navigate", url: `${BILL_PATH}?next=/evil` });
     serviceWorker.receive({ type: "notification-navigate", url: 42 });
     serviceWorker.receive({ type: "notification-navigate" });
-    serviceWorker.receive({ type: "something-else", url: "/app/bill/x" });
+    serviceWorker.receive({ type: "something-else", url: BILL_PATH });
     await settle();
 
     expect(mockPush).not.toHaveBeenCalled();
