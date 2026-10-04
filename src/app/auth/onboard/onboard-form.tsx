@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { readClipboardText } from "@/lib/platform/clipboard";
+import { isApplePrivateRelayEmail } from "@/lib/apple-private-relay";
 import { AccountLocalWipeError, deleteAccount } from "@/lib/sync/account-deletion";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { useAppStore } from "@/stores/app-store";
@@ -120,6 +121,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
   const [handleTouched, setHandleTouched] = useState(false);
   const [handleError, setHandleError] = useState("");
   const userEmail = me.email;
+  const pixEmail = isApplePrivateRelayEmail(userEmail) ? "" : userEmail;
   const [pixKeyType, setPixKeyType] = useState<PixKeyType>(me.pixKeyType ?? "email");
   const [customPixInput, setCustomPixInput] = useState("");
   const [pixError, setPixError] = useState("");
@@ -207,7 +209,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
       case "phone": return "(11) 99999-9999";
       case "cpf": return "000.000.000-00";
       case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-      default: return userEmail || "seu@email.com";
+      default: return pixEmail || "seu@email.com";
     }
   };
 
@@ -270,7 +272,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
   };
 
   const showEmailSuggestion =
-    Boolean(userEmail) && pixKeyType === "email" && customPixInput !== userEmail;
+    Boolean(pixEmail) && pixKeyType === "email" && customPixInput !== pixEmail;
 
   const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
@@ -382,11 +384,11 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
                   Pode cadastrar agora ou depois, no seu perfil.
                 </p>
 
-                {showEmailSuggestion && userEmail && (
+                {showEmailSuggestion && (
                   <div className="mt-4">
                     <button
                       type="button"
-                      onClick={() => handleEmailInput(userEmail)}
+                      onClick={() => handleEmailInput(pixEmail)}
                       className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 text-sm font-medium text-primary-text transition-colors hover:bg-primary/20"
                     >
                       <Mail className="size-4" />

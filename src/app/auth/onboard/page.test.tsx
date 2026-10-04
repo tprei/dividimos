@@ -135,6 +135,17 @@ describe("OnboardForm Pix skip", () => {
     expect(screen.getByRole("button", { name: /Usar meu e-mail/i })).toBeInTheDocument();
   });
 
+  it("never offers an Apple Hide My Email address as the Pix key", async () => {
+    const user = userEvent.setup();
+    const relayMe: Me = { ...me, email: "x7k2p9qd4m@privaterelay.appleid.com" };
+    render(<OnboardForm me={relayMe} action={action} next="/app" />);
+
+    await advanceToPixStep(user);
+
+    expect(screen.getByPlaceholderText("seu@email.com")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: /Usar meu e-mail/i })).not.toBeInTheDocument();
+  });
+
   it("submits skip intent without a Pix key", async () => {
     const user = userEvent.setup();
     render(<OnboardForm me={me} action={action} next="/app" />);
