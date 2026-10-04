@@ -212,7 +212,7 @@ export function ReceiptCameraView({
           <ReceiptCaptureArt />
           <h2 className="mt-4 flex items-center justify-center gap-2 text-xl font-bold tracking-tight">
             <CameraOff className="size-5 text-muted-foreground" />
-            Câmera indisponível
+            Não deu pra usar a câmera
           </h2>
           <p role="alert" className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">
             {errorMessage}
