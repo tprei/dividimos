@@ -9,6 +9,7 @@ import {
 import { useClientOnly } from "@/hooks/use-client-only";
 import { haptics } from "@/hooks/use-haptics";
 import { isAppleSignInAvailable, isNativeGoogleSignInAvailable } from "@/lib/capacitor/auth";
+import { storeAppleAuthorization } from "@/lib/sync/apple-credential";
 import { fetchLinkedProviders, linkAppleAccount, linkGoogleAccount } from "@/lib/sync/identity-links";
 
 type LinkedProviders = { apple: boolean; google: boolean };
@@ -48,6 +49,7 @@ export function LinkedAccountsSettings() {
     const result = provider === "apple" ? await linkAppleAccount() : await linkGoogleAccount();
     setPendingProvider(null);
     if (result.status === "linked") {
+      storeAppleAuthorization(result.authorizationCode);
       haptics.success();
       setProviders((current) => (current === null ? current : { ...current, [provider]: true }));
     } else if (result.status === "failed") {
