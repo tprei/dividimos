@@ -479,7 +479,7 @@ describe("selectHomeRooms", () => {
     seedHome({
       hostedRooms: [
         hostedRoomFixture({ id: "hosted-group" }),
-        hostedRoomFixture({ id: "hosted-solo", groupId: null, groupName: null }),
+        hostedRoomFixture({ id: "hosted-solo", groupId: null, groupName: "Casa da Ana" }),
       ],
       openRooms: { g1: [openRoomFixture({ id: "room-open" })] },
     });
@@ -490,6 +490,17 @@ describe("selectHomeRooms", () => {
     expect(byId.get("hosted-group")).toMatchObject({ kind: "hosted", hostLabel: "Você", placeLabel: "Grupo 1" });
     expect(byId.get("hosted-solo")).toMatchObject({ kind: "hosted", hostLabel: "Você", placeLabel: "Sem grupo" });
     expect(byId.get("room-open")).toMatchObject({ kind: "open", hostLabel: "Carol", placeLabel: "Grupo 1" });
+  });
+
+  it("falls back to Grupo for grouped rooms whose snapshot is missing and name is unknown", () => {
+    seedHome({
+      hostedRooms: [hostedRoomFixture({ id: "hosted-orphan", groupId: "g-missing", groupName: null })],
+    });
+
+    const byId = new Map(
+      selectHomeRooms(useAppStore.getState()).map((item) => [item.room.id, item]),
+    );
+    expect(byId.get("hosted-orphan")).toMatchObject({ kind: "hosted", hostLabel: "Você", placeLabel: "Grupo" });
   });
 
   it("resolves DM places as Conversa for rooms opened by others and the counterparty for hosted rooms", () => {

@@ -187,13 +187,16 @@ export function selectHomeRooms(state: AppState): HomeRoomCardItem[] {
   if (state.me) {
     const hostNames = displayNames(openRooms.map(({ room }) => room.host), { style: "short" });
     for (const room of state.hostedAssignmentRooms) {
-      const group = room.groupId ? state.groups[room.groupId] : undefined;
-      items.push({
-        kind: "hosted",
-        room,
-        hostLabel: "Você",
-        placeLabel: group ? groupNameOf(group, state.me.id) : room.groupName ?? "Sem grupo",
-      });
+      const group = room.groupId === null ? undefined : state.groups[room.groupId];
+      let placeLabel: string;
+      if (room.groupId === null) {
+        placeLabel = "Sem grupo";
+      } else if (group) {
+        placeLabel = groupNameOf(group, state.me.id);
+      } else {
+        placeLabel = room.groupName ?? "Grupo";
+      }
+      items.push({ kind: "hosted", room, hostLabel: "Você", placeLabel });
     }
     for (const { room, placeLabel } of openRooms) {
       items.push({

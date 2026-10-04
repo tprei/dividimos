@@ -17,6 +17,10 @@ import type { HomeRoomCardItem } from "./home-selectors";
 
 const COLLAPSED_ROOM_COUNT = 3;
 
+function progressText(ownedItemCount: number, itemCount: number): string {
+  return `${ownedItemCount}/${itemCount} ${itemCount === 1 ? "item atribuído" : "itens atribuídos"}`;
+}
+
 interface HomeOpenRoomsCardProps {
   rooms: HomeRoomCardItem[];
   pendingRoomId: string | null;
@@ -30,6 +34,7 @@ function HomeRoomRow({ item, pending, disabled, onOpen }: {
   onOpen: (room: OpenAssignmentRoom) => void;
 }) {
   const { room, hostLabel, placeLabel } = item;
+  const inReview = item.kind === "hosted" && room.status === "closed";
   const navigation: ListRowProps = item.kind === "hosted"
     ? { title: room.title, href: `/room/${room.id}` }
     : {
@@ -64,10 +69,15 @@ function HomeRoomRow({ item, pending, disabled, onOpen }: {
       footer={
         <span className="flex min-w-0 items-center justify-between gap-3 pt-1 pl-13">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-xs font-normal tabular-nums text-muted-foreground">
-              {room.ownedItemCount}/{room.itemCount} itens atribuídos
-            </span>
-            {room.status === "closed" && <Chip tone="neutral">Em revisão</Chip>}
+            {inReview ? (
+              <span className="text-xs font-semibold text-primary-text">Falta registrar a conta</span>
+            ) : (
+              <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                {progressText(room.ownedItemCount, room.itemCount)}
+              </span>
+            )}
+            {inReview && <Chip tone="primary">Em revisão</Chip>}
+            {item.kind === "open" && !item.room.joined && <Chip tone="neutral">Nova</Chip>}
           </span>
           <ClaimerAvatars claimers={room.claimers} />
         </span>

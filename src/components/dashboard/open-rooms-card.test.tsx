@@ -81,28 +81,34 @@ describe("HomeOpenRoomsCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("links hosted rows to their room and names grouped and standalone places", () => {
-    renderCard([
-      hostedItem("grouped"),
-      hostedItem("standalone", { groupId: null, groupName: null }, "Sem grupo"),
-    ]);
+  it("links hosted rows to their room", () => {
+    renderCard([hostedItem("grouped"), hostedItem("standalone", { groupId: null, groupName: null })]);
 
-    const grouped = screen.getByRole("link", { name: /Conta grouped/ });
-    const standalone = screen.getByRole("link", { name: /Conta standalone/ });
-    expect(grouped).toHaveAttribute("href", "/room/grouped");
-    expect(standalone).toHaveAttribute("href", "/room/standalone");
-    expect(within(grouped).getByText("Você abriu · Casa da Ana")).toBeInTheDocument();
-    expect(within(standalone).getByText("Você abriu · Sem grupo")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Conta grouped/ })).toHaveAttribute("href", "/room/grouped");
+    expect(screen.getByRole("link", { name: /Conta standalone/ })).toHaveAttribute("href", "/room/standalone");
   });
 
-  it("marks a closed hosted room as awaiting review", () => {
+  it("asks to register the bill on closed hosted rooms and keeps claim progress on open ones", () => {
     renderCard([hostedItem("review", { status: "closed" }), hostedItem("claiming")]);
 
     const review = screen.getByRole("link", { name: /Conta review/ });
     expect(within(review).getByText("Em revisão")).toBeInTheDocument();
+    expect(within(review).getByText("Falta registrar a conta")).toBeInTheDocument();
+    expect(within(review).queryByText("2/4 itens atribuídos")).not.toBeInTheDocument();
+
+    const claiming = screen.getByRole("link", { name: /Conta claiming/ });
+    expect(within(claiming).getByText("2/4 itens atribuídos")).toBeInTheDocument();
+    expect(within(claiming).queryByText("Falta registrar a conta")).not.toBeInTheDocument();
+  });
+
+  it("marks only unjoined rooms from others as Nova", () => {
+    renderCard([openItem("fresh"), openItem("joined-room", { joined: true }), hostedItem("mine")]);
+
+    expect(within(screen.getByRole("button", { name: /Conta fresh/ })).getByText("Nova")).toBeInTheDocument();
     expect(
-      within(screen.getByRole("link", { name: /Conta claiming/ })).queryByText("Em revisão")
+      within(screen.getByRole("button", { name: /Conta joined-room/ })).queryByText("Nova"),
     ).not.toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /Conta mine/ })).queryByText("Nova")).not.toBeInTheDocument();
   });
 
   it("opens a room opened by someone else when its row is tapped", async () => {
@@ -138,6 +144,11 @@ describe("HomeOpenRoomsCard", () => {
   it("shows claimed item progress as N/M itens atribuídos", () => {
     renderCard([openItem("room-progress", { ownedItemCount: 1, itemCount: 4 })]);
     expect(screen.getByText("1/4 itens atribuídos")).toBeInTheDocument();
+  });
+
+  it("uses the singular when a room has a single item", () => {
+    renderCard([openItem("room-single", { ownedItemCount: 1, itemCount: 1 })]);
+    expect(screen.getByText("1/1 item atribuído")).toBeInTheDocument();
   });
 
   it("keeps only three rows collapsed and expands without losing navigation", async () => {
