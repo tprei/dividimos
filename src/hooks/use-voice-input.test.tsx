@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-const { nativeSpeechAvailable, startNativeListening, nativeSpeechSupported } = vi.hoisted(() => ({
+const { nativeSpeechAvailable, startNativeListening, nativeSpeechSupported, opensAppSettings } = vi.hoisted(() => ({
   nativeSpeechAvailable: vi.fn(() => false),
   startNativeListening: vi.fn(),
   nativeSpeechSupported: vi.fn(async () => false),
+  opensAppSettings: vi.fn(() => false),
+}));
+vi.mock("@/lib/capacitor/app-settings", () => ({
+  opensAppSettings: () => opensAppSettings(),
 }));
 vi.mock("@/lib/capacitor/speech", () => ({
   isNativeSpeechAvailable: () => nativeSpeechAvailable(),
@@ -78,6 +82,7 @@ beforeEach(() => {
   nativeSpeechAvailable.mockReturnValue(false);
   nativeSpeechSupported.mockResolvedValue(false);
   startNativeListening.mockReset();
+  opensAppSettings.mockReturnValue(false);
   MockSpeechRecognition = makeMockCtor();
   Object.defineProperty(window, "webkitSpeechRecognition", {
     value: MockSpeechRecognition,
@@ -219,6 +224,28 @@ describe("useVoiceInput", () => {
 
     expect(nativeStop).toHaveBeenCalledOnce();
     expect(result.current.isListening).toBe(false);
+  });
+
+  it.each([
+    { platform: "iOS", settings: true, message: "Permita o microfone e o reconhecimento de fala nos Ajustes." },
+    { platform: "Android", settings: false, message: "Permissão do microfone negada. Verifique as configurações." },
+  ])("reports a refused native permission on $platform until the next attempt", async ({ settings, message }) => {
+    nativeSpeechAvailable.mockReturnValue(true);
+    nativeSpeechSupported.mockResolvedValue(true);
+    opensAppSettings.mockReturnValue(settings);
+    startNativeListening.mockResolvedValue({ kind: "permission_denied" });
+
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {});
+    await act(async () => result.current.startListening());
+
+    expect(result.current.error).toBe(message);
+    expect(result.current.permissionDenied).toBe(true);
+
+    startNativeListening.mockReturnValue(new Promise(() => {}));
+    act(() => result.current.startListening());
+    expect(result.current.error).toBeNull();
+    expect(result.current.permissionDenied).toBe(false);
   });
 
   it("reports no support and ignores start while the native probe is pending", async () => {
@@ -855,6 +882,21 @@ describe("useVoiceInput recorder engine", () => {
     );
     expect(result.current.isListening).toBe(false);
     expect(result.current.phase).toBe("idle");
+  });
+
+  it("points a refused microphone to Ajustes inside the iPhone app", async () => {
+    opensAppSettings.mockReturnValue(true);
+    getUserMediaMock.mockRejectedValue(
+      Object.assign(new Error("denied"), { name: "NotAllowedError" }),
+    );
+    const { result } = renderHook(() => useVoiceInput());
+    await act(async () => {
+      result.current.startListening();
+      await getUserMediaMock.mock.results[0]!.value.catch(() => null);
+    });
+
+    expect(result.current.error).toBe("Permita o microfone nos Ajustes.");
+    expect(result.current.permissionDenied).toBe(true);
   });
 
   it("cleans up tracks and timers on unmount while listening", async () => {

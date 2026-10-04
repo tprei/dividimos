@@ -11,6 +11,15 @@ export function isNativeCameraAvailable(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+/**
+ * On iOS the WebView's file input opens the system photo picker, which needs
+ * no Photo Library permission, while @capacitor/camera asks for full library
+ * access before it shows a picker.
+ */
+export function picksGalleryNatively(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() !== "ios";
+}
+
 /** Plugin messages for a user backing out, which is not a failure. */
 const CANCEL_PATTERN = /cancel|cancell?ed|user cancelled photos app/i;
 

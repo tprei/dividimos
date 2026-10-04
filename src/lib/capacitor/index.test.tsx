@@ -10,9 +10,15 @@ vi.mock("@capacitor/splash-screen", () => ({
 }));
 
 const mockGetLaunchUrl = vi.fn<() => Promise<{ url: string } | null>>();
+const appListeners = vi.hoisted(
+  () => ({}) as Record<string, (event: { url: string }) => void>,
+);
 vi.mock("@capacitor/app", () => ({
   App: {
-    addListener: vi.fn().mockResolvedValue({ remove: vi.fn() }),
+    addListener: vi.fn((event: string, handler: (event: { url: string }) => void) => {
+      appListeners[event] = handler;
+      return Promise.resolve({ remove: vi.fn() });
+    }),
     exitApp: vi.fn(),
     getLaunchUrl: () => mockGetLaunchUrl(),
   },
@@ -23,6 +29,12 @@ vi.mock("./status-bar", () => ({
 }));
 
 import { initCapacitor } from "./index";
+
+function flushMacrotasks(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, 0);
+  return promise;
+}
 
 const INVITE = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6";
 const CLAIM = "gst1_" + "a".repeat(43);
@@ -92,5 +104,47 @@ describe("cold-start deep links", () => {
     await initCapacitor(replace);
 
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("navigates a warm universal link through appUrlOpen", async () => {
+    mockGetLaunchUrl.mockResolvedValue(null);
+    const replace = vi.fn();
+    await initCapacitor(replace);
+
+    appListeners["appUrlOpen"]!({ url: `https://www.dividimos.ai/claim#${CLAIM}` });
+    await flushMacrotasks();
+
+    expect(replace).toHaveBeenCalledWith(`/claim#${CLAIM}`);
+  });
+
+  it("ignores a warm foreign-host link through appUrlOpen", async () => {
+    mockGetLaunchUrl.mockResolvedValue(null);
+    const replace = vi.fn();
+    await initCapacitor(replace);
+
+    appListeners["appUrlOpen"]!({ url: "https://evil.example.com/join/x" });
+    await flushMacrotasks();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("treats a cold-start URL that iOS delivers twice as one launch", async () => {
+    // iOS cold start can deliver the same URL through both getLaunchUrl and
+    // appUrlOpen; both deliveries must land on the identical target and a
+    // later re-init must not re-consume the invite.
+    const inviteUrl = `https://www.dividimos.ai/join/${INVITE}`;
+    mockGetLaunchUrl.mockResolvedValue({ url: inviteUrl });
+    const replace = vi.fn();
+
+    await initCapacitor(replace);
+    expect(replace).toHaveBeenCalledWith(`/join/${INVITE}`);
+
+    appListeners["appUrlOpen"]!({ url: inviteUrl });
+    await flushMacrotasks();
+    expect(replace).toHaveBeenCalledTimes(2);
+    expect(replace).toHaveBeenNthCalledWith(2, `/join/${INVITE}`);
+
+    await initCapacitor(replace);
+    expect(replace).toHaveBeenCalledTimes(2);
   });
 });

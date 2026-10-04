@@ -4,16 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RotateCcw, ScanLine, X } from "lucide-react";
 import { ReceiptCameraView } from "@/components/bill/receipt-camera-view";
+import { OpenAppSettingsButton } from "@/components/shared/open-app-settings-button";
 import { Button } from "@/components/ui/button";
 import { haptics } from "@/hooks/use-haptics";
 import { useAiConsent } from "@/hooks/use-ai-consent";
 import { popIn } from "@/lib/animations";
+import { opensAppSettings } from "@/lib/capacitor/app-settings";
 import {
   isNativeCameraAvailable,
   pickNativeGalleryPhoto,
+  picksGalleryNatively,
   takeNativePhoto,
   type PhotoOutcome,
 } from "@/lib/capacitor/camera";
+
+const CAMERA_DENIED_MESSAGE = "Permita o acesso à câmera nas configurações do aparelho.";
+const IOS_CAMERA_DENIED_MESSAGE = "Permita o acesso à câmera nos Ajustes.";
+
+function cameraDeniedMessage(): string {
+  return opensAppSettings() ? IOS_CAMERA_DENIED_MESSAGE : CAMERA_DENIED_MESSAGE;
+}
 
 export interface ReceiptScannerProps {
   /** Called with the captured/selected image file when user taps "Processar" */
@@ -30,6 +40,7 @@ export function ReceiptScanner({
   processing = false,
 }: ReceiptScannerProps) {
   const isNative = isNativeCameraAvailable();
+  const nativeGallery = picksGalleryNatively();
   const { granted } = useAiConsent();
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -111,11 +122,7 @@ export function ReceiptScanner({
         return;
       }
       haptics.error();
-      setCaptureError(
-        outcome.kind === "permission_denied"
-          ? "Permita o acesso à câmera nas configurações do aparelho."
-          : outcome.message,
-      );
+      setCaptureError(outcome.kind === "permission_denied" ? cameraDeniedMessage() : outcome.message);
     },
     [onBack, showFile],
   );
@@ -188,11 +195,11 @@ export function ReceiptScanner({
         if (outcome.kind === "cancelled") return;
         setCaptureError(
           outcome.kind === "permission_denied"
-            ? "Permita o acesso à câmera nas configurações do aparelho."
+            ? "Permita o acesso às fotos nas configurações do aparelho."
             : outcome.message,
         );
       },
-      () => setCaptureError("Não foi possível abrir a câmera."),
+      () => setCaptureError("Não foi possível abrir a galeria."),
     );
   }, [granted, showFile]);
 
@@ -222,6 +229,7 @@ export function ReceiptScanner({
           {captureError}
         </p>
       )}
+      {captureError === IOS_CAMERA_DENIED_MESSAGE && <OpenAppSettingsButton />}
 
       <input
         ref={galleryRef}
@@ -299,7 +307,7 @@ export function ReceiptScanner({
             <Button
               variant="outline"
               className="min-h-11 w-full"
-              onClick={isNative ? handleNativeGallery : handleCameraGallery}
+              onClick={nativeGallery ? handleNativeGallery : handleCameraGallery}
             >
               Escolher da galeria
             </Button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { opensAppSettings } from "@/lib/capacitor/app-settings";
 import {
   isNativeSpeechAvailable,
   isNativeSpeechSupported,
@@ -78,6 +79,9 @@ const LEVEL_UPDATE_INTERVAL_MS = 66;
 const NO_SPEECH_MESSAGE = "Não ouvi nada. Tente de novo.";
 const PERMISSION_DENIED_MESSAGE =
   "Permissão do microfone negada. Libere nas configurações do navegador.";
+const NATIVE_PERMISSION_DENIED_MESSAGE = "Permissão do microfone negada. Verifique as configurações.";
+const IOS_PERMISSION_DENIED_MESSAGE = "Permita o microfone e o reconhecimento de fala nos Ajustes.";
+const IOS_MIC_DENIED_MESSAGE = "Permita o microfone nos Ajustes.";
 const MIC_UNAVAILABLE_MESSAGE = "Não foi possível acessar o microfone.";
 const RECORD_FAILED_MESSAGE = "Não foi possível gravar o áudio. Tente de novo.";
 
@@ -88,6 +92,8 @@ export interface UseVoiceInputReturn {
   transcript: string;
   interimTranscript: string;
   error: string | null;
+  /** The last attempt failed because the microphone or recognizer permission is refused. */
+  permissionDenied: boolean;
   startListening: () => void;
   stopListening: () => void;
   isSupported: boolean;
@@ -102,6 +108,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [level, setLevel] = useState(0);
 
@@ -250,11 +257,11 @@ export function useVoiceInput(): UseVoiceInputReturn {
         if (instanceId !== instanceCounterRef.current) return;
         haptics.error();
         const name = micError instanceof Error ? micError.name : "";
-        setError(
-          name === "NotAllowedError" || name === "SecurityError"
-            ? PERMISSION_DENIED_MESSAGE
-            : MIC_UNAVAILABLE_MESSAGE,
-        );
+        const denied = name === "NotAllowedError" || name === "SecurityError";
+        setPermissionDenied(denied);
+        let message = MIC_UNAVAILABLE_MESSAGE;
+        if (denied) message = opensAppSettings() ? IOS_MIC_DENIED_MESSAGE : PERMISSION_DENIED_MESSAGE;
+        setError(message);
         return;
       }
       if (instanceId !== instanceCounterRef.current) {
@@ -427,6 +434,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     setTranscript("");
     setInterimTranscript("");
     setError(null);
+    setPermissionDenied(false);
     isStoppingRef.current = false;
     instanceCounterRef.current += 1;
     const instanceId = instanceCounterRef.current;
@@ -493,7 +501,8 @@ export function useVoiceInput(): UseVoiceInputReturn {
         setPhase("idle");
         clearSilenceTimer();
         if (outcome.kind === "permission_denied") {
-          setError("Permissão do microfone negada. Verifique as configurações.");
+          setPermissionDenied(true);
+          setError(opensAppSettings() ? IOS_PERMISSION_DENIED_MESSAGE : NATIVE_PERMISSION_DENIED_MESSAGE);
         } else if (outcome.kind === "unavailable") {
           setError("Este aparelho não reconhece voz.");
         } else {
@@ -621,6 +630,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     transcript,
     interimTranscript,
     error,
+    permissionDenied,
     startListening,
     stopListening,
     isSupported,

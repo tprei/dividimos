@@ -16,8 +16,16 @@ const mockPickNativeGalleryPhoto = vi.fn();
 
 vi.mock("@/lib/capacitor/camera", () => ({
   isNativeCameraAvailable: () => mockGetPlatform() !== "web",
+  picksGalleryNatively: () => mockGetPlatform() === "android",
   takeNativePhoto: () => mockTakeNativePhoto(),
   pickNativeGalleryPhoto: () => mockPickNativeGalleryPhoto(),
+}));
+
+const mockOpenAppSettings = vi.fn();
+
+vi.mock("@/lib/capacitor/app-settings", () => ({
+  opensAppSettings: () => mockGetPlatform() === "ios",
+  openAppSettings: () => mockOpenAppSettings(),
 }));
 
 import { ReceiptScanner } from "./receipt-scanner";
@@ -584,6 +592,37 @@ describe("ReceiptScanner", () => {
       expect(mockTakeNativePhoto).toHaveBeenCalledTimes(2);
       expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  describe("camera-first entry (iOS)", () => {
+    beforeEach(() => {
+      mockGetPlatform.mockReturnValue("ios");
+    });
+
+    it("picks from the gallery through the system picker, without asking for Photo Library access", async () => {
+      mockTakeNativePhoto.mockResolvedValue({ kind: "permission_denied" });
+      const { container } = render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+      await flushMicrotasks();
+      const galleryInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      const openPicker = vi.spyOn(galleryInput, "click");
+
+      await userEvent.click(screen.getByText("Escolher da galeria"));
+
+      expect(openPicker).toHaveBeenCalledOnce();
+      expect(mockPickNativeGalleryPhoto).not.toHaveBeenCalled();
+    });
+
+    it("sends a refused camera to the app's page in Ajustes", async () => {
+      mockOpenAppSettings.mockClear();
+      mockTakeNativePhoto.mockResolvedValue({ kind: "permission_denied" });
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+      await flushMicrotasks();
+
+      expect(screen.getByRole("alert")).toHaveTextContent("Permita o acesso à câmera nos Ajustes.");
+      await userEvent.click(screen.getByRole("button", { name: "Abrir Ajustes" }));
+
+      expect(mockOpenAppSettings).toHaveBeenCalledOnce();
     });
   });
 });
