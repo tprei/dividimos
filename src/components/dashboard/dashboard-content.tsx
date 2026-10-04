@@ -17,6 +17,7 @@ import {
   selectHomeMode,
   selectHomeRecentBills,
   selectHomeRooms,
+  selectShowFirstUseCard,
   type HomeInvitationItem,
 } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
@@ -75,6 +76,7 @@ export function DashboardContent() {
   const recentBills = useAppStore(selectHomeRecentBills);
   const rooms = useAppStore(selectHomeRooms);
   const invitations = useAppStore(selectHomeInvitations);
+  const showFirstUseCard = useAppStore(selectShowFirstUseCard);
   const { accept, decline, pendingGroupId } = useInvitationActions();
   const router = useRouter();
   const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
@@ -357,7 +359,7 @@ export function DashboardContent() {
       <NotificationPrompt />
 
       <div className="space-y-6 empty:hidden" data-tour="debt-lists">
-        {homeMode === "first-use" ? (
+        {showFirstUseCard && (
           <SectionCard className="space-y-3 p-5 text-center">
             <Users
               className="mx-auto size-6 text-muted-foreground"
@@ -374,7 +376,8 @@ export function DashboardContent() {
               Criar ou entrar num grupo
             </Button>
           </SectionCard>
-        ) : homeMode === "settled" ? null : (
+        )}
+        {homeMode === "outstanding" && (
           <>
             {owes.length > 0 && (
               <section>

@@ -28,11 +28,12 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
   pending: boolean;
 } & Pick<InvitationsCardProps, "onAccept" | "onDecline" | "onOpen">) {
   const isDm = invitation.kind === "dm";
-  const subtitle = isDm
-    ? "Quer conversar com você"
-    : invitation.inviter
-      ? `${invitation.inviter.name} te convidou`
-      : "Você recebeu um convite para este grupo";
+  let subtitle = "Convite para o grupo";
+  if (isDm) {
+    subtitle = "Quer conversar com você";
+  } else if (invitation.inviter) {
+    subtitle = `${invitation.inviter.name} te convidou`;
+  }
   const invitationLabel = isDm
     ? `conversa com ${invitation.title}`
     : `grupo ${invitation.title}`;
@@ -42,6 +43,7 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
       <ListRow
         title={invitation.title}
         subtitle={subtitle}
+        className="py-3"
         leading={isDm ? (
           <UserAvatar
             id={invitation.inviter?.id ?? invitation.groupId}
@@ -57,10 +59,10 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
           onOpen(invitation);
         }}
       />
-      <div className="grid grid-cols-2 gap-2 px-3 pb-3 pt-1">
+      <div className="flex justify-end gap-2 px-3 pb-3">
         <Button
-          variant="outline"
-          className="min-h-11"
+          variant="ghost"
+          className="min-h-11 text-muted-foreground"
           disabled={pending}
           aria-label={`Recusar convite para ${invitationLabel}`}
           onClick={() => {
@@ -71,6 +73,7 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
           Recusar
         </Button>
         <Button
+          variant="secondary"
           className="min-h-11 gap-1.5"
           disabled={pending}
           aria-label={`Aceitar convite para ${invitationLabel}`}
@@ -104,7 +107,7 @@ export function InvitationsCard({ invitations, pendingGroupId, onAccept, onDecli
       animate="visible"
     >
       <SectionHeading title="Convites" count={invitations.length} />
-      <SectionCard id={listId} className="border-primary/30">
+      <SectionCard id={listId}>
         {visibleInvitations.map((invitation) => (
           <InvitationRow
             key={invitation.groupId}

@@ -268,3 +268,9 @@ export function selectHomeInvitations(state: AppState): HomeInvitationItem[] {
   invitationsCache = { snapshots, invitations };
   return invitations;
 }
+
+export function selectShowFirstUseCard(state: AppState): boolean {
+  return selectHomeMode(state) === "first-use"
+    && selectHomeInvitations(state).length === 0
+    && selectHomeRooms(state).length === 0;
+}

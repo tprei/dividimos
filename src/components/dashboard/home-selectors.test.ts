@@ -8,6 +8,7 @@ import {
   selectHomeRecentBills,
   selectHomeRooms,
   selectOpenRoomsFromOthers,
+  selectShowFirstUseCard,
 } from "./home-selectors";
 
 const me: Me = {
@@ -718,5 +719,94 @@ describe("selectHomeInvitations", () => {
     const state = useAppStore.getState();
 
     expect(selectHomeInvitations(state)).toBe(selectHomeInvitations(state));
+  });
+});
+
+describe("selectShowFirstUseCard", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("is true on a first-use home with no invitations and no rooms", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(true);
+  });
+
+  it("is false on a first-use home with a pending invitation", () => {
+    const inviteOnly = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [inviteOnly.group.id]: inviteOnly },
+      groupOrder: [inviteOnly.group.id],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false on a first-use home with an open room in a DM", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { "dm-1": dmSnapshot() },
+      groupOrder: ["dm-1"],
+      openAssignmentRoomsByGroupId: {
+        "dm-1": [openRoomFixture({ id: "room-dm", groupId: "dm-1" })],
+      },
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectHomeRooms(useAppStore.getState())).toHaveLength(1);
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false on a first-use home with a hosted room", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {},
+      groupOrder: [],
+      hostedAssignmentRooms: [hostedRoomFixture()],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectHomeRooms(useAppStore.getState())).toHaveLength(1);
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false in outstanding mode", () => {
+    const debtGroup = snapshot({
+      balances: [
+        { kind: "user", participantId: me.id, netCents: -1500 },
+        { kind: "user", participantId: carol.id, netCents: 1500 },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [debtGroup.group.id]: debtGroup },
+      groupOrder: [debtGroup.group.id],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("outstanding");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false in settled mode", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("settled");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
   });
 });

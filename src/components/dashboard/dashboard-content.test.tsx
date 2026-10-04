@@ -288,6 +288,21 @@ describe("DashboardContent", () => {
     expect(router.push).toHaveBeenCalledWith("/app/groups/g1");
   });
 
+  it("swaps the first-use link for the Convites region while an invitation is pending", () => {
+    seedStore([invitedGroupSnapshot()]);
+    const { unmount } = render(<DashboardContent />);
+
+    expect(screen.getByRole("region", { name: "Convites" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Criar ou entrar num grupo" })).not.toBeInTheDocument();
+
+    unmount();
+
+    seedStore([]);
+    render(<DashboardContent />);
+
+    expect(screen.getByRole("link", { name: "Criar ou entrar num grupo" })).toBeInTheDocument();
+  });
+
   it("keeps QR room entry available with populated groups", () => {
     seedStore([snapshot({ balances: [] })]);
     render(<DashboardContent />);
