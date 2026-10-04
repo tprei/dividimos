@@ -288,8 +288,24 @@ describe("eventNotification", () => {
       ctx("carol", { isDm: true }),
     );
     expect(payload.title).toBe("Ana");
-    expect(payload.body).toBe("Ana convidou Carol");
+    expect(payload.body).toBe("quer conversar com você");
     expect(payload.url).toBe("/app/conversations/ana");
+    expect(payload.category).toBe("groups");
+  });
+
+  it("keeps the describeEvent copy for member_invited outside DMs", () => {
+    const payload = eventNotification(
+      event({
+        kind: "member_invited",
+        expense_id: null,
+        subject_user_id: "carol",
+        payload: { userIds: ["carol"] },
+      }),
+      ctx("carol"),
+    );
+    expect(payload.title).toBe("Viagem");
+    expect(payload.body).toBe("Ana convidou Carol");
+    expect(payload.url).toBe("/app/groups/group-1");
     expect(payload.category).toBe("groups");
   });
 

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUser } from "@/lib/push/notify-user";
-import { readPreferences } from "@/lib/push/preferences";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
 import {
@@ -11,6 +10,30 @@ import {
   recipientsFor,
   type EventNotificationMember,
 } from "@/lib/push/event-notification";
+import type { NotificationCategory, NotificationPreferences } from "@/types";
+import type { Json } from "@/types/database";
+
+const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  "expenses",
+  "settlements",
+  "nudges",
+  "groups",
+  "messages",
+];
+
+function readPreferences(json: Json | null): NotificationPreferences {
+  if (typeof json !== "object" || json === null || Array.isArray(json)) {
+    return {};
+  }
+  const prefs: NotificationPreferences = {};
+  for (const category of NOTIFICATION_CATEGORIES) {
+    const value = json[category];
+    if (typeof value === "boolean") {
+      prefs[category] = value;
+    }
+  }
+  return prefs;
+}
 
 /** Lets a later attempt re-dispatch an event that never reached anyone. */
 async function releaseClaim(
