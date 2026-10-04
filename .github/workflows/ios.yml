@@ -60,6 +60,10 @@ jobs:
           fi
           pod --version
 
+      # swift-format ships with the pinned Xcode; ios/.swift-format holds the style.
+      - name: Lint Swift
+        run: npm run lint:swift
+
       - run: npm ci --ignore-scripts
 
       - run: npx cap sync ios
