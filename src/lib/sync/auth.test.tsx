@@ -34,8 +34,15 @@ vi.mock("@/lib/push/detach", () => ({
 }));
 
 const mockForgetGoogle = vi.fn<() => Promise<void>>();
+const mockForgetApple = vi.fn<() => Promise<void>>();
 vi.mock("@/lib/capacitor/auth", () => ({
   forgetGoogleAccount: () => mockForgetGoogle(),
+  forgetAppleAccount: () => mockForgetApple(),
+}));
+
+const mockClearPendingSignInName = vi.fn();
+vi.mock("@/lib/pending-sign-in-name", () => ({
+  clearPendingSignInName: () => mockClearPendingSignInName(),
 }));
 
 const mockSignOut = vi.fn();
@@ -48,7 +55,7 @@ vi.mock("@/lib/platform/session-caches", () => ({
   clearSessionCaches: (...args: unknown[]) => mockClearSessionCaches(...args),
 }));
 
-type AuthEvent = "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "INITIAL_SESSION";
+type AuthEvent = "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "INITIAL_SESSION" | "USER_UPDATED";
 type AuthHandler = (event: AuthEvent, session: { user: { id: string } } | null) => void;
 
 const handlers: AuthHandler[] = [];
@@ -465,13 +472,16 @@ describe("bill draft account isolation", () => {
 });
 
 describe("sign-out push detach", () => {
-  it("detaches push and forgets the native Google account before dropping the session", async () => {
+  it("detaches push and forgets native Google and Apple accounts before dropping the session", async () => {
     const order: string[] = [];
     mockDetachPush.mockImplementation(async () => {
       order.push("detach");
     });
     mockForgetGoogle.mockImplementation(async () => {
-      order.push("forget");
+      order.push("forgetGoogle");
+    });
+    mockForgetApple.mockImplementation(async () => {
+      order.push("forgetApple");
     });
     mockSignOut.mockImplementation(async () => {
       order.push("signOut");
@@ -481,10 +491,24 @@ describe("sign-out push detach", () => {
     const result = await signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(order).toEqual(["detach", "forget", "signOut"]);
+    expect(order).toEqual(["detach", "forgetGoogle", "forgetApple", "signOut"]);
     expect(mockDetachPush).toHaveBeenCalledTimes(1);
     expect(mockForgetGoogle).toHaveBeenCalledTimes(1);
+    expect(mockForgetApple).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores USER_UPDATED events without resetting or bootstrapping", async () => {
+    const onSignedOut = vi.fn();
+    const detach = attachAuthListener(onSignedOut, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    emit("USER_UPDATED", "user-a");
+
+    expect(useAppStore.getState().me?.id).toBe("user-a");
+    expect(onSignedOut).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    detach();
   });
 
   it("drops local push delivery when the session ends elsewhere", async () => {
@@ -502,13 +526,14 @@ describe("sign-out push detach", () => {
 });
 
 describe("session caches on sign-out", () => {
-  it("SIGNED_OUT drops the session caches", () => {
+  it("SIGNED_OUT drops the session caches and pending sign-in name", () => {
     const detach = attachAuthListener(() => {}, () => {});
     useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
 
     emit("SIGNED_OUT", null);
 
     expect(mockClearSessionCaches).toHaveBeenCalledTimes(1);
+    expect(mockClearPendingSignInName).toHaveBeenCalledTimes(1);
     detach();
   });
 
