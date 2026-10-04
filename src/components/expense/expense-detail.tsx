@@ -291,6 +291,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       meId={me?.id ?? null}
       invitedUserIds={invitedUserIds}
       showHeading={!assignmentRoom}
+      historical={isDeleted}
       onInviteGuest={isDeleted ? undefined : (participant) => {
         setInviteIndex(participant.participantIndex);
       }}
@@ -340,13 +341,12 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         />
       )}
       <div className="px-4 py-6">
-        <p className="mb-1 text-sm text-muted-foreground">Total da conta</p>
+        <p className="mb-1 text-sm text-muted-foreground">{isDeleted ? "Total original" : "Total da conta"}</p>
         <Money
           cents={current.totalCents}
           size={isDeleted ? "lg" : "hero"}
-          className={isDeleted ? "text-muted-foreground line-through decoration-1" : undefined}
+          className={isDeleted ? "text-muted-foreground" : undefined}
         />
-        {isDeleted && <p className="mt-2 text-sm text-muted-foreground">Não entra mais nos saldos</p>}
       </div>
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverContent anchor={menuAnchor.current} align="end">
@@ -369,13 +369,13 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       </Popover>
 
       <div className="px-4">
-        {isDeleted && <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Registro da conta</h2>}
         <ExpensePayers
           payers={payers}
           participantName={participantName}
           participantId={participantId}
           participantAvatarUrl={participantAvatarUrl}
           participantIsGuest={participantIsGuest}
+          historical={isDeleted}
         />
       </div>
       {(current.serviceFeeBasisPoints > 0 || current.fixedFeeCents > 0) && (
