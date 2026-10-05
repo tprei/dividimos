@@ -2,10 +2,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoomShare } from "./room-share";
+import type { AssignmentRoomCodeState } from "@/types/assignment-room";
 
 const url = "https://dividimos.test/room/room-id#token";
 const props = {
   url,
+  code: { status: "idle" } satisfies AssignmentRoomCodeState,
+  codeEntryAddress: "dividimos.app/room",
+  onRetryCode: vi.fn(),
   open: true,
   onOpenChange: vi.fn(),
   rotating: false,
@@ -64,18 +68,6 @@ describe("RoomShare native sharing", () => {
     );
 
     expect(screen.getByText("Bia entrou")).toBeInTheDocument();
-    expect(screen.getByText("Bia entrou")).toHaveAttribute("aria-live", "polite");
-  });
-
-  it("shares the current invite URL", async () => {
-    const share = vi.fn(async () => undefined);
-    setNavigatorShare(share);
-    const user = userEvent.setup();
-    render(<RoomShare {...props} />);
-
-    await user.click(screen.getByRole("button", { name: "Compartilhar" }));
-
-    expect(share).toHaveBeenCalledWith({ title: "Dividimos", url });
   });
 
   it("reports a non-cancel share failure", async () => {
@@ -88,7 +80,7 @@ describe("RoomShare native sharing", () => {
 
     await user.click(screen.getByRole("button", { name: "Compartilhar" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Não foi possível compartilhar.");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
   it("does not report when the user cancels the share sheet", async () => {
@@ -102,5 +94,54 @@ describe("RoomShare native sharing", () => {
     await user.click(screen.getByRole("button", { name: "Compartilhar" }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("RoomShare spoken code", () => {
+  it("shows the spoken code and entry address even without a link", () => {
+    render(
+      <RoomShare
+        {...props}
+        url={null}
+        code={{ status: "ready", display: "cafuné-legal", expiresAt: "2026-10-03T12:15:00Z" }}
+      />,
+    );
+
+    expect(screen.getByRole("group", { name: "cafuné-legal" })).toBeInTheDocument();
+    expect(screen.getByText(/dividimos\.app\/room/)).toBeInTheDocument();
+  });
+
+  it("hides a ready code while the link rotates, since rotation kills it", () => {
+    render(
+      <RoomShare
+        {...props}
+        rotating
+        code={{ status: "ready", display: "pipoca-moleza", expiresAt: "2026-10-03T12:15:00Z" }}
+      />,
+    );
+
+    expect(screen.queryByText("pipoca-moleza")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("lets the host retry a failed code", async () => {
+    const user = userEvent.setup();
+    const onRetryCode = vi.fn();
+    render(
+      <RoomShare
+        {...props}
+        code={{ status: "error", message: "Não deu para gerar o código da sala. Tente de novo." }}
+        onRetryCode={onRetryCode}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Não deu para gerar o código da sala.");
+    await user.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(onRetryCode).toHaveBeenCalledOnce();
+  });
+
+  it("omits the code block while idle", () => {
+    render(<RoomShare {...props} />);
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
   });
 });

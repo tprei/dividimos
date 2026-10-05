@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import type {
   AssignmentItemShare,
   AssignmentRoomActivity,
+  AssignmentRoomCodeState,
   AssignmentRoomItem,
   AssignmentRoomParticipant,
   AssignmentRoomView,
@@ -32,6 +33,9 @@ interface RoomBoardProps {
   view: AssignmentRoomView;
   connected: boolean;
   joinUrl: string | null;
+  roomCode: AssignmentRoomCodeState;
+  roomCodeEntryAddress: string | null;
+  onRetryRoomCode: () => void;
   pendingItemIds: string[];
   claimError: { itemId: string; participantId: string; message: string } | null;
   splitError: { itemId: string; message: string } | null;
@@ -68,6 +72,9 @@ export function RoomBoard({
   view,
   connected,
   joinUrl,
+  roomCode,
+  roomCodeEntryAddress,
+  onRetryRoomCode,
   pendingItemIds,
   claimError,
   splitError,
@@ -264,6 +271,9 @@ export function RoomBoard({
             <div className="flex items-center">
             <RoomShare
               url={joinUrl}
+              code={roomCode}
+              codeEntryAddress={roomCodeEntryAddress}
+              onRetryCode={onRetryRoomCode}
               open={inviteOpen}
               onOpenChange={onInviteOpenChange}
               rotating={rotatingInvite}
