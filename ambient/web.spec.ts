@@ -117,6 +117,9 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     await page.screenshot({ path: "ambient-shots/3-pagamento.png" });
     await page.waitForTimeout(DWELL_MS);
 
+    await expect(page.getByTestId("chat-thread")).toHaveAttribute("aria-busy", "false", {
+      timeout: 30000,
+    });
     const settlementCards = page.getByTestId("event-settlement-card");
     const settlementsBefore = await settlementCards.count();
     await page.getByTestId("group-payment-confirm").click();
