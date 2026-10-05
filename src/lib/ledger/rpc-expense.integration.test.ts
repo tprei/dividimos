@@ -704,7 +704,18 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(deleted.expense.status).toBe("deleted");
     expect(deleted.expense.deletedBy).toBe(alice.id);
     expect(deleted.expense.deletedAt).not.toBeNull();
-    expect(deleted.participants).toHaveLength(0);
+    expect(deleted.participants).toEqual([
+      expect.objectContaining({
+        user: expect.objectContaining({ id: alice.id }),
+        shareCents: 1000,
+        paidCents: 2000,
+      }),
+      expect.objectContaining({
+        user: expect.objectContaining({ id: bruno.id }),
+        shareCents: 1000,
+        paidCents: 0,
+      }),
+    ]);
 
     const { error: restoreError } = await callRpc(aliceClient, "restore_expense", {
       p_expense_id: created.expenseId,
