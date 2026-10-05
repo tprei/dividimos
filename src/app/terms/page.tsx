@@ -16,7 +16,7 @@ export default function TermsPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Termos de Uso</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 3 de outubro de 2026
+        Última atualização: 5 de outubro de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -68,7 +68,9 @@ export default function TermsPage() {
 
         <section>
           <h2 className="text-base font-semibold">4. Uso aceitável</h2>
-          <p className="mt-2">Você concorda em não:</p>
+          <p className="mt-2">
+            O Dividimos não tolera conteúdo ofensivo nem pessoas abusivas. Você concorda em não:
+          </p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-muted-foreground">
             <li>Usar o Dividimos para atividades ilegais, golpes, fraudes, spam ou divulgação enganosa.</li>
             <li>
@@ -103,7 +105,7 @@ export default function TermsPage() {
             link de uma sala, a pessoa bloqueada só entra como convidada.
           </p>
           <p className="mt-2">
-            A equipe analisa denúncias em até 7 dias e pode apagar mensagens e suspender contas que
+            A equipe analisa denúncias em até 24 horas e pode apagar mensagens e suspender contas que
             violem estes termos. As medidas dependem da análise de cada caso; denunciar alguém não
             garante remoção ou suspensão.
           </p>
@@ -200,7 +202,8 @@ export default function TermsPage() {
             <a href={`mailto:${BRAND.contact}`} className="font-medium text-primary-text underline">
               {BRAND.contact}
             </a>
-            . Respondemos em até 7 dias.
+            . Respondemos e-mails em até 7 dias; denúncias feitas pelo app são analisadas em até 24
+            horas.
           </p>
         </section>
       </div>
