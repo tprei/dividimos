@@ -50,11 +50,11 @@ export function ReportDialog({ open, subject, kind, messagePreview, reason, deta
       <DialogContent showCloseButton={false} initialFocus={success || frozen ? true : firstReason} aria-busy={busy}>
         {!success && <DialogHeader>
           <DialogTitle>{kind === "message" ? "Denunciar mensagem" : "Denunciar pessoa"}</DialogTitle>
-          <DialogDescription>Conte o que aconteceu. Sua denúncia será analisada pela equipe do Dividimos em até 7 dias.</DialogDescription>
+          <DialogDescription>Conte o que aconteceu. Sua denúncia será analisada pela equipe do Dividimos em até 24 horas.</DialogDescription>
         </DialogHeader>}
         {state.status === "success" ? <div role="status" className="space-y-3 rounded-xl bg-muted p-4">
           <CheckCircle2 aria-hidden="true" className="size-6 text-primary-text" />
-          <DialogHeader><DialogTitle>Denúncia enviada</DialogTitle><DialogDescription>Vamos analisar sua denúncia em até 7 dias.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Denúncia enviada</DialogTitle><DialogDescription>Vamos analisar sua denúncia em até 24 horas.</DialogDescription></DialogHeader>
           <p className="break-all text-sm tabular-nums text-muted-foreground">Protocolo: {state.reportId}</p>
         </div> : <>
           <div className="flex min-w-0 items-center gap-3 rounded-xl border p-3"><UserAvatar id={subject.id} name={subject.name} avatarUrl={subject.avatarUrl} /><div className="min-w-0"><p className="truncate text-sm font-semibold" title={subject.name}>{subject.name}</p><p className="truncate text-sm text-muted-foreground" title={`@${subject.handle}`}>@{subject.handle}</p></div></div>

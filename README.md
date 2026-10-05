@@ -725,7 +725,7 @@ A denúncia só aparece como enviada no app depois que o Telegram aceita o aviso
 
 Se o envio falhar por algo temporário (rede, limite ou Telegram fora do ar), o app mantém a denúncia preenchida e oferece reenviar a mesma. Erros definitivos, como mensagem inexistente ou quem denuncia não estar mais no grupo, liberam os campos e não sugerem reenvio.
 
-Revisamos denúncias de abuso e pedidos enviados para `contato@dividimos.ai` em até 7 dias. Verifique a fila diariamente; um aviso no Telegram não substitui a revisão no dashboard.
+Revisamos denúncias de abuso em até 24 horas, o prazo prometido nos Termos de Uso e nas notas para a App Review, e pedidos enviados para `contato@dividimos.ai` em até 7 dias. Confira a fila mais de uma vez por dia; um aviso no Telegram não substitui a revisão no dashboard.
 
 1. No Supabase Dashboard, abra Table Editor > `public.reports`. Filtre `status = open` e ordene por `created_at`, das mais antigas para as mais novas. Confira também as linhas com `notified_at` vazio: elas foram salvas, mas o app ainda não confirmou a entrega do aviso.
 2. Confira `reporter_id`, `target_user_id`, `message_id`, `reason`, `details` e `message_snapshot`. O snapshot é evidência restrita à equipe, não texto para repostar. Ele pode continuar guardado depois que a mensagem original foi apagada ou o perfil foi anonimizado. Não compartilhe o acesso ao dashboard ou ao chat de moderação com usuários comuns.

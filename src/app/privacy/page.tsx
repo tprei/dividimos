@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Política de Privacidade</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 3 de outubro de 2026
+        Última atualização: 5 de outubro de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -332,7 +332,7 @@ export default function PrivacyPage() {
           </p>
           <p className="mt-2">
             As denúncias chegam à equipe pelo Telegram. Podemos apagar mensagens e suspender contas
-            que violem os Termos de Uso. Analisamos as denúncias em até 7 dias; esse é o prazo de
+            que violem os Termos de Uso. Analisamos as denúncias em até 24 horas; esse é o prazo de
             análise, não uma promessa de remoção ou suspensão em todos os casos.
           </p>
         </section>
@@ -385,7 +385,7 @@ export default function PrivacyPage() {
             <a href={`mailto:${BRAND.contact}`} className="font-medium text-primary-text underline">
               {BRAND.contact}
             </a>
-            . Respondemos e-mails de suporte e analisamos denúncias em até 7 dias.
+            . Respondemos e-mails de suporte em até 7 dias e analisamos denúncias em até 24 horas.
           </p>
         </section>
       </div>
