@@ -7,7 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { NotificationRow } from "./notification-row";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { useInvitationActions } from "@/hooks/use-invitation-actions";
-import { selectVisibleActivityEvents } from "@/stores/app-selectors";
+import { groupNameOf, selectVisibleActivityEvents } from "@/stores/app-selectors";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import { haptics } from "@/hooks/use-haptics";
@@ -46,6 +46,7 @@ function InvitationRow({
   onDecline: () => void;
 }) {
   const inviter = snapshot.members.find((member) => member.user.id !== meId);
+  const name = groupNameOf(snapshot, meId);
 
   return (
     <li className="flex items-center gap-2.5 rounded-xl bg-muted/40 p-2">
@@ -56,8 +57,10 @@ function InvitationRow({
         size="sm"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold" title={snapshot.group.name}>{snapshot.group.name}</p>
-        <p className="text-xs text-muted-foreground">Convite pendente</p>
+        <p className="truncate text-sm font-semibold" title={name}>{name}</p>
+        <p className="text-xs text-muted-foreground">
+          {snapshot.group.kind === "dm" ? "quer conversar com você" : "Convite pendente"}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <Button

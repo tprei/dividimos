@@ -111,27 +111,30 @@ export function eventNotification(
   event: GroupEventRow,
   ctx: EventNotificationContext,
 ): EventNotificationPayload {
-  const body = describeEvent(
-    {
-      id: event.id,
-      groupId: event.group_id,
-      actorId: event.actor_id,
-      kind: event.kind,
-      expenseId: event.expense_id,
-      settlementId: event.settlement_id,
-      subjectUserId: event.subject_user_id,
-      payload: payloadRecord(event),
-      createdAt: event.created_at,
-      actor: null,
-      expenseTitle: null,
-    },
-    {
-      actorName: ctx.actorName,
-      nameOf: ctx.nameOf,
-      expenseTitle: ctx.expenseTitle,
-      viewerId: ctx.viewerId,
-    },
-  );
+  const body =
+    ctx.isDm && event.kind === "member_invited"
+      ? "quer conversar com você"
+      : describeEvent(
+          {
+            id: event.id,
+            groupId: event.group_id,
+            actorId: event.actor_id,
+            kind: event.kind,
+            expenseId: event.expense_id,
+            settlementId: event.settlement_id,
+            subjectUserId: event.subject_user_id,
+            payload: payloadRecord(event),
+            createdAt: event.created_at,
+            actor: null,
+            expenseTitle: null,
+          },
+          {
+            actorName: ctx.actorName,
+            nameOf: ctx.nameOf,
+            expenseTitle: ctx.expenseTitle,
+            viewerId: ctx.viewerId,
+          },
+        );
 
   const shareSuffix =
     event.kind === "expense_created" && ctx.recipientShareCents !== null

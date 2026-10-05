@@ -316,6 +316,7 @@ export async function unarchiveGroup(groupId: string): Promise<void> {
 
 export async function getOrCreateDm(userId: string): Promise<{ groupId: string; created: boolean }> {
   const ack = await rpc("get_or_create_dm", { p_user_id: userId }, decodeMutationAck);
+  notify(ack.eventId);
   await refreshGroup(ack.groupId);
   return { groupId: ack.groupId, created: ack.created ?? false };
 }

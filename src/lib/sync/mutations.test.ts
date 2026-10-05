@@ -525,6 +525,7 @@ describe("mutations", () => {
       expect(conversation?.messages.map((m) => m.id)).toEqual(["msg-old", "msg-server-id"]);
       expect(conversation?.messages[1]?.clientId).toBe(message.clientId);
     });
+
     it("does not publish an acknowledgement after the account changes", async () => {
       useAppStore.setState({
         hydrated: true,
@@ -1545,12 +1546,45 @@ describe("mutations", () => {
       expect(useAppStore.getState().me).toEqual({ ...ME, name: "Nome Novo" });
     });
 
+    it("sends the DM invite push even when the overview refresh fails", async () => {
+      useAppStore.setState({ me: ME });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: 77, created: true });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("not_a_member"));
+
+      await expect(getOrCreateDm(USER_2.id)).rejects.toThrow(LedgerError);
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ eventId: 77 }),
+          keepalive: true,
+        }),
+      );
+    });
+
     it("creates DM, links, and updates profile", async () => {
       useAppStore.setState({ me: ME });
 
-      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: null, created: true });
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: 77, created: true });
       const dm = await getOrCreateDm(USER_2.id);
       expect(dm).toEqual({ groupId: "dm-1", created: true });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ eventId: 77 }),
+          keepalive: true,
+        }),
+      );
+
+      vi.mocked(globalThis.fetch).mockClear();
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: null, created: false });
+      const existingDm = await getOrCreateDm(USER_2.id);
+      expect(existingDm).toEqual({ groupId: "dm-1", created: false });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
 
       const link = { groupId: "g1", token: "tok123", expiresAt: null, maxUses: null };
       vi.mocked(rpc).mockResolvedValueOnce(link);

@@ -5,10 +5,15 @@ import userEvent from "@testing-library/user-event";
 import { NotificationsSheet } from "./notifications-sheet";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupEvent, GroupSnapshot, Me } from "@/types/ledger";
+import type { GroupEvent, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
 vi.mock("@/lib/sync/refresh", () => ({
   loadActivity: vi.fn(),
+}));
+
+vi.mock("@/lib/sync/mutations-group", () => ({
+  acceptInvitation: vi.fn(),
+  declineInvitation: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -19,13 +24,15 @@ vi.mock("next/link", () => ({
   }: {
     children: React.ReactNode;
     href: string;
-    onClick?: React.MouseEventHandler<HTMLAnchorElement>;
+    onClick?: () => void;
   }) => (
     <a href={href} onClick={onClick}>
       {children}
     </a>
   ),
 }));
+
+import { acceptInvitation, declineInvitation } from "@/lib/sync/mutations-group";
 
 const me: Me = {
   id: "user-1",
@@ -39,6 +46,30 @@ const me: Me = {
   onboarded: true,
   notificationPreferences: {},
 };
+
+const carol: UserProfile = {
+  id: "user-2",
+  handle: "carol",
+  name: "Carol Souza",
+  avatarUrl: null,
+  isBot: false,
+};
+
+function memberOf(
+  groupId: string,
+  user: UserProfile | Me,
+  status: "invited" | "accepted",
+  invitedBy: string | null,
+): GroupSnapshot["members"][number] {
+  return {
+    groupId,
+    userId: user.id,
+    status,
+    invitedBy,
+    acceptedAt: status === "accepted" ? "2026-01-01T00:00:00Z" : null,
+    user,
+  };
+}
 
 function snapshot(id = "g1"): GroupSnapshot {
   return {
@@ -67,6 +98,44 @@ function snapshot(id = "g1"): GroupSnapshot {
     archivedAt: null,
     financialHistorySharedAt: null,
     formerMembers: [],
+  };
+}
+
+function dmInvitation(): GroupSnapshot {
+  return {
+    group: {
+      id: "dm-1",
+      kind: "dm",
+      name: "",
+      creatorId: "user-2",
+      dmUserA: "user-1",
+      dmUserB: "user-2",
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    dmCounterparty: carol,
+    members: [memberOf("dm-1", me, "invited", "user-2"), memberOf("dm-1", carol, "accepted", null)],
+    balances: [],
+    guests: [],
+    settlements: [],
+    recentExpenses: [],
+    expenseCount: 0,
+    lastEventId: 0,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-09-18T12:00:00.000Z",
+    pairwiseEdges: [],
+    archivedAt: null,
+    financialHistorySharedAt: null,
+    formerMembers: [],
+  };
+}
+
+function groupInvitation(): GroupSnapshot {
+  return {
+    ...snapshot("g2"),
+    group: { ...snapshot("g2").group, name: "Viagem" },
+    members: [memberOf("g2", me, "invited", "user-2"), memberOf("g2", carol, "accepted", null)],
   };
 }
 
@@ -225,5 +294,31 @@ describe("NotificationsSheet", () => {
     expect(dismissEvent).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().activity.dismissedIds).toEqual([8]);
     expect(useAppStore.getState().activity.readIds).toEqual([8]);
+  });
+
+  it("renders a DM invitation with the counterparty name and conversation copy", () => {
+    renderSheet([dmInvitation()]);
+
+    expect(screen.getByText("Carol Souza")).toBeInTheDocument();
+    expect(screen.getByText("quer conversar com você")).toBeInTheDocument();
+    expect(screen.queryByText("Convite pendente")).not.toBeInTheDocument();
+  });
+
+  it("accepts a DM invitation through the shared action", async () => {
+    vi.mocked(acceptInvitation).mockResolvedValueOnce({ groupId: "dm-1", ledgerVersion: 1, eventId: null });
+    const { user } = renderSheet([dmInvitation()]);
+
+    await user.click(within(rowFor("Carol Souza")).getByRole("button", { name: "Aceitar" }));
+
+    await waitFor(() => expect(acceptInvitation).toHaveBeenCalledWith("dm-1"));
+    expect(declineInvitation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the group invitation copy for groups", () => {
+    renderSheet([groupInvitation()]);
+
+    expect(screen.getByText("Viagem")).toBeInTheDocument();
+    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
+    expect(screen.queryByText("quer conversar com você")).not.toBeInTheDocument();
   });
 });
