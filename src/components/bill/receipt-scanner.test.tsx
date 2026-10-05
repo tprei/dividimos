@@ -301,7 +301,6 @@ describe("ReceiptScanner", () => {
       expect(getUserMedia).toHaveBeenCalledOnce();
       expect(clickInput).not.toHaveBeenCalled();
       expect(screen.getByTestId("receipt-camera-video")).toBeInTheDocument();
-      expect(screen.queryByText("Camera")).not.toBeInTheDocument();
     });
 
 
@@ -541,16 +540,38 @@ describe("ReceiptScanner", () => {
       mockGetPlatform.mockReturnValue("android");
     });
 
-    it("launches the native camera immediately and leaves the scanner when cancelled", async () => {
+    it("launches the native camera immediately and falls back to choices when cancelled", async () => {
       const onBack = vi.fn();
-      mockTakeNativePhoto.mockResolvedValue({ kind: "cancelled" });
+      const galleryPhoto = createMockFile("galeria.jpg");
+      mockTakeNativePhoto
+        .mockResolvedValueOnce({ kind: "cancelled" })
+        .mockResolvedValueOnce({ kind: "cancelled" });
+      mockPickNativeGalleryPhoto.mockResolvedValueOnce({
+        kind: "captured",
+        file: galleryPhoto,
+      });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={onBack} />);
       await flushMicrotasks();
 
       expect(mockTakeNativePhoto).toHaveBeenCalledOnce();
-      expect(onBack).toHaveBeenCalledOnce();
+      expect(onBack).not.toHaveBeenCalled();
       expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Tirar foto")).toBeInTheDocument();
+      expect(screen.getByText("Escolher da galeria")).toBeInTheDocument();
+      expect(screen.getByText("Voltar")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByText("Tirar foto"));
+      await flushMicrotasks();
+
+      expect(mockTakeNativePhoto).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Escolher da galeria")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByText("Escolher da galeria"));
+      await flushMicrotasks();
+
+      expect(mockPickNativeGalleryPhoto).toHaveBeenCalledOnce();
+      expect(screen.getByAltText("Foto da nota fiscal")).toBeInTheDocument();
     });
 
     it("attaches to the same in-flight intent across a StrictMode replay", async () => {
@@ -575,13 +596,12 @@ describe("ReceiptScanner", () => {
 
     it("relaunches a fresh native intent when retaking", async () => {
       const first = createMockFile("primeira.jpg");
+      const onBack = vi.fn();
       mockTakeNativePhoto
         .mockResolvedValueOnce({ kind: "captured", file: first })
         .mockResolvedValueOnce({ kind: "cancelled" });
 
-      render(
-        <ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />,
-      );
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={onBack} />);
       await flushMicrotasks();
 
       expect(screen.getByAltText("Foto da nota fiscal")).toBeInTheDocument();
@@ -592,6 +612,8 @@ describe("ReceiptScanner", () => {
       expect(mockTakeNativePhoto).toHaveBeenCalledTimes(2);
       expect(screen.queryByAltText("Foto da nota fiscal")).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
+      expect(onBack).not.toHaveBeenCalled();
+      expect(screen.getByText("Tirar foto")).toBeInTheDocument();
     });
   });
 
