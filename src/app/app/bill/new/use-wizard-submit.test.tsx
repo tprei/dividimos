@@ -48,7 +48,7 @@ function setupValidSingleExpense() {
 }
 
 describe("useWizardSubmit", () => {
-  const router = { push: vi.fn() };
+  const router = { replace: vi.fn() };
   const onStaleVersion = vi.fn();
 
   beforeEach(() => {
@@ -97,7 +97,7 @@ describe("useWizardSubmit", () => {
       { kind: "user", userId: "user-alice" },
       { kind: "user", userId: "user-bob" },
     ]);
-    expect(router.push).toHaveBeenCalledWith("/app/bill/exp-created-1");
+    expect(router.replace).toHaveBeenCalledWith("/app/bill/exp-created-1");
     expect(useBillStore.getState().expense).toBeNull();
   });
 
@@ -131,7 +131,7 @@ describe("useWizardSubmit", () => {
     expect(call[0].expenseId).toBe("exp-edit-1");
     expect(call[0].expectedVersionNo).toBe(2);
     expect(call[0].header.occurredOn).toBe("2026-09-06");
-    expect(router.push).toHaveBeenCalledWith("/app/bill/exp-edit-1");
+    expect(router.replace).toHaveBeenCalledWith("/app/bill/exp-edit-1");
   });
 
   it("uses expectedVersionNo from draft intent when editing and expectedVersionNo prop is null, and clears intent on success", async () => {
@@ -347,7 +347,7 @@ describe("useWizardSubmit", () => {
       groupName: "Viagem",
       memberIds: ["user-bob"],
     });
-    expect(router.push).toHaveBeenCalledWith("/app/bill/exp-1");
+    expect(router.replace).toHaveBeenCalledWith("/app/bill/exp-1");
   });
 
   it("keeps the draft and creates nothing when the combined write fails", async () => {
@@ -374,7 +374,7 @@ describe("useWizardSubmit", () => {
     });
 
     expect(ok).toBe(false);
-    expect(router.push).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
     // The draft survives with its client id, so a retry is the same write.
     expect(useBillStore.getState().draftKey).toBe(draftKey);
     expect(useBillStore.getState().expense?.title).toBe("Jantar");

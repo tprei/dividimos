@@ -44,7 +44,7 @@ function payloadIssueMessage(issue: { code: string }): string {
   return "Os valores da conta não fecham.";
 }
 export interface WizardSubmitInput {
-  router: { push: (url: string) => void };
+  router: { replace: (url: string) => void };
   editExpenseId: string | null;
   expectedVersionNo: number | null;
   onStaleVersion: () => void;
@@ -132,7 +132,7 @@ export function useWizardSubmit({
           haptics.success();
           useBillStore.getState().reset();
           clearDraftIntent();
-          router.push(`/app/bill/${editExpenseId}`);
+          router.replace(`/app/bill/${editExpenseId}`);
           return true;
         }
 
@@ -167,7 +167,9 @@ export function useWizardSubmit({
         haptics.success();
         useBillStore.getState().reset();
         clearDraftIntent();
-        router.push(`/app/bill/${ack.expenseId ?? ""}`);
+        // Replace, not push: the bill's back arrow calls router.back(), which
+        // would otherwise reopen the wizard for a bill that is already saved.
+        router.replace(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
       } catch (error) {
         haptics.error();
