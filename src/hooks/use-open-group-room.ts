@@ -8,6 +8,7 @@ import { ledgerErrorMessage } from "@/lib/sync/errors";
 
 export interface OpenableGroupRoom {
   id: string;
+  groupId: string;
   host: { id: string };
 }
 
@@ -16,7 +17,7 @@ export interface OpenGroupRoom {
   openRoom: (room: OpenableGroupRoom) => Promise<void>;
 }
 
-export function useOpenGroupRoom(groupId: string, viewerId: string | null): OpenGroupRoom {
+export function useOpenGroupRoom(viewerId: string | null): OpenGroupRoom {
   const router = useRouter();
   const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -37,7 +38,7 @@ export function useOpenGroupRoom(groupId: string, viewerId: string | null): Open
       }
       setPendingRoomId(room.id);
       try {
-        await enterGroupAssignmentRoom({ groupId, roomId: room.id });
+        await enterGroupAssignmentRoom({ groupId: room.groupId, roomId: room.id });
         if (!mountedRef.current) return;
         router.push(`/room/${room.id}`);
       } catch (error) {
@@ -45,7 +46,7 @@ export function useOpenGroupRoom(groupId: string, viewerId: string | null): Open
         setPendingRoomId(null);
       }
     },
-    [groupId, viewerId, pendingRoomId, router],
+    [viewerId, pendingRoomId, router],
   );
 
   return { pendingRoomId, openRoom };

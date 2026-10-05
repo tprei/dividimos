@@ -39,7 +39,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const router = useRouter();
   const { accept, pendingGroupId } = useInvitationActions();
   const me = useAppStore((state) => state.me);
-  const { pendingRoomId, openRoom } = useOpenGroupRoom(groupId, me?.id ?? null);
+  const { pendingRoomId, openRoom } = useOpenGroupRoom(me?.id ?? null);
   const snapshot = useAppStore((state) => selectGroup(state, groupId));
   const conversation = useAppStore((state) => state.conversations[groupId]);
   const myStatus = snapshot?.members.find((member) => member.userId === me?.id)?.status;

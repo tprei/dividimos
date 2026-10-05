@@ -65,7 +65,7 @@ A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O an
 - **O anfitrião divide junto.** Ao abrir um item, escolhe **Igual** para dividir entre todos ou só algumas pessoas, ou **Ajustar** para mudar proporções e unidades. Os anéis nos avatares mostram cada parte. **Salvar divisão** envia as mudanças de uma vez; se alguém mudar o item enquanto ele edita, **Atualizar** recarrega a divisão antes de salvar.
 - **Ao vivo.** Cada marcação aparece pra todo mundo na hora.
 - **O anfitrião fecha e registra.** Ele fecha a sala, revisa, escolhe quem pagou e registra a conta num grupo existente ou num grupo novo. Quem entrou com conta recebe convite pro grupo. Quem entrou sem conta vira convidado e pode reivindicar a parte depois.
-- **Volta pra sala pela tela inicial.** As salas que você abriu e ainda não registrou aparecem em **Suas salas** no início, com quantos itens já têm dono. As que estão em revisão pedem pra você registrar a conta. Vale também pra sala aberta fora de um grupo.
+- **Volta pra sala pela tela inicial.** **Suas salas** reúne as salas que você abriu e ainda não registrou e as salas abertas por outras pessoas nos seus grupos e conversas, da mais nova pra mais antiga. Cada linha mostra quem abriu, onde e quantos itens foram atribuídos; toque nela pra abrir. As suas salas fechadas aparecem como **Em revisão**. Vale também pra sala aberta fora de um grupo.
 - **A sala acompanha a conta.** Depois de registrada, a conta mostra a sala em **Por item**, **Por pessoa** e **Histórico**, e edições na conta chegam em quem está com a sala aberta.
 
 ```mermaid

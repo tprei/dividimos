@@ -233,7 +233,7 @@ function openRoom(
 ): OpenAssignmentRoom {
   return {
     id,
-    groupId: "group-1",
+    groupId: "g1",
     status: "open",
     revision: 1,
     title: `Conta ${id}`,
