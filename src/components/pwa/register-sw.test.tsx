@@ -29,6 +29,11 @@ function installServiceWorkerMock(options: {
   const controller = { scriptURL: "/sw.js" };
   const serviceWorker = {
     getRegistrations: async () => [{ unregister }],
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    // Never settles: the notification-navigation hook waits on it, but these
+    // tests exercise the native teardown, not the handshake.
+    ready: new Promise(() => {}),
     get controller() {
       return options.controlledAfter ? controller : null;
     },

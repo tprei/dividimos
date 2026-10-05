@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useNotificationNavigation } from "@/hooks/use-notification-navigation";
 import { registerServiceWorker } from "@/lib/push/service-worker";
 import { useEffect } from "react";
 
@@ -39,6 +40,7 @@ async function releaseServiceWorker(): Promise<boolean> {
 
 export function RegisterSW() {
   const router = useRouter();
+  useNotificationNavigation();
   useEffect(() => {
     const native = isNativeWebView();
 
