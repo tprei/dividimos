@@ -1266,7 +1266,7 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1?.members[0]?.status).toBe("invited");
     });
 
-    it("treats an unreadable group after decline as the expected outcome", async () => {
+    it("drops a declined group without re-reading it", async () => {
       useAppStore.setState({
         hydrated: true,
         me: ME,
@@ -1274,25 +1274,16 @@ describe("mutations", () => {
         groupOrder: ["g1"],
       });
 
-      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
-      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("not_a_member"));
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 103 });
 
-      await expect(declineInvitation("g1")).resolves.toBeTruthy();
+      await expect(declineInvitation("g1")).resolves.toMatchObject({ eventId: 103 });
+      expect(refreshGroup).not.toHaveBeenCalled();
       expect(useAppStore.getState().groups.g1).toBeUndefined();
-    });
-
-    it("surfaces an unrelated refresh failure after decline", async () => {
-      useAppStore.setState({
-        hydrated: true,
-        me: ME,
-        groups: { g1: makeGroupSnapshot("g1") },
-        groupOrder: ["g1"],
-      });
-
-      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
-      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("network"));
-
-      await expect(declineInvitation("g1")).rejects.toThrow();
+      expect(useAppStore.getState().groupOrder).toEqual([]);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/notify",
+        expect.objectContaining({ body: JSON.stringify({ eventId: 103 }) }),
+      );
     });
 
     it("leaves and deletes group", async () => {
