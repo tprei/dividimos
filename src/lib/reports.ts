@@ -85,6 +85,6 @@ export function formatReportNotification(report: ReportNotification): string {
     `Grupo: ${report.group_name === null ? "Sem grupo disponível" : summaryLine(report.group_name, 80)}`,
     `Mensagem: ${report.message_snapshot === null ? "Sem texto disponível" : summaryLine(report.message_snapshot, 500)}`,
     `Detalhes: ${report.details === null ? "Não informados" : summaryLine(report.details, 300)}`,
-    "Revisar no Supabase em até 7 dias.",
+    "Revisar no Supabase em até 24 horas.",
   ].join("\n");
 }

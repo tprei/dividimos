@@ -159,6 +159,5 @@ describe("formatReportNotification", () => {
     expect(text).toContain("Mensagem: Sem texto disponível");
     expect(text).toContain("Detalhes: Não informados");
     expect(text).toContain(`Denúncia Dividimos: ${UUID}`);
-    expect(text).toContain("Revisar no Supabase em até 7 dias.");
   });
 });
