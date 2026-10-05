@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useId, useState } from "react";
 import { GroupAvatar } from "@/components/shared/group-avatar";
 import { SectionHeading } from "@/components/shared/section-heading";
@@ -39,11 +39,11 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
     : `grupo ${invitation.title}`;
 
   return (
-    <div data-slot="list-row" aria-busy={pending}>
+    <div data-slot="list-row" aria-busy={pending} className="flex items-center pr-3">
       <ListRow
         title={invitation.title}
         subtitle={subtitle}
-        className="py-3"
+        className="min-w-0 flex-1 py-3 pr-0"
         leading={isDm ? (
           <UserAvatar
             id={invitation.inviter?.id ?? invitation.groupId}
@@ -53,16 +53,16 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
         ) : (
           <GroupAvatar name={invitation.title} groupId={invitation.groupId} />
         )}
-        trailing={<ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />}
         onClick={() => {
           haptics.tap();
           onOpen(invitation);
         }}
       />
-      <div className="flex justify-end gap-2 px-3 pb-3">
+      <div className="flex shrink-0 items-center">
         <Button
           variant="ghost"
-          className="min-h-11 text-muted-foreground"
+          size="icon-lg"
+          className="text-muted-foreground"
           disabled={pending}
           aria-label={`Recusar convite para ${invitationLabel}`}
           onClick={() => {
@@ -70,11 +70,12 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
             onDecline(invitation);
           }}
         >
-          Recusar
+          <X aria-hidden="true" className="size-4" />
         </Button>
         <Button
           variant="secondary"
-          className="min-h-11 gap-1.5"
+          size="sm"
+          className="min-h-11 min-w-18"
           disabled={pending}
           aria-label={`Aceitar convite para ${invitationLabel}`}
           onClick={() => {
@@ -82,10 +83,10 @@ function InvitationRow({ invitation, pending, onAccept, onDecline, onOpen }: {
             onAccept(invitation);
           }}
         >
-          {pending && <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />}
-          <span aria-live="polite">{pending ? "Respondendo…" : "Aceitar"}</span>
+          {pending ? <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" /> : "Aceitar"}
         </Button>
       </div>
+      <span className="sr-only" role="status">{pending ? "Respondendo…" : ""}</span>
     </div>
   );
 }
