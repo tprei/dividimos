@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, QrCode, RefreshCw, Share2 } from "lucide-react";
+import { Check, Clock3, Copy, MessageCircle, QrCode, RefreshCw, Share2, Ticket } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RoomActivity } from "@/components/assignment-room/room-activity";
 import { RoomCodeTiles } from "@/components/assignment-room/room-code-tiles";
@@ -133,85 +133,101 @@ export function RoomShare({
         <QrCode className="size-4" aria-hidden="true" />
         <span className="sr-only sm:not-sr-only">Convidar</span>
       </DialogTrigger>
-      <DialogContent showCloseButton={!url}>
-        <DialogHeader className="gap-1">
-          <DialogTitle>Sala de itens</DialogTitle>
-          <DialogDescription>Cada pessoa marca o que consumiu</DialogDescription>
+      <DialogContent showCloseButton={!url} className="gap-4 [&>[data-slot=dialog-close]]:min-h-11 [&>[data-slot=dialog-close]]:min-w-11">
+        <DialogHeader className="shrink-0 flex-row items-center gap-3">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary-text">
+            <Ticket className="size-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 space-y-1">
+            <DialogTitle>Sala de itens</DialogTitle>
+            <DialogDescription className="leading-snug">Cada pessoa marca o que consumiu</DialogDescription>
+          </div>
         </DialogHeader>
 
-        {url && (
-          <div className="space-y-3">
-            <div className="flex min-h-64 items-center justify-center rounded-2xl border bg-paper p-4 text-primary-foreground">
-              <canvas
-                key={url}
-                ref={setCanvas}
-                aria-label="QR code do convite"
-                aria-hidden={rotating || qrFailed}
-                hidden={rotating || qrFailed}
-                width={224}
-                height={224}
-                className="max-w-full rounded-lg"
-              />
-              {rotating && (
-                <p role="status" className="text-sm">Gerando convite...</p>
-              )}
-              {qrFailed && !rotating && (
-                <p role="status" className="text-center text-sm">
-                  Não foi possível gerar o QR. Você ainda pode copiar o link.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {url === null && (
-          <p className="text-sm text-muted-foreground">
-            Gere um convite pra mostrar o QR.
-          </p>
-        )}
-
-        {spokenCode.status !== "idle" && (
-          <section className="min-w-0 space-y-2 rounded-2xl bg-muted/70 p-4" aria-labelledby="room-share-code-heading">
-            <h3 id="room-share-code-heading" className="text-sm font-semibold">
-              Ou fala o código
-            </h3>
-            {spokenCode.status === "ready" && (
-              <>
-                <div role="group" aria-labelledby="room-share-code-value">
-                  <span id="room-share-code-value" className="sr-only">{spokenCode.display}</span>
-                  <RoomCodeTiles words={spokenCode.display.split("-") as [string, string]} />
-                </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {codeEntryAddress ? (
-                    <>Quem for entrar abre <span className="font-medium text-foreground wrap-anywhere">{codeEntryAddress}</span> e digita. </>
-                  ) : (
-                    <>Quem for entrar digita o código. </>
-                  )}
-                  Vale por 15 minutos.
-                </p>
-              </>
-            )}
-            {spokenCode.status === "issuing" && (
-              <>
-                <RoomCodeTiles words={["", ""]} loading />
-                <p role="status" className="text-sm text-muted-foreground">Gerando código...</p>
-              </>
-            )}
-            {spokenCode.status === "error" && (
-              <div className="space-y-2">
-                <p role="alert" className="text-sm text-destructive-text">{spokenCode.message}</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-11 motion-reduce:transform-none motion-reduce:transition-none"
-                  onClick={onRetryCode}
-                >
-                  Tentar de novo
-                </Button>
+        <div className="min-w-0 shrink-0 rounded-2xl border border-border bg-muted/30">
+          {url && (
+            <div className="flex flex-col items-center gap-2 px-3 py-3">
+              <div className="flex size-54 max-w-full items-center justify-center rounded-2xl border border-border bg-paper p-2 text-primary-foreground">
+                <canvas
+                  key={url}
+                  ref={setCanvas}
+                  aria-label="QR code do convite"
+                  aria-hidden={rotating || qrFailed}
+                  hidden={rotating || qrFailed}
+                  width={224}
+                  height={224}
+                  className="size-48! max-w-full rounded-lg"
+                />
+                {rotating && (
+                  <p role="status" className="text-sm">Gerando convite...</p>
+                )}
+                {qrFailed && !rotating && (
+                  <p role="status" className="text-center text-sm">
+                    Não foi possível gerar o QR. Você ainda pode copiar o link.
+                  </p>
+                )}
               </div>
-            )}
-          </section>
-        )}
+              <p className="text-center text-sm font-medium leading-snug">
+                Aponte a câmera pra entrar
+              </p>
+            </div>
+          )}
+
+          {url === null && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Gere um convite pra mostrar o QR.
+            </p>
+          )}
+
+          {spokenCode.status !== "idle" && (
+            <section className="min-w-0 space-y-3 rounded-b-2xl border-t border-dashed border-primary/30 bg-primary/10 p-3" aria-labelledby="room-share-code-heading">
+              <h3 id="room-share-code-heading" className="flex items-center gap-2 text-sm font-semibold">
+                <MessageCircle className="size-4 text-primary-text" aria-hidden="true" />
+                Ou fala o código
+              </h3>
+              {spokenCode.status === "ready" && (
+                <>
+                  <div role="group" aria-labelledby="room-share-code-value">
+                    <span id="room-share-code-value" className="sr-only">{spokenCode.display}</span>
+                    <RoomCodeTiles words={spokenCode.display.split("-") as [string, string]} />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm leading-snug text-muted-foreground">
+                      {codeEntryAddress ? (
+                        <>Quem for entrar abre <span className="font-semibold text-foreground wrap-anywhere">{codeEntryAddress}</span> e digita.</>
+                      ) : (
+                        <>Quem for entrar digita o código.</>
+                      )}
+                    </p>
+                    <p className="flex items-center gap-1.5 text-xs leading-relaxed text-muted-foreground">
+                      <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+                      Vale por 15 minutos.
+                    </p>
+                  </div>
+                </>
+              )}
+              {spokenCode.status === "issuing" && (
+                <>
+                  <RoomCodeTiles words={["", ""]} loading />
+                  <p role="status" className="text-sm text-muted-foreground">Gerando código...</p>
+                </>
+              )}
+              {spokenCode.status === "error" && (
+                <div className="space-y-2">
+                  <p role="alert" className="text-sm text-destructive-text">{spokenCode.message}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-11 motion-reduce:transform-none motion-reduce:transition-none"
+                    onClick={onRetryCode}
+                  >
+                    Tentar de novo
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
+        </div>
 
         {errorMessage && (
           <p role="alert" className="text-sm text-destructive-text">
@@ -237,13 +253,13 @@ export function RoomShare({
           connected={connected}
         />
 
-        <div className="space-y-2">
-          <div className="flex gap-2">
+        <div className="-mx-4 -mb-4 shrink-0 space-y-2 rounded-b-2xl border-t bg-muted/30 px-4 py-3">
+          <div className="flex flex-wrap gap-2">
             {canShare && (
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-12 min-w-0 flex-1 gap-2 motion-reduce:transform-none motion-reduce:transition-none"
+                className="min-h-12 min-w-0 flex-1 basis-36 gap-2 px-3 motion-reduce:transform-none motion-reduce:transition-none"
                 disabled={!url || rotating}
                 onClick={handleShare}
               >
@@ -254,7 +270,7 @@ export function RoomShare({
             <Button
               type="button"
               variant="outline"
-              className="min-h-12 min-w-0 flex-1 gap-2 motion-reduce:transform-none motion-reduce:transition-none"
+              className="min-h-12 min-w-0 flex-1 basis-36 gap-2 px-3 motion-reduce:transform-none motion-reduce:transition-none"
               disabled={!url || rotating}
               onClick={handleCopy}
             >
