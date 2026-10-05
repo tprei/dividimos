@@ -1892,6 +1892,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      issue_assignment_room_code: {
+        Args: {
+          p_room_id: string
+          p_code: string
+        }
+        Returns: Json
+      }
       join_assignment_room: {
         Args: {
           p_room_id: string
@@ -2120,6 +2127,13 @@ export type Database = {
           target_handle: string
           group_name: string
         }[]
+      }
+      resolve_assignment_room_code: {
+        Args: {
+          p_code: string
+          p_grant_token: string
+        }
+        Returns: Json
       }
       resolve_expense_participants: {
         Args: {
