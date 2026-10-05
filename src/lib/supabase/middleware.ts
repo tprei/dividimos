@@ -16,7 +16,12 @@ const PUBLIC_PATHS = [
   "/terms",
   "/privacy",
   "/excluir-conta",
+  "/suporte",
 ];
+
+// Pages people need exactly when something is broken: they never wait on, or
+// fail because of, the auth service.
+const AUTH_FREE_PAGES: Record<string, true> = { "/excluir-conta": true, "/suporte": true };
 
 type PendingCookie = {
   name: string;
@@ -168,7 +173,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   const pathname = request.nextUrl.pathname;
-  if (pathname === "/excluir-conta") {
+  if (AUTH_FREE_PAGES[pathname]) {
     return NextResponse.next({ request });
   }
   let data: Awaited<ReturnType<typeof supabase.auth.getClaims>>["data"] = null;

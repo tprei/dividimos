@@ -89,9 +89,9 @@ describe("updateSession", () => {
     expect(response.status).toBe(200);
   });
 
-  it("keeps /excluir-conta public even with a stale session cookie and no auth service", async () => {
+  it.each(["/excluir-conta", "/suporte"])("keeps %s public even with a stale session cookie and no auth service", async (path) => {
     const response = await updateSession(
-      makeRequest("/excluir-conta", { "sb-local-auth-token.0": "session" }),
+      makeRequest(path, { "sb-local-auth-token.0": "session" }),
     );
     expect(response.status).toBeLessThan(400);
     const redirected = response.headers.get("location");
