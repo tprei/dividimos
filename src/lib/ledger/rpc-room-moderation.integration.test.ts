@@ -7,6 +7,7 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   authenticateAs,
   createGroup,
+  createGroupWithMembers,
   createTestUser,
   createTestUsers,
   decodeRpcData,
@@ -22,6 +23,8 @@ type Client = SupabaseClient<Database>;
 type CreateArgs =
   Database["public"]["Functions"]["create_assignment_room"]["Args"];
 type JoinArgs = Database["public"]["Functions"]["join_assignment_room"]["Args"];
+type EnterArgs =
+  Database["public"]["Functions"]["enter_group_assignment_room"]["Args"];
 
 interface RoomRows {
   rooms: number;
@@ -94,6 +97,19 @@ async function joinRoom(
   const { data, error } = await client.rpc("join_assignment_room", args);
   if (error) throw new Error(error.message);
   return decodeRpcData("join_assignment_room", data, decodeAssignmentRoomView);
+}
+
+async function enterRoom(
+  client: Client,
+  args: EnterArgs,
+): Promise<AssignmentRoomView> {
+  const { data, error } = await client.rpc("enter_group_assignment_room", args);
+  if (error) throw new Error(error.message);
+  return decodeRpcData(
+    "enter_group_assignment_room",
+    data,
+    decodeAssignmentRoomView,
+  );
 }
 
 async function roomRows(roomId: string): Promise<RoomRows> {
@@ -329,6 +345,61 @@ describe.skipIf(!isIntegrationTestReady)("assignment room moderation", () => {
       ),
     ).toContain("objectionable_content");
     expect(await roomRows(args.p_room_id)).toEqual(EMPTY_ROOM);
+  });
+
+  it("refuses a group member entering with an objectionable legacy profile name until update_profile corrects it", async () => {
+    const [member] = await createTestUsers(1);
+    const stranger = await createTestUser({ name: "Baitola" });
+    const groupId = await createGroupWithMembers(host, [member], "Grupo da sala");
+    const args = createArgs(host, {
+      p_group_target: { kind: "existing", groupId },
+      p_join_token: joinToken("J"),
+    });
+    await createRoom(hostClient, args);
+    await withPg(async (pg) => {
+      await pg.query("update public.users set name = 'Boiola' where id = $1", [
+        member.id,
+      ]);
+    });
+    const before = await roomRows(args.p_room_id);
+
+    expect(
+      await expectRpcError(
+        authenticateAs(member).rpc("enter_group_assignment_room", {
+          p_room_id: args.p_room_id,
+          p_member_token: memberToken(),
+        }),
+      ),
+    ).toContain("objectionable_content");
+    expect(await roomRows(args.p_room_id)).toEqual(before);
+
+    const client = authenticateAs(member);
+    const corrected = await client.rpc("update_profile", { p_name: "Ana Ok" });
+    expect(corrected.error).toBeNull();
+
+    const entered = await enterRoom(client, {
+      p_room_id: args.p_room_id,
+      p_member_token: memberToken(),
+    });
+    expect(entered.role).toBe("participant");
+    expect(entered.room.participants.find(
+      (participant) => participant.id === entered.room.selfParticipantId,
+    )).toMatchObject({ displayName: "Ana Ok", isGuest: false, removed: false });
+    expect(await roomRows(args.p_room_id)).toEqual({
+      ...before,
+      participants: before.participants + 1,
+      members: before.members + 1,
+      revision: before.revision + 1,
+    });
+
+    expect(
+      await expectRpcError(
+        authenticateAs(stranger).rpc("enter_group_assignment_room", {
+          p_room_id: args.p_room_id,
+          p_member_token: memberToken(),
+        }),
+      ),
+    ).toContain("not_a_member");
   });
 
   it("replays a legacy room with objectionable stored names without recreating anything", async () => {
