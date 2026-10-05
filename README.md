@@ -52,6 +52,8 @@ A permissão de IA é pedida no aparelho antes do primeiro uso — escanear nota
 
 Participantes junta nome da conta, data, grupo e quem participa. Depois de escanear, a revisão da nota oferece **Dividir manualmente** (vai pro wizard de vários itens) ou **Criar sala de divisão**.
 
+Na revisão, os ícones acompanham os itens e o total da linha fica separado da quantidade e do preço de cada unidade. Toque no item para editar: a quantidade fica ao lado do nome, e o campo **Valor total** continua sendo o total da linha.
+
 ### Sala de itens
 
 A sala é o jeito de dividir um cupom sem passar o celular de mão em mão. O anfitrião escaneia, cria a sala e mostra o QR Code. Cada pessoa entra pelo próprio celular e marca o que consumiu.
