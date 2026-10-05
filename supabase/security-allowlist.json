@@ -486,6 +486,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; lists only the caller's own open and in-review hosted rooms."
     },
+    "public.list_my_open_assignment_rooms()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; lists only rooms in groups the caller belongs to, with the same exclusions as list_open_assignment_rooms."
+    },
     "public.ledger_chat_message_json(p_message_id uuid)": {
       "anon": false,
       "authenticated": false,
