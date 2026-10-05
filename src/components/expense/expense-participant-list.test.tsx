@@ -113,6 +113,51 @@ describe("ExpenseParticipantList reconciliation", () => {
       "\u2212R$\u00a050,00",
     );
   });
+
+  it("shows the consumed share unsigned on a deleted bill and the signed balance on an active bill", () => {
+    const carol: Participant = {
+      ...userParticipant(0, carolProfile),
+      paidCents: 12000,
+    };
+
+    const { unmount } = render(
+      <ExpenseParticipantList
+        participants={[carol]}
+        meId="user-1"
+        invitedUserIds={new Set()}
+        historical
+        onInviteGuest={vi.fn()}
+      />,
+    );
+
+    const deletedRow = within(
+      screen.getByRole("list", { name: "Participantes" }),
+    ).getByRole("listitem");
+    expect(
+      within(deletedRow).getByLabelText("Consumo de Carol Souza nessa conta excluída")
+        .textContent,
+    ).toBe("R$\u00a050,00");
+    expect(
+      within(deletedRow).queryByLabelText("Saldo de Carol Souza nessa conta"),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <ExpenseParticipantList
+        participants={[carol]}
+        meId="user-1"
+        invitedUserIds={new Set()}
+        onInviteGuest={vi.fn()}
+      />,
+    );
+
+    const activeRow = within(
+      screen.getByRole("list", { name: "Participantes" }),
+    ).getByRole("listitem");
+    expect(
+      within(activeRow).getByLabelText("Saldo de Carol Souza nessa conta").textContent,
+    ).toBe("+R$\u00a070,00");
+  });
 });
 
 describe("ExpenseParticipantList", () => {

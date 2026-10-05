@@ -7,13 +7,15 @@ import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import type { Participant } from "@/types/ledger";
 import { displayNames } from "@/lib/people";
+import { cn } from "@/lib/utils";
 
 interface ExpenseParticipantListProps {
   participants: Participant[];
   meId: string | null;
   invitedUserIds: ReadonlySet<string>;
-  onInviteGuest: (participant: Participant, anchor: HTMLButtonElement) => void;
+  onInviteGuest?: (participant: Participant, anchor: HTMLButtonElement) => void;
   showHeading?: boolean;
+  historical?: boolean;
 }
 
 export function ExpenseParticipantList({
@@ -22,6 +24,7 @@ export function ExpenseParticipantList({
   invitedUserIds,
   onInviteGuest,
   showHeading = true,
+  historical = false,
 }: ExpenseParticipantListProps) {
   const names = displayNames(participants.map((p) => ({
     id: p.user?.id ?? p.guest?.id ?? String(p.participantIndex),
@@ -65,21 +68,21 @@ export function ExpenseParticipantList({
                     {participant.guest && <Chip tone="guest">Convidado</Chip>}
                   </span>
                   <Money
-                    cents={participant.paidCents - participant.shareCents}
-                    signed
+                    cents={historical ? participant.shareCents : participant.paidCents - participant.shareCents}
+                    signed={!historical}
                     size="sm"
-                    label={`Saldo de ${name} nessa conta`}
-                    className="shrink-0 font-semibold leading-5"
+                    label={historical ? `Consumo de ${name} nessa conta excluída` : `Saldo de ${name} nessa conta`}
+                    className={cn("shrink-0 font-semibold leading-5", historical && "text-muted-foreground")}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="min-w-0 truncate text-xs leading-4 text-muted-foreground">
-                    Consumiu <Money cents={participant.shareCents} className="text-xs" />
+                    {!historical && <>Consumiu <Money cents={participant.shareCents} className="text-xs" /></>}
                     {participant.paidCents > 0 && (
-                      <> · Pagou <Money cents={participant.paidCents} className="text-xs" /></>
+                      <>{!historical && " · "}Pagou <Money cents={participant.paidCents} className="text-xs" /></>
                     )}
                   </p>
-                  {participant.guest?.claimedBy === null && (
+                  {participant.guest?.claimedBy === null && onInviteGuest && (
                     <Button
                       type="button"
                       variant="outline"

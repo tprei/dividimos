@@ -903,6 +903,98 @@ describe("mutations", () => {
       const meBalance = useAppStore.getState().groups.g1?.balances.find((b) => b.participantId === ME.id);
       expect(meBalance?.netCents).toBe(2500);
     });
+
+    it("attributes the optimistic delete to the viewer before the RPC resolves", async () => {
+      const detail = {
+        expense: {
+          id: "exp-1",
+          groupId: "g1",
+          creatorId: ME.id,
+          status: "active" as const,
+          currentVersionNo: 1,
+          occurredOn: "2026-01-02",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          deletedAt: null,
+          deletedBy: null,
+        },
+        current: {
+          expenseId: "exp-1",
+          versionNo: 1,
+          authorId: ME.id,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          ...HEADER,
+          payload: PAYLOAD,
+          changeSummary: null,
+        },
+        versions: [],
+        participants: [],
+        group: { id: "g1", name: "Viagem", kind: "group" as const },
+      };
+
+      useAppStore.setState({ hydrated: true, me: ME, expenseDetails: { "exp-1": detail } });
+
+      const { promise: pendingRpc, resolve: resolveRpc } = Promise.withResolvers<MutationAck>();
+      vi.mocked(rpc).mockImplementationOnce(() => pendingRpc);
+
+      const pending = deleteExpense("exp-1");
+
+      const expense = useAppStore.getState().expenseDetails["exp-1"]?.expense;
+      expect(expense?.status).toBe("deleted");
+      expect(expense?.deletedBy).toBe(ME.id);
+      expect(expense?.deletedAt).toEqual(expect.any(String));
+
+      resolveRpc({ groupId: "g1", ledgerVersion: 2, eventId: 60 });
+      await pending;
+    });
+
+    it("clears the optimistic restore attribution and restores it verbatim on rollback", async () => {
+      const deletedAt = "2026-01-03T00:00:00.000Z";
+      const detail = {
+        expense: {
+          id: "exp-1",
+          groupId: "g1",
+          creatorId: ME.id,
+          status: "deleted" as const,
+          currentVersionNo: 1,
+          occurredOn: "2026-01-02",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          deletedAt,
+          deletedBy: USER_2.id,
+        },
+        current: {
+          expenseId: "exp-1",
+          versionNo: 1,
+          authorId: ME.id,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          ...HEADER,
+          payload: PAYLOAD,
+          changeSummary: null,
+        },
+        versions: [],
+        participants: [],
+        group: { id: "g1", name: "Viagem", kind: "group" as const },
+      };
+
+      useAppStore.setState({ hydrated: true, me: ME, expenseDetails: { "exp-1": detail } });
+
+      const { promise: pendingRpc, reject: rejectRpc } = Promise.withResolvers<MutationAck>();
+      vi.mocked(rpc).mockImplementationOnce(() => pendingRpc);
+
+      const pending = restoreExpense("exp-1");
+      await Promise.resolve();
+
+      const expense = useAppStore.getState().expenseDetails["exp-1"]?.expense;
+      expect(expense?.status).toBe("active");
+      expect(expense?.deletedBy).toBeNull();
+      expect(expense?.deletedAt).toBeNull();
+
+      rejectRpc(new LedgerError("stale_version"));
+      await expect(pending).rejects.toBeInstanceOf(LedgerError);
+
+      expect(useAppStore.getState().expenseDetails["exp-1"]).toBe(detail);
+      expect(useAppStore.getState().expenseDetails["exp-1"]?.expense.deletedBy).toBe(USER_2.id);
+      expect(useAppStore.getState().expenseDetails["exp-1"]?.expense.deletedAt).toBe(deletedAt);
+    });
   });
 
   describe("recordSettlement and voidSettlement", () => {
