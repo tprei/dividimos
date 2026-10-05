@@ -1849,6 +1849,12 @@ export type Database = {
           amount_cents: number
         }[]
       }
+      has_objectionable_text: {
+        Args: {
+          p_text: string
+        }
+        Returns: boolean
+      }
       increment_rate_limit: {
         Args: {
           p_bucket: string

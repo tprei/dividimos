@@ -242,7 +242,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
     startTransition(async () => {
       const result = await action(formData);
       if (result?.error) {
-        if (result.error.includes("Handle")) {
+        if (result.step === "profile") {
           setStep("profile");
           setHandleError(result.error);
         } else {
@@ -261,7 +261,7 @@ function OnboardPageContent({ me, action, next }: OnboardingFormProps) {
     startTransition(async () => {
       const result = await action(formData);
       if (result?.error) {
-        if (result.error.includes("Handle") || result.error.includes("Nome")) {
+        if (result.step === "profile") {
           setStep("profile");
           setHandleError(result.error);
         } else {

@@ -64,7 +64,8 @@ describe("completeOnboarding", () => {
     const get = vi.spyOn(formData, "get");
 
     await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
-      error: "Sessão expirada",
+      error: expect.any(String),
+      step: "pix",
     });
 
     expect(get).not.toHaveBeenCalled();
@@ -77,7 +78,8 @@ describe("completeOnboarding", () => {
     const get = vi.spyOn(formData, "get");
 
     await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
-      error: "Sessão expirada",
+      error: expect.any(String),
+      step: "pix",
     });
 
     expect(get).not.toHaveBeenCalled();
@@ -93,7 +95,8 @@ describe("completeOnboarding", () => {
     const get = vi.spyOn(formData, "get");
 
     await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
-      error: "Sessão expirada",
+      error: expect.any(String),
+      step: "pix",
     });
 
     expect(get).not.toHaveBeenCalled();
@@ -119,7 +122,8 @@ describe("completeOnboarding", () => {
     const formData = form({ pixKeyType: "unsupported" });
 
     await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
-      error: "Tipo de chave Pix inválido.",
+      error: expect.any(String),
+      step: "pix",
     });
 
     expect(mocks.validatePixKey).not.toHaveBeenCalled();
@@ -131,7 +135,8 @@ describe("completeOnboarding", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "handle_taken" } });
 
     await expect(completeOnboarding("user-a", "/app", form())).resolves.toEqual({
-      error: "Handle já em uso. Escolha outro.",
+      error: expect.any(String),
+      step: "profile",
     });
 
     expect(mocks.encryptPixKey).toHaveBeenCalledWith("ana@example.com");
@@ -173,7 +178,25 @@ describe("completeOnboarding", () => {
     formData.set("intent", "skip");
 
     await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
-      error: "Handle já em uso. Escolha outro.",
+      error: expect.any(String),
+      step: "profile",
     });
+  });
+
+  it("surfaces objectionable_content on the skip path as a profile-step rejection", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "objectionable_content" } });
+    const formData = form();
+    formData.set("intent", "skip");
+
+    await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
+      error: expect.any(String),
+      step: "profile",
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith("update_profile", {
+      p_handle: "ana_costa",
+      p_name: "Ana Costa",
+    });
+    expect(mocks.encryptPixKey).not.toHaveBeenCalled();
   });
 });
