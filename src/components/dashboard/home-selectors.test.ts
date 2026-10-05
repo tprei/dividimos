@@ -3,10 +3,12 @@ import type { HostedAssignmentRoom, OpenAssignmentRoom } from "@/types/assignmen
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import {
+  selectHomeInvitations,
   selectHomeMode,
   selectHomeRecentBills,
   selectHomeRooms,
   selectOpenRoomsFromOthers,
+  selectShowFirstUseCard,
 } from "./home-selectors";
 
 const me: Me = {
@@ -25,7 +27,11 @@ const me: Me = {
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
 const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null, isBot: false };
 
-function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+type SnapshotOverrides = Omit<Partial<GroupSnapshot>, "group"> & {
+  group?: Partial<GroupSnapshot["group"]>;
+};
+
+function snapshot(overrides: SnapshotOverrides = {}): GroupSnapshot {
   const base: GroupSnapshot = {
     group: {
       id: "g1",
@@ -604,5 +610,203 @@ describe("selectHomeRooms", () => {
     const after = selectHomeRooms(useAppStore.getState());
     expect(after).not.toBe(before);
     expect(after.map((item) => item.room.id)).toEqual(["room-2", "hosted-1", "room-1"]);
+  });
+});
+
+describe("selectHomeInvitations", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("maps an invited DM to the counterparty name and its inviter", () => {
+    const dm = snapshot({
+      group: {
+        id: "g-dm",
+        kind: "dm",
+        name: "",
+        creatorId: carol.id,
+        dmUserA: me.id,
+        dmUserB: carol.id,
+      },
+      dmCounterparty: carol,
+      members: [
+        { groupId: "g-dm", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "g-dm", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { "g-dm": dm },
+      groupOrder: ["g-dm"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g-dm",
+        kind: "dm",
+        title: "Carol Souza",
+        inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
+      },
+    ]);
+  });
+
+  it("maps an invited group to the group name and its inviter", () => {
+    const invited = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: invited },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g1",
+        kind: "group",
+        title: "Grupo 1",
+        inviter: { id: carol.id, name: "Carol Souza", avatarUrl: null },
+      },
+    ]);
+  });
+
+  it("returns null as inviter when the inviting member is absent from the snapshot", () => {
+    const invited = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: invited },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([
+      {
+        groupId: "g1",
+        kind: "group",
+        title: "Grupo 1",
+        inviter: null,
+      },
+    ]);
+  });
+
+  it("excludes groups where the viewer is already accepted", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeInvitations(useAppStore.getState())).toEqual([]);
+  });
+
+  it("returns the same array while inputs are unchanged", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+    const state = useAppStore.getState();
+
+    expect(selectHomeInvitations(state)).toBe(selectHomeInvitations(state));
+  });
+});
+
+describe("selectShowFirstUseCard", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+  });
+
+  it("is true on a first-use home with no invitations and no rooms", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(true);
+  });
+
+  it("is false on a first-use home with a pending invitation", () => {
+    const inviteOnly = snapshot({
+      members: [
+        { groupId: "g1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [inviteOnly.group.id]: inviteOnly },
+      groupOrder: [inviteOnly.group.id],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false on a first-use home with an open room in a DM", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { "dm-1": dmSnapshot() },
+      groupOrder: ["dm-1"],
+      openAssignmentRoomsByGroupId: {
+        "dm-1": [openRoomFixture({ id: "room-dm", groupId: "dm-1" })],
+      },
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectHomeRooms(useAppStore.getState())).toHaveLength(1);
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false on a first-use home with a hosted room", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {},
+      groupOrder: [],
+      hostedAssignmentRooms: [hostedRoomFixture()],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("first-use");
+    expect(selectHomeRooms(useAppStore.getState())).toHaveLength(1);
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false in outstanding mode", () => {
+    const debtGroup = snapshot({
+      balances: [
+        { kind: "user", participantId: me.id, netCents: -1500 },
+        { kind: "user", participantId: carol.id, netCents: 1500 },
+      ],
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [debtGroup.group.id]: debtGroup },
+      groupOrder: [debtGroup.group.id],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("outstanding");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
+  });
+
+  it("is false in settled mode", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { g1: snapshot() },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectHomeMode(useAppStore.getState())).toBe("settled");
+    expect(selectShowFirstUseCard(useAppStore.getState())).toBe(false);
   });
 });
