@@ -210,6 +210,8 @@ export function ChatThread({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      aria-busy={loading}
+      data-testid="chat-thread"
       className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 pb-3"
     >
       {hasMore && onLoadMore && (

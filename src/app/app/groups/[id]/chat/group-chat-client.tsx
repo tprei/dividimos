@@ -93,6 +93,8 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const paymentKey = useRef(crypto.randomUUID());
 
   const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
+  const historyStatus = conversation?.reconcile.status;
+  const historyLoading = historyStatus === "idle" || historyStatus === "loading";
   const renderedBoundaryKey = `${me?.id ?? ""}:${groupId}`;
   const [renderedBoundary, setRenderedBoundary] = useState<{
     key: string;
@@ -251,6 +253,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           expenses={snapshot.recentExpenses}
           nameOf={nameOf}
           profileOf={profileOf}
+          loading={historyLoading}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}
           onRenderedThrough={handleRenderedThrough}
