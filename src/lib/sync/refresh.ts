@@ -18,6 +18,7 @@ import {
   expensePageReadKey,
   expenseReadKey,
   HOSTED_ASSIGNMENT_ROOMS_READ_KEY,
+  MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY,
   MY_EXPENSES_READ_KEY,
   groupReadKey,
   openAssignmentRoomsReadKey,
@@ -44,6 +45,8 @@ const inFlightSharedSpending = new Map<string, Promise<void>>();
 const inFlightOpenRooms = new Map<string, Promise<void>>();
 let inFlightHostedRooms: Promise<void> | null = null;
 let pendingHostedRooms: Promise<void> | null = null;
+let inFlightMyOpenRooms: Promise<void> | null = null;
+let pendingMyOpenRooms: Promise<void> | null = null;
 
 interface ReadAttempt {
   generation: number;
@@ -93,6 +96,8 @@ export function invalidateSyncReads(): void {
   inFlightOpenRooms.clear();
   inFlightHostedRooms = null;
   pendingHostedRooms = null;
+  inFlightMyOpenRooms = null;
+  pendingMyOpenRooms = null;
 }
 
 async function trackedRead<T>(
@@ -307,6 +312,48 @@ export function refreshHostedAssignmentRooms(): Promise<void> {
     return runHostedRoomsRead();
   });
   pendingHostedRooms = followUp;
+  return followUp;
+}
+
+function runMyOpenRoomsRead(): Promise<void> {
+  const attempt = beginRead(MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY);
+  // A per-group read that starts after the aggregate supersedes it for that
+  // group: only groups whose per-group generation is untouched since this
+  // read started may be patched by its response.
+  const perGroupAtStart = new Map(readGenerations);
+  const appliesToGroup = (groupId: string): boolean =>
+    readGenerations.get(openAssignmentRoomsReadKey(groupId)) ===
+    perGroupAtStart.get(openAssignmentRoomsReadKey(groupId));
+  const task: Promise<void> = trackedRead(
+    MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY,
+    attempt,
+    () => rpc("list_my_open_assignment_rooms", {}, decodeOpenAssignmentRooms),
+    (rooms) =>
+      useAppStore.getState().applyAllOpenAssignmentRooms(rooms, appliesToGroup),
+  )
+    .then(
+      (): undefined => undefined,
+      (): undefined => undefined,
+    )
+    .finally(() => {
+      if (inFlightMyOpenRooms === task) inFlightMyOpenRooms = null;
+    });
+  inFlightMyOpenRooms = task;
+  return task;
+}
+
+export function refreshMyOpenAssignmentRooms(): Promise<void> {
+  const current = inFlightMyOpenRooms;
+  if (current === null) return runMyOpenRoomsRead();
+  if (pendingMyOpenRooms !== null) return pendingMyOpenRooms;
+
+  const authGeneration = getAuthGeneration();
+  const followUp = current.then(() => {
+    if (pendingMyOpenRooms === followUp) pendingMyOpenRooms = null;
+    if (getAuthGeneration() !== authGeneration) return;
+    return runMyOpenRoomsRead();
+  });
+  pendingMyOpenRooms = followUp;
   return followUp;
 }
 

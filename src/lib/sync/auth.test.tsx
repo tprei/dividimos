@@ -24,6 +24,7 @@ vi.mock("./refresh", async () => ({
   ...(await vi.importActual<typeof RefreshModule>("./refresh")),
   refreshHostedAssignmentRooms: vi.fn(async () => {}),
   readUserBlocks: vi.fn(async () => []),
+  refreshMyOpenAssignmentRooms: vi.fn(async () => {}),
 }));
 
 const mockDetachPush = vi.fn(async () => {});

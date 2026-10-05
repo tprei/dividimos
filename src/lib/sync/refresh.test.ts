@@ -9,6 +9,7 @@ import {
   expensePageReadKey,
   expenseReadKey,
   groupReadKey,
+  MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY,
   openAssignmentRoomsReadKey,
   settlementReadKey,
   useAppStore,
@@ -22,6 +23,7 @@ import {
   refreshExpense,
   refreshGroup,
   refreshHostedAssignmentRooms,
+  refreshMyOpenAssignmentRooms,
   refreshOpenAssignmentRooms,
   refreshSettlement,
 } from "./refresh";
@@ -524,6 +526,111 @@ describe("refreshHostedAssignmentRooms", () => {
 
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().hostedAssignmentRooms).toEqual([]);
+  });
+});
+
+describe("refreshMyOpenAssignmentRooms", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+  });
+
+  it("publishes every accepted group's list under one read key", async () => {
+    useAppStore.setState({
+      me: ME,
+      groups: { g1: memberSnapshot("g1", 2), g2: memberSnapshot("g2", 2) },
+    });
+    vi.mocked(rpc).mockResolvedValueOnce([
+      openRoom(),
+      { ...openRoom(), id: "00000000-0000-4000-8000-000000000010", groupId: "g2" },
+    ] as never);
+
+    await refreshMyOpenAssignmentRooms();
+
+    expect(rpc).toHaveBeenCalledWith(
+      "list_my_open_assignment_rooms",
+      {},
+      expect.any(Function),
+    );
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({
+      g1: [openRoom()],
+      g2: [{ ...openRoom(), id: "00000000-0000-4000-8000-000000000010", groupId: "g2" }],
+    });
+    expect(useAppStore.getState().reads[MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY]).toEqual({
+      status: "ready",
+    });
+  });
+
+  it("coalesces refreshes during a read into one follow-up", async () => {
+    useAppStore.setState({ me: ME, groups: { g1: memberSnapshot("g1", 2) } });
+    const first = Promise.withResolvers<OpenAssignmentRoom[]>();
+    const second = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc)
+      .mockReturnValueOnce(first.promise as never)
+      .mockReturnValueOnce(second.promise as never);
+
+    const initial = refreshMyOpenAssignmentRooms();
+    const followUp = refreshMyOpenAssignmentRooms();
+    expect(refreshMyOpenAssignmentRooms()).toBe(followUp);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    first.resolve([openRoom()]);
+    await initial;
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    second.resolve([{ ...openRoom(), revision: 2 }]);
+    await followUp;
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([
+      { ...openRoom(), revision: 2 },
+    ]);
+  });
+
+  it("keeps a group's fresh per-group list over a stale aggregate response", async () => {
+    useAppStore.setState({ me: ME, groups: { g1: memberSnapshot("g1", 2) } });
+    const aggregate = Promise.withResolvers<OpenAssignmentRoom[]>();
+    const perGroup = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "list_my_open_assignment_rooms" ? aggregate.promise : perGroup.promise,
+    );
+
+    const aggregateRead = refreshMyOpenAssignmentRooms();
+    const groupRead = refreshOpenAssignmentRooms("g1");
+    perGroup.resolve([openRoom()]);
+    await groupRead;
+    aggregate.resolve([]);
+    await aggregateRead;
+
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+    expect(useAppStore.getState().reads[MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY]).toEqual({
+      status: "ready",
+    });
+  });
+
+  it("drops a queued follow-up after sign-out", async () => {
+    const first = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc).mockReturnValueOnce(first.promise as never);
+
+    refreshMyOpenAssignmentRooms();
+    const followUp = refreshMyOpenAssignmentRooms();
+    clientState.authGeneration += 1;
+    first.resolve([openRoom()]);
+    await followUp;
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({});
+  });
+
+  it("resolves with the failure recorded in the read state", async () => {
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+
+    await expect(refreshMyOpenAssignmentRooms()).resolves.toBeUndefined();
+
+    expect(useAppStore.getState().reads[MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY]).toEqual({
+      status: "error",
+      code: "network",
+    });
   });
 });
 

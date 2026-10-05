@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenAssignmentRoom } from "@/types/assignment-room";
 import type { Bootstrap } from "@/types/ledger";
-import { useAppStore } from "@/stores/app-store";
+import { MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY, useAppStore } from "@/stores/app-store";
 import { LedgerError } from "./errors";
 import { rpc } from "./client";
 import { advanceBlockListEpoch, attachVisibilityRefresh, catchUpBootstrap, runBootstrap } from "./bootstrap";
-import { readUserBlocks } from "./refresh";
+import type * as RefreshModule from "./refresh";
+import { readUserBlocks, refreshMyOpenAssignmentRooms } from "./refresh";
 
 const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("./client", () => ({
@@ -15,10 +17,14 @@ vi.mock("./client", () => ({
     return authState.generation;
   },
 }));
-vi.mock("./refresh", () => ({
+vi.mock("./refresh", async () => ({
+  ...(await vi.importActual<typeof RefreshModule>("./refresh")),
   refreshHostedAssignmentRooms: vi.fn(async () => {}),
   readUserBlocks: vi.fn(async () => []),
+  refreshMyOpenAssignmentRooms: vi.fn(),
 }));
+
+const actualRefresh = await vi.importActual<typeof RefreshModule>("./refresh");
 
 const rpcMock = vi.mocked(rpc);
 const bootstrapResponse: Bootstrap = {
@@ -202,5 +208,138 @@ describe("runBootstrap and the block list", () => {
     expect(useAppStore.getState().me?.id).toBe(bootstrapResponse.me.id);
     expect(useAppStore.getState().bootstrapStatus).toBe("ready");
     expect(useAppStore.getState().blockedUsers).toEqual([blocked]);
+  });
+});
+
+describe("runBootstrap and the open rooms list", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.generation = 0;
+    actualRefresh.invalidateSyncReads();
+    vi
+      .mocked(refreshMyOpenAssignmentRooms)
+      .mockImplementation(actualRefresh.refreshMyOpenAssignmentRooms);
+    useAppStore.getState().reset();
+  });
+
+  function wireOverviewWithAcceptedGroup(): unknown {
+    return {
+      me: { ...bootstrapResponse.me },
+      groups: [
+        {
+          group: {
+            id: "g1",
+            kind: "group",
+            name: "Viagem",
+            creatorId: bootstrapResponse.me.id,
+            dmUserA: null,
+            dmUserB: null,
+            ledgerVersion: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          members: [
+            {
+              groupId: "g1",
+              userId: bootstrapResponse.me.id,
+              status: "accepted",
+              invitedBy: null,
+              acceptedAt: "2026-01-01T00:00:00.000Z",
+              user: bootstrapResponse.me,
+            },
+          ],
+          balances: [],
+          guests: [],
+          settlements: [],
+          recentExpenses: [],
+          lastEventId: 1,
+          unreadCount: 0,
+          lastMessage: null,
+          lastActivityAt: "2026-01-02T00:00:00.000Z",
+          expenseCount: 0,
+          pairwiseEdges: [],
+          overview: { avatar: { kind: "initials" }, spending: null },
+          archivedAt: null,
+          financialHistorySharedAt: null,
+          formerMembers: [],
+        },
+      ],
+      serverTime: bootstrapResponse.serverTime,
+    };
+  }
+
+  function openRoom(): OpenAssignmentRoom {
+    return {
+      id: "room-1",
+      groupId: "g1",
+      status: "open",
+      revision: 1,
+      title: "Almoço",
+      occurredOn: "2026-09-26",
+      totalCents: 100,
+      host: { id: "user-2", handle: "bob", name: "Bob", avatarUrl: null, isBot: false },
+      createdAt: "2026-09-26T11:00:00.000Z",
+      itemCount: 2,
+      ownedItemCount: 0,
+      claimers: [],
+      expenseId: null,
+      joined: false,
+    };
+  }
+
+  it("publishes bootstrap while the rooms read is still pending, then the rooms land", async () => {
+    const overview = Promise.withResolvers<unknown>();
+    const rooms = Promise.withResolvers<OpenAssignmentRoom[]>();
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "bootstrap_overview_v2" ? overview.promise : rooms.promise,
+    );
+
+    const done = runBootstrap();
+    overview.resolve(wireOverviewWithAcceptedGroup());
+    await done;
+
+    expect(useAppStore.getState().bootstrapStatus).toBe("ready");
+    expect(useAppStore.getState().groups.g1?.group.id).toBe("g1");
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toBeUndefined();
+
+    rooms.resolve([openRoom()]);
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]),
+    );
+  });
+
+  it("keeps rooms that landed before the groups they belong to", async () => {
+    const overview = Promise.withResolvers<unknown>();
+    vi.mocked(rpc).mockImplementation(async (name: unknown) =>
+      name === "bootstrap_overview_v2" ? overview.promise : [openRoom()],
+    );
+
+    const done = runBootstrap();
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]),
+    );
+    expect(useAppStore.getState().groups.g1).toBeUndefined();
+
+    overview.resolve(wireOverviewWithAcceptedGroup());
+    await done;
+
+    expect(useAppStore.getState().groups.g1?.group.id).toBe("g1");
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId.g1).toEqual([openRoom()]);
+  });
+
+  it("records a rooms failure without failing bootstrap", async () => {
+    vi.mocked(rpc).mockImplementation(async (name: unknown) => {
+      if (name === "bootstrap_overview_v2") return wireOverviewWithAcceptedGroup();
+      throw new LedgerError("network");
+    });
+
+    await expect(runBootstrap()).resolves.toBeUndefined();
+
+    expect(useAppStore.getState().bootstrapStatus).toBe("ready");
+    expect(useAppStore.getState().groups.g1?.group.id).toBe("g1");
+    expect(useAppStore.getState().reads[MY_OPEN_ASSIGNMENT_ROOMS_READ_KEY]).toEqual({
+      status: "error",
+      code: "network",
+    });
+    expect(useAppStore.getState().openAssignmentRoomsByGroupId).toEqual({});
   });
 });
