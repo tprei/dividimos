@@ -179,10 +179,9 @@ export function GroupSettlementView({
       }`
     : "";
 
-  // Built before the settled early return so an open modal survives the
-  // moment the last balance clears and shows its own settled state.
   const pixModal = pixTarget && !peopleById.get(pixTarget.counterpartyId)?.isDeparted ? (
     <PixQrModal
+      key={pixTarget.counterpartyId}
       open
       onClose={() => setPixTarget(null)}
       recipientName={fullNames.get(pixTarget.counterpartyId) ?? pixTarget.recipientName}

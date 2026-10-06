@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Check,
   Copy,
@@ -13,10 +13,11 @@ import {
   WifiOff,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,6 @@ import {
 import { formatBRL } from "@/lib/currency";
 import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
-import { ConfettiBurst } from "@/components/shared/confetti-burst";
 import {
   getSnapPoints,
   getSnapRadius,
@@ -41,7 +41,7 @@ import { copyText } from "@/lib/platform/clipboard";
 import { QrCanvas } from "@/components/shared/qr-canvas";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { popIn } from "@/lib/animations";
+import { fade, popIn } from "@/lib/animations";
 
 const PIX_QR_OPTIONS = { width: 240, margin: 2, color: { dark: "#1a1d2e", light: "#ffffff" } };
 
@@ -145,6 +145,11 @@ export function PixQrModal({
   const [showPayQr, setShowPayQr] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const surfaceVariants = reducedMotion ? fade : popIn;
+  const registrationButtonRef = useRef<HTMLButtonElement>(null);
+  const wasSettlingRef = useRef(false);
+  const pendingTitleId = useId();
 
   const counterpartySettled = open && !isSettling && !showSuccess && capCents === 0;
   const isFullPayment = paymentCents >= maxCents;
@@ -159,6 +164,14 @@ export function PixQrModal({
   const snapRadius = getSnapRadius(snapStep, 1);
   const snapPoints = getSnapPoints(sliderMin, maxCents, []);
   const halfAvailable = maxCents >= 200 && halfCents > sliderMin && halfCents < maxCents;
+
+  useEffect(() => {
+    if (wasSettlingRef.current && !isSettling && !showSuccess && !counterpartySettled && open) {
+      const button = registrationButtonRef.current;
+      if (button && !button.disabled) button.focus({ preventScroll: true });
+    }
+    wasSettlingRef.current = isSettling;
+  }, [isSettling, showSuccess, counterpartySettled, open]);
 
   const commitAmount = useCallback(() => {
     setEditingAmount(false);
@@ -370,6 +383,13 @@ export function PixQrModal({
     settleNotice = "Quando o Pix cair na sua conta, confirme aqui.";
   }
 
+  let registrationAnnouncement = "";
+  if (showSuccess) {
+    registrationAnnouncement = `Pagamento registrado. ${formatBRL(settledAmountCents)} ${mode === "collect" ? "de" : "para"} ${recipientName}.`;
+  } else if (isSettling) {
+    registrationAnnouncement = "Registrando pagamento. Salvando no Dividimos. Isso não movimenta dinheiro no banco.";
+  }
+
   return (
     <Dialog
       open={open}
@@ -382,37 +402,42 @@ export function PixQrModal({
       <DialogContent
         showCloseButton={!isSettling && !showSuccess && !counterpartySettled}
         initialFocus={false}
-        className="sm:max-w-md bg-card p-0 overflow-hidden"
+        {...(isSettling && !showSuccess ? { "aria-labelledby": pendingTitleId } : {})}
+        className="sm:max-w-md bg-card p-0 overflow-hidden [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2"
       >
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {registrationAnnouncement}
+        </div>
         <AnimatePresence mode="wait">
           {showSuccess ? (
             <motion.div
               key="success"
-              variants={popIn} initial="hidden" animate="visible" exit="exit"
-              className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 py-4"
+              variants={surfaceVariants} initial="hidden" animate="visible" exit="exit"
+              data-pix-state="success"
+              className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] text-center compact:pt-4 compact:pb-4"
             >
-              <ConfettiBurst />
+              <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-success/10 text-success-text" aria-hidden="true">
+                {reducedMotion ? (
+                  <Check className="size-8" />
+                ) : (
+                  <AnimatedCheckmark size={48} className="text-success-text" />
+                )}
+              </div>
 
-              <AnimatedCheckmark size={72} className="text-success" />
+              <DialogTitle className="mt-4 text-xl">Pagamento registrado</DialogTitle>
+              <Money cents={settledAmountCents} size="hero" tone="positive" className="mt-3 compact:text-3xl" />
 
-              <DialogTitle className="mt-5 text-xl">Pagamento registrado</DialogTitle>
-              <Money cents={settledAmountCents} size="lg" tone="positive" className="mt-2" />
-
-              <p
-                className="mt-1 text-sm text-muted-foreground"
-              >
+              <p className="mt-2 max-w-full break-words text-sm text-muted-foreground">
                 {mode === "collect" ? "de" : "para"}{" "}
                 <span className="font-medium text-foreground">{recipientName}</span>
               </p>
 
-              <div
-                className="mt-6"
-              >
+              <div className="mt-6 w-full compact:mt-4">
                 <Button
                   variant="outline"
                   size="lg"
                   onClick={handleSuccessClose}
-                  className="gap-2 min-h-11"
+                  className="w-full gap-2 min-h-11"
                 >
                   Fechar
                 </Button>
@@ -421,10 +446,16 @@ export function PixQrModal({
           ) : counterpartySettled ? (
             <motion.div
               key="settled-elsewhere"
-              variants={popIn} initial="hidden" animate="visible" exit="exit"
+              variants={surfaceVariants} initial="hidden" animate="visible" exit="exit"
               className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 py-4"
             >
-              <AnimatedCheckmark size={72} className="text-success" />
+              <div aria-hidden="true">
+                {reducedMotion ? (
+                  <Check className="size-[72px] text-success-text" />
+                ) : (
+                  <AnimatedCheckmark size={72} className="text-success-text" />
+                )}
+              </div>
 
               <DialogTitle className="mt-5 text-xl">Tudo certo!</DialogTitle>
 
@@ -466,8 +497,13 @@ export function PixQrModal({
               key="form"
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex min-h-0 flex-1 flex-col"
+              className="relative flex min-h-0 flex-1 flex-col"
             >
+              <div
+                inert={isSettling}
+                aria-hidden={isSettling || undefined}
+                className={cn("flex min-h-0 flex-1 flex-col", isSettling && "invisible pointer-events-none")}
+              >
               <div className="flex-1 overflow-y-auto min-h-0 px-4 pt-4 pb-3 overscroll-contain" data-testid="pix-qr-body">
                 <div className="flex items-center gap-3 pr-12">
                   <UserAvatar id={counterpartyId} name={recipientName} avatarUrl={counterpartyAvatarUrl} size="md" />
@@ -478,7 +514,10 @@ export function PixQrModal({
                 <div className={cn(showsQr && "compact:flex compact:items-center compact:gap-3")}>
                 <div className="min-w-0 text-center compact:flex-1">
 
-                  <div className="mt-3">
+                  <div className="mt-4 compact:mt-2">
+                    <p className="mb-1 text-sm font-medium text-muted-foreground compact:text-xs">
+                      Valor do pagamento
+                    </p>
                     {editingAmount ? (
                       <label
                         className={cn("flex items-center justify-center gap-1 text-3xl compact:text-2xl font-bold tabular-nums", mode === "pay" ? "text-destructive-text" : "text-success-text")}
@@ -498,7 +537,7 @@ export function PixQrModal({
                           maxCents={maxCents}
                           onChangeCents={setRequestedCents}
                           aria-label="Editar valor"
-                          className="h-12 w-40 text-3xl font-bold text-inherit compact:h-11 compact:w-28 compact:text-2xl"
+                          className="h-12 min-w-0 w-40 text-3xl font-bold text-inherit compact:h-11 compact:w-28 compact:text-2xl"
                         />
                       </label>
                     ) : (
@@ -507,13 +546,13 @@ export function PixQrModal({
                         onClick={() => setEditingAmount(true)}
                         disabled={isSettling}
                         aria-label={`Editar valor, ${formatBRL(paymentCents)}`}
-                        className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                        className={cn("inline-flex min-h-12 max-w-full items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-muted disabled:pointer-events-none disabled:opacity-50 compact:min-h-11", showsQr && "compact:gap-1 compact:px-1")}
                       >
-                        <Money cents={paymentCents} size="hero" tone={mode === "pay" ? "negative" : "positive"} className="compact:text-3xl" />
-                        <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
+                        <Money cents={paymentCents} size="hero" tone={mode === "pay" ? "negative" : "positive"} className={cn("compact:text-3xl", showsQr && "compact:text-lg compact:whitespace-normal")} />
+                        <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                       </button>
                     )}
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className={cn("mt-2 flex items-center gap-2", showsQr && "compact:flex-wrap compact:justify-center")}>
                       <input
                         type="range"
                         min={sliderMin}
@@ -523,58 +562,52 @@ export function PixQrModal({
                         onChange={handleSliderChange}
                         onKeyDown={handleSliderKeyDown}
                         disabled={isSettling}
-                        className="min-w-0 flex-1"
+                        className={cn("min-w-11 flex-1", showsQr && "compact:w-full compact:basis-full compact:shrink-0")}
                         aria-label="Valor do pagamento"
                         aria-valuetext={formatBRL(paymentCents)}
                       />
-                      <button
-                        type="button"
+                      <ChoiceChip
+                        size="sm"
+                        selected={paymentCents === maxCents}
                         onClick={() => { setRequestedCents(maxCents); haptics.selectionChanged(); }}
                         disabled={isSettling}
                         aria-pressed={paymentCents === maxCents}
                         aria-label="Tudo"
                         title="Tudo"
-                        className={`flex min-h-11 shrink-0 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors ${
-                          paymentCents === maxCents
-                            ? "text-primary-text"
-                            : "text-muted-foreground hover:text-primary-text"
-                        } disabled:opacity-50`}
+                        className="h-11 shrink-0 after:hidden"
                       >
                         Tudo
-                      </button>
+                      </ChoiceChip>
                       {halfAvailable && (
-                        <button
-                          type="button"
+                        <ChoiceChip
+                          size="sm"
+                          selected={paymentCents === halfCents}
                           onClick={() => { setRequestedCents(halfCents); haptics.selectionChanged(); }}
                           disabled={isSettling}
                           aria-pressed={paymentCents === halfCents}
                           aria-label="Metade"
                           title="Metade"
-                          className={`flex min-h-11 shrink-0 items-center justify-center rounded-full px-2 text-xs font-semibold transition-colors ${
-                            paymentCents === halfCents
-                              ? "text-primary-text"
-                              : "text-muted-foreground hover:text-primary-text"
-                          } disabled:opacity-50`}
+                          className="h-11 shrink-0 after:hidden"
                         >
                           Metade
-                        </button>
+                        </ChoiceChip>
                       )}
                     </div>
 
                     {!isFullPayment && isValidAmount && (
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         Restam <Money cents={maxCents - paymentCents} size="sm" />
                       </p>
                     )}
                   </div>
 
                   {copiaECola && mode === "pay" && (
-                    <div className="mt-5 text-left compact:mt-2">
+                    <div className="mt-3 text-left compact:mt-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 compact:w-full"
+                        className="min-h-11 gap-2 compact:w-full"
                         aria-expanded={showPayQr}
                         aria-controls="pix-qr-region"
                         onClick={() => setShowPayQr((v) => !v)}
@@ -591,7 +624,7 @@ export function PixQrModal({
               >
                 {showsQr ? (
                   <motion.div
-                    variants={popIn} initial="hidden" animate="visible"
+                    variants={surfaceVariants} initial="hidden" animate="visible"
                     className="mt-3 flex justify-center rounded-2xl border border-border bg-paper p-3 compact:p-2"
                   >
                     <QrCanvas
@@ -603,7 +636,7 @@ export function PixQrModal({
                   </motion.div>
                 ) : !copiaECola ? (
                   <motion.div
-                    variants={popIn} initial="hidden" animate="visible"
+                    variants={surfaceVariants} initial="hidden" animate="visible"
                     className="mt-3 flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-muted/30 p-4 text-center"
                   >
                     {payload.status === "idle" || payload.status === "loading" ? (
@@ -675,7 +708,7 @@ export function PixQrModal({
                   {copiaECola && <Button
                     onClick={handleCopy}
                     variant="outline"
-                    className="w-full gap-2"
+                    className="min-h-11 w-full gap-2 compact:px-2 compact:whitespace-normal"
                     disabled={!copiaECola || isSettling}
                   >
                     {copied ? (
@@ -696,25 +729,33 @@ export function PixQrModal({
                     </p>
                   )}
                   <Button
+                    ref={registrationButtonRef}
                     onClick={handlePayment}
                     variant={copiaECola ? "default" : "outline"}
-                    className="w-full gap-2"
+                    className="min-h-11 w-full gap-2"
                     disabled={!isValidAmount || isSettling}
                   >
-                    {isSettling ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Registrando...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4" />
-                        {!copiaECola ? "Registrar pagamento" : mode === "collect" ? "Já recebi" : "Já paguei"}
-                      </>
-                    )}
+                    <Check className="h-4 w-4" />
+                    {!copiaECola ? "Registrar pagamento" : mode === "collect" ? "Já recebi" : "Já paguei"}
                   </Button>
                 </div>
               </div>
+              </div>
+              {isSettling && (
+                <motion.div
+                  variants={fade} initial="hidden" animate="visible"
+                  data-pix-state="pending"
+                  className="absolute inset-0 flex min-h-0 flex-col items-center justify-center overflow-y-auto overscroll-contain bg-card px-6 py-6 text-center compact:py-4"
+                >
+                  <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+                    <Loader2 className="size-7 motion-safe:animate-spin text-muted-foreground" />
+                  </div>
+                  <h2 id={pendingTitleId} className="mt-4 text-xl leading-snug font-bold">Registrando pagamento</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Salvando no Dividimos. Isso não movimenta dinheiro no banco.
+                  </p>
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
