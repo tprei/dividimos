@@ -502,7 +502,7 @@ export function PixQrModal({
               <div
                 inert={isSettling}
                 aria-hidden={isSettling || undefined}
-                className={cn("flex min-h-0 flex-1 flex-col", isSettling && "invisible pointer-events-none")}
+                className={cn("flex min-h-0 flex-1 flex-col", isSettling && "opacity-0 pointer-events-none")}
               >
               <div className="flex-1 overflow-y-auto min-h-0 px-4 pt-4 pb-3 overscroll-contain" data-testid="pix-qr-body">
                 <div className="flex items-center gap-3 pr-12">

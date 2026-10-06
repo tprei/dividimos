@@ -92,7 +92,7 @@ stateDiagram-v2
 - **QR Code Pix.** BR Code EMV com Copia e Cola, gerado no servidor com a chave de quem recebe. Escolha **Tudo**, **Metade** ou edite o valor; a seleção e o total mudam na hora. O controle de valor tem alvo de 44px e foco visível pelo teclado.
 - **Poucas transferências.** **Quem paga quem** cruza o maior devedor com o maior credor até zerar o grupo, com no máximo uma transferência a menos que o número de pessoas com saldo.
 - **Registrar pagamento.** Quem pagou ou quem recebeu registra, e o saldo atualiza na hora. Errou? **Desfazer** no feed, no chat ou no detalhe do pagamento.
-- **Confirmação de registro.** O diálogo espera a confirmação do servidor antes de mostrar o valor registrado e o nome da outra pessoa, mesmo quando o pagamento zera o grupo. Registrar não movimenta dinheiro no banco. A confirmação não tem confete; com movimento reduzido, usa um símbolo estático.
+- **Confirmação de registro.** O diálogo espera a confirmação do servidor antes de mostrar o valor registrado e o nome da outra pessoa, mesmo quando o pagamento zera o grupo. Registrar não movimenta dinheiro no banco. Se falhar, o diálogo mantém o valor e a escolha de exibir o QR, e devolve o foco ao botão de registro. A confirmação não tem confete; com movimento reduzido, usa um símbolo estático.
 - **Lembrar.** Um toque manda um push pra quem te deve. Um lembrete por pessoa a cada 24h no grupo, e só se a dívida com você existir.
 - **Cobrar rápido.** Cobrança Pix avulsa, sem grupo: digita o valor, compartilha o QR e marca **Pagamento recebido** quando cair. O histórico fica em **Cobranças**.
 
