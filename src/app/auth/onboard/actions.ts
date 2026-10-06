@@ -16,24 +16,27 @@ function isPixKeyType(value: string): value is PixKeyType {
   return PIX_KEY_TYPES.some((type) => type === value);
 }
 function retryableError(): OnboardingActionResult {
-  return { error: "Não foi possível carregar sua conta. Tente novamente." };
+  return { error: "Não foi possível carregar sua conta. Tente novamente.", step: "pix" };
 }
 
 function sessionError(): OnboardingActionResult {
-  return { error: "Sessão expirada" };
+  return { error: "Sessão expirada", step: "pix" };
 }
 
 function onboardingRpcError(message: string): OnboardingActionResult {
   if (message === "handle_taken") {
-    return { error: "Handle já em uso. Escolha outro." };
+    return { error: "Handle já em uso. Escolha outro.", step: "profile" };
   }
   if (message === "invalid_handle") {
-    return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
+    return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados.", step: "profile" };
   }
   if (message === "invalid_name") {
-    return { error: "Nome inválido." };
+    return { error: "Nome inválido.", step: "profile" };
   }
-  return { error: "Não foi possível salvar sua conta. Tente novamente." };
+  if (message === "objectionable_content") {
+    return { error: "O nome ou o handle tem um termo ofensivo. Escolha outro.", step: "profile" };
+  }
+  return { error: "Não foi possível salvar sua conta. Tente novamente.", step: "pix" };
 }
 
 export async function completeOnboarding(
@@ -82,15 +85,15 @@ export async function completeOnboarding(
     handleValue.trim() === "" ||
     nameValue.trim() === ""
   ) {
-    return { error: "Dados incompletos" };
+    return { error: "Dados incompletos", step: "profile" };
   }
 
   const handle = handleValue.trim().toLowerCase();
   const name = nameValue.trim();
   if (!/^[a-z0-9_]{3,30}$/.test(handle)) {
-    return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
+    return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados.", step: "profile" };
   }
-  if (name.length > 80) return { error: "Nome inválido." };
+  if (name.length > 80) return { error: "Nome inválido.", step: "profile" };
 
   if (intentValue === "skip") {
     const { error } = await supabase.rpc("update_profile", {
@@ -110,15 +113,15 @@ export async function completeOnboarding(
     typeof pixKeyTypeValue !== "string" ||
     pixKeyValue.trim() === ""
   ) {
-    return { error: "Dados incompletos" };
+    return { error: "Dados incompletos", step: "pix" };
   }
 
   const pixKey = pixKeyValue.trim();
   if (!isPixKeyType(pixKeyTypeValue)) {
-    return { error: "Tipo de chave Pix inválido." };
+    return { error: "Tipo de chave Pix inválido.", step: "pix" };
   }
   if (!validatePixKey(pixKey, pixKeyTypeValue)) {
-    return { error: "Chave Pix inválida para o tipo selecionado" };
+    return { error: "Chave Pix inválida para o tipo selecionado", step: "pix" };
   }
 
   const { error } = await supabase.rpc("complete_onboarding", {

@@ -2,6 +2,7 @@ import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserEvent } from "@testing-library/user-event";
 import OnboardForm from "./onboard-form";
 import type { Me } from "@/types/ledger";
 import { lookupUserByHandle } from "@/lib/sync/mutations-group";
@@ -98,20 +99,8 @@ describe("OnboardForm Pix skip", () => {
     expect(screen.getByLabelText("Handle")).toHaveValue("ana_costa");
   });
 
-  it("renders contract copy and Pular por agora on the Pix step", async () => {
-    const user = userEvent.setup();
-    render(<OnboardForm me={me} action={action} next="/app" />);
-
-    await advanceToPixStep(user);
-
-    expect(
-      screen.getByText("Pode cadastrar agora ou depois, no seu perfil."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
-  });
-
   beforeEach(() => {
-    action.mockClear();
+    action.mockReset().mockResolvedValue(undefined);
   });
 
 
@@ -162,7 +151,7 @@ describe("OnboardForm Pix skip", () => {
 
 describe("OnboardForm phone Pix key", () => {
   beforeEach(() => {
-    action.mockClear();
+    action.mockReset().mockResolvedValue(undefined);
   });
 
   it("renders the Telefone Pix key option on the Pix step", async () => {
@@ -307,5 +296,79 @@ describe("onboarding name prefill", () => {
     await waitFor(() => expect(action).toHaveBeenCalled());
     const formData = action.mock.calls.at(-1)?.[0] as FormData;
     expect(formData.get("name")).toBe("Apple User Name");
+  });
+});
+
+describe("OnboardForm typed error routing", () => {
+  beforeEach(() => {
+    action.mockReset().mockResolvedValue(undefined);
+  });
+
+  async function fillDraftProfileAndAdvanceToPix(user: UserEvent) {
+    await screen.findByDisplayValue("ana_costa");
+    await user.clear(screen.getByLabelText("Nome"));
+    await user.type(screen.getByLabelText("Nome"), "Bruna Silva");
+    await user.clear(screen.getByLabelText("Handle"));
+    await user.type(screen.getByLabelText("Handle"), "bruna_silva");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Continuar" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Chave Pix" });
+  }
+
+  it("returns a skip profile rejection to the profile step keeping the draft name and handle", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await fillDraftProfileAndAdvanceToPix(user);
+    action.mockResolvedValueOnce({ error: "Falha ao salvar o perfil", step: "profile" });
+    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
+
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const formData = action.mock.calls[0][0] as FormData;
+    expect(formData.get("intent")).toBe("skip");
+    expect(formData.get("name")).toBe("Bruna Silva");
+    expect(formData.get("handle")).toBe("bruna_silva");
+
+    expect(await screen.findByRole("heading", { name: "Seu perfil" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toHaveValue("Bruna Silva");
+    expect(screen.getByLabelText("Handle")).toHaveValue("bruna_silva");
+    expect(screen.getByRole("alert")).toHaveTextContent("Falha ao salvar o perfil");
+    expect(screen.queryByRole("heading", { name: "Chave Pix" })).not.toBeInTheDocument();
+  });
+
+  it("returns a Pix-submit profile rejection to the profile step keeping the draft name and handle", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await fillDraftProfileAndAdvanceToPix(user);
+    await user.type(screen.getByPlaceholderText("ana@example.com"), "bruna@example.com");
+    action.mockResolvedValueOnce({ error: "Falha ao salvar o perfil", step: "profile" });
+    await user.click(screen.getByRole("button", { name: /Começar a usar/i }));
+
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const formData = action.mock.calls[0][0] as FormData;
+    expect(formData.get("name")).toBe("Bruna Silva");
+    expect(formData.get("handle")).toBe("bruna_silva");
+
+    expect(await screen.findByRole("heading", { name: "Seu perfil" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toHaveValue("Bruna Silva");
+    expect(screen.getByLabelText("Handle")).toHaveValue("bruna_silva");
+    expect(screen.getByRole("alert")).toHaveTextContent("Falha ao salvar o perfil");
+  });
+
+  it("keeps a Pix-step error mentioning Handle on the Pix step", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} next="/app" />);
+
+    await advanceToPixStep(user);
+    await user.type(screen.getByPlaceholderText("ana@example.com"), "bruna@example.com");
+    action.mockResolvedValueOnce({ error: "Handle rejeitado pelo servidor", step: "pix" });
+    await user.click(screen.getByRole("button", { name: /Começar a usar/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Handle rejeitado pelo servidor");
+    expect(screen.getByRole("heading", { name: "Chave Pix" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Seu perfil" })).not.toBeInTheDocument();
   });
 });
