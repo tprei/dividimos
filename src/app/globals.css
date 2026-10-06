@@ -391,7 +391,7 @@
   input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
-    height: 22px;
+    height: 44px;
     border-radius: 9999px;
     background: transparent;
     cursor: pointer;
@@ -477,11 +477,19 @@
     background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
     background-image: linear-gradient(to right, var(--primary) var(--range-fill), transparent var(--range-fill));
   }
-  input[type="range"][data-ticks]:focus-visible::-webkit-slider-thumb {
+  input[type="range"]:focus-visible::-webkit-slider-thumb {
     box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
   }
-  input[type="range"][data-ticks]:focus-visible::-moz-range-thumb {
+  input[type="range"]:focus-visible::-moz-range-thumb {
     box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    input[type="range"]:active::-webkit-slider-thumb {
+      transform: none;
+    }
+    input[type="range"]:active::-moz-range-thumb {
+      transform: none;
+    }
   }
 }
 

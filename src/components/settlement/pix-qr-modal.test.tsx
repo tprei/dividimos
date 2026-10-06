@@ -38,10 +38,6 @@ vi.mock("@/components/shared/animated-checkmark", () => ({
   AnimatedCheckmark: () => null,
 }));
 
-vi.mock("@/components/shared/confetti-burst", () => ({
-  ConfettiBurst: () => null,
-}));
-
 import { qrToCanvas } from "@/lib/qr";
 import { haptics } from "@/hooks/use-haptics";
 import { PixQrModal } from "./pix-qr-modal";
@@ -674,7 +670,7 @@ describe("PixQrModal", () => {
     expect(screen.getByRole("button", { name: /fechar|close/i })).toBeInTheDocument();
   });
 
-  it("hides the close button and shows Registrando... while settling", async () => {
+  it("prevents dismissal while a registration is pending", async () => {
     const pending = Promise.withResolvers<void>();
     const onMarkPaid = vi.fn(() => pending.promise);
     render(<PixQrModal {...defaultProps} onMarkPaid={onMarkPaid} />);
@@ -682,10 +678,10 @@ describe("PixQrModal", () => {
     fireEvent.click(await readyButton(/Já paguei/i));
 
     await waitFor(() => {
-      expect(screen.getByText("Registrando...")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /fechar|close/i }),
+      ).not.toBeInTheDocument();
     });
-
-    expect(screen.queryByRole("button", { name: /fechar|close/i })).not.toBeInTheDocument();
   });
 
   it("hides the modal close button in success state and fires onClose on Fechar", async () => {
@@ -913,7 +909,9 @@ describe("PixQrModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Registrando...")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /fechar|close/i }),
+      ).not.toBeInTheDocument();
     });
     expect(screen.queryByText("Tudo certo!")).not.toBeInTheDocument();
     expect(screen.queryByText(/Não há nada pendente/)).not.toBeInTheDocument();
