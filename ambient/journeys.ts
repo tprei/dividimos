@@ -30,8 +30,9 @@ const JOURNEY_POOL_SIZE = 4;
 export const JOURNEY_MEMBER_COUNT = 4;
 export const JOURNEY_STEPS = 8;
 // Episodes never remove what they wrote, so a reused group is trimmed back
-// before each one. That keeps every projection the group has to compute, and
-// the model that mirrors it, a fixed size.
+// to this many active expenses before each one. Settlements still
+// accumulate forever (deleting a confirmed one would move a balance), so
+// the replay pages through them past the PostgREST row cutoff.
 const JOURNEY_ACTIVE_EXPENSE_CAP = 24;
 
 export interface Journey {

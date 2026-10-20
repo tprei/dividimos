@@ -15,6 +15,8 @@ import {
   type Trip,
   type TripContext,
   type TripModelContext,
+  type PagedRead,
+  readEveryRow,
   verifyAgainstProduction,
 } from "./trips";
 
@@ -213,6 +215,88 @@ describe("trip scripts", () => {
 
     expect(pendingSteps(ctx, trip)).toEqual([]);
     expect(projectBalances(ctx.state.facts)).toEqual([]);
+  });
+});
+
+describe("trip replay paging", () => {
+  // A fake PostgREST: answers each range from `table`, never more than `cap`
+  // rows per response, and records the ranges it was asked for.
+  function fakeTable(table: number[], cap = 1000) {
+    const ranges: [number, number][] = [];
+    const page = async (from: number, to: number): Promise<PagedRead<number>> => {
+      ranges.push([from, to]);
+      return {
+        data: table.slice(from, Math.min(to + 1, from + cap)),
+        error: null,
+        count: table.length,
+      };
+    };
+    return { page, ranges };
+  }
+
+  const rows = (length: number) => Array.from({ length }, (_, index) => index);
+
+  it("reads an empty group in one request", async () => {
+    const fake = fakeTable([]);
+
+    expect(await readEveryRow("trip replay: list settlements", fake.page)).toEqual([]);
+    expect(fake.ranges).toEqual([[0, 999]]);
+  });
+
+  it("stops after exactly one full page", async () => {
+    const fake = fakeTable(rows(1000));
+
+    expect(await readEveryRow("trip replay: list settlements", fake.page)).toEqual(rows(1000));
+    expect(fake.ranges).toEqual([[0, 999]]);
+  });
+
+  it("reads past the row cutoff in order", async () => {
+    const fake = fakeTable(rows(1500));
+
+    expect(await readEveryRow("trip replay: list settlements", fake.page)).toEqual(rows(1500));
+    expect(fake.ranges).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+  });
+
+  it("keeps paging when the server caps responses below the page size", async () => {
+    const fake = fakeTable(rows(1200), 500);
+
+    expect(await readEveryRow("trip replay: list settlements", fake.page)).toEqual(rows(1200));
+    expect(fake.ranges.map(([from]) => from)).toEqual([0, 500, 1000]);
+  });
+
+  it("surfaces a read error", async () => {
+    const page = async (): Promise<PagedRead<number>> => ({
+      data: null,
+      error: { message: "boom" },
+      count: null,
+    });
+
+    await expect(readEveryRow("trip replay: list settlements", page)).rejects.toThrow(
+      "trip replay: list settlements failed: boom",
+    );
+  });
+
+  it("refuses a response without an exact count", async () => {
+    const page = async (): Promise<PagedRead<number>> => ({ data: [1], error: null, count: null });
+
+    await expect(readEveryRow("trip replay: list settlements", page)).rejects.toThrow(
+      "trip replay: list settlements failed: PostgREST returned no exact count",
+    );
+  });
+
+  it("refuses to return a partial table when rows run out early", async () => {
+    const page = async (from: number): Promise<PagedRead<number>> => ({
+      data: from === 0 ? rows(1000) : [],
+      error: null,
+      count: 1500,
+    });
+
+    await expect(readEveryRow("trip replay: list settlements", page)).rejects.toThrow(
+      "trip replay: list settlements stopped early: 1000 of 1500 rows",
+    );
   });
 });
 
