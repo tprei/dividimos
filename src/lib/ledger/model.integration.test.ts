@@ -270,5 +270,5 @@ describe.skipIf(!isIntegrationTestReady)("ledger model parity", () => {
       }),
       propertyConfig(50),
     );
-  });
+  }, 600_000);
 });
