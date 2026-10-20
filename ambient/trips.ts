@@ -30,6 +30,41 @@ const TRIP_GROUP_PREFIX = "Viagem dos bots";
 // facts so the board's diary keeps room for the rest of the run.
 const DIARY_NOTES_PER_RUN = 2;
 
+// PostgREST cuts a response off at max_rows without an error, so every
+// full-table read pages with an exact count and stops only once it has
+// seen that many rows.
+const PAGE_SIZE = 1000;
+
+export interface PagedRead<T> {
+  data: T[] | null;
+  error: { message: string } | null;
+  count: number | null;
+}
+
+/** Reads every row a paged query matches, one PAGE_SIZE range at a time. */
+export async function readEveryRow<T>(
+  what: string,
+  page: (from: number, to: number) => PromiseLike<PagedRead<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  while (true) {
+    const result = await page(rows.length, rows.length + PAGE_SIZE - 1);
+    if (result.error) {
+      throw new Error(`${what} failed: ${result.error.message}`);
+    }
+    if (result.count === null) {
+      throw new Error(`${what} failed: PostgREST returned no exact count`);
+    }
+    const batch = result.data ?? [];
+    rows.push(...batch);
+    if (rows.length >= result.count) {
+      return rows;
+    }
+    if (batch.length === 0) {
+      throw new Error(`${what} stopped early: ${rows.length} of ${result.count} rows`);
+    }
+  }
+}
 
 export interface ExpenseRecord {
   expenseId: string;
@@ -199,50 +234,53 @@ interface SettlementRow {
  * Rebuilds the trip's facts from the database with the service-role client,
  * the same read-only use the expense prune already makes of it. Expenses and
  * settlements are read together; the version bodies need the expense ids, so
- * they follow in a second read.
+ * they follow in a second read. Every read pages past the PostgREST row
+ * cutoff, because settlements are never swept and a busy group outgrows it.
  */
 export async function replayTrip(troupe: Troupe, groupId: string): Promise<TripState> {
-  const [expenseResult, settlementResult] = await Promise.all([
-    troupe.admin
-      .from("expenses")
-      .select("id,client_id,status,current_version_no")
-      .eq("group_id", groupId)
-      .order("created_at", { ascending: true })
-      .returns<ExpenseTableRow[]>(),
-    troupe.admin
-      .from("settlements")
-      .select("id,operation_id,status,from_user_id,to_user_id,amount_cents")
-      .eq("group_id", groupId)
-      .order("created_at", { ascending: true })
-      .returns<SettlementRow[]>(),
+  const [expenseRows, settlementRows] = await Promise.all([
+    readEveryRow<ExpenseTableRow>("trip replay: list expenses", (from, to) =>
+      troupe.admin
+        .from("expenses")
+        .select("id,client_id,status,current_version_no", { count: "exact" })
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+        .returns<ExpenseTableRow[]>(),
+    ),
+    readEveryRow<SettlementRow>("trip replay: list settlements", (from, to) =>
+      troupe.admin
+        .from("settlements")
+        .select("id,operation_id,status,from_user_id,to_user_id,amount_cents", {
+          count: "exact",
+        })
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+        .returns<SettlementRow[]>(),
+    ),
   ]);
-
-  if (expenseResult.error) {
-    throw new Error(`trip replay: list expenses failed: ${expenseResult.error.message}`);
-  }
-  if (settlementResult.error) {
-    throw new Error(`trip replay: list settlements failed: ${settlementResult.error.message}`);
-  }
-
-  const expenseRows = expenseResult.data ?? [];
-  const settlementRows = settlementResult.data ?? [];
 
   let versionRows: VersionRow[] = [];
   if (expenseRows.length > 0) {
-    const { data, error } = await troupe.admin
-      .from("expense_versions")
-      .select(
-        "expense_id,version_no,occurred_on,title,expense_type,total_cents,service_fee_bps,fixed_fee_cents,payload",
-      )
-      .in(
-        "expense_id",
-        expenseRows.map((row) => row.id),
-      )
-      .returns<VersionRow[]>();
-    if (error) {
-      throw new Error(`trip replay: list expense versions failed: ${error.message}`);
-    }
-    versionRows = data ?? [];
+    versionRows = await readEveryRow<VersionRow>("trip replay: list expense versions", (from, to) =>
+      troupe.admin
+        .from("expense_versions")
+        .select(
+          "expense_id,version_no,occurred_on,title,expense_type,total_cents,service_fee_bps,fixed_fee_cents,payload",
+          { count: "exact" },
+        )
+        .in(
+          "expense_id",
+          expenseRows.map((row) => row.id),
+        )
+        .order("expense_id", { ascending: true })
+        .order("version_no", { ascending: true })
+        .range(from, to)
+        .returns<VersionRow[]>(),
+    );
   }
 
   const expenses = expenseRows.map((row): ExpenseRecord => {
