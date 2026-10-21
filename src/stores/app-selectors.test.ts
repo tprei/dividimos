@@ -13,6 +13,7 @@ import { useAppStore } from "./app-store";
 import {
   formatOccurredOn,
   groupNameOf,
+  rankKnownPeople,
   selectConversationListSections,
   selectDmMembership,
   selectExpenseList,
@@ -93,6 +94,27 @@ function member(userId: string, status: MemberStatus, invitedBy: string | null =
       isBot: false,
     },
   };
+}
+
+function namedMember(userId: string, status: MemberStatus, name: string): GroupMember {
+  return { ...member(userId, status), user: { ...member(userId, status).user, name } };
+}
+
+function dmSnapshotWith(groupId: string, members: GroupMember[]): GroupSnapshot {
+  const counterparty = members.find((candidate) => candidate.userId !== me.id);
+  return snapshot(groupId, {
+    group: {
+      id: groupId,
+      kind: "dm",
+      name: "",
+      creatorId: me.id,
+      dmUserA: me.id,
+      dmUserB: counterparty ? counterparty.userId : null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members,
+  });
 }
 
 function summary(id: string, groupId: string): ExpenseSummary {
@@ -1093,5 +1115,112 @@ describe("sharedGroupsWith", () => {
 
     const state = useAppStore.getState();
     expect(sharedGroupsWith(state.groups, state.groupOrder, me.id, "user-2")).toEqual([]);
+  });
+});
+
+describe("rankKnownPeople", () => {
+  it("excludes the viewer, blocked users and invited group members", () => {
+    const groups = {
+      g1: snapshot("g1", {
+        members: [
+          member(me.id, "accepted"),
+          member("user-2", "accepted"),
+          member("user-3", "invited", me.id),
+        ],
+      }),
+      g2: snapshot("g2", { members: [member(me.id, "accepted"), member("user-4", "accepted")] }),
+    };
+    useAppStore.setState({
+      me,
+      groups,
+      groupOrder: ["g1", "g2"],
+      blockedUsers: [member("user-4", "accepted").user],
+    });
+
+    const state = useAppStore.getState();
+    expect(
+      rankKnownPeople(state.groups, state.groupOrder, me.id, state.blockedUsers).map((p) => p.id),
+    ).toEqual(["user-2"]);
+  });
+
+  it("includes a DM counterparty regardless of member status, falling back to dmCounterparty", () => {
+    const groups = {
+      dm1: dmSnapshotWith("dm1", [member(me.id, "accepted"), member("user-2", "invited", me.id)]),
+      dm2: snapshot("dm2", {
+        group: {
+          id: "dm2",
+          kind: "dm",
+          name: "",
+          creatorId: me.id,
+          dmUserA: me.id,
+          dmUserB: "user-5",
+          ledgerVersion: 1,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        members: [member(me.id, "accepted")],
+        dmCounterparty: namedMember("user-5", "invited", me.id).user,
+      }),
+    };
+    useAppStore.setState({ me, groups, groupOrder: ["dm1", "dm2"] });
+
+    const state = useAppStore.getState();
+    expect(
+      rankKnownPeople(state.groups, state.groupOrder, me.id, state.blockedUsers).map((p) => p.id),
+    ).toEqual(["user-2", "user-5"]);
+  });
+
+  it("skips snapshots where the viewer is only invited", () => {
+    const groups = {
+      g1: snapshot("g1", {
+        members: [member(me.id, "invited", "user-2"), member("user-3", "accepted")],
+      }),
+      g2: snapshot("g2", { members: [member(me.id, "accepted"), member("user-2", "accepted")] }),
+    };
+    useAppStore.setState({ me, groups, groupOrder: ["g1", "g2"] });
+
+    const state = useAppStore.getState();
+    expect(
+      rankKnownPeople(state.groups, state.groupOrder, me.id, state.blockedUsers).map((p) => p.id),
+    ).toEqual(["user-2"]);
+  });
+
+  it("orders by most recent snapshot first, then pt-BR name within one snapshot", () => {
+    const groups = {
+      g1: snapshot("g1", {
+        members: [
+          member(me.id, "accepted"),
+          namedMember("user-3", "accepted", "Zeca"),
+          namedMember("user-4", "accepted", "Áquila"),
+        ],
+      }),
+      g2: snapshot("g2", { members: [member(me.id, "accepted"), member("user-2", "accepted")] }),
+    };
+    useAppStore.setState({ me, groups, groupOrder: ["g2", "g1"] });
+
+    const state = useAppStore.getState();
+    expect(
+      rankKnownPeople(state.groups, state.groupOrder, me.id, state.blockedUsers).map((p) => p.id),
+    ).toEqual(["user-2", "user-4", "user-3"]);
+  });
+
+  it("counts shared snapshots within a first-seen snapshot, once per person, with the most recent profile", () => {
+    const groups = {
+      g1: snapshot("g1", {
+        members: [member(me.id, "accepted"), namedMember("user-2", "accepted", "Dandara Nóbrega")],
+      }),
+      g2: snapshot("g2", {
+        members: [
+          member(me.id, "accepted"),
+          member("user-2", "accepted"),
+          member("user-3", "accepted"),
+        ],
+      }),
+    };
+    useAppStore.setState({ me, groups, groupOrder: ["g2", "g1"] });
+
+    const state = useAppStore.getState();
+    const ranked = rankKnownPeople(state.groups, state.groupOrder, me.id, state.blockedUsers);
+    expect(ranked.map((p) => p.id)).toEqual(["user-2", "user-3"]);
+    expect(ranked[0]).toEqual(member("user-2", "accepted").user);
   });
 });

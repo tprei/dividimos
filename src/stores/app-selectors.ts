@@ -57,6 +57,51 @@ export function sharedGroupsWith(
   return shared;
 }
 
+export function rankKnownPeople(
+  groups: Record<string, GroupSnapshot>,
+  groupOrder: readonly string[],
+  meId: string,
+  blockedUsers: readonly UserProfile[],
+): UserProfile[] {
+  const blocked = new Set(blockedUsers.map((user) => user.id));
+  const known = new Map<string, { profile: UserProfile; firstSeen: number; snapshots: number }>();
+
+  const record = (profile: UserProfile, firstSeen: number) => {
+    if (profile.id === meId || blocked.has(profile.id)) return;
+    const existing = known.get(profile.id);
+    if (existing) {
+      existing.snapshots += 1;
+      return;
+    }
+    known.set(profile.id, { profile, firstSeen, snapshots: 1 });
+  };
+
+  for (const [index, id] of groupOrder.entries()) {
+    const snapshot = groups[id];
+    if (!snapshot) continue;
+    const mine = snapshot.members.find((candidate) => candidate.userId === meId);
+    if (!mine || mine.status !== "accepted") continue;
+    if (snapshot.group.kind === "dm") {
+      const counterpart = snapshot.members.find((candidate) => candidate.userId !== meId);
+      const profile = counterpart ? counterpart.user : snapshot.dmCounterparty;
+      if (profile) record(profile, index);
+      continue;
+    }
+    for (const candidate of snapshot.members) {
+      if (candidate.status !== "accepted") continue;
+      record(candidate.user, index);
+    }
+  }
+
+  return [...known.values()]
+    .sort((a, b) => {
+      if (a.firstSeen !== b.firstSeen) return a.firstSeen - b.firstSeen;
+      if (a.snapshots !== b.snapshots) return b.snapshots - a.snapshots;
+      return a.profile.name.localeCompare(b.profile.name, "pt-BR");
+    })
+    .map((entry) => entry.profile);
+}
+
 interface TransfersCacheEntry {
   ledgerVersion: number;
   balances: BalanceRow[];
