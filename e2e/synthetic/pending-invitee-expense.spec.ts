@@ -19,10 +19,9 @@ test.describe("Expenses with a pending invitee", () => {
     await page.getByRole("textbox", { name: "Nome da conta" }).press("Enter");
     await page.getByRole("button", { name: "Pular" }).click();
 
-    await page.getByRole("button", { name: "Por @handle" }).click();
-    await page.getByPlaceholder("handle do usuario").fill(bob.handle);
-    await page.getByRole("button", { name: "Buscar handle" }).click();
-    await page.getByRole("button", { name: "Adicionar" }).click();
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill(`@${bob.handle}`);
+    await page.getByRole("button", { name: `Adicionar ${bob.name}`, exact: true }).click();
     await expect(page.getByRole("button", { name: `Remover ${bob.name}` })).toBeVisible({ timeout: 10000 });
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByRole("textbox", { name: "Valor total" }).fill("80,00");

@@ -17,9 +17,9 @@ test.describe("Bill draft", () => {
     await titleInput.fill("Aluguel da praia");
     await titleInput.press("Enter");
     await page.getByRole("button", { name: "Pular" }).click();
-    await page.getByRole("button", { name: "Adicionar convidado" }).click();
-    await page.getByPlaceholder("Nome do convidado").fill("Bia");
-    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill("Bia");
+    await page.getByRole("button", { name: "Adicionar Bia como convidado", exact: true }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByLabel("Valor total").fill("360,50");
 
@@ -88,9 +88,9 @@ test.describe("Bill draft", () => {
     await titleInput.fill("Aluguel da praia");
     await titleInput.press("Enter");
     await page.getByRole("button", { name: "Pular" }).click();
-    await page.getByRole("button", { name: "Adicionar convidado" }).click();
-    await page.getByPlaceholder("Nome do convidado").fill("Bia");
-    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill("Bia");
+    await page.getByRole("button", { name: "Adicionar Bia como convidado", exact: true }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByLabel("Valor total").fill("360,50");
 

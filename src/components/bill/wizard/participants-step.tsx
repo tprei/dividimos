@@ -1,10 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Plus, UserPlus, Users, Users2, X } from "lucide-react";
+import { Users2, X } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
+import { PeoplePicker } from "@/components/bill/people-picker";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Chip } from "@/components/ui/chip";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { SelectionMark } from "@/components/ui/selection-mark";
 import { haptics } from "@/hooks/use-haptics";
 import { fade, popIn } from "@/lib/animations";
-import { cn } from "@/lib/utils";
 import type { User } from "@/types";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
@@ -54,10 +53,6 @@ export function ParticipantsStep({
   hasContactPicker,
   showGroupPicker = true,
 }: ParticipantsStepProps) {
-  const [showAddParticipant, setShowAddParticipant] = useState(false);
-  const [showAddGuest, setShowAddGuest] = useState(false);
-  const [guestNameInput, setGuestNameInput] = useState("");
-  const [addedGuest, setAddedGuest] = useState(false);
   const [pickingContacts, setPickingContacts] = useState(false);
   const reduceMotion = useReducedMotion();
 
@@ -82,7 +77,6 @@ export function ParticipantsStep({
   );
   const othersCount = participants.filter((p) => p.id !== me.id).length;
   const isSingleUserNoGuests = othersCount === 1 && guests.length === 0;
-  const showAddActions = !showAddParticipant && !showAddGuest;
 
   return (
     <div className="space-y-3">
@@ -135,75 +129,6 @@ export function ParticipantsStep({
           </div>
         </div>
       )}
-
-      <AnimatePresence>
-        {showAddGuest && (
-          <motion.div
-            variants={reduceMotion ? fade : popIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="rounded-[0.75rem] border border-dashed border-border bg-card p-3"
-          >
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const name = guestNameInput.trim();
-                if (!name) return;
-                haptics.tap();
-                onAddGuest(name);
-                setGuestNameInput("");
-                setShowAddGuest(false);
-                setAddedGuest(true);
-              }}
-              className="flex gap-2"
-            >
-              <Input
-                type="text"
-                aria-label="Nome do convidado"
-                placeholder="Nome do convidado"
-                value={guestNameInput}
-                onChange={(e) => setGuestNameInput(e.target.value)}
-                autoFocus
-                autoComplete="off"
-                enterKeyHint="done"
-                className="flex-1"
-              />
-              <Button type="submit" size="icon-lg" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
-                <Plus className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-lg"
-                aria-label="Cancelar convidado"
-                onClick={() => {
-                  setShowAddGuest(false);
-                  setGuestNameInput("");
-                }}
-              >
-                <X className="size-4" aria-hidden="true" />
-              </Button>
-            </form>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Convidados recebem um link pra confirmar a participação depois.
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showAddParticipant && (
-          <AddParticipantByHandle
-            onAdd={(profile: UserProfile) => {
-              onAddParticipant(profile);
-              setShowAddParticipant(false);
-            }}
-            onCancel={() => setShowAddParticipant(false)}
-            excludeIds={participants.map((p) => p.id)}
-          />
-        )}
-      </AnimatePresence>
 
       <div className="space-y-1.5">
         {showGroupPicker && selectedGroup && (
@@ -295,46 +220,26 @@ export function ParticipantsStep({
         </div>
       </div>
 
-      {showAddActions && (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-11"
-            onClick={() => {
-              setAddedGuest(false);
-              setShowAddParticipant(true);
-            }}
-          >
-            <UserPlus className="size-4" aria-hidden="true" />
-            Por @handle
-          </Button>
-          {hasContactPicker && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11"
-              onClick={handlePickContacts}
-              disabled={pickingContacts}
-            >
-              <Users2 className="size-4" aria-hidden="true" />
-              Dos contatos do celular
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn("h-11", addedGuest ? "border-primary/50 bg-primary/10 text-primary-text" : "border-dashed")}
-            onClick={() => setShowAddGuest(true)}
-          >
-            {addedGuest ? (
-              <Plus className="size-4" aria-hidden="true" />
-            ) : (
-              <Users className="size-4" aria-hidden="true" />
-            )}
-            {addedGuest ? "Mais um convidado" : "Adicionar convidado"}
-          </Button>
-        </div>
+      <PeoplePicker
+        me={me}
+        selectedIds={participants.map((p) => p.id)}
+        showSuggestions={!selectedGroup}
+        onAddPerson={onAddParticipant}
+        onAddGuest={(name) => onAddGuest(name)}
+      />
+
+      {hasContactPicker && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11"
+          onClick={handlePickContacts}
+          disabled={pickingContacts}
+        >
+          <Users2 className="size-4" aria-hidden="true" />
+          Dos contatos do celular
+        </Button>
       )}
 
       {showGroupPicker && !selectedGroupId && !isSingleUserNoGuests && (

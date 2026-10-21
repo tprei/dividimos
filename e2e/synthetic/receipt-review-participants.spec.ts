@@ -51,10 +51,9 @@ test.describe("Receipt review participants", () => {
     await expect(proceed).toBeDisabled();
 
     await addPeople.click();
-    await page.getByRole("button", { name: "Por @handle" }).click();
-    await page.getByPlaceholder("handle do usuario").fill(bob.handle);
-    await page.getByRole("button", { name: "Buscar handle" }).click();
-    await page.getByRole("button", { name: "Adicionar" }).click();
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill(`@${bob.handle}`);
+    await page.getByRole("button", { name: `Adicionar ${bob.name}`, exact: true }).click();
     await page.getByRole("button", { name: "Concluir" }).click();
 
     await expect(managePeople).toBeVisible();

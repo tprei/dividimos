@@ -27,10 +27,9 @@ test.describe("Bill Creation Flow", () => {
     await page.getByLabel("Nome da conta").fill(title);
     await page.getByLabel("Nome da conta").press("Enter");
     await page.getByRole("button", { name: "Pular" }).click();
-    await page.getByRole("button", { name: "Por @handle" }).click();
-    await page.getByPlaceholder("handle do usuario").fill("bob_test");
-    await page.getByRole("button", { name: "Buscar handle" }).click();
-    await page.getByRole("button", { name: "Adicionar", exact: true }).click();
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill("@bob_test");
+    await page.getByRole("button", { name: "Adicionar Bob Test", exact: true }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByLabel("Valor total").fill("100");
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
@@ -45,10 +44,9 @@ test.describe("Bill Creation Flow", () => {
     await page.getByLabel("Nome da conta").fill("Pizzaria");
     await page.getByLabel("Nome da conta").press("Enter");
     await page.getByRole("button", { name: "Pular" }).click();
-    await page.getByRole("button", { name: "Por @handle" }).click();
-    await page.getByPlaceholder("handle do usuario").fill("bob_test");
-    await page.getByRole("button", { name: "Buscar handle" }).click();
-    await page.getByRole("button", { name: "Adicionar", exact: true }).click();
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill("@bob_test");
+    await page.getByRole("button", { name: "Adicionar Bob Test", exact: true }).click();
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await page.getByRole("textbox", { name: "Descrição (ex: Picanha 400g)" }).fill("Pizza Margherita");
     await page.getByRole("textbox", { name: "Preço unitário" }).fill("80");
