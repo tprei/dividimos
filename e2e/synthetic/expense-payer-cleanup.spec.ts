@@ -208,9 +208,9 @@ test.describe("Expense payer cleanup (browser)", () => {
 
     // Add a guest from the same step.
     const guestName = "Temporary Guest";
-    await page.getByRole("button", { name: /Adicionar convidado/i }).click();
-    await page.getByPlaceholder("Nome do convidado").fill(guestName);
-    await page.getByPlaceholder("Nome do convidado").press("Enter");
+    const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+    await people.fill(guestName);
+    await page.getByRole("button", { name: `Adicionar ${guestName} como convidado`, exact: true }).click();
     await expect(page.getByText(guestName)).toBeVisible();
 
     // Same visit: the guest is added and removed in one pass.

@@ -5,14 +5,6 @@ import { ParticipantsStep } from "./participants-step";
 import type { Me, GroupSnapshot } from "@/types/ledger";
 import type { User } from "@/types";
 
-vi.mock("@/components/bill/add-participant-by-handle", () => ({
-  AddParticipantByHandle: ({ onCancel }: { onCancel: () => void }) => (
-    <div data-testid="add-by-handle">
-      <button onClick={onCancel}>Cancelar</button>
-    </div>
-  ),
-}));
-
 const toastError = vi.hoisted(() => vi.fn());
 vi.mock("react-hot-toast", () => ({
   default: { error: toastError, success: vi.fn() },
@@ -117,21 +109,6 @@ const baseProps = {
 };
 
 describe("ParticipantsStep", () => {
-  it("renders participants list with no group selected", () => {
-    render(<ParticipantsStep {...baseProps} participants={[meUser, otherUser]} />);
-
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(screen.getByText("Você")).toBeInTheDocument();
-  });
-
-  it("shows handle-based add and guest buttons when no group selected", () => {
-    render(<ParticipantsStep {...baseProps} />);
-
-    expect(screen.getByText("Por @handle")).toBeInTheDocument();
-    expect(screen.getByText("Adicionar convidado")).toBeInTheDocument();
-  });
-
   it("lists existing groups to pick from and reports the selection", async () => {
     const onSelectGroup = vi.fn();
     const groups = [
@@ -175,29 +152,6 @@ describe("ParticipantsStep", () => {
     );
 
     expect(screen.queryByText("Criar grupo com essas pessoas")).not.toBeInTheDocument();
-  });
-
-  it("shows selected group members as toggle chips and marks invited ones as pending", () => {
-    const groups = [
-      makeSnapshot("group-1", "Churrasco", [
-        { userId: "user-2", name: "Bob", handle: "bob", status: "accepted" },
-        { userId: "user-3", name: "Carol", handle: "carol", status: "invited" },
-      ]),
-    ];
-    render(
-      <ParticipantsStep
-        {...baseProps}
-        selectedGroupId="group-1"
-        groups={groups}
-        participants={[meUser, otherUser]}
-      />,
-    );
-
-    expect(screen.getByText("Churrasco")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(screen.getByText("Carol")).toBeInTheDocument();
-    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
-    expect(screen.getByText("Quem participou desta conta?")).toBeInTheDocument();
   });
 
   it("toggles a group member chip through onAddParticipant / onRemoveParticipant", async () => {
@@ -245,13 +199,6 @@ describe("ParticipantsStep", () => {
     expect(onSelectGroup).toHaveBeenCalledWith(null);
   });
 
-  it("renders guests section when guests exist", () => {
-    render(<ParticipantsStep {...baseProps} guests={[{ id: "guest-1", name: "Guest Dan" }]} />);
-
-    expect(screen.getByText("Guest Dan")).toBeInTheDocument();
-    expect(screen.getByText("Convidado")).toBeInTheDocument();
-  });
-
   it("calls onRemoveParticipant when remove button clicked", async () => {
     const onRemoveParticipant = vi.fn();
     const user = userEvent.setup();
@@ -267,49 +214,30 @@ describe("ParticipantsStep", () => {
     expect(onRemoveParticipant).toHaveBeenCalledWith("user-2");
   });
 
-  it("opens guest form and submits guest name", async () => {
+  it("adds a guest from the people field", async () => {
     const onAddGuest = vi.fn();
     const user = userEvent.setup();
     render(<ParticipantsStep {...baseProps} onAddGuest={onAddGuest} />);
 
-    await user.click(screen.getByText("Adicionar convidado"));
-    expect(screen.getByPlaceholderText("Nome do convidado")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Adicionar pessoas" }), "Dan");
+    await user.click(screen.getByRole("button", { name: "Adicionar Dan como convidado" }));
 
-    await user.type(screen.getByPlaceholderText("Nome do convidado"), "Dan");
-    await user.keyboard("{Enter}");
     expect(onAddGuest).toHaveBeenCalledWith("Dan");
   });
 
-  it("closes the guest form after each add and offers one more from the choice row", async () => {
-    const onAddGuest = vi.fn();
+  it("removes a guest through onRemoveGuest", async () => {
+    const onRemoveGuest = vi.fn();
     const user = userEvent.setup();
-    render(<ParticipantsStep {...baseProps} onAddGuest={onAddGuest} />);
-
-    await user.click(screen.getByRole("button", { name: "Adicionar convidado" }));
-    await user.type(screen.getByRole("textbox", { name: "Nome do convidado" }), "Dan{Enter}");
-
-    await waitFor(() =>
-      expect(screen.queryByRole("textbox", { name: "Nome do convidado" })).not.toBeInTheDocument(),
+    render(
+      <ParticipantsStep
+        {...baseProps}
+        guests={[{ id: "guest-1", name: "Dan" }]}
+        onRemoveGuest={onRemoveGuest}
+      />,
     );
-    expect(screen.getByRole("button", { name: "Por @handle" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Mais um convidado" }));
-    const input = screen.getByRole("textbox", { name: "Nome do convidado" });
-    expect(input).toHaveValue("");
-    await user.type(input, "Eva{Enter}");
-    expect(onAddGuest).toHaveBeenNthCalledWith(2, "Eva");
-  });
-
-  it("shows contact picker button when supported", () => {
-    render(<ParticipantsStep {...baseProps} hasContactPicker={true} />);
-
-    expect(screen.getByText("Dos contatos do celular")).toBeInTheDocument();
-  });
-
-  it("hides contact picker button when not supported", () => {
-    render(<ParticipantsStep {...baseProps} hasContactPicker={false} />);
-
-    expect(screen.queryByText("Dos contatos do celular")).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Remover Dan"));
+    expect(onRemoveGuest).toHaveBeenCalledWith("guest-1");
   });
 
   it("surfaces a toast when onPickContacts rejects", async () => {

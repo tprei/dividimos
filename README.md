@@ -41,6 +41,7 @@ Não tem cupom? Dá pra falar a conta ou digitar do jeito que vier. A divisão p
 - **Por voz.** Em **Falar conta**, você diz "Uber com João, 25 reais" e recebe um rascunho editável. No Android usa o reconhecimento de fala nativo; no navegador, a Web Speech API.
 - **Por texto, no chat.** O modo IA da conversa entende "pizza 80 com João" e monta a conta.
 - **Dois tipos de conta.** **Valor único** (um total pra dividir: Uber, Airbnb, mercado) ou **Vários itens** (cada um paga o que consumiu).
+- **Pessoas na conta.** Quem já divide grupos ou conversas com você aparece como sugestão recente, sem digitar o @. O campo **Nome ou @handle** filtra essas pessoas pelo nome, sem precisar de acento; um `@handle` exato busca alguém de fora. No mesmo campo, dá pra adicionar um convidado só pelo nome.
 - **Contatos do celular.** Adicione gente direto da agenda no Android e nos navegadores com Contact Picker. Os contatos não saem do aparelho.
 
 A permissão de IA é pedida no aparelho antes do primeiro uso — escanear nota, falar conta ou modo IA no chat — e fica salva por conta neste dispositivo; dá pra revogar em Configurações, e o servidor não exige essa permissão nas rotas de IA.

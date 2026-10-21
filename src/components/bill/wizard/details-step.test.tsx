@@ -7,10 +7,6 @@ import type { GroupSnapshot, Me } from "@/types/ledger";
 import { DetailsStep, initialStartProgress } from "./details-step";
 import { __resetBackHandlerStackForTests, runBackHandlers } from "@/lib/capacitor/back-handler";
 
-vi.mock("@/components/bill/add-participant-by-handle", () => ({
-  AddParticipantByHandle: () => null,
-}));
-
 const me: Me = {
   id: "user-1",
   email: "alice@test.com",
@@ -123,13 +119,13 @@ describe("DetailsStep guided start", () => {
     const user = userEvent.setup();
     render(<Host />);
 
-    expect(screen.queryByRole("button", { name: "Por @handle" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Adicionar pessoas" })).not.toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "Nome da conta" }), "pizzada{Enter}");
 
     await user.click(await screen.findByRole("button", { name: "Ontem" }));
     await user.click(await screen.findByRole("button", { name: /Churras da firma/ }));
 
-    expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Adicionar pessoas" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Nome da conta" })).toHaveValue("pizzada");
     expect(screen.getByRole("button", { name: "Data: Ontem" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Grupo: Churras da firma" })).toBeInTheDocument();
@@ -138,7 +134,7 @@ describe("DetailsStep guided start", () => {
   it("opens a named bill with a group already chosen straight on the people", () => {
     render(<Host initialTitle="Jantar" initialGroup="g-churras" />);
 
-    expect(screen.getByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Adicionar pessoas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data: Hoje" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Grupo: Churras da firma" })).toBeInTheDocument();
   });
@@ -150,7 +146,7 @@ describe("DetailsStep guided start", () => {
     await user.type(screen.getByRole("textbox", { name: "Nome da conta" }), "pizzada{Enter}");
     await user.click(await screen.findByRole("button", { name: "Hoje" }));
 
-    expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Adicionar pessoas" })).toBeInTheDocument();
     expect(screen.queryByText("De qual grupo?")).not.toBeInTheDocument();
   });
 
@@ -161,7 +157,7 @@ describe("DetailsStep guided start", () => {
     await user.click(screen.getByRole("button", { name: "Data: Hoje" }));
     await user.click(await screen.findByRole("button", { name: "Ontem" }));
 
-    expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Adicionar pessoas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data: Ontem" })).toBeInTheDocument();
   });
 
@@ -183,7 +179,7 @@ describe("DetailsStep guided start", () => {
     await user.type(screen.getByRole("textbox", { name: "Nome da conta" }), "pizzada{Enter}");
     await user.click(await screen.findByRole("button", { name: "Hoje" }));
     await user.click(await screen.findByRole("button", { name: "Pular" }));
-    expect(await screen.findByRole("button", { name: "Por @handle" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Adicionar pessoas" })).toBeInTheDocument();
 
     act(() => {
       runBackHandlers();

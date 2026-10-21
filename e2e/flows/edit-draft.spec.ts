@@ -8,9 +8,9 @@ test("resumes and edits a local draft without creating an expense", async ({ pag
   await page.getByLabel("Nome da conta").fill("Pizza de sexta");
   await page.getByLabel("Nome da conta").press("Enter");
   await page.getByRole("button", { name: "Pular" }).click();
-  await page.getByRole("button", { name: "Adicionar convidado" }).click();
-  await page.getByPlaceholder("Nome do convidado").fill("Carla");
-  await page.getByPlaceholder("Nome do convidado").press("Enter");
+  const people = page.getByRole("textbox", { name: "Adicionar pessoas" });
+  await people.fill("Carla");
+  await page.getByRole("button", { name: "Adicionar Carla como convidado", exact: true }).click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByLabel("Valor total").fill("80");
   await page.getByRole("button", { name: "Fechar" }).click();

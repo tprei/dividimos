@@ -28,8 +28,7 @@ test.describe("Itemized participants step", () => {
     await expect(page.getByRole("textbox", { name: "Nome da conta" })).toHaveValue("Rodízio");
     await expect(page.getByRole("button", { name: "Data: Ontem" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Grupo: Grupo Itens A" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Por @handle" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Adicionar convidado" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Adicionar pessoas" })).toBeVisible();
     await expect(page.getByText("Escolher um grupo existente")).toHaveCount(0);
     await expect(page.getByText("Criar grupo com essas pessoas")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Bob Itens" })).toHaveAttribute("aria-pressed", "true");
