@@ -1,1 +1,1 @@
-export type OnboardingActionResult = { error: string } | undefined;
+export type OnboardingActionResult = { error: string; step: "profile" | "pix" } | undefined;

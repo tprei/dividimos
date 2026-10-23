@@ -426,6 +426,11 @@
       "authenticated": false,
       "note": "Auth trigger on auth.users; no client execution path."
     },
+    "public.has_objectionable_text(p_text text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal immutable moderation check; called inside chat, group, and profile RPCs."
+    },
     "public.increment_rate_limit(p_bucket text, p_subject text, p_limit integer, p_window_seconds integer)": {
       "anon": false,
       "authenticated": false,
