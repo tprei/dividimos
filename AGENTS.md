@@ -91,6 +91,7 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 - Pix keys are encrypted at rest and decrypted server-side only. Never import `src/lib/crypto.ts` (server-only) from a client component; display the masked hint instead.
 - Keep user-facing copy in PT-BR.
 - Do not add animation, state, or UI libraries without a clear reason. Framer Motion is already present.
+- Every visual change follows `agent-guidance/VISUAL_CHANGES.md`: motion communicates a state or relationship from its state matrix, reuses the shared presets in `src/lib/animations.ts` and `MotionProvider` instead of new spring constants, keeps mobile, keyboard, and reduced-motion parity, and never presents financial feedback (Pix success, ledger updates) the system has not actually confirmed.
 
 ### Mobile surfaces
 

@@ -181,8 +181,8 @@ If the query returns any PR, fails, or cannot be completed in full, the branch m
 - CI must pass for the PR being merged.
 - Merge from the bottom of the stack upward, one PR at a time, following `Merging And Branch Cleanup` above.
 - Human review is required for every PR.
-- A PR that changes rendering carries before/after evidence. Capture "before" from the PR's parent branch with the same seeded data, viewport, and theme; capture "after" from the PR head. Original bug-report screenshots are context, not a controlled before.
-- Publish that evidence as one secret gist per PR (`gh gist create evidence.md gallery.html --desc "..."`, no `--public`) with the images embedded as data URLs, and link it from the PR body. Screenshots never get committed to the repo.
+- A PR that changes rendering carries before/after evidence per `agent-guidance/VISUAL_CHANGES.md`. Capture "before" from the PR's parent branch and "after" from the PR head, with the same seeded data, viewport, and theme; a change to motion or reversal also carries a short recording. Original bug-report screenshots are context, not a controlled before.
+- Publish the captures as raw PNG and video files in one secret gist per PR (clone the gist repo, add the files, push, no `--public`), and embed them in the PR body as an inline Before/After markdown table of `![alt](url)` images pointing at `https://gist.githubusercontent.com/<user>/<id>/raw/<file>.png`, verified to render before finishing. A standalone gallery page may link the raw URLs but never replaces the inline images. Screenshots never get committed to the repo.
 
 ## Agent Rules
 
