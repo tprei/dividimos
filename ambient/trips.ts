@@ -20,8 +20,12 @@ import { firstName, note } from "./diary";
  * production against the model, then advances the script a few steps.
  *
  * A trip group is never deleted: delete_group refuses any group that carries
- * financial history. Finished trips simply stay at zero and a new trip
- * starts the next UTC day.
+ * financial history. A finished trip stays at zero, a new trip starts the
+ * next UTC day, and the bots leave settled trips from earlier days. Every
+ * group a bot keeps is one more private channel its phone joins on load, and
+ * the realtime server holds a socket's broadcasts until all of its joins are
+ * authorized: in 75 groups, 69 of them old trips, Bruno saw the house group
+ * ~8s late.
  */
 
 const TRIP_GROUP_PREFIX = "Viagem dos bots";
@@ -29,6 +33,8 @@ const TRIP_GROUP_PREFIX = "Viagem dos bots";
 // Trip start and trip settled always get a line; this caps the per-step
 // facts so the board's diary keeps room for the rest of the run.
 const DIARY_NOTES_PER_RUN = 2;
+
+const SETTLED_TRIPS_LEFT_PER_RUN = 25;
 
 // PostgREST cuts a response off at max_rows without an error, so every
 // full-table read pages with an exact count and stops only once it has
@@ -812,5 +818,71 @@ export async function findOrStartTrip(
     state: await replayTrip(troupe, group.id),
     notesLeft: DIARY_NOTES_PER_RUN,
   };
+}
+
+interface TripMembershipRow {
+  group_id: string;
+  user_id: string;
+}
+
+async function leaveTrip(troupe: Troupe, groupId: string, userId: string): Promise<void> {
+  const client = await troupe.seed.authenticateAs(userId);
+  const { error } = await client.rpc("leave_group", { p_group_id: groupId });
+  if (error) {
+    throw new Error(`leaving trip ${groupId} as ${userId} failed: ${error.message}`);
+  }
+}
+
+/**
+ * Every bot leaves the settled trips other than the current one, at most
+ * SETTLED_TRIPS_LEFT_PER_RUN groups per run. A trip with any balance row left
+ * is not settled and keeps its members.
+ */
+export async function leaveSettledTrips(troupe: Troupe, currentGroupId: string): Promise<void> {
+  const memberships = await readEveryRow<TripMembershipRow>("trip memberships", (from, to) =>
+    troupe.admin
+      .from("group_members")
+      .select("group_id,user_id,groups!inner(name)", { count: "exact" })
+      .in("user_id", troupe.bots.map((bot) => bot.id))
+      .eq("status", "accepted")
+      .like("groups.name", `${TRIP_GROUP_PREFIX} %`)
+      .neq("group_id", currentGroupId)
+      .order("group_id", { ascending: true })
+      .order("user_id", { ascending: true })
+      .range(from, to)
+      .returns<TripMembershipRow[]>(),
+  );
+
+  const membersByGroup = new Map<string, string[]>();
+  for (const row of memberships) {
+    const members = membersByGroup.get(row.group_id) ?? [];
+    members.push(row.user_id);
+    membersByGroup.set(row.group_id, members);
+  }
+  if (membersByGroup.size === 0) {
+    return;
+  }
+
+  const balances = await readEveryRow<{ group_id: string }>("trip balances", (from, to) =>
+    troupe.admin
+      .from("group_balances")
+      .select("group_id", { count: "exact" })
+      .in("group_id", [...membersByGroup.keys()])
+      .order("group_id", { ascending: true })
+      .order("kind", { ascending: true })
+      .order("participant_id", { ascending: true })
+      .range(from, to)
+      .returns<{ group_id: string }[]>(),
+  );
+  const unsettled = new Set(balances.map((row) => row.group_id));
+  const settled = [...membersByGroup].filter(([groupId]) => !unsettled.has(groupId));
+  const batch = settled.slice(0, SETTLED_TRIPS_LEFT_PER_RUN);
+
+  for (const [groupId, userIds] of batch) {
+    await Promise.all(userIds.map((userId) => leaveTrip(troupe, groupId, userId)));
+  }
+  if (batch.length > 0) {
+    note(`Left ${batch.length} settled trips behind, ${settled.length - batch.length} to go`);
+  }
 }
 
