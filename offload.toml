@@ -6,7 +6,7 @@ max = 2
 egress = ["fonts.googleapis.com", "fonts.gstatic.com"]
 
 [setup]
-inputs = ["package-lock.json"]
+inputs = ["package.json", "package-lock.json"]
 run = ["npm ci --ignore-scripts --no-audit --no-fund"]
 
 [tasks.check]
