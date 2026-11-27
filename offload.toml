@@ -2,21 +2,27 @@ version = 1
 
 [worker]
 memory_mb = 6144
-max = 2
+max = 1
 egress = ["fonts.googleapis.com", "fonts.gstatic.com"]
 
 [setup]
 inputs = ["package.json", "package-lock.json"]
 run = ["npm ci --ignore-scripts --no-audit --no-fund"]
 
+[warm]
+run = ["npx tsc --noEmit", "npx eslint --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/"]
+
 [tasks.check]
-run = "npx tsc --noEmit && npm run lint && npm test"
 timeout = "20m"
 
+[tasks.check.parallel]
+typecheck = "npx tsc --noEmit"
+lint = "npx eslint --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/"
+test = "npx vitest run"
+
 [tasks.test]
-run = "npx vitest run --shard=$OFF_SHARD/$OFF_SHARDS"
+run = "npx vitest run"
 timeout = "20m"
-shards = 2
 
 [tasks.build]
 run = "npm run build"
