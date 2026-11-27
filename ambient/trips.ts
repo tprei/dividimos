@@ -34,8 +34,6 @@ const TRIP_GROUP_PREFIX = "Viagem dos bots";
 // facts so the board's diary keeps room for the rest of the run.
 const DIARY_NOTES_PER_RUN = 2;
 
-const SETTLED_TRIPS_LEFT_PER_RUN = 25;
-
 // PostgREST cuts a response off at max_rows without an error, so every
 // full-table read pages with an exact count and stops only once it has
 // seen that many rows.
@@ -834,9 +832,8 @@ async function leaveTrip(troupe: Troupe, groupId: string, userId: string): Promi
 }
 
 /**
- * Every bot leaves the settled trips other than the current one, at most
- * SETTLED_TRIPS_LEFT_PER_RUN groups per run. A trip with any balance row left
- * is not settled and keeps its members.
+ * Every bot leaves the settled trips other than the current one. A trip with
+ * any balance row left is not settled and keeps its members.
  */
 export async function leaveSettledTrips(troupe: Troupe, currentGroupId: string): Promise<void> {
   const memberships = await readEveryRow<TripMembershipRow>("trip memberships", (from, to) =>
@@ -876,13 +873,12 @@ export async function leaveSettledTrips(troupe: Troupe, currentGroupId: string):
   );
   const unsettled = new Set(balances.map((row) => row.group_id));
   const settled = [...membersByGroup].filter(([groupId]) => !unsettled.has(groupId));
-  const batch = settled.slice(0, SETTLED_TRIPS_LEFT_PER_RUN);
 
-  for (const [groupId, userIds] of batch) {
+  for (const [groupId, userIds] of settled) {
     await Promise.all(userIds.map((userId) => leaveTrip(troupe, groupId, userId)));
   }
-  if (batch.length > 0) {
-    note(`Left ${batch.length} settled trips behind, ${settled.length - batch.length} to go`);
+  if (settled.length > 0) {
+    note(`Left ${settled.length} settled trips behind`);
   }
 }
 
