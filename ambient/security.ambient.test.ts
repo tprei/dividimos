@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { BOT_SPECS, ensureTroupe, type Troupe } from "./bots";
+import { edgeRetryFetch } from "./edge-retry";
 
 // Production canary for the security fixes: every probe runs as the seeded
 // bots, writes only inside a throwaway probe group, and cleans up in finally,
@@ -70,7 +71,7 @@ async function joinPrivate(client: SupabaseClient, topic: string): Promise<strin
 function sessionClient(accessToken: string): SupabaseClient {
   const client = createClient(troupe.env.supabaseUrl, troupe.env.anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    global: { fetch: edgeRetryFetch, headers: { Authorization: `Bearer ${accessToken}` } },
   });
   client.realtime.setAuth(accessToken);
   return client;
@@ -80,6 +81,7 @@ beforeAll(async () => {
   troupe = await ensureTroupe();
   anon = createClient(troupe.env.supabaseUrl, troupe.env.anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: edgeRetryFetch },
   });
   BOT_SPECS.forEach((spec, index) => {
     clients.set(spec.handle, sessionClient(troupe.bots[index].accessToken));

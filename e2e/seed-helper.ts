@@ -115,13 +115,15 @@ export class SeedHelper {
   private supabaseUrl: string;
   private supabaseAnonKey: string;
   private jwtSecret: Uint8Array | null;
+  private clientFetch: typeof fetch | undefined;
 
   private userIds: string[] = [];
   private groupIds: string[] = [];
   private sessionCache = new Map<string, string>();
 
-  constructor(admin: SupabaseClient) {
+  constructor(admin: SupabaseClient, clientFetch?: typeof fetch) {
     this.admin = admin;
+    this.clientFetch = clientFetch;
     this.supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     this.supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -222,6 +224,7 @@ export class SeedHelper {
 
       const anonClient = createClient(this.supabaseUrl, this.supabaseAnonKey, {
         auth: { persistSession: false },
+        global: { fetch: this.clientFetch },
       });
 
       const { data: signInData, error: signInError } =
@@ -656,6 +659,7 @@ export class SeedHelper {
     if (cached) {
       return createClient(this.supabaseUrl, this.supabaseAnonKey, {
         global: {
+          fetch: this.clientFetch,
           headers: {
             Authorization: `Bearer ${cached}`,
           },
