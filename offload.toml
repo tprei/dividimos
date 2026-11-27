@@ -1,0 +1,28 @@
+version = 1
+
+[worker]
+memory_mb = 6144
+max = 2
+egress = ["fonts.googleapis.com", "fonts.gstatic.com"]
+
+[setup]
+inputs = ["package.json", "package-lock.json"]
+run = ["npm ci --ignore-scripts --no-audit --no-fund"]
+
+[tasks.check]
+run = "npx tsc --noEmit && npm run lint && npm test"
+timeout = "20m"
+
+[tasks.test]
+run = "npx vitest run --shard=$OFF_SHARD/$OFF_SHARDS"
+timeout = "20m"
+shards = 2
+
+[tasks.build]
+run = "npm run build"
+timeout = "20m"
+env = { NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY = "build-anon-key", SUPABASE_SERVICE_ROLE_KEY = "build-service-role-key" }
+
+[tasks.soak]
+run = "npm run test:soak"
+timeout = "60m"
