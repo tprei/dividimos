@@ -10,6 +10,7 @@ import { TRIPS } from "./trip-scripts";
 import {
   factId,
   findOrStartTrip,
+  leaveSettledTrips,
   pendingSteps,
   runPendingSteps,
   type Trip,
@@ -329,5 +330,9 @@ describe("bot trips", () => {
     if (pendingSteps(ctx, trip).length === 0) {
       expect(projectBalances(ctx.state.facts)).toEqual([]);
     }
+  });
+
+  it("leaves settled trips from earlier days behind", async () => {
+    await leaveSettledTrips(troupe, ctx.groupId);
   });
 });

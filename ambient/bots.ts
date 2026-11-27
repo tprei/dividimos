@@ -151,15 +151,17 @@ async function sweepGroupHistory(
 }
 
 /**
- * Sweeps every group a bot created: the house group, the journey pool, and
- * anything a later probe adds. Creator is the filter rather than membership,
- * because the owner joins bot groups and bots never join his.
+ * Sweeps every group a bot created that still has members: the house group,
+ * the journey pool, the current trip, and anything a later probe adds. Creator
+ * is the filter rather than membership, because the owner joins bot groups
+ * and bots never join his. A trip every bot has left takes no more writes, so
+ * it drops out instead of costing three reads a run forever.
  */
 export async function sweepBotGroups(troupe: Troupe): Promise<SweptHistory> {
   const botIds = troupe.bots.map((bot) => bot.id);
   const { data, error } = await troupe.admin
     .from("groups")
-    .select("id")
+    .select("id,group_members!inner(user_id)")
     .in("creator_id", botIds)
     .returns<{ id: string }[]>();
   if (error) {
