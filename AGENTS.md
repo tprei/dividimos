@@ -155,7 +155,7 @@ Write tests when they reduce real risk.
 Tests should verify behavior, not implementation details. Prefer a few clear tests over many fragile ones. Tests must not depend on order or shared mutable state.
 
 - **Migration changes with semantic logic must be covered by integration tests.** Any new or changed RPC, realtime topic, trigger, or constraint in `supabase/migrations/` needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards. Fresh replay and security checks do not replace behavior tests.
-- **Run heavy checks through `off`.** `offload.toml` declares `check` (tsc, lint, unit tests), `test` (unit tests in 2 parallel shards), `build`, and `soak`. Run `off run <task>` instead of `npx tsc`, `npm run lint`, `npm test`, `npm run build`, or `npm run test:soak` locally; it runs them on a Sprite worker and returns their exit code. If `off` isn't installed, run the commands locally.
+- **Run heavy checks through `off`.** `offload.toml` declares `check` (tsc, lint and unit tests, run concurrently), `test` (unit tests), `build`, and `soak`. Run `off run <task>` instead of `npx tsc`, `npm run lint`, `npm test`, `npm run build`, or `npm run test:soak` locally; it runs them on a Sprite worker and returns their exit code. If `off` isn't installed, run the commands locally.
 
 ## Pull Requests
 
