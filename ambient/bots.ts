@@ -3,6 +3,7 @@ import { SeedHelper, type SeededUser } from "../e2e/seed-helper";
 import { decodeGroupSnapshot } from "../src/lib/ledger/decode";
 import { transfersFromBalances } from "../src/lib/ledger/transfers";
 import { note } from "./diary";
+import { edgeRetryFetch } from "./edge-retry";
 import { type AmbientEnv, readAmbientEnv } from "./env";
 
 export interface BotSpec {
@@ -338,8 +339,9 @@ export async function ensureTroupe(): Promise<Troupe> {
 
   const admin = createClient(env.supabaseUrl, env.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: edgeRetryFetch },
   });
-  const seed = new SeedHelper(admin);
+  const seed = new SeedHelper(admin, edgeRetryFetch);
 
   const bots: SeededUser[] = [];
   for (const spec of BOT_SPECS) {
